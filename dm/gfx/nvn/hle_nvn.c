@@ -253,7 +253,7 @@ static void pc_add(const pool_t *p) {
     for (int i = 0; i < g_npc; i++) if (g_pc[i].p == p) { free(g_pc[i].bb); free(g_pc[i].tb); free(g_pc[i].mb); g_pc[i--] = g_pc[--g_npc]; }   // initialized again without a Finalize
     pcen c = {p, p->mem, p->size, (uint32_t)p->flags, 0, 0, 0, 0, calloc(nb, 1), calloc(nb, 1), calloc(nb, 1)};
     if (!c.bb || !c.tb || !c.mb) die("pool census allocation failed");
-    g_pc[g_npc++] = c;
+    g_pc[g_npc++] = c;   // NOLINT(clang-analyzer-security.ArrayBound): the count is never negative (the analyzer cannot know it of a global)
     pthread_mutex_unlock(&g_pc_mu);
 }
 static void pc_del(const pool_t *p) {
@@ -305,10 +305,10 @@ static void pc_log(uint64_t present) {
     enum { NG = 32, NTOP = 24 };
     struct { uint32_t flags; int n; uint64_t size, buf, tex, map, none, nz, naddr; } g[NG]; int ng = 0;
     pthread_mutex_lock(&g_pc_mu);
-    uint64_t all = 0, allnz = 0;
-    uint64_t *nz = calloc((size_t)g_npc + 1, sizeof *nz); int *ix = calloc((size_t)g_npc + 1, sizeof *ix);
+    uint64_t all = 0, allnz = 0; int np = g_npc;   // (one count for the whole log, under the lock: the analyzer cannot see that the calls below leave g_npc alone)
+    uint64_t *nz = calloc((size_t)np + 1, sizeof *nz); int *ix = calloc((size_t)np + 1, sizeof *ix);
     if (!nz || !ix) die("pool census allocation failed");
-    for (int i = 0; i < g_npc; i++) {
+    for (int i = 0; i < np; i++) {
         const pcen *c = &g_pc[i]; int k = 0; ix[i] = i;
         while (k < ng && g[k].flags != c->flags) k++;
         if (k == ng) { if (ng == NG) k = NG - 1; else { memset(&g[ng], 0, sizeof g[ng]); g[ng].flags = c->flags; ng++; } }
@@ -316,13 +316,13 @@ static void pc_log(uint64_t present) {
         g[k].n++; g[k].size += c->size; g[k].buf += pc_cover(c, c->bb, 0); g[k].tex += pc_cover(c, c->tb, 0); g[k].map += pc_cover(c, c->mb, 0);
         g[k].none += pc_cover(c, NULL, 1); g[k].nz += nz[i]; g[k].naddr += c->naddr; all += c->size; allnz += nz[i];
     }
-    g_pc_sort = g_pc; qsort(ix, (size_t)g_npc, sizeof *ix, pc_cmp);
+    g_pc_sort = g_pc; qsort(ix, (size_t)np, sizeof *ix, pc_cmp);
     LOG("[nvn] pools at present %llu: %d pools, %.0f MiB, %.0f MiB not zero (by flags: count, MiB, covered by buffers, by textures, mapped into virtual pools, by none, not zero, address queries)",
-        (unsigned long long)present, g_npc, all / 1048576.0, allnz / 1048576.0);
+        (unsigned long long)present, np, all / 1048576.0, allnz / 1048576.0);
     for (int k = 0; k < ng; k++)
         LOG("[nvn]   flags %#05x: %d, %.0f MiB, buffers %.0f, textures %.0f, mapped %.0f, none %.0f, not zero %.0f, address queries %llu", g[k].flags, g[k].n, g[k].size / 1048576.0,
             g[k].buf / 1048576.0, g[k].tex / 1048576.0, g[k].map / 1048576.0, g[k].none / 1048576.0, g[k].nz / 1048576.0, (unsigned long long)g[k].naddr);
-    for (int t = 0; t < g_npc && t < NTOP; t++) {
+    for (int t = 0; t < np && t < NTOP; t++) {
         const pcen *c = &g_pc[ix[t]];
         LOG("[nvn]   pool %p+%#llx flags %#05x: %u buffers %.1f MiB, %u textures %.1f MiB, %u mappings %.1f MiB, none %.1f MiB, not zero %.1f MiB, %u address queries", (const void *)c->mem,
             (unsigned long long)c->size, c->flags, c->nbuf, pc_cover(c, c->bb, 0) / 1048576.0, c->ntex, pc_cover(c, c->tb, 0) / 1048576.0, c->nmap,
@@ -685,7 +685,7 @@ NVN(nvnTextureGetSamples, int, const NVNtexture *t) { return CTX(t)->d.samples; 
 NVN(nvnTextureGetMemoryPool, NVNmemoryPool *, const NVNtexture *t) { return (NVNmemoryPool *)CTX(t)->pool; }
 NVN(nvnTextureGetMemoryOffset, ptrdiff_t, const NVNtexture *t) { return (ptrdiff_t)CTX(t)->off; }
 // The GPU address of the texture's storage (DRAGON QUEST XI S, Unreal Engine 4.18, asks for it at start): pool address + offset, the same address space as nvnMemoryPoolGetBufferAddress
-NVN(nvnTextureGetTextureAddress, NVNtextureAddress, const NVNtexture *t) { const tex_t *o = CTX(t); if (o->pool && o->pool->mem) mtl_pool_need(o->pool->mem + o->off, o->L.size, "a texture's address"); return o->pool ? (NVNtextureAddress)(o->pool->mem + o->off) : 0; }
+NVN(nvnTextureGetTextureAddress, NVNtextureAddress, const NVNtexture *t) { const tex_t *o = CTX(t); if (o->pool && o->pool->mem) mtl_pool_need(o->pool->mem + o->off, o->L.size, "a texture's address"); return o->pool ? (NVNtextureAddress)((uintptr_t)o->pool->mem + (uint64_t)o->off) : 0; }   // (as integers: a pool without storage has no mem)
 // The size of a texture's ZCull save area (SaveZCullData / RestoreZCullData). The host does no ZCull and never touches the area, but games allocate it from their own pools, and NVN
 // does not report 0. Cuphead (Unity 2017.4) allocates one per depth target (main+0x1948060) from its pool allocator, which gives a zero-size request the offset of a live block; its
 // map of allocations then loses that block (the zero-size one's size overwrites it, and freeing the zero-size one deletes it), and the block's own free later pushes a garbage-sized
@@ -1023,8 +1023,12 @@ static uint8_t *hostseg_take(const cmd_t *o, size_t n) {
     for (int i = 0; i < g_nhostseg && !m; i++)
         if (!g_hostseg[i].busy && g_hostseg[i].n == n) { g_hostseg[i] = (hostseg_t){ g_hostseg[i].mem, n, f, 1, lo, hi }; m = g_hostseg[i].mem; }
     if (!m && g_hostseg_bytes + n <= HOSTSEG_CAP && (m = malloc(n))) {
-        if (g_nhostseg == g_caphostseg) { g_caphostseg = g_caphostseg ? g_caphostseg * 2 : 64; g_hostseg = realloc(g_hostseg, sizeof *g_hostseg * (size_t)g_caphostseg); }
-        g_hostseg[g_nhostseg++] = (hostseg_t){ m, n, f, 1, lo, hi }; g_hostseg_bytes += n;
+        if (g_nhostseg == g_caphostseg) {   // (a failed realloc keeps the old table: the host stops rather than writing through null)
+            int cap = g_caphostseg ? g_caphostseg * 2 : 64; hostseg_t *grown = realloc(g_hostseg, sizeof *g_hostseg * (size_t)cap);
+            if (!grown) die("host segment table allocation failed");
+            g_hostseg = grown; g_caphostseg = cap;
+        }
+        g_hostseg[g_nhostseg++] = (hostseg_t){ m, n, f, 1, lo, hi }; g_hostseg_bytes += n;   // NOLINT(clang-analyzer-security.ArrayBound): the count is never negative (the analyzer cannot know it of a global)
     }
     unsigned t = ++total; int ns = g_nhostseg; uint64_t bytes = g_hostseg_bytes;
     pthread_mutex_unlock(&g_hostseg_mu);
@@ -2381,7 +2385,7 @@ static uint8_t *vpool_reserve(pool_t *o) {   // → the reserved range, or NULL
     pthread_mutex_lock(&g_vp_mu);
     if (g_nvp == g_cvp && !(g_vp = realloc(g_vp, (g_cvp = g_cvp ? 2 * g_cvp : 64) * sizeof *g_vp))) die("sparse pool table allocation failed");
     int at = g_nvp; while (at > 0 && g_vp[at - 1]->base > v->base) at--;   // (kept sorted by base: vpool_at's binary search)
-    memmove(&g_vp[at + 1], &g_vp[at], (size_t)(g_nvp - at) * sizeof *g_vp); g_vp[at] = v; g_nvp++; o->vp = v;
+    memmove(&g_vp[at + 1], &g_vp[at], (size_t)(g_nvp - at) * sizeof *g_vp); g_vp[at] = v; g_nvp++; o->vp = v;   // NOLINT(clang-analyzer-security.ArrayBound): the count is never negative (the analyzer cannot know it of a global)
     o->vmode = o->size > DM_GAME_APP_POOL ? 2 : 0;
     pthread_mutex_unlock(&g_vp_mu);
     if (o->vmode == 2) LOG("[nvn] virtual pool %p (%#llx bytes, flags %#x): sparse, own address range %p+%#llx, physical pages are remapped into it", (const void *)o, (unsigned long long)o->size, o->flags, a, (unsigned long long)len);

@@ -77,7 +77,7 @@ def pchtxt_build_id(b):
         ln = strip_line(raw)
         if len(ln) <= 2 or ln[0] != '@': continue
         if ln[1] in 'sS': break
-        if ln[1] in 'nN': bid = pad(re.match(r'[0-9a-fA-F]*', ln[8:]).group())
+        if ln[1] in 'nN': bid = pad(re.match(r'[0-9a-fA-F]*', ln[8:]).group())   # pyright: ignore[reportOptionalMemberAccess]  # a * pattern always matches
     return bid
 
 
@@ -125,7 +125,7 @@ def parse_pchtxt(b, name='patch'):
         if q is not None:
             j, s = q + 1, ''
             while j < len(ln) and ln[j] != ln[q]:
-                if ln[j] == '\\' and j + 1 < len(ln): s += ESC.get(ln[j + 1], ln[j + 1]); j += 2
+                if ln[j] == '\\' and j + 1 < len(ln): s += ESC.get(ln[j + 1]) or ln[j + 1]; j += 2
                 else: s += ln[j]; j += 1
             data = s.encode('latin-1')
         else:

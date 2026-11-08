@@ -46,7 +46,7 @@ def zstd():
     """The zstd module: compression.zstd (Python 3.14), else backports.zstd (the same API)"""
     try: from compression import zstd as z
     except ImportError:
-        try: from backports import zstd as z
+        try: from backports import zstd as z   # pyright: ignore[reportMissingImports]  # the package for Python before 3.14
         except ImportError: raise Error(f'Python {sys.version_info[0]}.{sys.version_info[1]} has no compression.zstd (3.14+): a .nup with zstd files needs it, '
                                         'or pip install backports.zstd') from None
     return z
@@ -228,7 +228,7 @@ class Nup:
             else: hi = mid
         return kids[lo] if lo < len(kids) and self.name(kids[lo]) == want else None
 
-    def find(self, inner, start=''):
+    def find(self, inner, start: str | tuple = ''):
         """The node of a path inside the container ('' its root; 'update/458752/romfs/a/b', 'base/exefs/main'); FileNotFoundError when there is none"""
         k = start
         for part in inner.split('/'):
@@ -324,18 +324,19 @@ class _Zstd(io.RawIOBase):
         if whence not in (0, 1, 2) or pos < 0: raise ValueError('invalid seek')
         self.pos = pos; return pos
     def _bad(self, got): return Error(f'{self.path}: zstd extent at {self.start:#x} gives {got} bytes, its record says {self.length}')
-    def _load(self):
-        with _Raw(self.path, self.start, self.stored) as r: comp = r.readall()
-        try: self.data = zstd().decompress(comp)
-        except Exception as e: raise Error(f'{self.path}: zstd extent at {self.start:#x}: {e}') from None
-        if len(self.data) != self.length: raise self._bad(len(self.data))
+    def _load(self):   # the whole extent, decompressed on the first call
+        if self.data is None:
+            with _Raw(self.path, self.start, self.stored) as r: comp = r.readall()
+            try: self.data = zstd().decompress(comp)
+            except Exception as e: raise Error(f'{self.path}: zstd extent at {self.start:#x}: {e}') from None
+            if len(self.data) != self.length: raise self._bad(len(self.data))
+        return self.data
     def readinto(self, buffer):
         want = min(len(buffer), max(0, self.length - self.pos))
         if not want: return 0
         if self.tmp is not None: data = pread(self.tmp.fileno(), want, self.pos)
         elif self.length <= SMALL:
-            if self.data is None: self._load()
-            data = self.data[self.pos:self.pos + want]
+            data = self._load()[self.pos:self.pos + want]
         else:
             if self.stream is None or self.stream.tell() > self.pos:
                 if self.stream is not None: self.stream.close()
@@ -347,8 +348,7 @@ class _Zstd(io.RawIOBase):
         return len(data)
     def readall(self):
         if self.tmp is None and self.length <= SMALL:
-            if self.data is None: self._load()
-            data = self.data[self.pos:]; self.pos = max(self.pos, self.length); return bytes(data)
+            data = self._load()[self.pos:]; self.pos = max(self.pos, self.length); return bytes(data)
         return super().readall()
     def fileno(self):
         if self.tmp is None:

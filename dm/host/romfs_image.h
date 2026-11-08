@@ -31,7 +31,8 @@ static int romfs_image_read(int fd, void *buf, size_t size, off_t off) {
 // Swap2-Native: a Nintendo RomFS image as is (hactool --romfs, or a dump's romfs.bin: the 0x50-byte header, the directory and file tables,
 // the data from the header's data offset) opened into the same index as a DMROMFS1 image: breadth-first, each directory's children one
 // run sorted by name (bytes, a shorter prefix first), a file's a its absolute offset in the image. NULL with errno EINVAL when the file is
-// not one (or its tables are out of bounds, loop or repeat a name), another errno for an I/O or allocation failure
+// not one (or its tables are out of bounds, loop or repeat a name), another errno for an I/O or allocation failure. Only the host's hle_fs.c
+// opens one: the header's other includers (the Mac launcher, the iOS app, the tool tests' validators) read DMROMFS1 images alone, hence unused
 typedef struct { uint32_t meta; uint32_t name, nlen; uint8_t type; } romfs_nx_kid;
 static int romfs_nx_kid_cmp(const void *pa, const void *pb, void *names) {
     const romfs_nx_kid *a = pa, *b = pb; const char *n = names;
@@ -47,7 +48,7 @@ static void romfs_nx_sort(romfs_nx_kid *k, size_t n, const char *names) {   // (
 }
 static uint32_t romfs_nx_u32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static uint64_t romfs_nx_u64(const uint8_t *p) { uint64_t v; memcpy(&v, p, 8); return v; }
-static romfs_img *romfs_nx_open(const char *path) {
+__attribute__((unused)) static romfs_img *romfs_nx_open(const char *path) {
     int fd = open(path, O_RDONLY); struct stat st; uint8_t h[0x50]; romfs_img *m = NULL;
     uint8_t *dmeta = NULL, *fmeta = NULL; romfs_nx_kid *kids = NULL; uint32_t *queue = NULL; char *pool = NULL; img_ent *e = NULL;
     if (fd < 0) return NULL;

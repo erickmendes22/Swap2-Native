@@ -11,6 +11,7 @@ module_t *g_mod; int g_nmod;                            // host symbols that cra
 void svc_thread_dump(void) {}
 int dm_guest_as_contains(uintptr_t address) { (void)address; return 0; } // Tests use host-thread stacks.
 void dm_vi_layer_crop(int c[4]) { c[0] = c[1] = c[2] = c[3] = 0; }   // no vi layer crop in unit tests (hle_vi.c)
+uint64_t dm_guest_unmapped(uintptr_t a, size_t n) { (void)a; (void)n; return 0; }   // no guest regions in unit tests: every page counts as mapped (hle_svc.c)
 void crash_install(void);
 void nvn_present_config(int hz, int display_mode);
 #include <fcntl.h>

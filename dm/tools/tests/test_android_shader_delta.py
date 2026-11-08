@@ -49,7 +49,7 @@ def write_lib(path, version, game=GAME, abi='', shaders=(), codec=1):
     for key, ms, c1 in sorted(shaders):
         c1o = put(c1) if c1 else 0; m0, b0 = nm, nb
         for v, s in enumerate(ms):
-            st = zstd.compress(s) if codec == 1 else s
+            st = zstd.compress(s) if codec == 1 else s   # pyright: ignore[reportOptionalMemberAccess]  # the classes that write zstd libraries skip without it
             mods += delta.MOD.pack(put(st), len(s), len(st), v, codec, 0); nm += 1
         binds += bind(0); nb += 1
         entries += entry(key, nmods=len(ms), c1=c1, m0=m0, b0=b0, c1_off=c1o)
@@ -88,8 +88,8 @@ class EntryHash(unittest.TestCase):
         L = delta.Library(str(self.tmp / 'A.lib')); good = L.hash_of(0, zstd)[1]
         off, size, stored, *_ = delta.MOD.unpack_from(L.m, L.mo); L.close()
         outcomes = set()
+        d = bytearray((self.tmp / 'A.lib').read_bytes())
         for at in range(stored):
-            d = bytearray((self.tmp / 'A.lib').read_bytes()) if at == 0 else d
             d0 = bytes(d); d[L.blob_off + off + at] ^= 0x5a; (self.tmp / 'B.lib').write_bytes(bytes(d)); d = bytearray(d0)
             L2 = delta.Library(str(self.tmp / 'B.lib'))
             try: outcomes.add('other hash' if L2.hash_of(0, zstd)[1] != good else 'SAME')
@@ -279,8 +279,9 @@ class Launcher(unittest.TestCase):
         self.assertTrue(int(lo2) < int(lo) and int(hi2) < int(hi) and int(lo2) >= 5)
         self.assertRegex(text, r'^about \d+-\d+ minutes$')
         # A whole Prepare: the rewrite and the shaders step, by the game's shader count (DKB 22,852 within the 30-45 minutes measured and estimated, MKW 11,604 less)
-        dkb = [int(x) for x in re.fullmatch(r'about (\d+)-(\d+) minutes', self.java('job', 22852)).groups()]
-        mkw = [int(x) for x in re.fullmatch(r'about (\d+)-(\d+) minutes', self.java('job', 11604)).groups()]
+        def span(text):
+            m = re.fullmatch(r'about (\d+)-(\d+) minutes', text); assert m, text; return [int(x) for x in m.groups()]
+        dkb, mkw = span(self.java('job', 22852)), span(self.java('job', 11604))
         self.assertTrue(dkb[0] >= int(lo) and 40 <= dkb[1] <= 50 and mkw[0] < dkb[0] and mkw[1] < dkb[1], (dkb, mkw))
 
 

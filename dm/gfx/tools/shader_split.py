@@ -3140,7 +3140,7 @@ def main():
     spill_tmp = None
     if rd:
         sd = os.path.join(rd, 'spill')   # (ScanCache keeps it; the phone deletes it with the kept results)
-        if not cache.have: _sh.rmtree(sd, ignore_errors=True)
+        if cache is not None and not cache.have: _sh.rmtree(sd, ignore_errors=True)   # (cache is a ScanCache whenever rd is set)
     else: sd = spill_tmp = _tf.mkdtemp(prefix='split-spill-', dir=os.path.dirname(os.path.abspath(pkg)) or '.')
     os.makedirs(sd, exist_ok=True); os.environ['DM_SPLIT_SPILL'] = sd
     import atexit; atexit.register(lambda: spill_tmp and _sh.rmtree(spill_tmp, ignore_errors=True))

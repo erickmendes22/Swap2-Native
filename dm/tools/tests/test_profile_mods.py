@@ -72,8 +72,9 @@ class ProfileMods(unittest.TestCase):
                     self.assertIn(f.suffix.lower(), xp.EXTS)
                     recs = xp.parse(f)
                     bid = xp.pchtxt_build_id(f.read_bytes()) if f.suffix.lower() == '.pchtxt' else xp.pad(f.name.split('.')[0])
+                    assert bid is not None, f'{f.name} has no @nsobid line'
                     module = next((m for m, b in builds if b == bid[:32]), None)
-                    self.assertIsNotNone(module, f'{f.name} is for build {bid[:40]}, which no build row of the profile has')
+                    assert module is not None, f'{f.name} is for build {bid[:40]}, which no build row of the profile has'
                     for r in recs:
                         at = r.offset - xp.HEADER
                         hit = [c for c in checks if c[0] == module and c[1] == at and len(c[2]) == len(r.data)]

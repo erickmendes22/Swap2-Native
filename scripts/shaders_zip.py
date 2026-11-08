@@ -201,7 +201,7 @@ def make(lib_dir, out, pack):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n\n')[0])
     ap.add_argument('lib_dir', help='the library folder, v-<version> with dmsh_vk.lib')
     ap.add_argument('--out', help='where the zip goes (default: beside the library folder)')
     ap.add_argument('--pack', help='the pack folder made from the same dump (its pack.tsv: the game version and builds)')

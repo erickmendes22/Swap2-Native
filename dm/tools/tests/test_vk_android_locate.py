@@ -24,7 +24,7 @@ def vk_functions(*names):
              or isinstance(n, ast.Assign) and any(isinstance(t, ast.Tuple) and any(isinstance(e, ast.Name) and e.id == 'KEY_FNS' for e in t.elts) for t in n.targets)]
     ns = {'ast': ast, 'os': os, 'sys': sys, 'struct': struct, 'hashlib': hashlib, 'HERE': str(TOOLS)}
     keep.sort(key=lambda n: n.lineno)
-    exec(compile(ast.Module(body=keep, type_ignores=[]), 'vk_android_build.py', 'exec'), ns)
+    exec(compile(ast.Module(body=[*keep], type_ignores=[]), 'vk_android_build.py', 'exec'), ns)
     return ns
 
 

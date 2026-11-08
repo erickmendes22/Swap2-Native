@@ -8,7 +8,7 @@ static int fails;
 #define MIB (1ull << 20)
 
 typedef struct { uint32_t fl, fmt, w, h, levels, usage; } key;   // a stand-in for the create info vka_tex.c keys on
-static int bind(vkz_tab *t, const key *k, uint64_t size, uint64_t *next_h, uint64_t *h_out) {   // vka_imem_bind_zero's bookkeeping: 1 = a new allocation
+static int zbind(vkz_tab *t, const key *k, uint64_t size, uint64_t *next_h, uint64_t *h_out) {   // vka_imem_bind_zero's bookkeeping: 1 = a new allocation
     int i = vkz_ref(t, k, sizeof *k);
     if (i >= 0) { *h_out = t->e[i].h; return 0; }
     uint64_t h = (*next_h)++;
@@ -30,10 +30,10 @@ int main(void) {
     vkz_tab t = {0}; uint64_t nh = 100, h[8];
     key r8 = {0x400, 9, 16384, 16384, 6, 0x17}, rg16 = {0x400, 77, 8192, 8192, 1, 0x17}, r8b = r8; r8b.levels = 5;
     // four R8 targets of one create info: one allocation
-    int fresh = 0; for (int i = 0; i < 4; i++) fresh += bind(&t, &r8, 341 * MIB, &nh, &h[i]);
+    int fresh = 0; for (int i = 0; i < 4; i++) fresh += zbind(&t, &r8, 341 * MIB, &nh, &h[i]);
     CHECK(fresh == 1 && h[0] == h[1] && h[1] == h[2] && h[2] == h[3], "four images of one key share one allocation (%d made)", fresh);
-    CHECK(bind(&t, &rg16, 128 * MIB, &nh, &h[4]) == 1 && h[4] != h[0], "another key: its own allocation");
-    CHECK(bind(&t, &r8b, 340 * MIB, &nh, &h[5]) == 1 && h[5] != h[0], "one field apart (levels): its own allocation");
+    CHECK(zbind(&t, &rg16, 128 * MIB, &nh, &h[4]) == 1 && h[4] != h[0], "another key: its own allocation");
+    CHECK(zbind(&t, &r8b, 340 * MIB, &nh, &h[5]) == 1 && h[5] != h[0], "one field apart (levels): its own allocation");
     uint64_t im, al, by, sv; vkz_stats(&t, &im, &al, &by, &sv);
     CHECK(im == 6 && al == 3 && by == (341 + 128 + 340) * MIB && sv == 3 * 341 * MIB, "stats: %llu images, %llu allocations, %llu MiB, %llu MiB saved",
           (unsigned long long)im, (unsigned long long)al, (unsigned long long)(by / MIB), (unsigned long long)(sv / MIB));
@@ -43,13 +43,13 @@ int main(void) {
     CHECK(vkz_unref(&t, h[1]) == 1, "the fourth: the allocation is freed");
     CHECK(vkz_unref(&t, h[1]) == -1, "and is no entry's any more");
     CHECK(vkz_find(&t, &r8, sizeof r8) < 0, "its key is gone");
-    CHECK(bind(&t, &r8, 341 * MIB, &nh, &h[6]) == 1 && h[6] != h[0], "a new image of that key makes a new allocation");
+    CHECK(zbind(&t, &r8, 341 * MIB, &nh, &h[6]) == 1 && h[6] != h[0], "a new image of that key makes a new allocation");
     vkz_stats(&t, &im, &al, &by, &sv);
     CHECK(im == 3 && al == 3 && sv == 0 && t.made == 4 && t.owned == 2, "stats after: %llu images, %llu allocations, %llu made, %llu owned", (unsigned long long)im, (unsigned long long)al,
           (unsigned long long)t.made, (unsigned long long)t.owned);
     CHECK(vkz_add(&t, &r8, VKZ_KEY + 1, 999, 1) < 0 && vkz_ref(&t, &r8, VKZ_KEY + 1) < 0, "a key longer than VKZ_KEY is refused");
     // many keys: the table grows
-    for (uint32_t i = 0; i < 1000; i++) { key k = {0x400, 9, 64 + i, 64, 1, 0x17}; uint64_t hh; bind(&t, &k, 4 * MIB, &nh, &hh); }
+    for (uint32_t i = 0; i < 1000; i++) { key k = {0x400, 9, 64 + i, 64, 1, 0x17}; uint64_t hh; zbind(&t, &k, 4 * MIB, &nh, &hh); }
     vkz_stats(&t, &im, &al, NULL, NULL);
     CHECK(al == 1003 && im == 1003, "1000 more keys: %llu allocations", (unsigned long long)al);
     free(t.e);

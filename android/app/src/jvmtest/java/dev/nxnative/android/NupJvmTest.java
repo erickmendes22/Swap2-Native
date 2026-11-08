@@ -294,7 +294,7 @@ public final class NupJvmTest {
     static File packDir(File t, String name, String romfs, String aoc) throws IOException {
         File p = new File(t, name);
         write(new File(p, "main.patched.bin"), new byte[1]);
-        write(new File(p, "pack.tsv"), ("format\t1\ntarget\tandroid\ntitle_id\t" + TID + "\nname\tGame\nversion\t458752\nromfs\t" + romfs + "\nmodules\tmain\n"
+        write(new File(p, "pack.tsv"), ("format\t" + Pack.FORMAT + "\ntarget\tandroid\ntitle_id\t" + TID + "\nname\tGame\nversion\t458752\nromfs\t" + romfs + "\nmodules\tmain\n"
                 + (aoc == null ? "" : "aoc\t" + aoc + "\n")).getBytes(StandardCharsets.UTF_8));
         return p;
     }

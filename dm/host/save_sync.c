@@ -126,7 +126,7 @@ typedef struct { plat_sha256_t sha; FILE *out; ss_meta *m; uint32_t entries; uin
 static int pack_entry(void *c, const char *abs, const char *rel, const struct stat *st) {
     packer *k = c;
     char guest[1024]; ssize_t gl = plat_getxattr(abs, GUEST_NAME, guest, sizeof guest);
-    if (gl < 0) gl = 0;   // ENOATTR: the host name is the guest's
+    if (gl < 0 || (size_t)gl > sizeof guest) gl = 0;   // ENOATTR: the host name is the guest's (a value longer than the buffer fails with ERANGE, never comes back longer)
     size_t pl = strlen(rel); int file = S_ISREG(st->st_mode);
     if (pl > UINT16_MAX) return -1;
     uint8_t h[ENT] = {(uint8_t)(file ? 2 : 1)}; uint16_t pl16 = (uint16_t)pl, gl16 = (uint16_t)gl;

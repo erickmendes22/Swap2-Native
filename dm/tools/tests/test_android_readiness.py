@@ -40,7 +40,8 @@ def probe_facts():
     keys |= {'format.' + m for m in re.findall(r'\{"([a-z0-9]+)", VK_FORMAT_', src)}
     for line in re.findall(r'"limit\.[^"]*"', src):
         keys |= set(re.findall(r'(limit\.[A-Za-z0-9_]+)=', line))
-    ext = re.search(r'k_exts\[\] = \{(.*?)\};', src, re.S).group(1)
+    m = re.search(r'k_exts\[\] = \{(.*?)\};', src, re.S); assert m, 'no k_exts[] table'
+    ext = m.group(1)
     names = dict(re.findall(r'#define (VK_\w+_EXTENSION_NAME)\s+"(\w+)"', VK_HEADER.read_text(encoding='utf-8')))   # the macros' strings, as the driver lists them
     for macro in re.findall(r'\b(VK_\w+_EXTENSION_NAME)\b', ext): keys.add('ext.' + names[macro])
     keys |= {'ext.' + m for m in re.findall(r'"(VK_[A-Za-z0-9_]+)"', ext)}

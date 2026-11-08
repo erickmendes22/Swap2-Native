@@ -212,7 +212,7 @@ def header(g):
          f'#define DM_GAME_TEX_DYN_SLOTS {int(tds == "on")}',
          f'#define DM_GAME_GPU_TS_SEGMENT {int(gts == "segment")}',
          f'#define DM_GAME_VCONV_RANGE {int(vcr == "on")}',
-         f'#define DM_GAME_WINDOW_FN {{{", ".join(wfn) or "{\"\", 0, 0, 0, 0}"}}}', f'#define DM_GAME_NWINDOW_FN {len(wfn)}',
+         '#define DM_GAME_WINDOW_FN {' + (', '.join(wfn) or '{"", 0, 0, 0, 0}') + '}', f'#define DM_GAME_NWINDOW_FN {len(wfn)}',
          *([f'#define DM_GAME_NVN_API_MAJOR {api.split(".")[0]}', f'#define DM_GAME_NVN_API_MINOR {api.split(".")[1]}'] if g.get('device_api', '') else []),   # without the key: by the SDK version (hle_nvn.c nvn_api)
          '']
     return '\n'.join(L)

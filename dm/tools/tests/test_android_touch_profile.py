@@ -30,8 +30,8 @@ class StandardSkinAssetTest(unittest.TestCase):
     def test_sprite_table_matches_manifest(self):
         manifest = json.loads((self.ART / 'sprites-v2.json').read_text(encoding='utf-8'))
         source = (ROOT / 'android/app/src/main/java/dev/nxnative/android/TouchProfile.java').read_text(encoding='utf-8')
-        ids = re.findall(r'"([a-z0-9_]+)"', re.search(r' SPRITE_IDS = \{(.*?)\};', source, re.S).group(1))
-        rects = [list(map(int, m)) for m in re.findall(r'\{(\d+), (\d+), (\d+), (\d+)\}', re.search(r'STANDARD_SPRITE_RECTS = \{(.*?)\n    \};', source, re.S).group(1))]
+        ids = re.findall(r'"([a-z0-9_]+)"', group1(r' SPRITE_IDS = \{(.*?)\};', source, re.S))
+        rects = [list(map(int, m)) for m in re.findall(r'\{(\d+), (\d+), (\d+), (\d+)\}', group1(r'STANDARD_SPRITE_RECTS = \{(.*?)\n    \};', source, re.S))]
         self.assertEqual(ids, list(manifest['sprites']))
         self.assertEqual(rects, [manifest['sprites'][i]['rect_px'] for i in ids])
         self.assertIn(f"STANDARD_ATLAS_SIZE = {manifest['width']}", source)
@@ -50,6 +50,11 @@ class StandardSkinAssetTest(unittest.TestCase):
                 else:
                     self.assertIn(f'std("{control["sprite"]}", ', source)
                     self.assertRegex(source, rf'std\("{control["sprite"]}", \d+, ANCHOR_{control["anchor"].upper()}, {num(x)}, {num(y)}, {w:g}, {h:g}\)')
+
+
+def group1(pattern, text, flags=0):
+    """The first group of pattern's match in text: a failed test when the source has none"""
+    m = re.search(pattern, text, flags); assert m, f'{pattern} matches nothing'; return m.group(1)
 
 
 def png_size(path):
@@ -71,7 +76,7 @@ class Zelda40SkinAssetTest(unittest.TestCase):
 
     def zelda_items(self):
         source = self.PROFILE.read_text(encoding='utf-8')
-        return re.search(r'StandardItem\[\] ZELDA40 = \{(.*?)\n    \};', source, re.S).group(1)
+        return group1(r'StandardItem\[\] ZELDA40 = \{(.*?)\n    \};', source, re.S)
 
     def test_bundled_atlas(self):
         bundled = ROOT / 'android/app/src/main/res/drawable-nodpi/s2_zelda40_controls.png'
@@ -85,8 +90,8 @@ class Zelda40SkinAssetTest(unittest.TestCase):
     def test_sprite_table_matches_manifest(self):
         manifest = json.loads((self.ART / 'sprites-v1.json').read_text(encoding='utf-8'))
         source = self.PROFILE.read_text(encoding='utf-8')
-        ids = re.findall(r'"([a-z0-9_]+)"', re.search(r' SPRITE_IDS = \{(.*?)\};', source, re.S).group(1))
-        rects = [list(map(int, m)) for m in re.findall(r'\{(\d+), (\d+), (\d+), (\d+)\}', re.search(r'ZELDA40_SPRITE_RECTS = \{(.*?)\n    \};', source, re.S).group(1))]
+        ids = re.findall(r'"([a-z0-9_]+)"', group1(r' SPRITE_IDS = \{(.*?)\};', source, re.S))
+        rects = [list(map(int, m)) for m in re.findall(r'\{(\d+), (\d+), (\d+), (\d+)\}', group1(r'ZELDA40_SPRITE_RECTS = \{(.*?)\n    \};', source, re.S))]
         self.assertEqual(ids, list(manifest['sprites']))
         self.assertEqual(rects, [manifest['sprites'][i]['rect_px'] for i in ids])
         self.assertIn(f"ZELDA40_ATLAS_W = {manifest['width']}, ZELDA40_ATLAS_H = {manifest['height']}", source)
@@ -123,7 +128,7 @@ class Zelda40SkinAssetTest(unittest.TestCase):
             self.assertIn(f'ZELDA40_CAP = {cap["size_ref"][0]}f / {base["size_ref"][0]}f, ZELDA40_STICK_TRAVEL = 28f / {base["size_ref"][0] // 2}f', source)
         # D-pad: the four measured centres (up, right, down, left), one region at their bounding box's centre with its largest half extent
         dpad = [controls[d] for d in ('up', 'right', 'down', 'left')]
-        table = re.search(r'ZELDA40_DPAD = \{(.*?)\};', source).group(1)
+        table = group1(r'ZELDA40_DPAD = \{(.*?)\};', source)
         self.assertEqual([list(map(float, m)) for m in re.findall(r'\{([\d.]+), ([\d.]+)\}', table)], [list(map(float, d['center_ref'])) for d in dpad])
         self.assertTrue(all(d['size_ref'] == [90, 90] and d['anchor'] == 'left' for d in dpad))
         self.assertIn('ZELDA40_DPAD_SIZE = 90', source)

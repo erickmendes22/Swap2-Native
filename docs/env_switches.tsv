@@ -248,6 +248,7 @@ DM_PROBE_LIMIT	diagnostic	Maximum printed hits per guest probe; 0 or absent leav
 DM_PROBE_POLL	diagnostic	`=<address>[+<length>]` (hex, 4 bytes by default, up to 8): a host thread spins on the bytes and on each change snapshots every thread's pc, lr and frames, for writes the watch misses
 DM_PROBE_WATCH	diagnostic	`=<address>[+<length>]` (hex, 8 bytes by default): write-protects that host page and reports who writes these bytes, without a debugger
 DM_PROBE_X2	diagnostic	`=<bytes>` (hex): probe hits also dump that many bytes of the memory x2 points to
+DM_PROFILE_MODS_NSO	test	`=<title ID>:<module>=<NSO file>[,...]` (dm/tools/tests/test_profile_mods.py) a dump's module (never in the repository) the profile mods' check rows are also compared with, their patched words read back
 DM_PROGRAM_ID	switch	`=<hex>`: the program ID the host reports from `svcGetInfo(ProgramId)` (default: the profile's `program_id`)
 DM_PSO_ARCHIVE	path	The folder of the per-game Metal 4 pipeline archive of pipeline bases (default `pso_archive/` beside `pso_user.tsv`); `off` keeps no archive
 DM_PSO_BUNDLE	path	The pipeline archive made offline (`<GPU architecture>.mtl4a`, `prebuilt.tsv`), read only; the iOS app and Mac launcher set it to their `pso/` folder; `off` ignores it
@@ -411,6 +412,10 @@ DM_VK_NANSCAN_DUMP	diagnostic	`=<format>x<width>` (Android, live: read at use) w
 DM_VK_NANSCAN_FS	diagnostic	`=<key>` (Android, restart) with `DM_VK_NANSCAN`, a fragment shader key (hex) whose draw, once a frame, has its inputs scanned for NaN / infinite texels
 DM_VK_NANSCAN_SERIAL	diagnostic	`=<serial>` (Android, restart) with `DM_VK_NANSCAN=2`, split only passes into the image of that texture serial (default any)
 DM_VK_NANSCAN_STEP	diagnostic	`=<n>` (Android, restart, default 64) with `DM_VK_NANSCAN=2`, the pass is ended and scanned after every n draws
+DM_VK_NDSR	switch	`net` (Android, live; the default) | `fsr` | `bilinear`: agl's NDSR upscaler network runs, or our own FSR 1 EASU (or the bilinear A/B kernel) runs in its dispatch slot (vka_ndsr.c; a workaround with a quality loss, opt-in)
+DM_VK_NDSR_INPUT	switch	`linear` (Android, live; the default) | `sqrt`: with `DM_VK_NDSR`, the network's input holds the colour, or its square root (agl's light upscaler; the profile key `ndsr_input`)
+DM_VK_NDSR_LOG	diagnostic	`1` (Android, live) with `DM_VK_NDSR`, logs the network's push bank once per input and output size
+DM_VK_NDSR_MAP	diagnostic	`full` (Android, live; the default) | `push`: with `DM_VK_NDSR`, the whole input onto the whole output, or the mapping of agl's push bank (experimental)
 DM_VK_OCCLUSION	switch	`0` (Android, read once: at the first samples-passed reset or report, on) every samples-passed report writes 1 instead of the count of the Vulkan occlusion queries begun after the game's samples-passed reset (the constant before 2026-11-07; the A/B switch)
 DM_VK_PASS_CLEARS	switch	`0` (Android, live: the next submission, 1) clears of the bound targets are made outside the render pass instead of inside the pass over them (each such clear then ends the pass)
 DM_VK_PASS_KEEP	switch	`0` (Android, live: the next submission, 1) a render target change ends the open pass at once instead of only when the next draw's targets differ

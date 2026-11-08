@@ -34,7 +34,7 @@ class Error(Exception):
 # ---------- zstd (zstandard, or Python 3.14's compression.zstd) ----------
 def _zstandard():
     try:
-        import zstandard
+        import zstandard   # pyright: ignore[reportMissingImports]  # optional: Python 3.14's compression.zstd serves without it
         return zstandard
     except ImportError:
         return None
@@ -51,9 +51,7 @@ def frame_info(data):
     did = int.from_bytes(data[o:o + did_size], 'little') if did_size else 0
     o += did_size
     fcs_size = (1 if single else 0, 2, 4, 8)[fcs_flag]
-    fcs = int.from_bytes(data[o:o + fcs_size], 'little') if fcs_size else None
-    if fcs_size == 2:
-        fcs += 256
+    fcs = int.from_bytes(data[o:o + fcs_size], 'little') + (256 if fcs_size == 2 else 0) if fcs_size else None   # (the two-byte field holds the size less 256)
     return fcs, did, bool(checksum)
 
 
@@ -197,7 +195,9 @@ class Byml:
 def edit(raw, file_part, scale, threshold=None, expect=None, log=print, floor=None):
     """The edited pack bytes and the edited value word offsets, from the decompressed pack raw: every level's scale set to scale, or (scale None) each raised to
     floor when it is below it, the levels above it kept"""
-    new = (lambda v: scale) if scale is not None else (lambda v: max(v, floor))
+    if scale is not None: new = lambda v: scale
+    elif floor is not None: new = lambda v: max(v, floor)
+    else: raise Error('edit takes a scale or a floor')
     files = sarc_files(raw)
     hits = sorted(k for k in files if file_part in k and k.endswith('.bgyml'))
     if not hits:

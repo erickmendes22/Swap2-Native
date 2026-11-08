@@ -197,7 +197,7 @@ class Cache:
         keys = set()
         it = read_entries(path)
         self.version = next(it)
-        for _off, envs, key in it:
+        for _off, envs, key in it:   # pyright: ignore[reportGeneralTypeIssues]  # read_entries yields the version, then (offset, environments, key) entries
             ids = []
             for e in envs:
                 self.env_stage[SLOT[e.sst]] += 1; self.n['tables texture types'] += len(e.tex); self.n['tables pixel formats'] += len(e.pix); self.n['tables cbuf values'] += len(e.cbuf)
@@ -255,7 +255,7 @@ def borrow_key(key_skip):
               {e.id for e in (t.elts if isinstance(t, ast.Tuple) else [t]) if isinstance(e, ast.Name)} & set(consts_want) for t in n.targets)]
     if len(fns) != len(fns_want): red(f'{SPLIT} no longer defines {", ".join(sorted(set(fns_want) - set(fns)))}: eden_cache.py takes them from there')
     ns = {'struct': struct, 'hashlib': hashlib, 'KEY_SKIP': key_skip}
-    exec(compile(ast.Module(body=consts + [fns[n] for n in fns_want], type_ignores=[]), SPLIT, 'exec'), ns)
+    exec(compile(ast.Module(body=[*consts, *(fns[n] for n in fns_want)], type_ignores=[]), SPLIT, 'exec'), ns)
     return ns['skey'], ns['nvn2_ctl']
 
 
@@ -357,7 +357,7 @@ def match(cache, pkg):
             start = len(words) - 2 - n; amap = words[start:start + n]
             lts = {}
 
-            def lowered_at(i):
+            def lowered_at(i, lts=lts, amap=amap, words=words, start=start, n=n):   # (this program's: bound here)
                 """The operand values of native instruction i's lowered range; None for an empty range (an instruction lowered to nothing, or a map step that goes back)"""
                 if i not in lts:
                     lo = max(amap[i] // 8, 10); hi = min(amap[i + 1] // 8 if i + 1 < n else start - 1, start - 1)
@@ -376,7 +376,7 @@ def match(cache, pkg):
             # The one candidate (or the winner) over its own operand instructions: the record has the program's SPH / workgroup and length, its operands must agree too
             agree = total = 0
             for i in range(n):
-                nt = native_tokens(pkg.native(win[0], i))
+                nt = native_tokens(pkg.native(win[0], i))   # pyright: ignore[reportGeneralTypeIssues]  # win is never empty: cands is not, and best is one of the scores
                 if not nt: continue
                 lt = lowered_at(i)
                 if lt is None: continue

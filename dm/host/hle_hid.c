@@ -529,7 +529,8 @@ HLE_FORCE("_ZN2nn3hid18SwapNpadAssignmentERKjS2_", "swap controller ids; ignored
 HLE_FORCE("_ZN2nn3hid21StartLrAssignmentModeEv", "L/R assignment mode; ignored by the host", void, h_hid_LrStart, void) {}
 HLE_FORCE("_ZN2nn3hid20StopLrAssignmentModeEv", "L/R assignment mode; ignored by the host", void, h_hid_LrStop, void) {}
 // Controller applet (system UI): report the connected players right away, with player 1's controller selected. ControllerSupportResultInfo = { int playerCount; uint32_t selectedId; };
-// ControllerSupportArg starts with { int8 playerCountMin, playerCountMax }: the count is capped at the maximum. Fewer players than the minimum: on a Switch the applet stays open
+// ControllerSupportArg starts with { int8 playerCountMin, playerCountMax }: the count is capped at the maximum, and the players past it are not reported any more (the supported
+// npads narrowed to No1..No<max>, Handheld and Other, until the game's next SetSupportedNpadIdType). Fewer players than the minimum: on a Switch the applet stays open
 // until enough controllers connect or the player closes it, and the SDK's ShowControllerSupportCore (Mario Kart 8 Deluxe 4.0.0 sdk+0x24eeb0) turns the applet's result into
 // 0 success, 2 → 2202-3102, anything else → ResultControllerSupportCanceled (2202-3101). The host has nothing to wait for, so it answers as the player closing it. An OK with
 // fewer players is an answer a Switch never gives: Mario Kart 8 Deluxe asks for two in 2P and opened the applet again every few frames on it (GitHub issue #550)

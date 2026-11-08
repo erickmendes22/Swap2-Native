@@ -23,7 +23,7 @@ sys.path.insert(0, str(REPO / 'dm' / 'gfx' / 'vk_android' / 'fsr'))
 import ndsr_spv  # noqa: E402
 
 try:
-    import zstandard
+    import zstandard   # pyright: ignore[reportMissingImports]  # optional: GsysDynres skips without it
 except ImportError:
     zstandard = None
 
@@ -60,19 +60,19 @@ class Lavapipe(unittest.TestCase):
 # ---------- A synthetic pack ----------
 def byml(root):
     """A little-endian BYML (version 7) of nested dicts, lists, floats and ints; a dict key '#<hex>' makes a hash dictionary; the same object twice is one node"""
-    keys = set()
+    seen = set()
 
     def collect(n):
         if isinstance(n, dict):
             for k, v in n.items():
                 if not k.startswith('#'):
-                    keys.add(k)
+                    seen.add(k)
                 collect(v)
         elif isinstance(n, list):
             for v in n:
                 collect(v)
     collect(root)
-    keys = sorted(keys)
+    keys = sorted(seen)
     kt = struct.pack('<I', 0xC2 | len(keys) << 8)
     offs, strs = [], b''
     base = 4 + 4 * (len(keys) + 1)
@@ -165,6 +165,7 @@ class GsysDynres(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name) / 'romfs'
         (self.root / 'Pack').mkdir(parents=True)
+        assert zstandard   # (the class is skipped without it)
         self.raw = pack_bytes()
         samples = [pack_bytes()[i:i + 512] for i in range(0, len(self.raw) - 512, 16)] * 8
         self.dic = zstandard.train_dictionary(2048, samples, dict_id=4)
@@ -185,6 +186,7 @@ class GsysDynres(unittest.TestCase):
         frame = (self.out / 'Pack/Bootup.Nin_Ounce_NVN2.pack.zs').read_bytes()
         size, did, _ = self.g.frame_info(frame)
         self.assertEqual((size, did), (len(self.raw), 4))
+        assert zstandard
         new = zstandard.ZstdDecompressor(dict_data=self.dic).decompressobj().decompress(frame)
         self.assertEqual(len(new), len(self.raw))
         files = self.g.sarc_files(new)
@@ -202,6 +204,7 @@ class GsysDynres(unittest.TestCase):
 
     def test_threshold(self):
         self.assertEqual(self.run_tool('--threshold', '1000'), 0)
+        assert zstandard
         new = zstandard.ZstdDecompressor(dict_data=self.dic).decompressobj().decompress((self.out / 'Pack/Bootup.Nin_Ounce_NVN2.pack.zs').read_bytes())
         o, _ = self.g.sarc_files(new)[NAME]
         by = self.g.Byml(new, o)

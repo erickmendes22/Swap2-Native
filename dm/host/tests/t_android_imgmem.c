@@ -25,7 +25,7 @@ int main(void) {
     CHECK(vke_free(&l, 7, 9) == -2 && vke_free(&l, 8, 2) == -2 && l.used == 23, "a double free or a range inside a free extent is refused, used unchanged (%u)", l.used);
     vke_free(&l, 0, 7); vke_free(&l, 16, 16); CHECK(vke_empty(&l) && l.nf == 1, "freed in any order, merged");
     // random sizes and alignments, random order
-    int n = 0; srand(7); uint64_t used = 0;
+    int n = 0; srand(7); uint64_t used = 0;   // NOLINT(bugprone-random-generator-seed): a fixed seed, so every run checks the same sequence
     for (int step = 0; step < 300000; step++) {
         if (n && (rand() % 3 == 0)) {
             int j = rand() % n; run r = live[j]; live[j] = live[--n];

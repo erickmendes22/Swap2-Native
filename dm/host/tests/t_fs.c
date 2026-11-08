@@ -40,7 +40,11 @@ static ssize_t fake_pwrite(int fd, const void *buf, size_t n, off_t off) {
 }
 static int fails, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { fails++; printf("  ✗ "); } else printf("  ✓ "); printf(__VA_ARGS__); printf("\n"); } while (0)
-static void put(const char *p, const char *s) { FILE *f = fopen(p, "w"); fputs(s, f); fclose(f); }
+static FILE *xopen(const char *p, const char *mode) {   // a fixture file the test cannot write stops it
+    FILE *f = fopen(p, mode); if (!f) { printf("  ✗ cannot open %s: %s\n", p, strerror(errno)); exit(1); }
+    return f;
+}
+static void put(const char *p, const char *s) { FILE *f = xopen(p, "w"); fputs(s, f); fclose(f); }
 static int same(const char *p, const char *s) {
     char b[64] = {0}; FILE *f = fopen(p, "r"); if (!f) return 0; size_t k = fread(b, 1, sizeof b - 1, f); fclose(f);
     return k == strlen(s) && !memcmp(b, s, k);
@@ -96,7 +100,7 @@ static size_t nup_fixture(uint8_t *o) {   // returns the file's size; o has room
     #undef W64
     return fsize;
 }
-static void nup_write(const char *p, const uint8_t *b, size_t n) { FILE *f = fopen(p, "wb"); fwrite(b, 1, n, f); fclose(f); }
+static void nup_write(const char *p, const uint8_t *b, size_t n) { FILE *f = xopen(p, "wb"); fwrite(b, 1, n, f); fclose(f); }
 static void nup_tests(const char *root) {
     printf("NUP container\n");
     static uint8_t b[8192]; static char want[102001], got[102001];
@@ -196,7 +200,7 @@ int main(void) {
     {   uint8_t img[32 + 7 + 5 * 24 + 7] = {0}; uint64_t hd[3] = {39, 5 * 24 + 7, 5};
         img_ent e[5] = {{1, 1, 0, 0, 0, 0}, {2, 3, 0, 4, 0, 0}, {32, 5, 4, 1, 1, 0}, {5, 0, 5, 1, 0, 0}, {37, 2, 6, 1, 1, 0}};
         memcpy(img, "DMROMFS1", 8); memcpy(img + 8, hd, sizeof hd); memcpy(img + 32, "helloxy", 7); memcpy(img + 39, e, sizeof e); memcpy(img + 39 + sizeof e, "dataabc", 7);
-        char ip[1100]; snprintf(ip, sizeof ip, "%s/rom.img", root); FILE *f = fopen(ip, "wb"); fwrite(img, 1, sizeof img, f); fclose(f);
+        char ip[1100]; snprintf(ip, sizeof ip, "%s/rom.img", root); FILE *f = xopen(ip, "wb"); fwrite(img, 1, sizeof img, f); fclose(f);
         setenv("DM_ROMFS", ip, 1); unsetenv("DM_ROMFS_OVERLAY"); CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK, "mount the image");
         CHECK(read_fs("rom:/data/a", got, sizeof got) && !strcmp(got, "hello"), "reads a file"); CHECK(read_fs("rom:/data/../data/c", got, sizeof got) && !strcmp(got, "xy"), "reads the next file, through ..");
         uint64_t h; size_t n = 0; int64_t sz = 0; char b[16] = {0};
@@ -236,20 +240,20 @@ int main(void) {
         {   // a file written as read from a damaged NSP (nx_extract --allow-damaged) still reads, and the mount counts it and the first open names it once
             romfs_img *clean = img_open(ip); CHECK(clean && !clean->damaged, "a clean image has no damaged files"); romfs_image_close(clean);
             e[2].flags = IMG_ENT_DAMAGED; memcpy(img + 39, e, sizeof e);
-            f = fopen(ip, "wb"); fwrite(img, 1, sizeof img, f); fclose(f);
+            f = xopen(ip, "wb"); fwrite(img, 1, sizeof img, f); fclose(f);
             CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK && g_mnt[0].img && g_mnt[0].img->damaged == 1, "a damaged file mounts, and is counted");
             CHECK(g_mnt[0].img->e[2].flags == IMG_ENT_DAMAGED, "not named before its first open");
             CHECK(read_fs("rom:/data/c", got, sizeof got) && !strcmp(got, "xy") && g_mnt[0].img->e[4].flags == 0, "opening a clean file names nothing");
             CHECK(read_fs("rom:/data/a", got, sizeof got) && !strcmp(got, "hello") && g_mnt[0].img->e[2].flags == (IMG_ENT_DAMAGED | IMG_ENT_REPORTED), "the damaged file reads as written, and is named");
             CHECK(read_fs("rom:/data/a", got, sizeof got) && !strcmp(got, "hello"), "and reads again");
             g_nmnt = 0;
-            e[2].flags = 2; memcpy(img + 39, e, sizeof e); f = fopen(ip, "wb"); fwrite(img, 1, sizeof img, f); fclose(f);
+            e[2].flags = 2; memcpy(img + 39, e, sizeof e); f = xopen(ip, "wb"); fwrite(img, 1, sizeof img, f); fclose(f);
             CHECK(!img_open(ip), "an unknown flag on a file is refused");
-            e[2].flags = 0; e[1].flags = IMG_ENT_DAMAGED; memcpy(img + 39, e, sizeof e); f = fopen(ip, "wb"); fwrite(img, 1, sizeof img, f); fclose(f);
+            e[2].flags = 0; e[1].flags = IMG_ENT_DAMAGED; memcpy(img + 39, e, sizeof e); f = xopen(ip, "wb"); fwrite(img, 1, sizeof img, f); fclose(f);
             CHECK(!img_open(ip), "a damaged flag on a directory is refused");
             e[1].flags = 0; memcpy(img + 39, e, sizeof e);
         }
-        f = fopen(ip, "wb"); fwrite(img, 1, 39 + 50, f); fclose(f);   // cut off inside the index, as a copy stopped partway
+        f = xopen(ip, "wb"); fwrite(img, 1, 39 + 50, f); fclose(f);   // cut off inside the index, as a copy stopped partway
         CHECK(!img_open(ip), "a cut-off image is refused");
     }
     nup_tests(root);

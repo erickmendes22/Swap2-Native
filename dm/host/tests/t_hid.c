@@ -101,8 +101,11 @@ static void t_npads(void) {
     int32_t info[2]; int8_t arg[8] = {1, 4};
     CHECK(h_hid_ShowCtrl(info, arg) == RES_OK && info[0] == 2 && info[1] == 0, "the controller applet reports two players, player 1 selected");
     CHECK(applet_opens == 1 && applet_depth == 0 && applet_closes_at_depth0 == 1, "the controller applet opens and closes once around its answer (focus 2, then 1)");
-    arg[1] = 1; h_hid_ShowCtrl(info, arg);
+    g_signals = 0; arg[1] = 1; h_hid_ShowCtrl(info, arg);
     CHECK(info[0] == 1, "the applet's count is capped at the game's maximum");
+    CHECK(h_hid_GetStyle(&(uint32_t){1}) == 0 && g_signals == 1 && g_signalled == ev1, "players past the applet's maximum are no longer reported, No2's style event signalled");
+    ids((const uint32_t[]){0, 1, 2, 3, 4, 5, 6, 7, NPAD_HANDHELD, 0x10}, 10);   // the game supports every npad again
+    CHECK(h_hid_GetStyle(&(uint32_t){1}) == STYLE_FULLKEY && g_signals == 2, "SetSupportedNpadIdType reports player 2 again");
     arg[0] = 3; arg[1] = 4;
     CHECK(h_hid_ShowCtrl(info, arg) == RES_CTRL_CANCELED && info[0] == 2, "fewer players than the game's minimum: canceled (2202-3101), as the player closing the applet");
     CHECK(h_hid_ShowCtrl0(arg) == RES_CTRL_CANCELED, "the overload without a result: canceled too");

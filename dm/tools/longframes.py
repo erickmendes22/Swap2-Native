@@ -100,7 +100,7 @@ def cause(r):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or '').split('\n')[0])
     ap.add_argument('log')
     ap.add_argument('--min-ms', type=float, default=50)
     ap.add_argument('--top', type=int, default=20)

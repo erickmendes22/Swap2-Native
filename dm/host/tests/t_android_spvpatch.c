@@ -15,14 +15,25 @@
 
 static int g_fail;
 #define CHECK(c, ...) do { if (!(c)) { g_fail++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
-static int have_val(void) { return system("spirv-val --version >/dev/null 2>&1") == 0; }
+static int have_val(void) { return system("spirv-val --version >/dev/null 2>&1") == 0; }   // NOLINT(bugprone-command-processor): the test runs spirv-val from the PATH, on fixed arguments
 static int validate(const uint32_t *w, size_t n, const char *tag) {
     char path[256]; snprintf(path, sizeof path, "/tmp/t_spvpatch_%d.spv", (int)getpid());
     FILE *f = fopen(path, "wb"); if (!f) return 0; fwrite(w, 4, n, f); fclose(f);
     char cmd[400]; snprintf(cmd, sizeof cmd, "spirv-val --target-env vulkan1.3 %s", path);
-    int r = system(cmd); remove(path);
+    int r = system(cmd); remove(path);   // NOLINT(bugprone-command-processor): spirv-val on the test's own temporary file
     if (r) printf("  spirv-val failed on %s\n", tag);
     return r == 0;
+}
+// A module file's words (*nw of them), or NULL when it cannot be read whole
+static uint32_t *read_spv(const char *p, size_t *nw) {
+    *nw = 0;
+    FILE *f = fopen(p, "rb"); if (!f) return NULL;
+    long sz = fseek(f, 0, SEEK_END) ? -1 : ftell(f);
+    uint32_t *w = sz > 0 && !fseek(f, 0, SEEK_SET) ? malloc((size_t)sz) : NULL;
+    if (w && fread(w, 1, (size_t)sz, f) != (size_t)sz) { free(w); w = NULL; }
+    fclose(f);
+    if (w) *nw = (size_t)sz / 4;
+    return w;
 }
 static int count_op(const uint32_t *w, size_t n, uint32_t op) { int k = 0; for (size_t i = 5; i < n; i += w[i] >> 16) { if (!(w[i] >> 16)) break; k += (w[i] & 0xffff) == op; } return k; }
 // The instruction defining id among the types and globals (OpType*: id at word 1; OpVariable: word 2), or NULL
@@ -164,26 +175,25 @@ int main(void) {
         while (d && (e = readdir(d))) {
             size_t l = strlen(e->d_name); if (l < 4 || strcmp(e->d_name + l - 4, ".spv")) continue;
             char p[1024]; snprintf(p, sizeof p, "%s/%s", dir, e->d_name);
-            FILE *f = fopen(p, "rb"); if (!f) continue; fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f);
-            uint32_t *w = malloc((size_t)sz); if (fread(w, 1, (size_t)sz, f) != (size_t)sz) { fclose(f); free(w); continue; } fclose(f);
+            size_t nw; uint32_t *w = read_spv(p, &nw); if (!w) continue;
             // every Location-decorated input: find them by a first rewrite of all 32 locations, narrowing on refusal
             uint32_t mask = 0;
-            for (size_t i = 5; i < (size_t)sz / 4; i += w[i] >> 16) { if (!(w[i] >> 16)) break; if ((w[i] & 0xffff) == 71 && (w[i] >> 16) >= 4 && w[i + 2] == 30 && w[i + 3] < 32) {
-                uint32_t id = w[i + 1]; for (size_t j = 5; j < (size_t)sz / 4; j += w[j] >> 16) { if (!(w[j] >> 16)) break; if ((w[j] & 0xffff) == 59 && w[j + 2] == id && w[j + 3] == 1) mask |= 1u << w[i + 3]; } } }
-            uint32_t *x = mask ? vka_spv_vin_retype(w, (size_t)sz / 4, mask, 0, &on, err, sizeof err) : NULL;
+            for (size_t i = 5; i < nw; i += w[i] >> 16) { if (!(w[i] >> 16)) break; if ((w[i] & 0xffff) == 71 && (w[i] >> 16) >= 4 && i + 3 < nw && w[i + 2] == 30 && w[i + 3] < 32) {
+                uint32_t id = w[i + 1]; for (size_t j = 5; j < nw; j += w[j] >> 16) { if (!(w[j] >> 16)) break; if ((w[j] & 0xffff) == 59 && (w[j] >> 16) >= 4 && j + 3 < nw && w[j + 2] == id && w[j + 3] == 1) mask |= 1u << w[i + 3]; } } }
+            uint32_t *x = mask ? vka_spv_vin_retype(w, nw, mask, 0, &on, err, sizeof err) : NULL;
             if (!x) { refused++; if (refused <= 4) printf("  %s: %s\n", e->d_name, mask ? err : "no input"); }
             else { done++; if (val) CHECK(validate(x, on, e->d_name), "%s valid", e->d_name); free(x); }
-            uint32_t ib[8]; int ni = float_images(w, (size_t)sz / 4, ib, 8, 0);   // every float storage image of format Unknown, as uint then as int
+            uint32_t ib[8]; int ni = float_images(w, nw, ib, 8, 0);   // every float storage image of format Unknown, as uint then as int
             for (int c = 1; ni && c <= 2; c++) {
                 vka_spv_imgsel s[8]; for (int k = 0; k < ni; k++) s[k] = (vka_spv_imgsel){0, ib[k], (uint8_t)c, 0};
-                uint32_t *y = vka_spv_img_retype(w, (size_t)sz / 4, s, ni, &on, err, sizeof err);
+                uint32_t *y = vka_spv_img_retype(w, nw, s, ni, &on, err, sizeof err);
                 if (!y) { irefused++; if (irefused <= 4) printf("  %s: storage images as %s: %s\n", e->d_name, c == 1 ? "uint" : "int", err); continue; }
                 idone++; if (val) CHECK(validate(y, on, e->d_name), "%s storage images as %s valid", e->d_name, c == 1 ? "uint" : "int"); free(y);
             }
-            ni = float_images(w, (size_t)sz / 4, ib, 8, 1);   // each float sampled image alone, as uint then as int (one a depth comparison reads is refused)
+            ni = float_images(w, nw, ib, 8, 1);   // each float sampled image alone, as uint then as int (one a depth comparison reads is refused)
             for (int k = 0; k < ni; k++) for (int c = 1; c <= 2; c++) {
                 vka_spv_imgsel s1 = {0, ib[k], (uint8_t)c, 0};
-                uint32_t *y = vka_spv_img_retype(w, (size_t)sz / 4, &s1, 1, &on, err, sizeof err);
+                uint32_t *y = vka_spv_img_retype(w, nw, &s1, 1, &on, err, sizeof err);
                 if (!y) { srefused++; if (srefused <= 4) printf("  %s: sampled image %u as %s: %s\n", e->d_name, ib[k], c == 1 ? "uint" : "int", err); continue; }
                 sdone++; if (val) CHECK(validate(y, on, e->d_name), "%s sampled image %u as %s valid", e->d_name, ib[k], c == 1 ? "uint" : "int"); free(y);
             }
@@ -195,8 +205,8 @@ int main(void) {
     }
     const char *gs = getenv("DM_VK_GS_SPV");
     if (gs) {
-        FILE *f = fopen(gs, "rb"); CHECK(f, "%s not readable", gs);
-        if (f) { fseek(f, 0, SEEK_END); long sz = ftell(f); rewind(f); uint32_t *w = malloc((size_t)sz); size_t nw = fread(w, 1, (size_t)sz, f) / 4; fclose(f);
+        size_t nw; uint32_t *w = read_spv(gs, &nw); CHECK(w, "%s not readable", gs);
+        if (w) {
             int ch = 0; size_t sn = 0; uint32_t *sg = vka_spv_subgroup_single(w, nw, &sn, &ch, err, sizeof err); if (sg) { free(w); w = sg; nw = sn; }
             int found = vka_spv_gs_claim(w, nw, 255, NULL, NULL, err, sizeof err);
             CHECK(found >= 0, "%s: memory writes counted (%s)", gs, err);

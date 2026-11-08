@@ -52,7 +52,7 @@ def env(stage, code, tex=(), pix=(), cbuf=(), wg=None, smem=0, version=53):
     counts = [len(code), len(tex), len(pix), len(cbuf)] + ([0] if version == 53 else []) + [0]
     b = struct.pack(f'<{len(counts)}Q', *counts) + struct.pack('<7I', 0, 2, 0, 0, 0, 0, stage) + code
     b += b''.join(struct.pack('<II', *t) for t in tex) + b''.join(struct.pack('<II', *t) for t in pix) + b''.join(struct.pack('<QI', *t) for t in cbuf)
-    if stage == 5: return b + struct.pack('<4I', *wg, smem)
+    if stage == 5: assert wg is not None, 'a compute environment takes its workgroup'; return b + struct.pack('<4I', *wg, smem)
     b += bytes(0x50)
     if stage == 3: b += b'\xff' * 32
     if stage in (7, 8) and version == 53: b += struct.pack('<3I', 32, 1, 1) + b'\x07' * 0x50

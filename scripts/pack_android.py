@@ -44,17 +44,94 @@ FORMAT = 2   # pack.tsv format; the launcher refuses another. 2: the pack carrie
 class Error(Exception): pass
 
 
-def sha(paths):
+# The rewrite key, <module>.android.key: SHA-256 over name\0bytes of the REWRITER files (and exefs_patches.py when the module has exefs patches), the module, the
+# profile's patches.py (when there is one), every other dm/games/*/patches.py that names the module's build ID (patch_nso.py loads them all, and a build another
+# game ships, a shared sdk or movie module, may have its CUTS / OBS / FRAME_STEP there; hashed under its repository path), and the only part of game.tsv the
+# rewriter reads: its build rows (patch_nso.py reads them for a module whose build has no CUTS), normalized by build_rows and hashed under the name ROWS. Then
+# ' target=android' and, with exefs patches, ' mods=<their digest>'. The rest of game.tsv is the host's (ndsr_input, scene_scale_palette, window size, ...):
+# a change there must not make the code stale and rewrite main on the phone.
+# A key of the earlier formula (v1: the whole game.tsv, no other patches.py) counts as current when no other patches.py names the build and the game.tsv it
+# hashed is the profile's, or the pack's copy (<pack>/game.tsv, written after the rewrite) whose build rows are the profile's: the key proves the copy is the
+# file it was made with, and the rows the rewrite read are the same. upgrade_keys writes such a key in the current formula before the copy is replaced.
+# The launcher computes the same keys (RewriteKey.java; dm/tools/tests/test_android_rewritekey.py runs both).
+ROWS = 'game.tsv build rows'
+BUILD_ROW_TEXT = frozenset(range(0x20, 0x7f)) | {0x09}
+
+
+def build_rows(b):
+    """game.tsv's build rows, bytes in, bytes out: each line (split at \\n, one trailing \\r dropped) of printable ASCII and tabs whose first cell is `build`,
+    its cells stripped of spaces and joined by tabs, one a line. patch_nso.py splits with str.splitlines and strips each cell with str.strip, which also break
+    at \\r, \\x0b, \\x0c, \\x1c-\\x1e, \\x85, U+2028/9 and strip Unicode spaces: a line holding `build` and any byte outside printable ASCII and tabs is kept
+    whole, as it is, so two tables that differ for the rewriter never come out the same here (RewriteKey.buildRows does the same)"""
+    rows = []
+    for line in b.split(b'\n'):
+        if line.endswith(b'\r'): line = line[:-1]
+        if not all(c in BUILD_ROW_TEXT for c in line):
+            if b'build' in line: rows.append(line + b'\n')
+            continue
+        c = [x.strip(b' ') for x in line.split(b'\t')]
+        if c[0] == b'build': rows.append(b'\t'.join(c) + b'\n')
+    return b''.join(rows)
+
+
+def part(h, name, b): h.update(name.encode() + b'\0' + b)
+
+
+def other_patches(g, data):
+    """[(repository path, bytes)] of the dm/games/*/patches.py other than the profile's that name the module's build ID (its NSO header +0x40, 32 hex digits)"""
+    bid = data[0x40:0x50].hex().encode() if data[:4] == b'NSO0' and len(data) >= 0x60 else None
+    own = os.path.realpath(g.dir / 'patches.py')
+    out = []
+    for p in sorted((REPO / 'dm/games').glob('*/patches.py'), key=lambda p: f'dm/games/{p.parent.name}/patches.py'):   # by the name hashed, as RewriteKey's TreeMap
+        if bid is None or os.path.realpath(p) == own: continue
+        b = p.read_bytes()
+        if bid in b: out.append((f'dm/games/{p.parent.name}/patches.py', b))
+    return out
+
+
+def rewrite_keys(src, g, mods=(), pack=None, xp=None):
+    """Every key that counts as the current rewriter's for the module, rewrite_key's first: the current formula, then (when no other patches.py names the build)
+    the v1 key with the profile's game.tsv, and with pack/game.tsv when pack names a pack folder whose copy has the profile's build rows (RewriteKey.keys).
+    mods: exefs_patches.find's [(label, path)]; xp: whether exefs_patches.py is hashed (default: when there are mods) and suffix as rewrite_key's"""
+    if xp is None: xp = bool(mods)
     h = hashlib.sha256()
-    for p in paths: h.update(p.name.encode() + b'\0' + p.read_bytes())
-    return h.hexdigest()
+    for f in REWRITER: part(h, f, (REPO / 'dm/tools' / f).read_bytes())
+    if xp: part(h, 'exefs_patches.py', (REPO / 'dm/tools/exefs_patches.py').read_bytes())
+    data = src.read_bytes(); part(h, src.name, data)
+    pp = g.dir / 'patches.py'
+    if pp.is_file(): part(h, 'patches.py', pp.read_bytes())
+    gt = (g.dir / 'game.tsv').read_bytes()
+    others = other_patches(g, data)
+    cur = h.copy()
+    for name, b in others: part(cur, name, b)
+    part(cur, ROWS, build_rows(gt))
+    hs = [cur]
+    if not others:
+        tails = [gt]
+        pg = pack / 'game.tsv' if pack is not None else None
+        if pg is not None and pg.is_file() and (pb := pg.read_bytes()) != gt and build_rows(pb) == build_rows(gt): tails.append(pb)
+        for b in tails: t = h.copy(); part(t, 'game.tsv', b); hs.append(t)
+    suffix = ' target=android' + (f' mods={exefs_patches.digest(mods)}' if mods else '')
+    return [t.hexdigest() + suffix for t in hs]
 
 
 def rewrite_key(src, g, mods=()):
-    """The module's key: the rewriter's files, the module, the profile's patches.py and game.tsv; with exefs patches (mods: exefs_patches.find's [(label, path)]) also
-    exefs_patches.py, and ' mods=<their digest>' after the target, which the launcher compares without the tools (PackCheck.mods). A module without mods keeps the key it had"""
-    files = [REPO / 'dm/tools' / f for f in REWRITER] + ([REPO / 'dm/tools/exefs_patches.py'] if mods else []) + [src] + [p for p in (g.dir / 'patches.py',) if p.is_file()] + [g.dir / 'game.tsv']
-    return sha(files) + ' target=android' + (f' mods={exefs_patches.digest(mods)}' if mods else '')
+    """The key a module rewritten now carries (rewrite_keys' first). A module without mods has no ' mods=' part, and exefs_patches.py is not in its hash"""
+    return rewrite_keys(src, g, mods)[0]
+
+
+def upgrade_keys(srcs, out, g):
+    """Each module's key that counts as current (rewrite_keys with the pack's game.tsv) in an earlier formula is written in the current one (by rename), so the pack
+    stays current when its copy of game.tsv is replaced (--keep-code, which reads no mods: the key's own ' mods=' part is kept, the launcher compares it). Other keys
+    are left as they are"""
+    for m, src in srcs.items():
+        kf = out / f'{m}.android.key'
+        if not kf.is_file(): continue
+        have = kf.read_text().strip(); digest, _, suffix = have.partition(' ')
+        keys = [k.partition(' ')[0] for k in rewrite_keys(src, g, pack=out, xp=' mods=' in have)]
+        if digest in keys[1:] and suffix.startswith('target=android'):
+            tmp = out / f'{m}.android.key.tmp'; tmp.write_text(keys[0] + ' ' + suffix + '\n'); os.replace(tmp, kf)
+            print(f'  {m}: key brought to the current formula (same rewrite)')
 
 
 def nso_build_id(path):   # the module's build ID (NSO header +0x40), as the profile's build rows name it
@@ -125,8 +202,10 @@ def rewrite(py, srcs, out, jobs, g, in_process=False, mods=None):
     env = dict(os.environ, DM_GAME=g.id, DM_REWRITE_J=str(max(1, (os.cpu_count() or 4) // max(1, len(srcs)))))
     todo = {}
     for m, src in srcs.items():
-        key = rewrite_key(src, g, mods.get(m, ())); kf = out / f'{m}.android.key'
-        if (out / f'{m}.patched.bin').is_file() and kf.is_file() and kf.read_text().strip() == key: print(f'  {m}: unchanged, kept'); continue
+        keys = rewrite_keys(src, g, mods.get(m, ()), out); key = keys[0]; kf = out / f'{m}.android.key'
+        if (out / f'{m}.patched.bin').is_file() and kf.is_file() and (have := kf.read_text().strip()) in keys:   # the current key, or an earlier formula's of the same rewrite
+            if have != key: tmp = out / f'{m}.android.key.tmp'; tmp.write_text(key + '\n'); os.replace(tmp, kf)   # its key in the current formula (upgrade_keys)
+            print(f'  {m}: unchanged, kept'); continue
         todo[m] = (src, key)
     for m in todo: (out / f'{m}.android.key').unlink(missing_ok=True)   # every module to rewrite is unfinished from here on: no mix of old and new modules passes
     if in_process:
@@ -327,6 +406,7 @@ def main():
         if a.keep_code:
             if missing := [m for m in mods if not (out / f'{m}.patched.bin').is_file() or not (out / f'{m}.android.key').is_file()]:
                 raise Error(f'--keep-code: {out} has no complete {", ".join(missing)} (patched.bin and its key): rewrite first')
+            upgrade_keys(srcs, out, g)   # before the copy below replaces the game.tsv an earlier key was made with (a rewrite run does it in rewrite)
             print('  modules kept as they are (--keep-code)')
         else:
             try: rewrite(sys.executable, srcs, out, max(1, a.j), g, a.in_process, patches)

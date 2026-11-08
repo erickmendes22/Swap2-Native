@@ -67,8 +67,9 @@ int vka_walk(const vka_bstate *s, int st, const dmsh_vk_entry *e, const dmsh_vk_
             case DMSH_VK_KIND_SUPPORT: r.what = VKA_R_SUPPORT; break;
             case DMSH_VK_KIND_DRVCB: r.what = VKA_R_DRV; r.bank = (int16_t)reg; break;
             case DMSH_VK_KIND_SBUF: case DMSH_VK_KIND_UBO_PTR: {
-                const vka_range *u = noslot || reg >= 16 ? NULL : b->kind == DMSH_VK_KIND_SBUF ? &s->ssbo[st][reg] : &s->ubo[st][reg];
-                if (u && u->addr) { r.what = VKA_R_BUF; r.addr = u->addr; r.size = u->size; }
+                if (noslot || reg >= 16) break;   // (tested apart from the range: a null-or-slot pointer made the analyzer take the slot's address for null)
+                const vka_range *u = b->kind == DMSH_VK_KIND_SBUF ? &s->ssbo[st][reg] : &s->ubo[st][reg];
+                if (u->addr) { r.what = VKA_R_BUF; r.addr = u->addr; r.size = u->size; }
                 break; }
             case DMSH_VK_KIND_SBUF_UBO: {
                 uint64_t a = noslot ? 0 : ubo_word(s, st, reg, b->off, 8, rd, ctx);
