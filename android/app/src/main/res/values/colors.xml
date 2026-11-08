@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The old icon's background (swap2_icon.xml era); the launcher icon is now brand v6 (the adaptive ic_launcher.xml of mipmap-anydpi-v26 and -v33, the s2_icon_v6 drawables) -->
+    <color name="ic_launcher_background">#FF0B1020</color>
+
+    <!-- The launcher's palette (Ui.java, themes.xml), Swap2-Native Console revision 6 (docs/SWAP2-NATIVE-CONSOLE-REVISAO-v6.md, console-v4/tokens.json): the LIGHT
+         theme here, the dark one in values-night. Light, dark or the system's comes from Settings › Theme (LauncherTheme). Only the launcher's screens use these:
+         the game's overlays and touch controls keep their own palettes. The names are Banana Native's (bn_*): bn_banana is the primary action and the focus,
+         near-black in light and off-white in dark; cyan and coral stay small brand accents (s2_brand_*) -->
+    <color name="bn_bg">#FFF4F4F2</color>            <!-- background -->
+    <color name="bn_card">#FFFFFFFF</color>          <!-- surface: cards and dialogs -->
+    <color name="bn_card_stroke">#FFD5D7D8</color>   <!-- border -->
+    <color name="bn_tint">#FFEAEAE7</color>          <!-- elevated: tonal buttons, icon tiles, chips -->
+    <color name="bn_banana">#FF15171B</color>        <!-- focus / primary action -->
+    <color name="bn_banana_deep">#FFC89218</color>   <!-- progress fill: preparation's warm yellow -->
+    <color name="bn_on_banana">#FFFFFFFF</color>     <!-- text and icons on the primary action -->
+    <color name="bn_text">#FF15171B</color>
+    <color name="bn_text_2">#FF62666D</color>        <!-- muted -->
+    <color name="bn_accent">#FF006E7A</color>        <!-- check boxes, switches, dialog buttons: the cyan darkened to 5.4:1 on the background -->
+    <color name="bn_leaf">#FF23724C</color>          <!-- success: Ready, a passed check -->
+    <color name="bn_on_leaf">#FFFFFFFF</color>
+    <color name="bn_danger">#FFB23841</color>        <!-- 4.75:1 on its tint (the Danger button), 5.9:1 on white -->
+    <color name="bn_danger_tint">#FFF6E1E2</color>
+    <color name="bn_warn_tint">#FFF7ECD3</color>     <!-- behind a warning chip -->
+    <color name="s2_coral">#FFB83C45</color>         <!-- an error state as text or a dot -->
+    <color name="s2_warning">#FF8A5A00</color>       <!-- a warning or paused state as text (5.9:1 on white) -->
+    <color name="s2_prepare">#FFE3A82B</color>       <!-- Prepare / Continue buttons and the preparation stroke: warm yellow -->
+    <color name="s2_on_prepare">#FF15171B</color>
+    <color name="s2_shelf">#FFEBEBE8</color>         <!-- the library's pale action shelf -->
+    <color name="s2_edge">#FFFFFFFF</color>          <!-- a raised panel's 1 dp light edge -->
+    <color name="s2_dock">#FFFAFAF8</color>          <!-- the floating lower dock -->
+    <color name="s2_brand_cyan">#FF42D4E5</color>    <!-- the mark's small offset shadows, the focus frame's offset edges -->
+    <color name="s2_brand_coral">#FFFF777D</color>
+</resources>

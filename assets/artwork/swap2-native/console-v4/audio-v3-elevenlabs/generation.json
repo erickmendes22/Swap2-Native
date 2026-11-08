@@ -1,0 +1,115 @@
+{
+  "provider": "ElevenLabs",
+  "model": "eleven_text_to_sound_v2",
+  "endpoint": "https://api.elevenlabs.io/v1/sound-generation",
+  "sounds": {
+    "focus": {
+      "file": "s2_focus.mp3",
+      "request": {
+        "text": "One isolated soft plastic button tick, a tiny rounded tap at the beginning, about 40 milliseconds, then complete silence. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "confirm": {
+      "file": "s2_confirm.mp3",
+      "request": {
+        "text": "One soft digital confirmation: a tiny tactile click with two short rounded sine pulses rising slightly in pitch, total audible length 140 milliseconds, then silence. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "back": {
+      "file": "s2_back.mp3",
+      "request": {
+        "text": "One soft lower-pitched digital back tap, with a tiny falling sine pulse. Audible length 100 milliseconds at the beginning, then silence. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "panel_open": {
+      "file": "s2_panel_open.mp3",
+      "request": {
+        "text": "One clean quiet rounded UI click with a subtle upward pitch inflection, audible length 120 milliseconds, then silence. No sliding or swooshing sound. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "panel_close": {
+      "file": "s2_panel_close.mp3",
+      "request": {
+        "text": "One clean quiet rounded UI click with a subtle downward pitch inflection, audible length 100 milliseconds, then silence. No sliding or swooshing sound. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "ready": {
+      "file": "s2_ready.mp3",
+      "request": {
+        "text": "Two small warm rounded electronic tones gently ascending, a calm completion cue, total audible length 250 milliseconds at the beginning, then silence. No celebratory jingle. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 0.6,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 10492
+    },
+    "error": {
+      "file": "s2_error.mp3",
+      "request": {
+        "text": "Two quiet low rounded electronic taps, non-alarming and friendly, total audible length 180 milliseconds at the beginning, then silence. No buzzer or harsh distortion. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "launch": {
+      "file": "s2_launch.mp3",
+      "request": {
+        "text": "One soft tactile click followed by one short rounded warm rising sine tone, total audible length 250 milliseconds at the beginning, then silence. No cinematic flourish. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 0.6,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 10492
+    },
+    "boot": {
+      "file": "s2_boot.mp3",
+      "request": {
+        "text": "An original minimal app startup: two tiny interlocking plastic clicks, then two soft warm rounded sine tones. Gentle, confident and clean. Finish the audible sound within 850 milliseconds, then silence. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail.",
+        "duration_seconds": 1.2,
+        "prompt_influence": 0.85,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 20105
+    }
+  }
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Console revision 6 settings categories (docs/SWAP2-NATIVE-CONSOLE-REVISAO-v6.md): an original line icon in the UI kit's style (32 units, 2.2 stroke), tinted by Ui.icon -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="32" android:viewportHeight="32">
+    <path android:pathData="M10,8h12a2,2 0 0,1 2,2v12a2,2 0 0,1 -2,2h-12a2,2 0 0,1 -2,-2v-12a2,2 0 0,1 2,-2ZM13,13h6v6h-6ZM12,8v-4M16,8v-4M20,8v-4M12,28v-4M16,28v-4M20,28v-4M8,12h-4M8,16h-4M8,20h-4M28,12h-4M28,16h-4M28,20h-4"
+        android:strokeColor="#F3F6FC"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

@@ -1,0 +1,14 @@
+# Zelda 40th Anniversary touch concept
+
+Created on 2026-11-06 with the built-in image_gen tool. Original fan-designed visual concept, not an official hardware edition. Presentation only: not integrated into the app. The existing guest ABI has no Home, Capture or C inputs; these optional visual elements must not be mapped to invented bits.
+
+## Prompt
+
+Create a beautiful high-resolution LANDSCAPE 21:9 UI design concept for an Android in-game TOUCH CONTROLLER OVERLAY, a fan-designed Zelda 40th Anniversary special edition for Swap2-Native, inspired by Nintendo Switch 2 controller layout. This is an original celebratory concept, not a claim of official hardware. Show ONLY virtual touch buttons on a very quiet deep midnight forest-green background, no physical console, no controller housing, no phone frame, no hands, no game scene. Keep the central 55% almost completely empty for gameplay.
+
+Design: restrained premium Zelda collector edition. Matte dark forest-green and charcoal button caps, softly brushed aged champagne-gold rims, ivory glyphs, subtle engraved golden Hylian geometric linework. Small triangular/Triforce and winged Hyrule crest motifs embossed sparingly on analog caps, emerald inset accents. Elegant artifact craftsmanship, tactile low-profile bevels, highly readable controls. No oversized ornamental frames, no jewels, no bright neon or glossy gold bubbles. Minimal and usable as a real touch overlay.
+
+Exact complete layout: Top left two broad rounded shoulder buttons ZL then L, and small minus button further inward. Upper-left large left analog stick, with visible circular base and concave movable thumb cap bearing a subtle triangle motif. Beside it a small L3 pill. Beneath left analog, a diamond of four SEPARATE round direction buttons bearing clean ivory up/left/right/down arrows. Upper right shoulder row R then ZR, with small plus button further inward. Beneath right shoulders the Nintendo ABXY diamond: X at TOP, Y at LEFT, A at RIGHT, B at BOTTOM. Use exact clear ivory letters, no action-specific weapon replacement. Beneath face buttons, right analog stick with subtle Hylian crest, small R3 pill beside it. Bottom-left small capture camera icon. Bottom-right small Home house icon and separate C button. At top center a tiny neutral gamepad visibility icon. Bottom center a discreet settings gear. Everything within safe screen margins. Same coherent green/gold style on every control; comfortable gaps, precise spacing and generous empty center.
+
+Top center only a very small refined gold label "ZELDA" with a discreet "40" anniversary crest beside it; under it tiny "ANNIVERSARY CONCEPT". No fake Nintendo endorsement, no additional text, no watermark. Do not duplicate or omit controls. Overall looks like a sophisticated commemorative console interface, not a fantasy inventory menu. Crisp professional UI artwork.
+

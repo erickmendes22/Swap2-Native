@@ -1,0 +1,10 @@
+# A mod this profile ships (BuiltinMods.java; android/README.md "Mods (exefs patches)"). The launcher shows it as a switch in the game's settings and copies
+# exefs/ into <Switch2>/Mods/<title ID>/<folder> when it is turned on. Keys:
+#   label            the switch's string resource (res/values*/strings.xml)
+#   note             its note's string resource
+#   android_default  on or off: what a launcher that has never been told installs (on: copied in at the launcher's start, once per game)
+#   check            module, offset, the original bytes the patch replaces (hex): dm/tools/tests/test_profile_mods.py checks them against a dump when it has one
+label	s2_mod_plain_movies
+note	s2_mod_plain_movies_note
+android_default	on
+check	main	0x3b5f524	28010034

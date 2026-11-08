@@ -1,0 +1,9 @@
+#version 450
+// An indirect NVN2 mesh draw's Vulkan record (vka_draw.c mesh_ind_args): NVN's {count, first} record's count as {x, 1, 1}, read by the GPU (a culling compute wrote it
+// earlier in the frame); x = 0 (nothing drawn) for a count past the device's workgroup limit per dimension, as the direct draw skips one (VK_EXT_mesh_shader: a larger count is
+// undefined). The record is bound at the storage alignment below it: at is its word index from there
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0, std430) readonly buffer S { uint w[]; } s;
+layout(set = 0, binding = 1, std430) writeonly buffer D { uint xyz[3]; } d;
+layout(push_constant) uniform P { uint at, maxg; } p;
+void main() { uint n = s.w[p.at]; d.xyz[0] = n > p.maxg ? 0u : n; d.xyz[1] = 1u; d.xyz[2] = 1u; }

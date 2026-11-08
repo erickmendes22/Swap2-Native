@@ -1,0 +1,115 @@
+{
+  "provider": "ElevenLabs",
+  "model": "eleven_text_to_sound_v2",
+  "endpoint": "https://api.elevenlabs.io/v1/sound-generation",
+  "sounds": {
+    "boot": {
+      "file": "s2_boot.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. Two subtle interlocking tactile clicks at 0.15 and 0.42 seconds followed by a short warm two-note ascending glass-synth signature, settled by 1.2 seconds. Confident, understated.",
+        "duration_seconds": 1.5,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 24702
+    },
+    "focus": {
+      "file": "s2_focus.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. ONE very short quiet rounded tick with a tiny wood-and-sine texture at the start. Audible content approximately 70 milliseconds, then silence. Suitable for repeated menu navigation.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "confirm": {
+      "file": "s2_confirm.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. ONE soft affirmative click followed immediately by a tiny rising clear electronic tone. Audible content 160 milliseconds, then silence.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "back": {
+      "file": "s2_back.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. ONE soft lower descending electronic tap, short and gentle. Audible content approximately 130 milliseconds, then silence.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "panel_open": {
+      "file": "s2_panel_open.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. ONE tiny airy soft sliding swish resolving in a warm tick, audible content 200 milliseconds, then silence. Very restrained menu panel opening.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "panel_close": {
+      "file": "s2_panel_close.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. ONE tiny reverse airy soft sliding swish ending quietly, audible content 180 milliseconds, then silence. Very restrained menu panel closing.",
+        "duration_seconds": 0.5,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 8820
+    },
+    "ready": {
+      "file": "s2_ready.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. A small warm affirmative three-note glass-synth completion chime, calm and satisfying, never triumphant. Sound ends within 600 milliseconds, followed by silence.",
+        "duration_seconds": 0.8,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 13835
+    },
+    "error": {
+      "file": "s2_error.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. A quiet friendly two-pulse low electronic notice, rounded and non-alarming. No harsh buzzer. Audible content about 260 milliseconds, then silence.",
+        "duration_seconds": 0.6,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 10492
+    },
+    "launch": {
+      "file": "s2_launch.mp3",
+      "request": {
+        "text": "Original premium handheld console UI sound, clean soft electronic timbre, intimate dry sound, gentle rounded attack, no speech, no music, no hiss or background, no recognizable existing console motif. ONE soft tactile confirm click followed by a short upward airy digital flourish, no dramatic sweep. Audible content 450 milliseconds, then silence.",
+        "duration_seconds": 0.8,
+        "prompt_influence": 0.65,
+        "model_id": "eleven_text_to_sound_v2",
+        "loop": false
+      },
+      "request_id": null,
+      "bytes": 13835
+    }
+  }
+}

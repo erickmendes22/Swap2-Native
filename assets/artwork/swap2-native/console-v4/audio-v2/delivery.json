@@ -1,0 +1,108 @@
+{
+  "version": 2,
+  "provider": "Original deterministic synthesis",
+  "supersedes": "../audio/delivery.json",
+  "description": "Short, dry, rounded sine transients. No reverb, noise, voices, loops or external recordings.",
+  "audition_status": "Revision after user feedback; subjective approval pending.",
+  "sounds": {
+    "focus": {
+      "file": "s2_focus.wav",
+      "duration_ms": 45,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -18,
+      "rms_dbfs": -29.69,
+      "gain": 0.3,
+      "loop": false
+    },
+    "confirm": {
+      "file": "s2_confirm.wav",
+      "duration_ms": 145,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "rms_dbfs": -26.27,
+      "gain": 0.5,
+      "loop": false
+    },
+    "back": {
+      "file": "s2_back.wav",
+      "duration_ms": 110,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "rms_dbfs": -25.23,
+      "gain": 0.5,
+      "loop": false
+    },
+    "panel_open": {
+      "file": "s2_panel_open.wav",
+      "duration_ms": 95,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "rms_dbfs": -24.28,
+      "gain": 0.5,
+      "loop": false
+    },
+    "panel_close": {
+      "file": "s2_panel_close.wav",
+      "duration_ms": 85,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "rms_dbfs": -25.47,
+      "gain": 0.5,
+      "loop": false
+    },
+    "ready": {
+      "file": "s2_ready.wav",
+      "duration_ms": 330,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12,
+      "rms_dbfs": -22.68,
+      "gain": 0.5,
+      "loop": false
+    },
+    "error": {
+      "file": "s2_error.wav",
+      "duration_ms": 180,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "rms_dbfs": -25.0,
+      "gain": 0.5,
+      "loop": false
+    },
+    "launch": {
+      "file": "s2_launch.wav",
+      "duration_ms": 230,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12,
+      "rms_dbfs": -23.07,
+      "gain": 0.5,
+      "loop": false
+    },
+    "boot": {
+      "file": "s2_boot.wav",
+      "duration_ms": 900,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12,
+      "rms_dbfs": -26.65,
+      "gain": 0.5,
+      "loop": false
+    }
+  }
+}

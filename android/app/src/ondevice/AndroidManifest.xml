@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Merged over src/main/AndroidManifest.xml in every APK (build.gradle). Preparing the game on the phone (android/ONDEVICE.md, "The service and the screen") -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 14+: the type's own permission -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android 13+: the progress notification; asked for when the user starts a job (the job runs without it, the notification is then only in the task manager) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <application>
+        <!-- The preparation screen (docs/SWAP2-NATIVE-PREPARE-FLOW.md): Jogar on a game that needs preparing, or its card's mini summary, opens it over the library.
+             Landscape only, as the launcher and the game are (src/main/AndroidManifest.xml) -->
+        <activity
+            android:name=".PrepareActivity"
+            android:theme="@style/Theme.Banana"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+        <!-- The job runs in a process of its own: a crash in a tool never takes the launcher or a running game with it, and the job goes on when the app is swiped away.
+             dataSync: Android 14+ allows it 6 hours a day (onTimeout pauses the job cleanly); shortService is too short -->
+        <service
+            android:name=".PackService"
+            android:exported="false"
+            android:process=":pack"
+            android:foregroundServiceType="dataSync" />
+        <!-- The Scene resolution's 720p overlay (SceneService): one short tool run in the packer's Python, so in the packer's process; started while the launcher
+             is in front (a plain started service, no notification) -->
+        <service
+            android:name=".SceneService"
+            android:exported="false"
+            android:process=":pack" />
+    </application>
+</manifest>

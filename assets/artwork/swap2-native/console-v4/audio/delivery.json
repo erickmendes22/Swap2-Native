@@ -1,0 +1,116 @@
+{
+  "version": 4,
+  "provider": "ElevenLabs",
+  "mastering": "Mono PCM 48kHz/16bit; silence trim, short edge fades, conservative peak normalization; original MP3 preserved.",
+  "audition_status": "Generated and technically checked; subjective user audition pending.",
+  "sounds": {
+    "back": {
+      "file": "s2_back.wav",
+      "source": "s2_back.mp3",
+      "duration_ms": 266.6,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12.0,
+      "rms_dbfs": -22.47,
+      "gain": 0.4,
+      "loop": false
+    },
+    "boot": {
+      "file": "s2_boot.wav",
+      "source": "s2_boot.mp3",
+      "duration_ms": 1480.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -9.0,
+      "rms_dbfs": -35.02,
+      "gain": 0.4,
+      "loop": false
+    },
+    "confirm": {
+      "file": "s2_confirm.wav",
+      "source": "s2_confirm.mp3",
+      "duration_ms": 156.9,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12.0,
+      "rms_dbfs": -26.66,
+      "gain": 0.4,
+      "loop": false
+    },
+    "error": {
+      "file": "s2_error.wav",
+      "source": "s2_error.mp3",
+      "duration_ms": 600.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12.0,
+      "rms_dbfs": -30.68,
+      "gain": 0.4,
+      "loop": false
+    },
+    "focus": {
+      "file": "s2_focus.wav",
+      "source": "s2_focus.mp3",
+      "duration_ms": 100,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "rms_dbfs": -28.47,
+      "gain": 0.22,
+      "loop": false
+    },
+    "launch": {
+      "file": "s2_launch.wav",
+      "source": "s2_launch.mp3",
+      "duration_ms": 800.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -9.0,
+      "rms_dbfs": -25.71,
+      "gain": 0.4,
+      "loop": false
+    },
+    "panel_close": {
+      "file": "s2_panel_close.wav",
+      "source": "s2_panel_close.mp3",
+      "duration_ms": 480.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12.0,
+      "rms_dbfs": -29.87,
+      "gain": 0.4,
+      "loop": false
+    },
+    "panel_open": {
+      "file": "s2_panel_open.wav",
+      "source": "s2_panel_open.mp3",
+      "duration_ms": 480.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12.0,
+      "rms_dbfs": -31.12,
+      "gain": 0.4,
+      "loop": false
+    },
+    "ready": {
+      "file": "s2_ready.wav",
+      "source": "s2_ready.mp3",
+      "duration_ms": 800.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -9.0,
+      "rms_dbfs": -29.0,
+      "gain": 0.4,
+      "loop": false
+    }
+  }
+}

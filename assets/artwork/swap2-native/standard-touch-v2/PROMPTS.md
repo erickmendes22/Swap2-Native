@@ -1,0 +1,31 @@
+# Standard touch artwork v2 — generation prompts
+
+Generated with the built-in image_gen tool on 2026-11-06. The first layout was approved by the user. Images were copied to this directory; no runtime integration or APK change is included.
+
+## Approved layout
+
+Create a polished landscape 21:9 UI concept image for the STANDARD TOUCH CONTROLLER OVERLAY of the Android game launcher Swap2-Native. This is a visual proposal of the actual in-game overlay, inspired by the button arrangement and understated industrial finish of Nintendo Switch 2 Joy-Con controls, using original artwork. No physical console frame or Joy-Con body. Background is an extremely quiet dark charcoal blue gradient, no game scene. The central 55 percent of the screen must stay empty and unobstructed.
+
+Art direction: sophisticated minimal graphite soft-touch button caps, subtle bevels and soft inset shading, fine pale gray rim, exceptionally clean white labels. Fine cyan #31D7ED accent on left controls, restrained coral #FF686B on right controls. No ornate gold rings, no thick neon, no chrome, no glass bubbles. Buttons must look tactile but flat enough for a readable phone overlay. Restrained premium console UX. Large comfortable touch targets, balanced spacing.
+
+Precise layout: left edge upper row two rounded horizontal shoulder buttons labelled "ZL" and "L"; large left analog stick directly below in the upper-left control region, with a broad quiet circular base and smaller concave thumb cap; below it four SEPARATE circular directional arrow buttons in a diamond, with clear gaps. On right edge upper row two matching shoulder buttons labelled "R" and "ZR"; beneath them four separate circular face buttons in Nintendo diamond arrangement: X TOP, Y LEFT, A RIGHT, B BOTTOM. A right analog stick below that diamond, its base slightly smaller than left. Small "L3" and "R3" pill buttons beside their own sticks (click actions). Tiny minus button near left top inner edge and tiny plus button near right top inner edge. Bottom left small capture/screenshot symbol button; bottom right small house symbol Home button and a separate small "C" button. A small unobtrusive controller visibility icon at top center, and small settings gear at bottom center. Do not invent other controls or repeat labels. Keep every control well inside safe screen margins.
+
+Only tiny title "Swap2-Native" centered at the top, elegant off-white, and a very small subtitle "STANDARD TOUCH" beneath it. No extra annotations, measurements, marketing copy, hands, watermarks or game logos. Produce a beautiful finished high-resolution UI presentation, not a technical wireframe. All glyphs crisp and accurate.
+
+## Sprite atlas
+
+Create a production UI SPRITE ATLAS matching the approved reference image's original Swap2-Native graphite/cyan/coral touch buttons. Reference is STYLE ONLY. Output is a SQUARE image, ideally 2048x2048, with a genuinely TRANSPARENT background and a strictly regular 5 COLUMN x 5 ROW grid of 25 cells. No visible grid, no panel, no background, no title, no annotations, no extra text. Each cell contains exactly ONE isolated sprite centered in its cell, all art completely within the inner 76% of that cell. Keep transparent gutters between all cells. Orthographic face-on, crisp anti-aliased edges. Same restrained graphite soft-touch material, fine gray rim, white labels, subtle bevel, no ornamental gold/neon/chrome.
+
+Exact row-major layout; DO NOT reorder:
+ROW 1: X circular coral-accent button; Y circular coral-accent button; A circular coral-accent button; B circular coral-accent button; + small round neutral button.
+ROW 2: minus symbol small round neutral button; L wide rounded cyan-accent shoulder button; ZL wide rounded cyan-accent shoulder button; R wide rounded coral-accent shoulder button; ZR wide rounded coral-accent shoulder button.
+ROW 3: L3 small rounded dark cyan-accent pill; R3 small rounded dark coral-accent pill; UP white triangle circular cyan-accent directional button; DOWN white triangle circular cyan-accent directional button; LEFT white triangle circular cyan-accent directional button.
+ROW 4: RIGHT white triangle circular cyan-accent directional button; capture white camera symbol small round cyan-accent button; Home white house symbol small round coral-accent button; C small round coral-accent button; show/hide controls white gamepad-outline symbol small round neutral button.
+ROW 5: LEFT ANALOG BASE ONLY, broad dark disk with empty recessed center and a thin cyan ring, absolutely NO central thumb cap; LEFT ANALOG THUMB CAP ONLY, isolated smaller circular concave textured graphite disk with thin cyan edge, no base behind it; RIGHT ANALOG BASE ONLY, broad dark disk with empty recessed center and thin coral ring, no thumb cap; RIGHT ANALOG THUMB CAP ONLY, isolated smaller circular concave textured graphite disk with thin coral edge and no base; settings white gear symbol small round neutral button.
+
+The four face letters must be exactly X Y A B. Plus and minus each appear once only. Analog bases and movable caps MUST be separate sprites in separate cells. Directional buttons each have one correctly pointing white triangular arrow. Shoulder labels must each be exact L, ZL, R, ZR and only their own letters. Maximize consistent production quality and clean transparency. This atlas will be sampled at cell boundaries by an Android Canvas implementation.
+
+## Selected atlas alpha cleanup
+
+Edit this exact sprite atlas for production transparency. Preserve all 25 sprites, their positions, labels, dimensions, material, and the 5x5 arrangement exactly. Change ONLY the transparency/background cleanup: REMOVE ALL gray/white haze, all colored ambient mist, all diffuse external drop shadows, all checkerboard-looking pixels, and all rectangular background pixels between and around every sprite. Every empty pixel outside the actual button silhouettes MUST have RGBA alpha exactly ZERO. Button faces should be solid opaque graphite, with only anti-aliased silhouette edges using partial alpha. Keep the cyan/coral accent strokes INSIDE button silhouettes. Do not add a visible checkerboard or any background color. Each sprite must be cleanly isolated against true clear transparency, like game-ready PNG cutouts. Preserve the separate analog bases and caps, all original glyphs, and exact arrangement.
+

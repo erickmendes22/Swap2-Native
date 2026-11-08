@@ -1,0 +1,18 @@
+{
+  "revision": 6,
+  "brand": "brand-v6/",
+  "library": "mockups/library-rich-v3.png",
+  "settings_general": "mockups/settings-general-rich-v3.png",
+  "settings_game": "mockups/settings-game-rich-v3.png",
+  "audio": "audio-v3-elevenlabs/",
+  "prompts": "audio-v3-elevenlabs/PROMPTS.md",
+  "preview": "preview/index.html",
+  "unselected": [
+    "brand-s-v5/",
+    "audio-v2/",
+    "audio/"
+  ],
+  "notes": "Library art approved; settings and angular old-style brand follow subsequent user direction. Native APK not modified.",
+  "opening": "preview/boot-preview-current.mp4",
+  "documentation": "CURRENT-IMPLEMENTATION.md"
+}

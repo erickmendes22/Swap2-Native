@@ -1,0 +1,296 @@
+package dev.nxnative.android;
+
+import android.os.StatFs;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * Whether a picked folder is a dump this APK can prepare: a Switch 2 dump folder (scripts/pack_dump.py's layout: base/exefs, updates/&lt;version&gt;/exefs + romfs, dlc/)
+ * of one of the APK's games (Profile) with one of its profile's builds (game.tsv build rows, Profile.buildMap), checked by the NSO build IDs of the
+ * update's modules. Reads a few headers only; a refusal says why in a sentence the user can act on. A .nup (NUP.md) is checked the same way on its packages
+ * (checkNup).
+ */
+final class DumpCheck {
+    /** Free space a whole job needs beyond the dump (a peak of about 1.5 GB, with the library briefly twice) */
+    static final long NEED_FULL = 2048L << 20;
+    /**
+     * Free space a code-only job needs (the rewrite and the pack step, the shader library kept where it is). To measure on the next device run (the rewrite's
+     * peak on shared storage); 768 MB until then (docs/SWAP2-NATIVE-PREPARE-FLOW.md "Storage")
+     */
+    static final long NEED_CODE = 768L << 20;
+
+    /** Free space one step needs before it starts (PackService's preflight), to measure like NEED_CODE: the rewrite's and the pack's outputs, the split's tables */
+    static long stepNeed(String step, boolean codeOnly) {
+        switch (step) {
+            case "identify": return 0;
+            case "rewrite": return NEED_CODE;
+            case "split": return 768L << 20;
+            case "shaders": return 512L << 20;
+            case "pack": return codeOnly ? 256L << 20 : 768L << 20;
+            default: return 0;
+        }
+    }
+
+    /** Result.code: what kind of refusal (null: none, or one the sentence alone says) */
+    static final String NOSPACE = "nospace", NOTDUMP = "notdump", BUILD = "build", UNWRITABLE = "unwritable";
+
+    static final class Result {
+        File dump, work;
+        String titleId, error;
+        String code;                // nospace, notdump, build, unwritable, or null (error says it)
+        long needBytes;             // the free space asked for (nospace)
+        long version;               // the update's version (updates/<version>)
+        Map<String, String> buildIds = new LinkedHashMap<>();   // module → its NSO build ID (32 hex digits)
+        int dlc;
+        long free;
+
+        boolean ok() { return error == null; }
+    }
+
+    private DumpCheck() {}
+
+    /** The folder of one version of a dump: base/ for version 0 (the base game), else updates/<version>/ */
+    static File versionDir(File dump, long version) { return new File(dump, version == 0 ? "base" : "updates/" + version); }
+
+    /**
+     * A path inside one version of a dump, as the tools take it: a folder's &lt;dump&gt;/updates/&lt;version&gt;/&lt;sub&gt; (base/ for 0), a .nup's
+     * &lt;dump&gt;.nup:update/&lt;version&gt;/&lt;sub&gt; (base for 0; NUP.md "Naming a package")
+     */
+    static String versionPath(File dump, long version, String sub) {
+        if (Nup.isNup(dump)) return Nup.spec(dump, Nup.versionSelector(version), sub);
+        File r = sub.equals("romfs") ? Pack.romfsIn(versionDir(dump, version)) : null;   // (the romfs/ folder, or a romfs.bin image beside it)
+        return r != null ? r.getPath() : new File(versionDir(dump, version), sub).getPath();
+    }
+
+    /**
+     * The work folder a dump's job uses: &lt;Switch2&gt;/Work/&lt;title ID&gt; (Switch2Layout.workOf), or an older &lt;title ID&gt;-work beside the dump while there is no
+     * new one (the launcher's start moves it: Switch2Migration)
+     */
+    static File workOf(File dump, String titleId) { return Switch2Layout.workOf(dump, titleId); }
+
+    /** needBytes: the free space the job asks for (NEED_FULL, NEED_CODE plus the tools' unpack: PackEngine.toolsBytes), 0 for none */
+    static Result check(File dump, long needBytes) {
+        Result r = new Result();
+        r.dump = dump;
+        r.needBytes = needBytes;
+        r.error = check(r, needBytes);
+        if (r.error != null && r.code == null && r.titleId == null) r.code = NOTDUMP;
+        return r;
+    }
+
+    /** The free space of the folder f is on (the work folder, Work/ before it exists), -1 when it cannot be read */
+    static long freeOf(File f) {
+        File probe = f;
+        while (probe.getParentFile() != null && !probe.isDirectory()) probe = probe.getParentFile();
+        try { return new StatFs(probe.getPath()).getAvailableBytes(); } catch (IllegalArgumentException e) { return -1; }
+    }
+
+    private static String check(Result r, long needFree) {
+        File dump = r.dump;
+        if (Nup.isNup(dump) || Nup.wrongCase(dump)) {
+            String e = checkNup(r);
+            return e != null ? e : space(r, needFree);
+        }
+        if (!dump.isDirectory()) return dump + " is not a folder this app can read. Check that All files access is on.";
+        File npdm = new File(dump, "base/exefs/main.npdm");
+        if (!npdm.isFile()) {
+            if (new File(dump, "exefs/main.npdm").isFile())
+                return dump.getName() + " is one version's folder. Pick the dump folder above it, the one with base/ (and updates/).";
+            return dump + " is not a dump folder: it has no base/exefs/main.npdm. Pick the folder with base/, updates/ and dlc/.";
+        }
+        try {
+            r.titleId = Pack.programId(npdm);
+        } catch (IOException e) {
+            return "base/exefs/main.npdm cannot be read: " + e.getMessage();
+        }
+        Profile prof = Profile.of(r.titleId);
+        if (prof == null) return Profile.missing(r.titleId, "This dump");
+
+        Map<Long, Map<String, String>> builds = prof.buildMap();
+        File[] ups = new File(dump, "updates").listFiles(f -> f.isDirectory() && f.getName().matches("\\d+"));
+        List<Long> have = new ArrayList<>();
+        if (ups != null) for (File u : ups) have.add(Long.parseLong(u.getName()));
+        have.sort(null);
+        if (new File(dump, "base/exefs/main").isFile()) have.add(0, 0L);   // version 0 is the base game itself (a game whose supported build is its base, no update)
+        Long want = null, row = null;
+        // A build is known by its modules, not by the version number it was dumped under: Mario Kart World's profile has 1.8.0 as version 0 (a dump whose base was
+        // 1.8.0), while another dump has the same 1.8.0 modules as update 917504 over the 1.0 base. The newest version whose modules are one of the profile's builds wins
+        for (int k = have.size() - 1; k >= 0 && want == null; k--) {
+            File vd = versionDir(dump, have.get(k));
+            for (Map.Entry<Long, Map<String, String>> b : builds.entrySet()) {
+                boolean all = !b.getValue().isEmpty();
+                for (Map.Entry<String, String> m : b.getValue().entrySet()) {
+                    File nso = new File(vd, "exefs/" + m.getKey());
+                    try { all &= nso.isFile() && nsoBuildId(nso).startsWith(m.getValue()); } catch (IOException e) { all = false; }
+                    if (!all) break;
+                }
+                if (all) { want = have.get(k); row = b.getKey(); break; }
+            }
+        }
+        if (want == null) for (Long v : builds.keySet()) if (have.contains(v)) want = row = v;   // the newest of the profile's builds this dump has (its modules are checked below)
+        if (want == null) {
+            have.remove(Long.valueOf(0));
+            return (have.isEmpty() ? "This dump has no update (updates/<version>/)." : "This dump has update " + join(have) + ".") + " " + prof.supported();
+        }
+        r.version = want;
+        File up = versionDir(dump, want);
+        String upName = want == 0 ? "base" : "updates/" + want;
+        for (String f : new String[] {"exefs/main", "exefs/main.npdm"})
+            if (!new File(up, f).isFile()) return upName + " has no " + f + ": the dump is incomplete.";
+        if (Pack.romfsIn(up) == null) return upName + "/romfs is missing or empty (and there is no romfs.bin): the dump is incomplete.";
+        try {
+            String upId = Pack.programId(new File(up, "exefs/main.npdm"));
+            if (!upId.equals(r.titleId)) return upName + " is of " + upId + ", the base is " + r.titleId + ".";
+            for (Map.Entry<String, String> m : builds.get(row).entrySet()) {
+                File nso = new File(up, "exefs/" + m.getKey());
+                if (!nso.isFile()) return upName + " has no exefs/" + m.getKey() + ": the dump is incomplete.";
+                String id = nsoBuildId(nso);
+                r.buildIds.put(m.getKey(), id);
+                if (!id.startsWith(m.getValue())) {
+                    r.code = BUILD;
+                    return upName + "/exefs/" + m.getKey() + " is build " + id.substring(0, 16) + "…, not the " + m.getValue().substring(0, 16)
+                            + "… of " + prof.name + " (" + Profile.versionName(row) + "). The dump is of another version or was modified.";
+                }
+            }
+        } catch (IOException e) {
+            return upName + ": " + e.getMessage();
+        }
+        File[] dlc = new File(dump, "dlc").listFiles(File::isDirectory);
+        r.dlc = dlc == null ? 0 : dlc.length;
+        return space(r, needFree);
+    }
+
+    /**
+     * A .nup (NUP.md): the same checks as for a folder, on its packages. It opens (superblock, the TOC's SHA-256: Nup.open), has a base package, its title ID
+     * (the base's main.npdm) is one of the APK's games, it has the update of a build the profile supports (update/&lt;version&gt;, or the base for version 0) with
+     * exefs/main, exefs/main.npdm of that title and a RomFS with files, and that update's modules are the profile's builds (NSO build IDs). Add-ons are counted
+     */
+    private static String checkNup(Result r) {
+        File dump = r.dump;
+        String fn = dump.getName();
+        if (Nup.wrongCase(dump)) return fn + ": rename it so that its name ends in \".nup\" (lower case); the tools and the game read only that name.";
+        if (!dump.isFile() || !dump.canRead()) return dump + " is not a file this app can read. Check that All files access is on.";
+        Nup n;
+        try {
+            n = Nup.open(dump);
+        } catch (IOException e) {
+            return fn + " cannot be used: " + e.getMessage();
+        }
+        Nup.Pkg base = n.base();
+        if (base == null) return fn + " has no base game (an update-only .nup). Preparing needs a .nup with the base game (and its update, when the game has one).";
+        try {
+            r.titleId = n.programId();
+        } catch (IOException e) {
+            return fn + ": the base's main.npdm cannot be read: " + e.getMessage();
+        }
+        Profile prof = Profile.of(r.titleId);
+        if (prof == null) return Profile.missing(r.titleId, "This dump");
+
+        Map<Long, Map<String, String>> builds = prof.buildMap();
+        List<Long> have = new ArrayList<>();
+        for (Nup.Pkg p : n.of(Nup.UPDATE)) have.add(p.version);
+        have.sort(null);
+        try {
+            Nup.Node bm = n.lookup(base, "exefs/main");
+            if (bm != null && !bm.dir) have.add(0, 0L);
+        } catch (IOException e) {
+            return fn + ": " + e.getMessage();
+        }
+        Long want = null, row = null;
+        for (int k = have.size() - 1; k >= 0 && want == null; k--) {   // as for a folder: the newest version whose modules are one of the profile's builds
+            Nup.Pkg vp = n.find(Nup.versionSelector(have.get(k)));
+            if (vp == null) continue;
+            for (Map.Entry<Long, Map<String, String>> b : builds.entrySet()) {
+                boolean all = !b.getValue().isEmpty();
+                for (Map.Entry<String, String> m : b.getValue().entrySet()) {
+                    try { Nup.Node x = n.lookup(vp, "exefs/" + m.getKey()); all &= x != null && !x.dir && nsoBuildId(n.read(x, 0x60), m.getKey()).startsWith(m.getValue()); }
+                    catch (IOException e) { all = false; }
+                    if (!all) break;
+                }
+                if (all) { want = have.get(k); row = b.getKey(); break; }
+            }
+        }
+        if (want == null) for (Long v : builds.keySet()) if (have.contains(v)) want = row = v;
+        if (want == null) {
+            have.remove(Long.valueOf(0));
+            return (have.isEmpty() ? fn + " has no update." : fn + " has update " + join(have) + ".") + " " + prof.supported();
+        }
+        r.version = want;
+        String sel = Nup.versionSelector(want);
+        Nup.Pkg up = n.find(sel);
+        if (up == null) return fn + " has no " + sel + ".";
+        try {
+            for (String f : new String[] {"exefs/main", "exefs/main.npdm"}) {
+                Nup.Node x = n.lookup(up, f);
+                if (x == null || x.dir) return sel + " in " + fn + " has no " + f + ": the .nup is incomplete.";
+            }
+            Nup.Node rd = n.dir(up.romfsDir);
+            if (rd == null || rd.childCount == 0) return sel + "/romfs in " + fn + " is missing or empty: the .nup is incomplete.";
+            String upId = Pack.programId(n.read(n.lookup(up, "exefs/main.npdm"), -1), sel + "/exefs/main.npdm");
+            if (!upId.equals(r.titleId)) return sel + " in " + fn + " is of " + upId + ", the base is " + r.titleId + ".";
+            for (Map.Entry<String, String> m : builds.get(row).entrySet()) {
+                Nup.Node nso = n.lookup(up, "exefs/" + m.getKey());
+                if (nso == null || nso.dir) return sel + " in " + fn + " has no exefs/" + m.getKey() + ": the .nup is incomplete.";
+                String id = nsoBuildId(n.read(nso, 0x60), m.getKey());
+                r.buildIds.put(m.getKey(), id);
+                if (!id.startsWith(m.getValue()) && (r.code = BUILD) != null)
+                    return sel + "/exefs/" + m.getKey() + " in " + fn + " is build " + id.substring(0, 16) + "…, not the " + m.getValue().substring(0, 16)
+                            + "… of " + prof.name + " (" + Profile.versionName(row) + "). The dump is of another version or was modified.";
+            }
+        } catch (IOException e) {
+            return sel + " in " + fn + ": " + e.getMessage();
+        }
+        r.dlc = n.of(Nup.ADDON).size();
+        return null;
+    }
+
+    /** The work folder (workOf), its free space and its ondevice/ folder (a folder dump and a .nup alike) */
+    private static String space(Result r, long needFree) {
+        File dump = r.dump;
+        r.work = workOf(dump, r.titleId);
+        File probe = r.work;
+        while (probe.getParentFile() != null && !probe.isDirectory()) probe = probe.getParentFile();   // Work/ itself may not be there yet
+        try {
+            r.free = new StatFs(probe.getPath()).getAvailableBytes();
+        } catch (IllegalArgumentException e) {
+            return "Cannot read the free space of " + probe + ".";
+        }
+        if (!GameFlow.fits(r.free, needFree)) {
+            r.code = NOSPACE;
+            return String.format(Locale.ROOT, "Preparing needs %s free for its work folder; %s has %s free.", GameFlow.gb(needFree), probe, GameFlow.gb(r.free));
+        }
+        File od = new File(r.work, "ondevice");
+        if (!od.isDirectory() && !od.mkdirs()) { r.code = r.free < (1L << 20) ? NOSPACE : UNWRITABLE; return "Cannot make " + od + ": the work folder is not writable."; }
+        return null;
+    }
+
+    private static String join(List<Long> v) {
+        StringBuilder b = new StringBuilder();
+        for (Long x : v) b.append(b.length() == 0 ? "" : ", ").append(x);
+        return b.toString();
+    }
+
+    /** An NSO's module (build) ID, 32 bytes at 0x40, as 64 lower-case hex digits */
+    static String nsoBuildId(File nso) throws IOException {
+        try (RandomAccessFile f = new RandomAccessFile(nso, "r")) {
+            byte[] h = new byte[0x60];
+            f.readFully(h);
+            return nsoBuildId(h, nso.getName());
+        }
+    }
+
+    /** The same, of an NSO's first 0x60 bytes (a .nup's file: Nup.read) */
+    static String nsoBuildId(byte[] h, String name) throws IOException {
+        if (h.length < 0x60 || h[0] != 'N' || h[1] != 'S' || h[2] != 'O' || h[3] != '0') throw new IOException(name + " is not an NSO");
+        StringBuilder b = new StringBuilder();
+        for (int i = 0x40; i < 0x60; i++) b.append(String.format(Locale.ROOT, "%02x", h[i] & 0xff));
+        return b.toString();
+    }
+}

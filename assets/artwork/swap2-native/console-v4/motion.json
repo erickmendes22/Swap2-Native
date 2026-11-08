@@ -1,0 +1,112 @@
+{
+  "version": 4,
+  "boot": {
+    "duration_ms": 1500,
+    "library_reveal_ms": 1320,
+    "repeat_in_same_process": false,
+    "audio": "boot",
+    "layers": [
+      {
+        "id": "arrow-upper",
+        "from_ms": 0,
+        "to_ms": 440,
+        "translation_x_dp": [
+          -36,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ],
+        "easing": [
+          0.2,
+          0.8,
+          0.2,
+          1
+        ]
+      },
+      {
+        "id": "arrow-lower",
+        "from_ms": 120,
+        "to_ms": 560,
+        "translation_x_dp": [
+          36,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ],
+        "easing": [
+          0.2,
+          0.8,
+          0.2,
+          1
+        ]
+      },
+      {
+        "id": "number-2",
+        "from_ms": 420,
+        "to_ms": 660,
+        "translation_y_dp": [
+          5,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      {
+        "id": "wordmark",
+        "from_ms": 660,
+        "to_ms": 900,
+        "translation_y_dp": [
+          6,
+          0
+        ],
+        "opacity": [
+          0,
+          1
+        ]
+      },
+      {
+        "id": "boot-surface",
+        "from_ms": 1320,
+        "to_ms": 1500,
+        "opacity": [
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "reduced_motion": {
+    "boot_ms": 120,
+    "movement": false,
+    "audio_optional": true
+  },
+  "transitions": {
+    "page_enter_ms": 180,
+    "page_exit_ms": 120,
+    "page_translation_dp": 8,
+    "sheet_ms": 220,
+    "sheet_translation_dp": 16,
+    "carousel_snap_ms": 160,
+    "focus_ms": 90,
+    "focus_scale": 1.02,
+    "press_ms": 60,
+    "press_scale": 0.98,
+    "progress_ms": 220,
+    "loading_cycle_ms": 900
+  },
+  "audio": {
+    "max_streams": 3,
+    "focus_throttle_ms": 120,
+    "focus_gain": 0.22,
+    "other_gain": 0.4,
+    "default_master_volume": 0.35,
+    "ui_on_gameplay": false,
+    "autoplay_in_preview": false
+  }
+}

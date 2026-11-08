@@ -1,0 +1,57 @@
+# The Legend of Zelda: Ocarina of Time (Switch 2, update v131072). Provisional: in bring-up on Android (Swap2-Native), not run yet
+# Nintendo EPD's engine (sead / agl / gsys, Phive, RSDB, ELink2 / SLink2), NVN2 (Ampere shaders), as Donkey Kong Bananza and Mario Kart World; modules main + subsdk0 + sdk.
+# The dump is a NUP file (android/NUP.md) with the base (v65536) and update 131072. Shaders: Shader/*.Nin_Ounce_NVN2.bfsha.zs and Layout2Shader/ (BNSH with Ampere code).
+# Keys taken from Donkey Kong Bananza's profile (same engine, same Switch 2 memory model) until a run here says otherwise (the game note, dm/games/0400486024DEC000/README.md).
+
+# ---- Identity ----
+title_id	0400486024DEC000
+program_id	0400486024DEC000
+
+# ---- App ----
+name	The Legend of Zelda: Ocarina of Time
+ipa	ZeldaOcarinaOfTime.ipa
+app_category	public.app-category.adventure-games
+pad_layout	full
+
+# ---- Versions ----
+build	v131072	v131072	main=e0f3ccfaf50065ae4ea01eb5aeb13b1a	subsdk0=b0110087a7b339ef74588d3bd0b4dd5d	sdk=1643a838814f9c10c696f930ed681e7f
+package	v131072
+shader_versions	v131072
+
+# ---- Files ----
+modules	main subsdk0 sdk
+romfs_marker	System/Resource/ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs
+zip_store	.zs:.bwav:.webm:.metallib
+
+# ---- Memory ----
+# Virtual address memory: the NPDM declares a system resource (24 MB in the base, 48 MB in update 131072), so the SDK's IsVirtualAddressMemoryEnabled is true. The game
+# takes both a 6.2 GB heap (nninitStartup: SetHeapSize 0x18ce00000) and an address region of the rest of the pool (main+0x9c2130) after the 1 GB node area (its sdk has
+# no reviewed node-area implementation). 256 MB in front + 4.5 GB alias region + 256 MB stack region + 9 GB heap region (the note, What it needs). A 256 MB heap region
+# (mem_reserve 0x2d0000000, mem_alias 0x2a0000000) stops the boot at SetHeapSize (OOM: req 0x18ce00000 > cap 0x10000000; 2026-11-06)
+mem_reserve	0x380000000
+mem_alias	0x120000000
+mem_stack	0x10000000
+app_pool	0x240000000
+# The packed version's NPDM's (pack_android.py takes it from the NPDM; this is the value for update 131072)
+sys_resource	0x3000000
+# The NPDM's cores (ThreadInfo cores 0-5, main thread core 0), as on every Switch 2 application: GetInfo(CoreMask) answers them (pack_android.py takes the NPDM's)
+core_mask	0x3f
+ideal_core	0
+
+# ---- Shader split (shader_split.py) ----
+shader_groups	/Shader/=shader /Effect/=effect /UI/=layout /Layout2Shader/=layout
+shader_note	The Legend of Zelda: Ocarina of Time shaders
+
+# ---- Graphics ----
+# agl's render buffer binding wraps its clears in render conditions in Donkey Kong Bananza and Mario Kart World (same engine); assumed here (open)
+render_cond	on
+# The Android launcher's Upscaler option (FSR 1 EASU in place of agl's NDSR networks, DM_VK_NDSR=fsr): its light upscaler fa3033d05c0a41d6 reads sqrt(colour), packed
+# as RGB9E5 by a335c1db6270c355 (its disassembly), so the stand-in squares what it gives (DM_VK_NDSR_INPUT=sqrt). Phone A/B 2026-11-08, Link's house: 30.2-30.9 -> 37.8-38.4 fps
+ndsr_input	sqrt
+# The Upscaler's default in the launcher: FSR 1. Phone A/B 2026-11-08 (POCO F7 Ultra, 891.11, Link's house, 6 min from a cold phone): 39.8 fps p50 (p10 37.5), GPU 24.5 ms,
+# frame time p95 29 ms, max 136 ms, with the 720p scene; the network 28.5-30.7 fps, GPU 32-34.5 ms, p95 36-38 ms, max 242-578 ms; the same peak and end temperatures
+ndsr_default	fsr
+# The Android launcher's Scene resolution 720p: dm/tools/gsys_dynres.py writes this ResolutionReduceScale into every level of DynamicResolutionParam's palettes
+# (Pack/Bootup.Nin_Ounce_NVN2.pack.zs), checked against the originals that follow, as a RomFS overlay made on the phone from the player's files (DM_ROMFS_OVERLAY).
+# The scene is not linear in the scale: 0.625 gave 1304x734, 0.6135 gives 1275x717 (seen on the phone 2026-11-07)
+scene_scale_palette	0.6135	0.75,0.71112,0.66667,0.62223,0.58334,0.53334,0.5,0.4445,0.37223,0.33334

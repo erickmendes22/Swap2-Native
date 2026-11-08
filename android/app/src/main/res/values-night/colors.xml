@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launcher's DARK palette (values/colors.xml has the light one and says what each color is for): graphite surfaces, off-white text and focus -->
+    <color name="bn_bg">#FF17191D</color>
+    <color name="bn_card">#FF24272D</color>
+    <color name="bn_card_stroke">#FF444A54</color>
+    <color name="bn_tint">#FF2D3138</color>
+    <color name="bn_banana">#FFF4F4F2</color>
+    <color name="bn_banana_deep">#FFFFC477</color>
+    <color name="bn_on_banana">#FF15171B</color>
+    <color name="bn_text">#FFF4F4F2</color>
+    <color name="bn_text_2">#FFAEB4BF</color>
+    <color name="bn_accent">#FF42D4E5</color>
+    <color name="bn_leaf">#FF6AC795</color>
+    <color name="bn_on_leaf">#FF15171B</color>
+    <color name="bn_danger">#FFFF9298</color>
+    <color name="bn_danger_tint">#FF3A2629</color>
+    <color name="bn_warn_tint">#FF3A3224</color>
+    <color name="s2_coral">#FFFF777D</color>
+    <color name="s2_warning">#FFFFC477</color>
+    <color name="s2_prepare">#FFFFC477</color>
+    <color name="s2_on_prepare">#FF15171B</color>
+    <color name="s2_shelf">#FF22252A</color>
+    <color name="s2_edge">#1AFFFFFF</color>
+    <color name="s2_dock">#FF262A30</color>
+</resources>

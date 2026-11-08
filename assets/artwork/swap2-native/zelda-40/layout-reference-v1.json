@@ -1,0 +1,338 @@
+{
+  "version": 1,
+  "profile_id": "zelda-oot",
+  "title_id": "0400486024DEC000",
+  "skin_id": "zelda-40",
+  "reference_canvas": [
+    1912,
+    823
+  ],
+  "default_opacity": 0.65,
+  "controls": [
+    {
+      "sprite": "zl",
+      "anchor": "left",
+      "center_ref": [
+        131,
+        71
+      ],
+      "size_ref": [
+        192,
+        72
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "l",
+      "anchor": "left",
+      "center_ref": [
+        334,
+        71
+      ],
+      "size_ref": [
+        176,
+        72
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "minus",
+      "anchor": "left",
+      "center_ref": [
+        485,
+        74
+      ],
+      "size_ref": [
+        60,
+        60
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "r",
+      "anchor": "right",
+      "center_ref": [
+        1578,
+        71
+      ],
+      "size_ref": [
+        176,
+        72
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "zr",
+      "anchor": "right",
+      "center_ref": [
+        1780,
+        71
+      ],
+      "size_ref": [
+        192,
+        72
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "plus",
+      "anchor": "right",
+      "center_ref": [
+        1425,
+        74
+      ],
+      "size_ref": [
+        60,
+        60
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "left_stick_base",
+      "anchor": "left",
+      "center_ref": [
+        155,
+        270
+      ],
+      "size_ref": [
+        244,
+        244
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "left_stick_cap",
+      "anchor": "left",
+      "center_ref": [
+        155,
+        270
+      ],
+      "size_ref": [
+        162,
+        162
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "l3",
+      "anchor": "left",
+      "center_ref": [
+        343,
+        273
+      ],
+      "size_ref": [
+        100,
+        54
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "up",
+      "anchor": "left",
+      "center_ref": [
+        185,
+        462
+      ],
+      "size_ref": [
+        90,
+        90
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "left",
+      "anchor": "left",
+      "center_ref": [
+        101,
+        540
+      ],
+      "size_ref": [
+        90,
+        90
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "right",
+      "anchor": "left",
+      "center_ref": [
+        266,
+        540
+      ],
+      "size_ref": [
+        90,
+        90
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "down",
+      "anchor": "left",
+      "center_ref": [
+        185,
+        619
+      ],
+      "size_ref": [
+        90,
+        90
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "x",
+      "anchor": "right",
+      "center_ref": [
+        1693,
+        187
+      ],
+      "size_ref": [
+        90,
+        90
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "y",
+      "anchor": "right",
+      "center_ref": [
+        1607,
+        268
+      ],
+      "size_ref": [
+        90,
+        90
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "a",
+      "anchor": "right",
+      "center_ref": [
+        1778,
+        268
+      ],
+      "size_ref": [
+        90,
+        90
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "b",
+      "anchor": "right",
+      "center_ref": [
+        1693,
+        350
+      ],
+      "size_ref": [
+        90,
+        90
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "right_stick_base",
+      "anchor": "right",
+      "center_ref": [
+        1621,
+        541
+      ],
+      "size_ref": [
+        244,
+        244
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "right_stick_cap",
+      "anchor": "right",
+      "center_ref": [
+        1621,
+        541
+      ],
+      "size_ref": [
+        162,
+        162
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "r3",
+      "anchor": "right",
+      "center_ref": [
+        1815,
+        541
+      ],
+      "size_ref": [
+        102,
+        54
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "visibility",
+      "anchor": "center",
+      "center_ref": [
+        956,
+        118
+      ],
+      "size_ref": [
+        44,
+        44
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "settings",
+      "anchor": "center",
+      "center_ref": [
+        956,
+        751
+      ],
+      "size_ref": [
+        64,
+        64
+      ],
+      "enabled_initially": true
+    },
+    {
+      "sprite": "capture",
+      "anchor": "left",
+      "center_ref": [
+        96,
+        741
+      ],
+      "size_ref": [
+        80,
+        80
+      ],
+      "enabled_initially": false
+    },
+    {
+      "sprite": "home",
+      "anchor": "right",
+      "center_ref": [
+        1668,
+        742
+      ],
+      "size_ref": [
+        80,
+        80
+      ],
+      "enabled_initially": false
+    },
+    {
+      "sprite": "c",
+      "anchor": "right",
+      "center_ref": [
+        1814,
+        742
+      ],
+      "size_ref": [
+        80,
+        80
+      ],
+      "enabled_initially": false
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launcher's look (MainActivity, ReadinessActivity, PrepareActivity): Swap2-Native Console revision 6, LIGHT here and dark in values-night (colors.xml);
+         Settings › Theme picks light, dark or the system's (LauncherTheme: the activities' configuration and the app's night mode, so the system splash matches).
+         No action bar (the screen draws its own header), edge to edge. The Android 12+ splash shows the v6 mark of the same theme and leaves at the first frame -->
+    <style name="Theme.Banana" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">@color/bn_banana</item>
+        <item name="android:colorPrimaryDark">@color/bn_bg</item>
+        <item name="android:colorAccent">@color/bn_accent</item>
+        <item name="android:colorControlActivated">@color/bn_accent</item>
+        <item name="android:colorBackground">@color/bn_bg</item>
+        <item name="android:windowBackground">@color/bn_bg</item>
+        <item name="android:textColorPrimary">@color/bn_text</item>
+        <item name="android:textColorSecondary">@color/bn_text_2</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:alertDialogTheme">@style/Theme.Banana.Dialog</item>
+        <item name="android:windowSplashScreenBackground">@color/bn_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/s2_splash_v6</item>
+    </style>
+
+    <style name="Theme.Banana.Dialog" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">@color/bn_accent</item>
+        <item name="android:colorControlActivated">@color/bn_accent</item>
+        <item name="android:colorBackground">@color/bn_card</item>
+        <item name="android:textColorPrimary">@color/bn_text</item>
+        <item name="android:textColorSecondary">@color/bn_text_2</item>
+        <item name="android:windowBackground">@drawable/bn_dialog_bg</item>
+        <item name="android:buttonBarButtonStyle">@style/Banana.DialogButton</item>
+    </style>
+
+    <style name="Banana.DialogButton" parent="android:Widget.Material.Light.Button.Borderless.Colored">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+</resources>

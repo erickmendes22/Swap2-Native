@@ -1,0 +1,1055 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "icons.folder",
+      "file": "icons/folder.svg",
+      "pngFile": "png/icons/folder.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.folder-open",
+      "file": "icons/folder-open.svg",
+      "pngFile": "png/icons/folder-open.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.refresh",
+      "file": "icons/refresh.svg",
+      "pngFile": "png/icons/refresh.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.settings",
+      "file": "icons/settings.svg",
+      "pngFile": "png/icons/settings.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.play",
+      "file": "icons/play.svg",
+      "pngFile": "png/icons/play.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.back",
+      "file": "icons/back.svg",
+      "pngFile": "png/icons/back.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.close",
+      "file": "icons/close.svg",
+      "pngFile": "png/icons/close.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.search",
+      "file": "icons/search.svg",
+      "pngFile": "png/icons/search.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.chevron-down",
+      "file": "icons/chevron-down.svg",
+      "pngFile": "png/icons/chevron-down.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.chevron-left",
+      "file": "icons/chevron-left.svg",
+      "pngFile": "png/icons/chevron-left.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.chevron-right",
+      "file": "icons/chevron-right.svg",
+      "pngFile": "png/icons/chevron-right.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.check",
+      "file": "icons/check.svg",
+      "pngFile": "png/icons/check.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.warning",
+      "file": "icons/warning.svg",
+      "pngFile": "png/icons/warning.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.info",
+      "file": "icons/info.svg",
+      "pngFile": "png/icons/info.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.lock",
+      "file": "icons/lock.svg",
+      "pngFile": "png/icons/lock.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.gamepad",
+      "file": "icons/gamepad.svg",
+      "pngFile": "png/icons/gamepad.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.grid",
+      "file": "icons/grid.svg",
+      "pngFile": "png/icons/grid.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.list",
+      "file": "icons/list.svg",
+      "pngFile": "png/icons/list.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.sort",
+      "file": "icons/sort.svg",
+      "pngFile": "png/icons/sort.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.filter",
+      "file": "icons/filter.svg",
+      "pngFile": "png/icons/filter.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.more",
+      "file": "icons/more.svg",
+      "pngFile": "png/icons/more.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.volume",
+      "file": "icons/volume.svg",
+      "pngFile": "png/icons/volume.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.display",
+      "file": "icons/display.svg",
+      "pngFile": "png/icons/display.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.library",
+      "file": "icons/library.svg",
+      "pngFile": "png/icons/library.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.stop",
+      "file": "icons/stop.svg",
+      "pngFile": "png/icons/stop.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.external",
+      "file": "icons/external.svg",
+      "pngFile": "png/icons/external.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.file",
+      "file": "icons/file.svg",
+      "pngFile": "png/icons/file.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.retry",
+      "file": "icons/retry.svg",
+      "pngFile": "png/icons/retry.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.sun",
+      "file": "icons/sun.svg",
+      "pngFile": "png/icons/sun.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "icons.moon",
+      "file": "icons/moon.svg",
+      "pngFile": "png/icons/moon.png",
+      "width": 32,
+      "height": 32,
+      "role": "icon"
+    },
+    {
+      "id": "brand.symbol",
+      "file": "brand/symbol.svg",
+      "pngFile": "png/brand/symbol.png",
+      "width": 100,
+      "height": 100,
+      "role": "brand symbol"
+    },
+    {
+      "id": "brand.wordmark",
+      "file": "brand/wordmark.svg",
+      "pngFile": "png/brand/wordmark.png",
+      "width": 640,
+      "height": 104,
+      "role": "editable wordmark; resolve font before rasterizing"
+    },
+    {
+      "id": "brand.app-icon",
+      "file": "brand/app-icon.svg",
+      "pngFile": "png/brand/app-icon.png",
+      "width": 256,
+      "height": 256,
+      "role": "square app icon; Android applies mask"
+    },
+    {
+      "id": "buttons.primary-normal",
+      "file": "buttons/primary-normal.svg",
+      "pngFile": "png/buttons/primary-normal.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.primary-focused",
+      "file": "buttons/primary-focused.svg",
+      "pngFile": "png/buttons/primary-focused.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.primary-pressed",
+      "file": "buttons/primary-pressed.svg",
+      "pngFile": "png/buttons/primary-pressed.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.primary-disabled",
+      "file": "buttons/primary-disabled.svg",
+      "pngFile": "png/buttons/primary-disabled.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.secondary-normal",
+      "file": "buttons/secondary-normal.svg",
+      "pngFile": "png/buttons/secondary-normal.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.secondary-focused",
+      "file": "buttons/secondary-focused.svg",
+      "pngFile": "png/buttons/secondary-focused.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.secondary-pressed",
+      "file": "buttons/secondary-pressed.svg",
+      "pngFile": "png/buttons/secondary-pressed.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.secondary-disabled",
+      "file": "buttons/secondary-disabled.svg",
+      "pngFile": "png/buttons/secondary-disabled.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.danger-normal",
+      "file": "buttons/danger-normal.svg",
+      "pngFile": "png/buttons/danger-normal.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.danger-focused",
+      "file": "buttons/danger-focused.svg",
+      "pngFile": "png/buttons/danger-focused.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.danger-pressed",
+      "file": "buttons/danger-pressed.svg",
+      "pngFile": "png/buttons/danger-pressed.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.danger-disabled",
+      "file": "buttons/danger-disabled.svg",
+      "pngFile": "png/buttons/danger-disabled.png",
+      "width": 320,
+      "height": 64,
+      "role": "textless button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.icon-normal",
+      "file": "buttons/icon-normal.svg",
+      "pngFile": "png/buttons/icon-normal.png",
+      "width": 64,
+      "height": 64,
+      "role": "empty icon-button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.icon-focused",
+      "file": "buttons/icon-focused.svg",
+      "pngFile": "png/buttons/icon-focused.png",
+      "width": 64,
+      "height": 64,
+      "role": "empty icon-button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.icon-pressed",
+      "file": "buttons/icon-pressed.svg",
+      "pngFile": "png/buttons/icon-pressed.png",
+      "width": 64,
+      "height": 64,
+      "role": "empty icon-button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "buttons.icon-disabled",
+      "file": "buttons/icon-disabled.svg",
+      "pngFile": "png/buttons/icon-disabled.png",
+      "width": 64,
+      "height": 64,
+      "role": "empty icon-button shell",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "panels.window",
+      "file": "panels/window.svg",
+      "pngFile": "png/panels/window.png",
+      "width": 960,
+      "height": 640,
+      "role": "surface shell",
+      "stretchInsets": [
+        28,
+        28,
+        28,
+        28
+      ]
+    },
+    {
+      "id": "panels.toolbar",
+      "file": "panels/toolbar.svg",
+      "pngFile": "png/panels/toolbar.png",
+      "width": 960,
+      "height": 80,
+      "role": "surface shell",
+      "stretchInsets": [
+        20,
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "id": "panels.details",
+      "file": "panels/details.svg",
+      "pngFile": "png/panels/details.png",
+      "width": 960,
+      "height": 104,
+      "role": "surface shell",
+      "stretchInsets": [
+        24,
+        24,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "panels.popover",
+      "file": "panels/popover.svg",
+      "pngFile": "png/panels/popover.png",
+      "width": 320,
+      "height": 240,
+      "role": "surface shell",
+      "stretchInsets": [
+        20,
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "id": "panels.dialog",
+      "file": "panels/dialog.svg",
+      "pngFile": "png/panels/dialog.png",
+      "width": 640,
+      "height": 320,
+      "role": "surface shell",
+      "stretchInsets": [
+        28,
+        28,
+        28,
+        28
+      ]
+    },
+    {
+      "id": "panels.tooltip",
+      "file": "panels/tooltip.svg",
+      "pngFile": "png/panels/tooltip.png",
+      "width": 320,
+      "height": 64,
+      "role": "surface shell",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "panels.option-row",
+      "file": "panels/option-row.svg",
+      "pngFile": "png/panels/option-row.png",
+      "width": 800,
+      "height": 88,
+      "role": "surface shell",
+      "stretchInsets": [
+        20,
+        20,
+        20,
+        20
+      ]
+    },
+    {
+      "id": "cards.normal",
+      "file": "cards/normal.svg",
+      "pngFile": "png/cards/normal.png",
+      "width": 480,
+      "height": 336,
+      "role": "empty game card; cover area 4,4,472,260",
+      "stretchInsets": [
+        24,
+        24,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "tabs.normal",
+      "file": "tabs/normal.svg",
+      "pngFile": "png/tabs/normal.png",
+      "width": 192,
+      "height": 56,
+      "role": "textless category tab",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "cards.focused",
+      "file": "cards/focused.svg",
+      "pngFile": "png/cards/focused.png",
+      "width": 480,
+      "height": 336,
+      "role": "empty game card; cover area 4,4,472,260",
+      "stretchInsets": [
+        24,
+        24,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "tabs.focused",
+      "file": "tabs/focused.svg",
+      "pngFile": "png/tabs/focused.png",
+      "width": 192,
+      "height": 56,
+      "role": "textless category tab",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "cards.selected",
+      "file": "cards/selected.svg",
+      "pngFile": "png/cards/selected.png",
+      "width": 480,
+      "height": 336,
+      "role": "empty game card; cover area 4,4,472,260",
+      "stretchInsets": [
+        24,
+        24,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "tabs.selected",
+      "file": "tabs/selected.svg",
+      "pngFile": "png/tabs/selected.png",
+      "width": 192,
+      "height": 56,
+      "role": "textless category tab",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "cards.disabled",
+      "file": "cards/disabled.svg",
+      "pngFile": "png/cards/disabled.png",
+      "width": 480,
+      "height": 336,
+      "role": "empty game card; cover area 4,4,472,260",
+      "stretchInsets": [
+        24,
+        24,
+        24,
+        24
+      ]
+    },
+    {
+      "id": "tabs.disabled",
+      "file": "tabs/disabled.svg",
+      "pngFile": "png/tabs/disabled.png",
+      "width": 192,
+      "height": 56,
+      "role": "textless category tab",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "fields.normal",
+      "file": "fields/normal.svg",
+      "pngFile": "png/fields/normal.png",
+      "width": 400,
+      "height": 56,
+      "role": "textless search/dropdown/input shell",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "fields.focused",
+      "file": "fields/focused.svg",
+      "pngFile": "png/fields/focused.png",
+      "width": 400,
+      "height": 56,
+      "role": "textless search/dropdown/input shell",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "fields.error",
+      "file": "fields/error.svg",
+      "pngFile": "png/fields/error.png",
+      "width": 400,
+      "height": 56,
+      "role": "textless search/dropdown/input shell",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "fields.disabled",
+      "file": "fields/disabled.svg",
+      "pngFile": "png/fields/disabled.png",
+      "width": 400,
+      "height": 56,
+      "role": "textless search/dropdown/input shell",
+      "stretchInsets": [
+        16,
+        16,
+        16,
+        16
+      ]
+    },
+    {
+      "id": "controls.toggle-off",
+      "file": "controls/toggle-off.svg",
+      "pngFile": "png/controls/toggle-off.png",
+      "width": 64,
+      "height": 40,
+      "role": "toggle state"
+    },
+    {
+      "id": "controls.toggle-on",
+      "file": "controls/toggle-on.svg",
+      "pngFile": "png/controls/toggle-on.png",
+      "width": 64,
+      "height": 40,
+      "role": "toggle state"
+    },
+    {
+      "id": "controls.toggle-disabled-off",
+      "file": "controls/toggle-disabled-off.svg",
+      "pngFile": "png/controls/toggle-disabled-off.png",
+      "width": 64,
+      "height": 40,
+      "role": "toggle state"
+    },
+    {
+      "id": "controls.toggle-disabled-on",
+      "file": "controls/toggle-disabled-on.svg",
+      "pngFile": "png/controls/toggle-disabled-on.png",
+      "width": 64,
+      "height": 40,
+      "role": "toggle state"
+    },
+    {
+      "id": "controls.checkbox-off",
+      "file": "controls/checkbox-off.svg",
+      "pngFile": "png/controls/checkbox-off.png",
+      "width": 32,
+      "height": 32,
+      "role": "checkbox state"
+    },
+    {
+      "id": "controls.radio-off",
+      "file": "controls/radio-off.svg",
+      "pngFile": "png/controls/radio-off.png",
+      "width": 32,
+      "height": 32,
+      "role": "radio state"
+    },
+    {
+      "id": "controls.checkbox-on",
+      "file": "controls/checkbox-on.svg",
+      "pngFile": "png/controls/checkbox-on.png",
+      "width": 32,
+      "height": 32,
+      "role": "checkbox state"
+    },
+    {
+      "id": "controls.radio-on",
+      "file": "controls/radio-on.svg",
+      "pngFile": "png/controls/radio-on.png",
+      "width": 32,
+      "height": 32,
+      "role": "radio state"
+    },
+    {
+      "id": "controls.checkbox-disabled",
+      "file": "controls/checkbox-disabled.svg",
+      "pngFile": "png/controls/checkbox-disabled.png",
+      "width": 32,
+      "height": 32,
+      "role": "checkbox state"
+    },
+    {
+      "id": "controls.radio-disabled",
+      "file": "controls/radio-disabled.svg",
+      "pngFile": "png/controls/radio-disabled.png",
+      "width": 32,
+      "height": 32,
+      "role": "radio state"
+    },
+    {
+      "id": "controls.slider-track",
+      "file": "controls/slider-track.svg",
+      "pngFile": "png/controls/slider-track.png",
+      "width": 320,
+      "height": 12,
+      "role": "stretch track"
+    },
+    {
+      "id": "controls.slider-fill",
+      "file": "controls/slider-fill.svg",
+      "pngFile": "png/controls/slider-fill.png",
+      "width": 320,
+      "height": 12,
+      "role": "clip to current value"
+    },
+    {
+      "id": "controls.slider-thumb",
+      "file": "controls/slider-thumb.svg",
+      "pngFile": "png/controls/slider-thumb.png",
+      "width": 32,
+      "height": 32,
+      "role": "separate movable thumb"
+    },
+    {
+      "id": "badges.recognized",
+      "file": "badges/recognized.svg",
+      "pngFile": "png/badges/recognized.png",
+      "width": 160,
+      "height": 32,
+      "role": "textless badge; use dark label",
+      "stretchInsets": [
+        12,
+        12,
+        12,
+        12
+      ]
+    },
+    {
+      "id": "feedback.banner-recognized",
+      "file": "feedback/banner-recognized.svg",
+      "pngFile": "png/feedback/banner-recognized.png",
+      "width": 800,
+      "height": 72,
+      "role": "textless message/toast surface",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "badges.warning",
+      "file": "badges/warning.svg",
+      "pngFile": "png/badges/warning.png",
+      "width": 160,
+      "height": 32,
+      "role": "textless badge; use dark label",
+      "stretchInsets": [
+        12,
+        12,
+        12,
+        12
+      ]
+    },
+    {
+      "id": "feedback.banner-warning",
+      "file": "feedback/banner-warning.svg",
+      "pngFile": "png/feedback/banner-warning.png",
+      "width": 800,
+      "height": 72,
+      "role": "textless message/toast surface",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "badges.error",
+      "file": "badges/error.svg",
+      "pngFile": "png/badges/error.png",
+      "width": 160,
+      "height": 32,
+      "role": "textless badge; use dark label",
+      "stretchInsets": [
+        12,
+        12,
+        12,
+        12
+      ]
+    },
+    {
+      "id": "feedback.banner-error",
+      "file": "feedback/banner-error.svg",
+      "pngFile": "png/feedback/banner-error.png",
+      "width": 800,
+      "height": 72,
+      "role": "textless message/toast surface",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "badges.neutral",
+      "file": "badges/neutral.svg",
+      "pngFile": "png/badges/neutral.png",
+      "width": 160,
+      "height": 32,
+      "role": "textless badge; use dark label",
+      "stretchInsets": [
+        12,
+        12,
+        12,
+        12
+      ]
+    },
+    {
+      "id": "feedback.banner-neutral",
+      "file": "feedback/banner-neutral.svg",
+      "pngFile": "png/feedback/banner-neutral.png",
+      "width": 800,
+      "height": 72,
+      "role": "textless message/toast surface",
+      "stretchInsets": [
+        18,
+        18,
+        18,
+        18
+      ]
+    },
+    {
+      "id": "feedback.spinner",
+      "file": "feedback/spinner.svg",
+      "pngFile": "png/feedback/spinner.png",
+      "width": 48,
+      "height": 48,
+      "role": "rotate at runtime; static for reduced motion"
+    },
+    {
+      "id": "feedback.progress-track",
+      "file": "feedback/progress-track.svg",
+      "pngFile": "png/feedback/progress-track.png",
+      "width": 480,
+      "height": 12,
+      "role": "progress track"
+    },
+    {
+      "id": "feedback.progress-fill",
+      "file": "feedback/progress-fill.svg",
+      "pngFile": "png/feedback/progress-fill.png",
+      "width": 480,
+      "height": 12,
+      "role": "clip to known progress; do not fake percentage"
+    },
+    {
+      "id": "feedback.skeleton-card",
+      "file": "feedback/skeleton-card.svg",
+      "pngFile": "png/feedback/skeleton-card.png",
+      "width": 480,
+      "height": 336,
+      "role": "loading placeholder"
+    },
+    {
+      "id": "covers.placeholder",
+      "file": "covers/placeholder.svg",
+      "pngFile": "png/covers/placeholder.png",
+      "width": 480,
+      "height": 264,
+      "role": "generic cover when metadata has no image"
+    },
+    {
+      "id": "hints.a",
+      "file": "hints/a.svg",
+      "pngFile": "png/hints/a.png",
+      "width": 40,
+      "height": 40,
+      "role": "controller hint; map per device family"
+    },
+    {
+      "id": "hints.b",
+      "file": "hints/b.svg",
+      "pngFile": "png/hints/b.png",
+      "width": 40,
+      "height": 40,
+      "role": "controller hint; map per device family"
+    },
+    {
+      "id": "hints.x",
+      "file": "hints/x.svg",
+      "pngFile": "png/hints/x.png",
+      "width": 40,
+      "height": 40,
+      "role": "controller hint; map per device family"
+    },
+    {
+      "id": "hints.y",
+      "file": "hints/y.svg",
+      "pngFile": "png/hints/y.png",
+      "width": 40,
+      "height": 40,
+      "role": "controller hint; map per device family"
+    },
+    {
+      "id": "hints.dpad",
+      "file": "hints/dpad.svg",
+      "pngFile": "png/hints/dpad.png",
+      "width": 40,
+      "height": 40,
+      "role": "directional hint"
+    }
+  ]
+}

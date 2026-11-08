@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dialogs: the UI kit's dialog panel: a 24 dp rounded surface with a hairline border, inset from the screen's sides -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:insetLeft="20dp" android:insetRight="20dp" android:insetTop="24dp" android:insetBottom="24dp">
+    <shape android:shape="rectangle">
+        <corners android:radius="24dp" />
+        <solid android:color="@color/bn_card" />
+        <stroke android:width="1dp" android:color="@color/bn_card_stroke" />
+    </shape>
+</inset>

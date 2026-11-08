@@ -1,0 +1,16 @@
+# Android performance overlay
+
+Implemented 2026-11-05. `PerformanceOverlay` replaces the top-right statistics TextView; the separate build tag and log stay as before.
+
+- Compact: game/presented FPS, aggregate frame time, process resident RAM, SoC and battery temperatures in one horizontal line (520 × 34 reference units before user scaling).
+- Detailed: GPU name from the selected driver's readiness probe, manufacturer wordmark badge, FPS, frame time and RAM charts, GPU time, CPU frequency caps, battery temperature/level, free/total system RAM and Android thermal status. The badge identifies the manufacturer; it is not an official corporate logo.
+- Drag the panel to move it. Double-tap changes modes. Both choices persist in launcher preferences and the mode is also available in global/in-game overlay settings. Position is normalized within the full parent view and clamped on resizing. Hidden system bars and camera cutouts no longer reserve a drag margin, so the panel reaches every screen edge. Gestures on the panel do not reach game controls.
+- Size slider: 40–150%, default 75% to reduce screen coverage. Opacity slider: 20–100%, default 100% of the themed panel's existing transparency. Both affect both modes, apply live in-game, and persist globally. The view measures the scaled panel and fits it proportionally into the full parent, so drawing and touch bounds shrink together.
+
+GameActivity now applies `Ui.immersive` on creation, resume and focus recovery: edge-to-edge window, display-cutout mode ALWAYS, hidden status/navigation bars and transient bars by swipe. Previously only the launcher used this helper. The game's rendering aspect ratio is still controlled by the renderer, independently from the full-screen application window.
+
+Startup fix: on this device's Android build, `PhoneWindow.getInsetsController()` dereferences its decor even before it exists. Calling the immersive helper early caused `GameActivity.onCreate` to crash, also previously observed in preparation screens. `Ui.immersive` now explicitly creates the decor with `getDecorView()` before asking the window for its insets controller. This fixes the initialization order while retaining immersive mode.
+- History: 96 aggregate samples at the existing 500ms polling interval (48 seconds), **not individual frame timings or 1% low measurements**. A gap over two seconds starts fresh history.
+- Memory, CPU sysfs and SoC sensor reads use the existing background executor with at most one pending job. Readings stop when the overlay is disabled or the Activity is paused/stopped, subject to an already-running read finishing. Battery uses Android's sticky broadcast. Only explicitly named SoC thermal zones are accepted; inaccessible/unknown sensors display `--`, never the battery temperature as a substitute. CPU values are caps, not utilization or actual clock readings.
+
+Validation: Android Java/resources compilation passes with the development fake-packer configuration. Device validation remains pending: drag to each edge, double-tap without dragging, change mode in settings, rotate/fold, pause/resume, hide/show, and verify temperature availability and identity with each GPU driver. No production APK install was performed.

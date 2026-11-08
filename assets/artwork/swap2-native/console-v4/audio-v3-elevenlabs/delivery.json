@@ -1,0 +1,118 @@
+{
+  "version": 3,
+  "provider": "ElevenLabs",
+  "model": "eleven_text_to_sound_v2",
+  "prompt_file": "prompts.json",
+  "description": "Actual ElevenLabs recordings; decoded to mono PCM, silence-trimmed, level-normalized and duration-bounded with short edge fades for UI use. Original full MP3s retained. No replacement synthesis.",
+  "audition_status": "Awaiting user evaluation of revised prompts.",
+  "sounds": {
+    "back": {
+      "file": "s2_back.wav",
+      "source": "s2_back.mp3",
+      "duration_ms": 150.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "gain": 0.5,
+      "loop": false,
+      "before_budget_ms": 480.0
+    },
+    "boot": {
+      "file": "s2_boot.wav",
+      "source": "s2_boot.mp3",
+      "duration_ms": 839.1,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12,
+      "gain": 0.5,
+      "loop": false,
+      "before_budget_ms": 839.1
+    },
+    "confirm": {
+      "file": "s2_confirm.wav",
+      "source": "s2_confirm.mp3",
+      "duration_ms": 180.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "gain": 0.5,
+      "loop": false,
+      "before_budget_ms": 480.0
+    },
+    "error": {
+      "file": "s2_error.wav",
+      "source": "s2_error.mp3",
+      "duration_ms": 260.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "gain": 0.5,
+      "loop": false,
+      "before_budget_ms": 480.0
+    },
+    "focus": {
+      "file": "s2_focus.wav",
+      "source": "s2_focus.mp3",
+      "duration_ms": 80.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -18,
+      "gain": 0.3,
+      "loop": false,
+      "before_budget_ms": 344.9
+    },
+    "launch": {
+      "file": "s2_launch.wav",
+      "source": "s2_launch.mp3",
+      "duration_ms": 450.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12,
+      "gain": 0.5,
+      "loop": false,
+      "before_budget_ms": 600.0
+    },
+    "panel_close": {
+      "file": "s2_panel_close.wav",
+      "source": "s2_panel_close.mp3",
+      "duration_ms": 180.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "gain": 0.5,
+      "loop": false,
+      "before_budget_ms": 480.0
+    },
+    "panel_open": {
+      "file": "s2_panel_open.wav",
+      "source": "s2_panel_open.mp3",
+      "duration_ms": 220.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -15,
+      "gain": 0.5,
+      "loop": false,
+      "before_budget_ms": 480.0
+    },
+    "ready": {
+      "file": "s2_ready.wav",
+      "source": "s2_ready.mp3",
+      "duration_ms": 450.0,
+      "sample_rate": 48000,
+      "channels": 1,
+      "bits": 16,
+      "peak_dbfs": -12,
+      "gain": 0.5,
+      "loop": false,
+      "before_budget_ms": 600.0
+    }
+  }
+}

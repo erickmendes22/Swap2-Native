@@ -1,0 +1,18 @@
+# The Legend of Zelda: Ocarina of Time (Switch 2), update v131072, module main (NSO build ID e0f3ccfaf50065ae4ea01eb5aeb13b1a45da3348, which the profile's build row gives by its first 16 bytes).
+# Platform workaround, on by default on Android (mod.tsv android_default on): the engine's plain movie player instead of the NDVE one.
+#
+# main+0x3b5f500 builds the movie player. It reads a flag at [[x0 + 0x460] + 0x10]: when it is set (the Switch 2 path) it makes the 0x2f0-byte player
+# (main+0x3b62cd0), which runs each decoded picture through the NDVE network (about a dozen HMMA compute shaders, 98-117 ms of GPU a frame on Adreno with
+# Qualcomm 891.11); when it is clear, the 0x1c0-byte player (main+0x3b619e0), which shows the decoded 1920x1080 AV1 picture as it is.
+#   main+0x3b5f524  28010034  cbz w8, main+0x3b5f548      (the flag test)
+#   becomes         09000014  b main+0x3b5f548            (always the plain player)
+# Checked by disassembly of this build (2026-11-08). The picture keeps the movie's own resolution and loses only the network's enhancement.
+#
+# Found by edennx-ocarina-ios (arcatafuriosa, MIT, over seedds/nxnative: its overlay dm/games/0400486024DEC000/patches.py, a rewriter cut there);
+# here an exefs mod so that it can be turned on and off (Game settings > Graphics, or the Mods section).
+# The game note: dm/games/0400486024DEC000/README.md, Open.
+@nsobid-e0f3ccfaf50065ae4ea01eb5aeb13b1a45da3348
+@flag offset_shift 0x100
+@enabled
+03b5f524 09000014
+@stop

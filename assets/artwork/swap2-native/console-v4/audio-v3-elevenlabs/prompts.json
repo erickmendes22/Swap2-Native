@@ -1,0 +1,53 @@
+{
+  "model_id": "eleven_text_to_sound_v2",
+  "prompt_influence": 0.85,
+  "output_format": "mp3_44100_128",
+  "loop": false,
+  "sounds": [
+    {
+      "id": "focus",
+      "duration_seconds": 0.5,
+      "text": "One isolated soft plastic button tick, a tiny rounded tap at the beginning, about 40 milliseconds, then complete silence. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    },
+    {
+      "id": "confirm",
+      "duration_seconds": 0.5,
+      "text": "One soft digital confirmation: a tiny tactile click with two short rounded sine pulses rising slightly in pitch, total audible length 140 milliseconds, then silence. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    },
+    {
+      "id": "back",
+      "duration_seconds": 0.5,
+      "text": "One soft lower-pitched digital back tap, with a tiny falling sine pulse. Audible length 100 milliseconds at the beginning, then silence. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    },
+    {
+      "id": "panel_open",
+      "duration_seconds": 0.5,
+      "text": "One clean quiet rounded UI click with a subtle upward pitch inflection, audible length 120 milliseconds, then silence. No sliding or swooshing sound. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    },
+    {
+      "id": "panel_close",
+      "duration_seconds": 0.5,
+      "text": "One clean quiet rounded UI click with a subtle downward pitch inflection, audible length 100 milliseconds, then silence. No sliding or swooshing sound. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    },
+    {
+      "id": "ready",
+      "duration_seconds": 0.6,
+      "text": "Two small warm rounded electronic tones gently ascending, a calm completion cue, total audible length 250 milliseconds at the beginning, then silence. No celebratory jingle. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    },
+    {
+      "id": "error",
+      "duration_seconds": 0.5,
+      "text": "Two quiet low rounded electronic taps, non-alarming and friendly, total audible length 180 milliseconds at the beginning, then silence. No buzzer or harsh distortion. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    },
+    {
+      "id": "launch",
+      "duration_seconds": 0.6,
+      "text": "One soft tactile click followed by one short rounded warm rising sine tone, total audible length 250 milliseconds at the beginning, then silence. No cinematic flourish. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    },
+    {
+      "id": "boot",
+      "duration_seconds": 1.2,
+      "text": "An original minimal app startup: two tiny interlocking plastic clicks, then two soft warm rounded sine tones. Gentle, confident and clean. Finish the audible sound within 850 milliseconds, then silence. Dry close-up UI sound in silence. Warm, muted, restrained. No reverb, ambience, voices, music, hiss or long tail."
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+[
+  {
+    "file": "res\\mipmap-mdpi\\ic_launcher.png",
+    "size": [
+      48,
+      48
+    ]
+  },
+  {
+    "file": "res\\mipmap-mdpi\\ic_launcher_round.png",
+    "size": [
+      48,
+      48
+    ]
+  },
+  {
+    "file": "res\\drawable-mdpi\\swap2_icon_foreground.png",
+    "size": [
+      108,
+      108
+    ]
+  },
+  {
+    "file": "res\\drawable-mdpi\\swap2_icon_monochrome.png",
+    "size": [
+      108,
+      108
+    ]
+  },
+  {
+    "file": "res\\mipmap-hdpi\\ic_launcher.png",
+    "size": [
+      72,
+      72
+    ]
+  },
+  {
+    "file": "res\\mipmap-hdpi\\ic_launcher_round.png",
+    "size": [
+      72,
+      72
+    ]
+  },
+  {
+    "file": "res\\drawable-hdpi\\swap2_icon_foreground.png",
+    "size": [
+      162,
+      162
+    ]
+  },
+  {
+    "file": "res\\drawable-hdpi\\swap2_icon_monochrome.png",
+    "size": [
+      162,
+      162
+    ]
+  },
+  {
+    "file": "res\\mipmap-xhdpi\\ic_launcher.png",
+    "size": [
+      96,
+      96
+    ]
+  },
+  {
+    "file": "res\\mipmap-xhdpi\\ic_launcher_round.png",
+    "size": [
+      96,
+      96
+    ]
+  },
+  {
+    "file": "res\\drawable-xhdpi\\swap2_icon_foreground.png",
+    "size": [
+      216,
+      216
+    ]
+  },
+  {
+    "file": "res\\drawable-xhdpi\\swap2_icon_monochrome.png",
+    "size": [
+      216,
+      216
+    ]
+  },
+  {
+    "file": "res\\mipmap-xxhdpi\\ic_launcher.png",
+    "size": [
+      144,
+      144
+    ]
+  },
+  {
+    "file": "res\\mipmap-xxhdpi\\ic_launcher_round.png",
+    "size": [
+      144,
+      144
+    ]
+  },
+  {
+    "file": "res\\drawable-xxhdpi\\swap2_icon_foreground.png",
+    "size": [
+      324,
+      324
+    ]
+  },
+  {
+    "file": "res\\drawable-xxhdpi\\swap2_icon_monochrome.png",
+    "size": [
+      324,
+      324
+    ]
+  },
+  {
+    "file": "res\\mipmap-xxxhdpi\\ic_launcher.png",
+    "size": [
+      192,
+      192
+    ]
+  },
+  {
+    "file": "res\\mipmap-xxxhdpi\\ic_launcher_round.png",
+    "size": [
+      192,
+      192
+    ]
+  },
+  {
+    "file": "res\\drawable-xxxhdpi\\swap2_icon_foreground.png",
+    "size": [
+      432,
+      432
+    ]
+  },
+  {
+    "file": "res\\drawable-xxxhdpi\\swap2_icon_monochrome.png",
+    "size": [
+      432,
+      432
+    ]
+  },
+  {
+    "file": "store\\swap2-native-512.png",
+    "size": [
+      512,
+      512
+    ]
+  }
+]
