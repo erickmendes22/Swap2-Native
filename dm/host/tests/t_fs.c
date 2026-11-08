@@ -50,11 +50,11 @@ static int same(const char *p, const char *s) {
     return k == strlen(s) && !memcmp(b, s, k);
 }
 static Result write_save(const char *path, const char *s) {           // open -> set size -> write -> close
-    uint64_t h; Result r = h_fs_OpenFile(&h, path, MODE_WRITE); if (r) return r;
+    uint64_t h = 0; Result r = h_fs_OpenFile(&h, path, MODE_WRITE); if (r) return r;
     h_fs_SetFileSize(h, (int64_t)strlen(s));
     r = h_fs_WriteFile(h, 0, s, strlen(s), NULL); h_fs_CloseFile(h); return r;
 }
-static int read_fs(const char *path, char *out, size_t n) { uint64_t h; size_t got = 0; if (h_fs_OpenFile(&h, path, MODE_READ)) return 0; Result r = h_fs_ReadFile(&got, h, 0, out, n - 1); h_fs_CloseFile(h); out[got] = 0; return !r; }
+static int read_fs(const char *path, char *out, size_t n) { uint64_t h = 0; size_t got = 0; if (h_fs_OpenFile(&h, path, MODE_READ)) return 0; Result r = h_fs_ReadFile(&got, h, 0, out, n - 1); h_fs_CloseFile(h); out[got] = 0; return !r; }
 
 // ---------- NUP container (nup_image.h, android/NUP.md) ----------
 // A .nup written here from SPEC.md's layout, independently of dm/tools/nup_pack.py: four packages (base, two updates, an add-on), raw, empty and
@@ -114,7 +114,7 @@ static void nup_tests(const char *root) {
     g_nmnt = 0;
     snprintf(spec, sizeof spec, "%s:update/65536/romfs", np); setenv("DM_ROMFS", spec, 1);
     CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK && read_fs("rom:/data/a", got, sizeof got) && !strcmp(got, "HELLO"), "update/65536/romfs selects that update");
-    {   uint64_t h; int64_t sz = 0; size_t r1 = 0, r2 = 0, r3 = 0;
+    {   uint64_t h = 0; int64_t sz = 0; size_t r1 = 0, r2 = 0, r3 = 0;   // h: the null handle (refused by every call) when the open fails, not a stray descriptor
         CHECK(h_fs_OpenFile(&h, "rom:/data/z", MODE_READ) == RES_OK && h_fs_GetFileSize(&sz, h) == RES_OK && sz == 102000, "a zstd file opens with its uncompressed size (%lld)", (long long)sz);
         CHECK(h_fs_ReadFile(&r1, h, 0, got, 40000) == RES_OK && h_fs_ReadFile(&r2, h, 40000, got + 40000, 70000) == RES_OK && r1 == 40000 && r2 == 62000 && !memcmp(got, want, 102000),
               "a zstd file reads in pieces, the last one cut at its end (%zu + %zu)", r1, r2);
@@ -136,7 +136,7 @@ static void nup_tests(const char *root) {
     // not in the cache's budget, kept after close
     g_nmnt = 0; setenv("DM_NUP_DISK_MB", "0.05", 1); setenv("TMPDIR", root, 1);
     snprintf(spec, sizeof spec, "%s:update/65536/romfs", np); setenv("DM_ROMFS", spec, 1);
-    {   uint64_t h; size_t r1 = 0, r2 = 0; memset(got, 0, sizeof got);
+    {   uint64_t h = 0; size_t r1 = 0, r2 = 0; memset(got, 0, sizeof got);   // (h: the null handle when the mount or the open fails)
         CHECK(h_fs_MountRom("rom", NULL, 0) == RES_OK && h_fs_OpenFile(&h, "rom:/data/z", MODE_READ) == RES_OK, "a large zstd file opens");
         CHECK(h_fs_ReadFile(&r1, h, 0, got, 50000) == RES_OK && h_fs_ReadFile(&r2, h, 50000, got + 50000, 60000) == RES_OK && r1 == 50000 && r2 == 52000 && !memcmp(got, want, 102000),
               "a large zstd file reads its bytes from the temporary file (%zu + %zu)", r1, r2);

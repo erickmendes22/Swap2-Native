@@ -85,7 +85,6 @@ class Module:
     def model(self): return EXEC_MODELS.get(self.entry[1]) if self.entry else None
 
     def interface(self):
-        assert self.entry is not None, 'the module has no OpEntryPoint'
         _, k = string_at(self.entry, 3)
         return self.entry[k:]
 
@@ -194,9 +193,7 @@ class Module:
                 if x[0] & 0xffff == OP_MEMBER_DECORATE and x[1] == t and x[3] == DEC_BUILTIN and x[4] == builtin: return vid, x[2]
         return None, None
 
-    def entry_function(self):
-        assert self.entry is not None, 'the module has no OpEntryPoint'
-        return self.entry[2]
+    def entry_function(self): return self.entry[2]
 
     def function_range(self, fid):   # (index of OpFunction, index of OpFunctionEnd)
         a = next(k for k, x in enumerate(self.ins) if x[0] & 0xffff == OP_FUNCTION and x[2] == fid)
@@ -440,7 +437,7 @@ def block_rows(m, vid):
             if len(x) < 6: dyn = True; continue
             r = const_int(m, x[5])
             if r is None: dyn = True
-            else: rows.add(r * 16 + (4 * c if len(x) > 6 and (c := const_int(m, x[6])) is not None else 0))
+            else: rows.add(r * 16 + (4 * const_int(m, x[6]) if len(x) > 6 and const_int(m, x[6]) is not None else 0))
         elif x[0] & 0xffff == OP_LOAD and x[3] == vid: dyn = True   # the whole block
     return sorted(rows), dyn
 
@@ -1060,11 +1057,11 @@ def hmma_next_uses(m, a, e, fid):
         args = x[4:15]; key = [V.key_of_var(p) for p in args[:10]]
         seq.append(((blk, 'A', *key[:6]), (blk, 'B', *key[:2], *key[6:8])))
         V.see([3 << 16 | OP_STORE, args[10], ('hmma_d', len(seq))])   # (a value no other one numbers as)
-    nxt, seen = [], {}   # built from the last call back
+    nxt, seen = [None] * len(seq), {}
     for i in range(len(seq) - 1, -1, -1):
-        nxt.append(tuple(seen.get(q) for q in seq[i]))
+        nxt[i] = tuple(seen.get(q) for q in seq[i])
         for q in seq[i]: seen[q] = i
-    return nxt[::-1]
+    return nxt
 
 
 def hmma_lds(m, keep=HMMA_KEEP):
@@ -1103,8 +1100,8 @@ def hmma_lds(m, keep=HMMA_KEEP):
         nxt = hmma_next_uses(m, a, e, fid) if keep is not None else None
         out = []; V = BlockValues(m); cache = {}; due = {}; ci = -1   # due: a kept gather's next use (call index in the function)
         def em(op, ty, *ops):
-            r = m.new_id(); out.append([(3 + len(ops)) << 16 | op, ty, r, *ops]); return r   # noqa: B023  # em and the helpers below run in the iteration that defines them
-        def I(op, p, q): return em(op, i32, p, q)   # noqa: E743  # an i32 operation, as em is any
+            r = m.new_id(); out.append([(3 + len(ops)) << 16 | op, ty, r, *ops]); return r
+        def I(op, p, q): return em(op, i32, p, q)
         for x in m.ins[a:e + 1]:
             op = x[0] & 0xffff
             if op == OP_LABEL: cache = {}
@@ -1124,11 +1121,11 @@ def hmma_lds(m, keep=HMMA_KEEP):
             if need:
                 b4 = I(OP_SHR_LOGICAL, bse, CI[2])   # the warp's block in uvec4s: A rows at 2 r, B rows at 32 + 2 n
                 vi = I(OP_SHR_LOGICAL, t, CI[1]); c0 = em(OP_BITCAST, u32, I(OP_SHL_LOGICAL, I(OP_BITWISE_AND, t, CI[1]), CI[1])); c1 = em(OP_IADD, u32, c0, CU[1])
-                rowA = lambda r: I(OP_IADD, b4, I(OP_SHL_LOGICAL, r, CI[1]))   # noqa: B023  # (called in this iteration)
-                rowB = lambda c: I(OP_IADD, b4, I(OP_IADD, CI[32], I(OP_SHL_LOGICAL, c, CI[1])))   # noqa: B023
+                rowA = lambda r: I(OP_IADD, b4, I(OP_SHL_LOGICAL, r, CI[1]))
+                rowB = lambda c: I(OP_IADD, b4, I(OP_IADD, CI[32], I(OP_SHL_LOGICAL, c, CI[1])))
                 def st(row, w0, w1):   # the lane's k-words t and t + 4 of a row: components 2 (t & 1) and + 1 of its uvec4 t / 2
-                    v4 = I(OP_IADD, row, vi)   # noqa: B023  # (called in this iteration)
-                    for c, w in ((c0, w0), (c1, w1)): out.append([3 << 16 | OP_STORE, em(OP_ACCESS_CHAIN, p_u, scratch, v4, c), em(OP_BITCAST, u32, w)])   # noqa: B023
+                    v4 = I(OP_IADD, row, vi)
+                    for c, w in ((c0, w0), (c1, w1)): out.append([3 << 16 | OP_STORE, em(OP_ACCESS_CHAIN, p_u, scratch, v4, c), em(OP_BITCAST, u32, w)])
                 g8 = I(OP_IADD, g, CI[8])
                 if kA in need: st(rowA(g), val[2], val[4]); st(rowA(g8), val[3], val[5])
                 if kB in need: st(rowB(g), val[6], val[7])

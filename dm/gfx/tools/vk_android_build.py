@@ -208,7 +208,7 @@ def borrow_key(key_skip):
               {e.id for e in (t.elts if isinstance(t, ast.Tuple) else [t]) if isinstance(e, ast.Name)} & set(KEY_CONSTS) for t in n.targets)]
     if len(fns) != len(KEY_FNS): sys.exit(f'[RED] {SPLIT} no longer defines {", ".join(sorted(set(KEY_FNS) - set(fns)))}: vk_android_build.py takes them from there')
     ns = {'struct': struct, 'hashlib': hashlib, 'KEY_SKIP': key_skip}
-    exec(compile(ast.Module(body=[*consts, *(fns[n] for n in KEY_FNS)], type_ignores=[]), SPLIT, 'exec'), ns)
+    exec(compile(ast.Module(body=consts + [fns[n] for n in KEY_FNS], type_ignores=[]), SPLIT, 'exec'), ns)
     return ns['skey']
 
 
@@ -411,12 +411,12 @@ def classify(stage, r, res, m):
     e = {'name': nm, 'desc': desc, 'count': r['count'], 'reg': None, 'off': 0, 'skind': None, 'sreg': None, 'soff': None, 'flags': 0, 'dim': r['dim'], 'id': r['id'], 'tbind': r['binding']}
     texlike = desc in (spv.VK_COMBINED, spv.VK_SAMPLED_IMAGE, spv.VK_UNIFORM_TEXEL, spv.VK_STORAGE_IMAGE, spv.VK_STORAGE_TEXEL, spv.VK_SAMPLER)
     if nm == 'support_buffer': e['kind'] = abi.KIND_SUPPORT
-    elif desc in (spv.VK_UNIFORM_BUFFER,) and (mc := re.fullmatch(r'[a-z]+_c(\d+)', nm)):
-        n = int(mc.group(1))
+    elif desc in (spv.VK_UNIFORM_BUFFER,) and re.fullmatch(r'[a-z]+_c(\d+)', nm):
+        n = int(re.fullmatch(r'[a-z]+_c(\d+)', nm).group(1))
         if 3 <= n <= 16: e.update(kind=abi.KIND_CBUF, reg=n - 3)
         else: e.update(kind=abi.KIND_C1 if n == 1 else abi.KIND_DRVCB, reg=n)
-    elif desc == spv.VK_STORAGE_BUFFER and (ms := re.fullmatch(r'[a-z]+_s(\d+)', nm)):
-        e.update(kind=abi.KIND_SBUF, index=int(ms.group(1)))
+    elif desc == spv.VK_STORAGE_BUFFER and re.fullmatch(r'[a-z]+_s(\d+)', nm):
+        e.update(kind=abi.KIND_SBUF, index=int(re.fullmatch(r'[a-z]+_s(\d+)', nm).group(1)))
     elif texlike and nm.endswith(POOL_SUFFIX) and r['count'] >= 33:
         e.update(kind=abi.KIND_SAMP_POOL if desc == spv.VK_SAMPLER else abi.KIND_TEX_POOL)
         if desc not in (spv.VK_SAMPLER, spv.VK_SAMPLED_IMAGE): e['kind'] = abi.KIND_UNKNOWN   # a pool of combined or storage images: not in the ABI
@@ -795,7 +795,7 @@ def read_result(key):
             if o + ln > end: sys.exit(f'[RED] {p} is cut short: delete it and run again')
             if loose:
                 f.seek(o); stored = f.read(ln)
-                mods.append((variant, size, stored, codec, delta.spirv(stored, codec, zstd)))
+                mods.append((variant, size, stored, codec, zstd.decompress(stored) if codec == VK['CODEC_ZSTD'] else stored))
             else: mods.append((variant, size, Stored(p, o, ln), codec, None))
             o += ln
     return key, h['st'], h['err'], (h['refl'], mods)
@@ -858,8 +858,7 @@ heads = {k: h for k in keys if (h := result_head(result_path(k)))}
 MANIFEST, _why = (None, 'a key list') if want else (None, 'DMSH_VK_RAW') if RAW else load_manifest()
 REUSED = {k for k, h in heads.items() if h.get('reused')}
 if MANIFEST:
-    _mhashes = MANIFEST['hashes']   # (taken here, where MANIFEST is known to be loaded, for _reuse)
-    _cand = [k for k in keys if k not in heads and _mhashes.get(k, '-') != '-']
+    _cand = [k for k in keys if k not in heads and MANIFEST['hashes'].get(k, '-') != '-']
     _libs = older_libraries() if _cand else []
     _have = collections.defaultdict(list)   # key → [(library, entry number)], newest library first
     for L in _libs:
@@ -870,7 +869,7 @@ if MANIFEST:
         for L, i in _have[k]:
             try: _, hh, (_, e, b, c1, mods) = L.hash_of(i, zstd)
             except Exception as ex: errs.append(f'{L.version}: {type(ex).__name__}: {ex}'); continue   # any entry that cannot be read is translated instead
-            if hh != _mhashes[k]: continue
+            if hh != MANIFEST['hashes'][k]: continue
             refl = {'stage': STAGE_OF[k], 'reused': L.version, 'lib': {'entry': delta.zeroed(e).hex(), 'binds': b.hex(), 'c1': c1.hex()}}
             write_result(k, 'ok', '', (refl, [(v, size, bytes(st), codec, None) for v, size, st, codec in mods]), None)
             return k, L.version, None
@@ -940,8 +939,7 @@ def run_batch(batch):
     for key in batch:
         res = fin(key, bd, jobs[key], c1s[key], xerr)
         if res[1] == 'translation failed' and key not in xerr: continue   # neither a module nor the translator's reason: not a result (a rerun translates it again)
-        _, status, why, made = res
-        write_result(key, status, why, made, PS_INPUTS.get(key) if STAGE_OF[key] != 'vs' else None)
+        write_result(key, *res[1:], PS_INPUTS.get(key) if STAGE_OF[key] != 'vs' else None)
     shutil.rmtree(bd, ignore_errors=True)
     progress('translate', len(batch))
 
@@ -956,7 +954,6 @@ try:   # the package descriptors are closed however the translation ends (the ph
                     if h and h['ps_inputs'] is not None: PS_INPUTS[k] = set(h['ps_inputs'])
                     elif h and h.get('reused') and k in _need:   # kept from an older library: the inputs its base module reads, as finish() takes them
                         _r = read_result(k)[3]
-                        assert _r is not None, f'{k}: a kept result with no modules'   # (a reused result is an ok one)
                         _b = next(m for m in _r[1] if m[0] == VK['MOD_BASE'])
                         PS_INPUTS[k] = set(spv.Module(delta.spirv(stored_bytes(_b[2]), _b[3], zstd)).io(spv.SC_INPUT))
         batches = [_phase[i:i + BATCH] for i in range(0, len(_phase), BATCH)]
@@ -984,9 +981,9 @@ lib, size = write_library(results)
 if os.environ.get('DMSH_VK_LOOSE') == '1':
     os.makedirs(os.path.join(out, 'spv'), exist_ok=True)
     for key, st, _, r in results:
-        if st == 'ok' and r:
+        if st == 'ok':
             for variant, _, _, _, data in r[1]: open(os.path.join(out, 'spv', key + (f'_{variant}' if variant else '') + '.spv'), 'wb').write(data)
-index = {k: r[0] for k, st, _, r in results if st == 'ok' and r}   # a shader kept from an older library has its stage and that library's version here, not its whole reflection
+index = {k: r[0] for k, st, _, r in results if st == 'ok'}   # a shader kept from an older library has its stage and that library's version here, not its whole reflection
 for v in index.values():
     for b in v.get('bindings', ()): b['kind_num'] = KIND_NUM[b['kind']]
 json.dump({'chain': CHAIN, 'vk_chain': VKV, 'game': GAME.id, 'inputs': INPUTS, 'shaders': index}, open(os.path.join(out, 'index.json'), 'w'), separators=(',', ':'))
@@ -1017,14 +1014,14 @@ progress('done')
 
 # ---- summary
 st = collections.Counter(r[1] for r in results)
-okr = [r[3][0] for r in results if r[1] == 'ok' and r[3] and not r[3][0].get('reused')]   # reflections made here (a kept entry's is in the older library)
+okr = [r[3][0] for r in results if r[1] == 'ok' and not r[3][0].get('reused')]   # reflections made here (a kept entry's is in the older library)
 if REUSED: print(f'kept from older libraries: {len(REUSED)} shaders (the counts below are of the {len(okr)} translated here)')
 print(f'shaders {len(results)}: ok {st["ok"]}, ' + ', '.join(f'{k} {v}' for k, v in st.items() if k != 'ok'))
 print('  by stage: ' + ', '.join(f'{s} {n}/{m}' for s, m in sorted(collections.Counter(STAGE_OF[r[0]] for r in results).items())
                                   for n in [sum(1 for r in results if r[1] == 'ok' and STAGE_OF[r[0]] == s)]))
 for lvl in [k for k in st if k != 'ok']:
     for e, n in collections.Counter(re.sub(r'\b[0-9a-f]{16}\b|%\d+|\d+', '#', r[2]) for r in results if r[1] == lvl).most_common(10): print(f'  [{lvl}] {n:5d}  {e}')
-mods = sum(len(r[3][1]) for r in results if r[1] == 'ok' and r[3]); raw = sum(m[1] for r in results if r[1] == 'ok' and r[3] for m in r[3][1])
+mods = sum(len(r[3][1]) for r in results if r[1] == 'ok'); raw = sum(m[1] for r in results if r[1] == 'ok' for m in r[3][1])
 print(f'modules {mods}, every one valid for spirv-val --target-env vulkan1.3 ({sum(1 for x in okr if x["flags"] & VK["F_GL_DEPTH"])} with the GL depth constant); library {lib}: {size / 1e6:.1f} MB ({raw / 1e6:.1f} MB of SPIR-V before compression)')
 fl = collections.Counter(n for x in okr for n, v in VK.items() if n.startswith('F_') and x['flags'] & v)
 print('flags: ' + ', '.join(f'{n[2:].lower()} {fl[n]}' for n in sorted(fl)))

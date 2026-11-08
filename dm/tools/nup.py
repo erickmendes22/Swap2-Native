@@ -228,7 +228,7 @@ class Nup:
             else: hi = mid
         return kids[lo] if lo < len(kids) and self.name(kids[lo]) == want else None
 
-    def find(self, inner, start: str | tuple = ''):
+    def find(self, inner, start: 'str | tuple' = ''):
         """The node of a path inside the container ('' its root; 'update/458752/romfs/a/b', 'base/exefs/main'); FileNotFoundError when there is none"""
         k = start
         for part in inner.split('/'):

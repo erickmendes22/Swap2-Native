@@ -64,6 +64,16 @@ pyright	dm/gfx/tools/unityfs.py	reportOperatorIssue	2	Operator "+" not supported
 pyright	dm/gfx/tools/unityfs.py	reportOperatorIssue	2	Operator "+=" not supported for types "int" and "Any | tuple[Any, ...]" Operator "+" not supported for types "int" and "tuple[Any, ...]"
 pyright	dm/gfx/tools/unityfs.py	reportOperatorIssue	2	Operator "<=" not supported for types "Literal[0]" and "Any | tuple[Any, ...]" Operator "<=" not supported for types "Literal[0]" and "tuple[Any, ...]"
 pyright	dm/gfx/tools/unityfs.py	reportSelfClsParameterName	4	Instance methods should take a "self" parameter
+pyright	dm/gfx/tools/vk_android_build.py	reportArgumentType	1	Argument of type "list[FunctionDef | Assign]" cannot be assigned to parameter "body" of type "list[stmt]" in function "__init__" "list[FunctionDef | Assign]" is not assignable to "list[stmt]" Type parameter "_T@list" is invariant, but "FunctionDef | Assign" is not the same as "stmt" Consider switching from "list" to "Sequence" which is covariant
+pyright	dm/gfx/tools/vk_android_build.py	reportCallIssue	1	Expected 5 positional arguments
+pyright	dm/gfx/tools/vk_android_build.py	reportOptionalMemberAccess	1	"decompress" is not a known attribute of "None"
+pyright	dm/gfx/tools/vk_android_build.py	reportOptionalMemberAccess	2	"group" is not a known attribute of "None"
+pyright	dm/gfx/tools/vk_android_build.py	reportOptionalSubscript	8	Object of type "None" is not subscriptable
+pyright	dm/gfx/tools/vk_android_spv.py	reportArgumentType	1	Argument of type "None" cannot be assigned to parameter "iter2" of type "Iterable[_T2@__new__]" in function "__new__" "None" is incompatible with protocol "Iterable[_T2@__new__]" "__iter__" is not present
+pyright	dm/gfx/tools/vk_android_spv.py	reportArgumentType	1	Argument of type "tuple[Unknown | None, ...]" cannot be assigned to parameter "value" of type "None" in function "__setitem__" "tuple[Unknown | None, ...]" is not assignable to "None"
+pyright	dm/gfx/tools/vk_android_spv.py	reportCallIssue	1	No overloads for "__setitem__" match the provided arguments
+pyright	dm/gfx/tools/vk_android_spv.py	reportOperatorIssue	1	Operator "*" not supported for types "Literal[4]" and "Unknown | None" Operator "*" not supported for types "Literal[4]" and "None"
+pyright	dm/gfx/tools/vk_android_spv.py	reportOptionalSubscript	2	Object of type "None" is not subscriptable
 pyright	dm/gfx/tools/vk_shaders.py	reportArgumentType	1	Argument of type "list[str]" cannot be assigned to parameter "iterable" of type "Iterable[LiteralString]" in function "join" "list[str]" is not assignable to "Iterable[LiteralString]" Type parameter "_T_co@Iterable" is covariant, but "str" is not a subtype of "LiteralString" "str" is not assignable to "LiteralString"
 pyright	dm/gfx/tools/vk_shaders.py	reportCallIssue	1	No overloads for "join" match the provided arguments
 pyright	dm/gfx/tools/vk_shaders.py	reportOptionalMemberAccess	2	"group" is not a known attribute of "None"
@@ -226,6 +236,12 @@ ruff	dm/gfx/tools/shader_split.py	B023	3	Function definition does not bind loop 
 ruff	dm/gfx/tools/shader_split.py	B023	3	Function definition does not bind loop variable `secs`
 ruff	dm/gfx/tools/shader_split.py	F841	1	Local variable `pre` is assigned to but never used
 ruff	dm/gfx/tools/unityfs.py	B023	2	Function definition does not bind loop variable `buf`
+ruff	dm/gfx/tools/vk_android_spv.py	B023	1	Function definition does not bind loop variable `c0`
+ruff	dm/gfx/tools/vk_android_spv.py	B023	1	Function definition does not bind loop variable `c1`
+ruff	dm/gfx/tools/vk_android_spv.py	B023	1	Function definition does not bind loop variable `vi`
+ruff	dm/gfx/tools/vk_android_spv.py	B023	2	Function definition does not bind loop variable `b4`
+ruff	dm/gfx/tools/vk_android_spv.py	B023	2	Function definition does not bind loop variable `out`
+ruff	dm/gfx/tools/vk_android_spv.py	E743	1	Ambiguous function name: `I`
 ruff	dm/tools/patch_nso.py	B023	1	Function definition does not bind loop variable `at`
 ruff	dm/tools/patch_nso.py	B023	2	Function definition does not bind loop variable `n`
 ruff	dm/tools/patch_nso.py	PIE808	1	Unnecessary `start` argument in `range`
