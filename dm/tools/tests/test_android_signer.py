@@ -11,7 +11,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 SRC = REPO / 'android/app/src/main/java/dev/nxnative/android/Signer.java'
 TEST = REPO / 'android/app/src/jvmtest/java/dev/nxnative/android/SignerJvmTest.java'
-OFFICIAL = 'ad232b1c519e8f14d1f6dbeaa2569847002714306bc93f18924dd3a7e8abe23e'   # the v0.1.0 release APK's certificate (apksigner verify --print-certs)
+OFFICIAL = '9d6f1e98632da3def8699c908acf8a1387257a35ef58c46c25d7388f34c7c0f1'   # Swap2-Native's release certificate (keytool -exportcert, 2026-11-08)
 TAG = 'Banana Native 0.1 · 6a6448d · 2026-11-02'
 
 

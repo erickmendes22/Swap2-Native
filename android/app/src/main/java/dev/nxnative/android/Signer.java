@@ -11,8 +11,9 @@ import java.security.NoSuchAlgorithmException;
  * (apksigner verify --print-certs). Pure Java (no Android): Prefs reads the certificates (PackageManager) and hands them here; SignerJvmTest drives it on the JVM.
  */
 final class Signer {
-    /** SHA-256 of the release signing certificate (DER), lower-case hex: read from the published v0.1.0 release APK (apksigner verify --print-certs), public data */
-    static final String OFFICIAL = "ad232b1c519e8f14d1f6dbeaa2569847002714306bc93f18924dd3a7e8abe23e";
+    /** SHA-256 of Swap2-Native's release signing certificate (DER), lower-case hex: its exported certificate (keytool -exportcert, 2026-11-08), public data.
+     *  Banana Native's was ad232b1c519e8f14d1f6dbeaa2569847002714306bc93f18924dd3a7e8abe23e */
+    static final String OFFICIAL = "9d6f1e98632da3def8699c908acf8a1387257a35ef58c46c25d7388f34c7c0f1";
 
     private Signer() {}
 
