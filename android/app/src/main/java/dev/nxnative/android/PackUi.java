@@ -134,6 +134,20 @@ final class PackUi {
 
     private static void importRun(MainActivity a, Game g, File source) {
         if (!ready(a, g)) return;
+        // Legacy Banana format 1 is not a runnable Swap2 format-2 pack.
+        // Import only its Vulkan shader library through the same strict ABI/title
+        // checks used by "Import shaders"; do not copy its executable, keys or saves.
+        // This check runs before PackZip.stage: it is why the old UI rejected format 1.
+        try {
+            if (PackZip.importFormat(source) == 1) {
+                ShaderUi.importLegacyPack(a, g, source);
+                return;
+            }
+        } catch (IOException e) {
+            a.error(a.getString(R.string.s2_pack_import_failed, e.getMessage())
+                    + "\\n\\n" + a.getString(R.string.s2_pack_import_nothing));
+            return;
+        }
         File packs = AppStorage.packs(a), target = AppStorage.pack(a, g.titleId);
         run(a, g, "Importing " + g.name + "'s pack…", () -> {
             long need = size(source);
