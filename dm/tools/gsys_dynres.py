@@ -192,10 +192,24 @@ class Byml:
         struct.pack_into(self.e + ('f' if t == D_FLOAT else 'i'), self.b, w, v if t == D_FLOAT else int(v))
 
 
+
+# Ocarina V9: optional bounded ten-level palette (~720p to ~576p).
+# Only the known v131072 palette is modified. The game's original
+# resolution selector is untouched; no experimental ARM64 selector hook.
+def _oot_perf_palette(scale, original_scales):
+    if scale != 0.6133 or original_scales is None or len(original_scales) != 10:
+        return None
+    top, bottom = max(original_scales), min(original_scales)
+    if abs(top - 0.75) > 0.00001 or abs(bottom - 0.33334) > 0.00001:
+        return None
+    return lambda v: 0.5 + (v - bottom) * (scale - 0.5) / (top - bottom)
+
 def edit(raw, file_part, scale, threshold=None, expect=None, log=print, floor=None):
     """The edited pack bytes and the edited value word offsets, from the decompressed pack raw: every level's scale set to scale, or (scale None) each raised to
     floor when it is below it, the levels above it kept"""
-    if scale is not None: new = lambda v: scale
+    if scale is not None:
+        bounded = _oot_perf_palette(scale, expect)
+        new = bounded if bounded is not None else lambda v: scale
     elif floor is not None: new = lambda v: max(v, floor)
     else: raise Error('edit takes a scale or a floor')
     files = sarc_files(raw)
