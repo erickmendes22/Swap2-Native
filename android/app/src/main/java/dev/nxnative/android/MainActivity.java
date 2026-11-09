@@ -1514,7 +1514,7 @@ public final class MainActivity extends Activity {
         f.dump = Ondevice.isDump(gd);
         Pack p;
         try { p = Pack.read(pd); } catch (IOException e) {
-            f.shadersImported = ShaderZip.ready(pd, g.titleId);
+            f.shadersImported = ShaderZip.ready(pd, g.titleId) || ShaderZip.bananaFallback(pd, g.titleId) != null;
             f.rewrite = true;   // a whole Prepare: the code, and every shader unless they were imported
             f.toTranslate = f.shadersImported ? 0 : f.mapShaders;
             f.shaders = !f.shadersImported;
@@ -1532,7 +1532,8 @@ public final class MainActivity extends Activity {
             f.legacy = !f.playable && Pack.legacyLibrary(pd, g.titleId) != null;
             int delta = Ondevice.deltaShaders(pd, g.titleId);
             f.deltaKnown = delta >= 0;
-            f.toTranslate = delta >= 0 ? delta : f.mapShaders;   // the manifest's count for the pack's older library, else all of them
+            f.toTranslate = ShaderZip.bananaFallback(pd, g.titleId) != null ? 0
+                    : delta >= 0 ? delta : f.mapShaders;   // imported same-ABI Banana shaders do not need retranslation
         } else f.toTranslate = 0;
         f.rewrite = f.build || f.mods;
         if (!f.build && !f.mods && !f.shadersMissing) f.code = PackCheck.code(this, p, gd);
