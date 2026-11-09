@@ -48,6 +48,8 @@ Other phones are untested. Settings › **Readiness check** says what a phone la
 
 ## Prepare a game
 
+New to the app? **Getting started** explains file selection and preparation. Open it from the empty library, Add game, or Settings → About. For a `.nup`, select the file itself; do not extract it. If Recent or Downloads cannot locate it, browse through Internal storage to its local folder. The app explains import failures and offers another selection without changing your dump.
+
 Each game is prepared once: its code is rewritten for Android and its shaders are translated for Vulkan. The app does this on the phone ([android/LIBRARY.md](android/LIBRARY.md)):
 
 1. Copy your dump (folder or `.nup`) into `/sdcard/Switch2/Games` on the phone.
@@ -88,6 +90,23 @@ A pack can also be made on a computer with `scripts/pack_android.py` and copied 
 ## Building
 
 See [android/README.md, Build the APK](android/README.md#build-the-apk). Release keys are never in this repository.
+
+## Support the project
+
+Swap2-Native is a free, independent project. If you enjoy it and would like to support its development, you can
+sponsor me on GitHub, Ko-fi or Buy Me a Coffee. Your support helps me dedicate time to fixing bugs, improving performance and compatibility, and
+working on future releases. Sponsorship is entirely optional: it does not unlock features or guarantee specific fixes.
+Bug reports, device tests, and contributions are also greatly appreciated.
+
+This month's goal is to pay for Claude Code Max ($100/month), the AI coding tool I use to work on my projects. The
+badge below shows how much has come in this month, across all platforms and shared by BOTWRecompAndroid, TOTKDroid,
+LASRecompAndroid and Swap2-Native; I update it by hand.
+
+[![Claude Code Max goal](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmamcjr%2FBOTWRecompAndroid%2Fmain%2F.github%2Fdonation-goal.json&query=%24.raised&prefix=%24&color=2EA043&logo=claude&logoColor=white&label=Claude%20Code%20Max%20goal&suffix=%20%2F%20%24100%20this%20month)](https://github.com/mamcjr/BOTWRecompAndroid/blob/main/.github/donation-goal.json)
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-on%20GitHub-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/mamcjr)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-mamcjr-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/mamcjr)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-mamcjr-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mamcjr)
 
 ## Credits and licence
 
