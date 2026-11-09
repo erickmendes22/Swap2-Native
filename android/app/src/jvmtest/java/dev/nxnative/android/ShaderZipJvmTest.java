@@ -527,7 +527,7 @@ public final class ShaderZipJvmTest {
                 "\nname\tOcarina\nversion\t131072\nmodules\tmain\n").getBytes(StandardCharsets.UTF_8);
         byte[] inputs = stamp(ID, INPUTS).getBytes(StandardCharsets.UTF_8);
         zip(out, Arrays.asList(
-                new Object[] {"main.patched.bin", "executable"},
+                new Object[] {"main.patched.bin", "executable".getBytes(StandardCharsets.UTF_8)},
                 new Object[] {"pack.tsv", packTsv},
                 new Object[] {"shaders/v-" + v + "/dmsh_vk.lib", lib},
                 new Object[] {"shaders/v-" + v + "/inputs.tsv", inputs}));
