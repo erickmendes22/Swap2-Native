@@ -1,0 +1,33 @@
+name: Ocarina V11 extended GMEM validation
+on:
+  push:
+    branches: [ocarina-v11-gmem-capacity]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Test map capacity and shader import invariants
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m py_compile scripts/pack_android.py
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v11_gmem_map.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v101_paths.py' -v
+          python3 -m unittest discover -s dm/tools/tests -p 'test_android_shaderzip.py' -v
+      - name: Generate and show new shader chain headers
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/tools/dmsh_chain.py --header
+          python3 dm/gfx/tools/vk_android_build.py --header
+          cat dm/gfx/nvn/dmsh_chain.h
+          cat dm/gfx/nvn/dmsh_chain_vk.h
+          git diff -- dm/gfx/nvn/dmsh_chain.h dm/gfx/nvn/dmsh_chain_vk.h
