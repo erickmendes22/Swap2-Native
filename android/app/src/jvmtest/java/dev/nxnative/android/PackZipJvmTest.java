@@ -61,11 +61,41 @@ public final class PackZipJvmTest {
     public static void main(String[] args) throws Exception {
         File t = new File(args[0]);
         roundTrip(new File(t, "round"));
+        legacyFormatRouting(new File(t, "banana-format1"));
         slip(new File(t, "slip"));
         wrongTitle(new File(t, "title"));
         damaged(new File(t, "damaged"));
         swap(new File(t, "swap"));
         System.out.println("ok " + n);
+    }
+
+    /** User's screenshot: Banana's format=1 in Import pack must be routed to
+     * ShaderZip, not passed to the format-2 Pack.stage full-pack importer. */
+    static void legacyFormatRouting(File t) throws Exception {
+        File src = pack(new File(t, "src"), ID, "c0ffee", "banana");
+        String current = read(new File(src, "pack.tsv"));
+        String old = current.replace("format\\t2", "format\\t1");
+        write(new File(src, "pack.tsv"), old);
+        check(PackZip.importFormat(src) == 1, "Banana format-1 folder detected");
+        File zip = new File(t, "banana-pack-" + ID + "-458752.zip");
+        Map<String, String> map = new java.util.LinkedHashMap<>();
+        map.put("pack.tsv", old);
+        map.put("main.patched.bin", "banana code should not replace local code");
+        map.put("shaders/v-c0ffee/dmsh_vk.lib", "some Banana shader library");
+        zip(zip, map);
+        check(PackZip.importFormat(zip) == 1, "Banana format-1 ZIP detected");
+        check(PackZip.titleOf(zip).equals(ID), "Banana ZIP identifies the correct title");
+        String fail = error(() -> PackZip.stage(zip, new File(t, "packs"), ID));
+        check(fail != null && fail.contains("pack format 1"), "legacy pack still not promoted into a runnable format-2 pack: " + fail);
+        File currentZip = new File(t, "swap2-pack.zip");
+        map.put("pack.tsv", current);
+        zip(currentZip, map);
+        check(PackZip.importFormat(currentZip) == 2, "modern full-pack import path unchanged");
+        map.put("pack.tsv", old + "format\\t2\\n");
+        File duplicate = new File(t, "duplicate.zip");
+        zip(duplicate, map);
+        check(error(() -> PackZip.importFormat(duplicate)) != null,
+                "ambiguous duplicate format rejected");
     }
 
     static void roundTrip(File t) throws Exception {
