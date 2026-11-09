@@ -965,6 +965,32 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                 return context.Load(StorageKind.StorageBuffer, mapBinding, Const(0), context.IAdd(entry, Const(word)));
             }
 
+            // Ocarina V10 opt-in: most repeated raw accesses can be in pool 1.
+            // Check the complete 64-bit [start,end) interval first.
+            // Every miss follows the original twelve-step binary search.
+            bool fastPool = Environment.GetEnvironmentVariable("DMSH_GMEM_FAST1") == "1";
+            Operand selected = fastPool ? Local() : null;
+            Operand afterSearch = fastPool ? Label() : null;
+            if (fastPool)
+            {
+                Operand first = Const(GmemMapEntryWords); // first nonempty pool
+                Operand startLo = MapWord(first, 0);
+                Operand startHi = MapWord(first, 1);
+                Operand stopLo = MapWord(first, 2);
+                Operand stopHi = MapWord(first, 3);
+                Operand geStart = context.BitwiseOr(
+                    context.ICompareLessUnsigned(startHi, addrHigh),
+                    context.BitwiseAnd(context.ICompareEqual(startHi, addrHigh), context.ICompareLessOrEqualUnsigned(startLo, addrLow)));
+                Operand ltEnd = context.BitwiseOr(
+                    context.ICompareLessUnsigned(addrHigh, stopHi),
+                    context.BitwiseAnd(context.ICompareEqual(addrHigh, stopHi), context.ICompareLessUnsigned(addrLow, stopLo)));
+                Operand slow = Label();
+                context.BranchIfFalse(slow, context.BitwiseAnd(geStart, ltEnd));
+                context.Copy(selected, Const(1));
+                context.Branch(afterSearch);
+                context.MarkLabel(slow);
+            }
+
             // The last entry whose start is at or below the address (entry 0 starts at 0, so there always is one)
             Operand index = Const(0);
 
@@ -980,6 +1006,12 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                     context.BitwiseAnd(context.ICompareEqual(startHigh, addrHigh), context.ICompareLessOrEqualUnsigned(startLow, addrLow)));
 
                 index = context.ConditionalSelect(atOrBelow, candidate, index);
+            }
+            if (fastPool)
+            {
+                context.Copy(selected, index);
+                context.MarkLabel(afterSearch);
+                index = selected;
             }
 
             Operand found = context.IMultiply(index, Const(GmemMapEntryWords));

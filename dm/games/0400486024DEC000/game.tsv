@@ -46,6 +46,11 @@ shader_note	The Legend of Zelda: Ocarina of Time shaders
 fps_target	60
 fps_hold	off
 
+# ---- V10 shader translation (optional per-game GMEM shortcut) ----
+# Full 64-bit bounds check for pool 1, otherwise original binary search.
+# Changes only newly translated shader SPIR-V, not the NVN host ABI.
+shader_gmem_fast	1
+
 # ---- Graphics ----
 # agl's render buffer binding wraps its clears in render conditions in Donkey Kong Bananza and Mario Kart World (same engine); assumed here (open)
 render_cond	on

@@ -330,6 +330,14 @@ def pack_shaders(a, g, work, out, vdir):
         print(f'shaders: building the Vulkan library {lib} from {pkg} with {py} (J={a.J}; about 10 minutes on DKB)', flush=True)
         (work / 'android-shaders' / 'work').mkdir(parents=True, exist_ok=True)
         env = dict(os.environ, DM_GAME=g.id, J=str(a.J), WORK=str(work / 'android-shaders' / 'work'))
+        # The Ocarina-specific shader_GMEM fast path is selected at translation
+        # time, never in the running Vulkan driver; other games retain the
+        # unchanged memory-pool binary search. The shader_* profile row is
+        # included in dmsh_chain.inputs, so caches distinguish this build.
+        fast = g.get('shader_gmem_fast', '0')
+        if fast not in ('0', '1'):
+            raise Error(f'{g.id}: shader_gmem_fast must be 0 or 1')
+        env['DMSH_GMEM_FAST1'] = fast
         r = subprocess.run([py, str(VK_BUILD), '--target', 'vulkan', str(pkg), str(cache)], env=env)
         if r.returncode: raise Error(f'vk_android_build.py exit code {r.returncode} (a package that lacks the profile\'s shaders stops it: delete {pkg} and the split runs again)')
         if not library_current(lib, g): raise Error(f'vk_android_build.py finished but {lib} is not a full library of {g.id} with the current inputs')
