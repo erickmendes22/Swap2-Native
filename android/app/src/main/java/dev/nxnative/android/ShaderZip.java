@@ -729,6 +729,229 @@ final class ShaderZip {
         }
     }
 
+
+    // --- Banana Native full-pack shader extraction ---
+    // Banana Native exports banana-pack-<title>-<version>.zip, with pack.tsv and
+    // shaders/v-<chain>/dmsh_vk.lib. It does NOT export a three-file shader ZIP.
+    // Only the library is extracted. The game code, saves and other pack files
+    // are never copied or replaced.
+    static Staged readAuto(File zip, Target target, Progress progress) throws IOException {
+        try (ZipFile zf = new ZipFile(zip)) {
+            boolean pack = zf.getEntry("pack.tsv") != null;
+            if (!pack) {
+                for (Enumeration<? extends ZipEntry> en = zf.entries(); en.hasMoreElements();) {
+                    String n = en.nextElement().getName();
+                    if (n.matches("[^/]+/pack\\.tsv")) { pack = true; break; }
+                }
+            }
+            if (pack) return readBananaPack(zf, zip.getName(), target, progress);
+        } catch (ZipException e) {
+            throw new Failure(Why.DAMAGED, zip.getName() + " is not a valid ZIP: " + e.getMessage(), String.valueOf(e.getMessage()));
+        }
+        return read(zip, target, progress);
+    }
+
+    // A SAF document might have no filesystem path. Banana's exported filename
+    // identifies its full-pack format and lets it be processed as a ZIP stream,
+    // without copying a potentially multi-gigabyte archive to internal storage.
+    static Staged readAuto(InputStream in, String name, Target target, Progress progress) throws IOException {
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        if (n.startsWith("banana-pack-") || n.startsWith("banananative-pack-"))
+            return readBananaPack(in, name, target, progress);
+        return read(in, name, target, progress);
+    }
+
+    private static boolean isPackLibrary(String path) {
+        return path.matches("shaders/v-[0-9a-f]{6,16}/dmsh_vk\\.lib");
+    }
+
+    private static void packTitle(byte[] data, Target t) throws IOException {
+        if (data.length > MAX_SMALL)
+            throw new Failure(Why.DAMAGED, "pack.tsv is too large", "pack.tsv");
+        String title = one(rows(data), "title_id").toUpperCase(Locale.ROOT);
+        if (!title.equals(t.titleId))
+            throw new Failure(Why.OTHER_GAME, "Banana pack is for " + title + ", not " + t.titleId, title, t.titleId);
+    }
+
+    private static void packInputs(byte[] data, HeaderPack candidate, Target t) throws IOException {
+        if (data.length > MAX_SMALL) throw new Failure(Why.DAMAGED, "inputs.tsv is too large", "inputs.tsv");
+        Map<String, List<String>> rows = rows(data);
+        String game = one(rows, "game").toUpperCase(Locale.ROOT);
+        String inputs = one(rows, "inputs");
+        if (!game.equals(t.titleId) || !inputs.equals(candidate.header.inputs))
+            throw new Failure(Why.DAMAGED, "Banana inputs.tsv does not match its shader library", "inputs.tsv");
+    }
+
+    private static final class HeaderPack {
+        ShaderLibs.Header header;
+        String version;
+        long size, crc;
+        String name;
+        ZipEntry entry;
+    }
+
+    private static HeaderPack packCandidate(String path, byte[] head, long size, long crc, Target t) throws IOException {
+        ShaderLibs.Header h = ShaderLibs.header(head);
+        if (h == null) throw new Failure(Why.DAMAGED, "not a Vulkan dmsh shader library", "header");
+        String version = path.substring("shaders/v-".length(), path.length() - "/dmsh_vk.lib".length());
+        if (!h.vkChain.equals(version))
+            throw new Failure(Why.DAMAGED, "library header version differs from pack path", "version");
+        if (!t.titleId.equals(h.game))
+            throw new Failure(Why.OTHER_GAME, "library is for " + h.game, h.game, t.titleId);
+        if (!h.abi.equals(t.abi))
+            throw new Failure(Why.OTHER_ABI, "Banana ABI " + h.abi + " is not Swap2 ABI " + t.abi, h.abi, t.abi);
+        if (!version.equals(t.current) && !t.allowCompatibleFallback && !new Reader(t, "", QUIET).restampable(version))
+            throw new Failure(Why.OTHER_VERSION, "shader version " + version + " cannot be used", version, t.current);
+        if (version.equals(t.current) && !"unknown".equals(t.inputs) && !t.inputs.equals(h.inputs))
+            throw new Failure(Why.OTHER_INPUTS, "current shader inputs are different", h.inputs, t.inputs);
+        if (size > MAX_LIB || size >= 0 && !h.fits(size))
+            throw new Failure(Why.DAMAGED, "shader library is truncated or too large", "tables");
+        HeaderPack chosen = new HeaderPack();
+        chosen.header = h; chosen.version = version; chosen.size = size; chosen.crc = crc; chosen.name = path;
+        return chosen;
+    }
+
+    private static Staged stagePackLibrary(InputStream in, byte[] header, HeaderPack h, byte[] inputs, Target t, Progress p) throws IOException {
+        if (t.space.free(new File(t.pack, "shaders")) < Math.max(0, h.size) + SPARE)
+            throw new Failure(Why.NO_SPACE, "not enough free space for Banana shader library", SaveStore.size(Math.max(0, h.size) + SPARE), t.pack.getPath(), SaveStore.size(t.space.free(t.pack)));
+        Staged staged = new Staged();
+        staged.target = t; staged.version = h.version; staged.abi = h.header.abi;
+        staged.inputs = h.header.inputs; staged.shaders = h.header.entries;
+        File sh = new File(t.pack, "shaders");
+        if (!sh.exists() && !sh.mkdirs()) throw io("cannot create shaders folder", IO_CREATE, sh);
+        staged.dir = new File(sh, IMPORT + staged.version);
+        if (staged.dir.exists()) deleteTree(staged.dir);
+        if (!staged.dir.mkdirs()) throw io("cannot create import staging folder", IO_CREATE, staged.dir);
+        File dst = new File(staged.dir, LIB);
+        try {
+            CRC32 crc = new CRC32();
+            MessageDigest sha = sha();
+            long total = header.length;
+            crc.update(header); sha.update(header);
+            try (FileOutputStream out = new FileOutputStream(dst)) {
+                out.write(header);
+                byte[] buf = new byte[CHUNK];
+                for (int n; (n = in.read(buf)) > 0;) {
+                    total += n;
+                    if (total > MAX_LIB || h.size >= 0 && total > h.size)
+                        throw new Failure(Why.TOO_BIG, "shader library exceeds its declared size", SaveStore.size(total));
+                    crc.update(buf, 0, n); sha.update(buf, 0, n);
+                    out.write(buf, 0, n);
+                    p.at(COPY, total, h.size > 0 ? h.size : total);
+                    if (p.cancelled()) throw new Failure(Why.CANCELLED, "cancelled");
+                }
+                out.getFD().sync();
+            }
+            if (h.size >= 0 && total != h.size || !h.header.fits(total))
+                throw new Failure(Why.DAMAGED, "shader library size or tables are invalid", "size");
+            if (h.crc >= 0 && h.crc != crc.getValue())
+                throw new Failure(Why.DAMAGED, "Banana shader library CRC mismatch", "CRC");
+            staged.libSize = total;
+            byte[] stamp = inputs == null ? ("game\\t" + t.titleId + "\\ninputs\\t" + h.header.inputs + "\\n").getBytes(StandardCharsets.UTF_8) : inputs;
+            packInputs(stamp, h, t);
+            write(new File(staged.dir, INPUTS), stamp);
+            String origin = "# Shader library imported from Banana full-pack ZIP\\n" +
+                    "kind\\tbanana-pack-shaders\\n" + "game\\t" + t.titleId + "\\n" +
+                    "library_version\\t" + h.version + "\\n" + "abi\\t" + h.header.abi + "\\n" +
+                    "lib_sha256\\t" + hex(sha.digest()) + "\\n";
+            write(new File(staged.dir, SOURCE), origin.getBytes(StandardCharsets.UTF_8));
+            return staged;
+        } catch (IOException | RuntimeException ex) {
+            unstage(staged);
+            throw ex;
+        }
+    }
+
+    private static Staged readBananaPack(ZipFile zf, String name, Target t, Progress p) throws IOException {
+        lock(t);
+        Staged staged = null;
+        try {
+            String prefix = PackZip.prefix(zf);
+            ZipEntry pack = zf.getEntry(prefix + "pack.tsv");
+            if (pack == null || pack.getSize() > MAX_SMALL) throw new Failure(Why.NOT_SHADER_ZIP, "Banana pack has no valid pack.tsv", name, "pack.tsv");
+            byte[] tsv;
+            try (InputStream in = zf.getInputStream(pack)) { tsv = in.readNBytes(MAX_SMALL + 1); }
+            packTitle(tsv, t);
+            HeaderPack pick = null;
+            Failure incompatible = null;
+            for (Enumeration<? extends ZipEntry> en = zf.entries(); en.hasMoreElements();) {
+                ZipEntry e = en.nextElement();
+                String path = PackZip.safeName(e.getName(), prefix);
+                if (path == null || !isPackLibrary(path)) continue;
+                byte[] header;
+                try (InputStream in = zf.getInputStream(e)) { header = in.readNBytes(ShaderLibs.HEADER_SIZE); }
+                try {
+                    HeaderPack candidate = packCandidate(path, header, e.getSize(), e.getCrc(), t);
+                    candidate.entry = e;
+                    if (pick == null || candidate.version.equals(t.current) ||
+                            candidate.header.entries > pick.header.entries) pick = candidate;
+                    if (candidate.version.equals(t.current)) break;
+                } catch (Failure e2) { if (incompatible == null) incompatible = e2; }
+            }
+            if (pick == null) {
+                if (incompatible != null) throw incompatible;
+                throw new Failure(Why.NO_LIBRARY, "Banana pack has no matching Vulkan shader library", t.titleId);
+            }
+            ZipEntry inEntry = zf.getEntry(prefix + "shaders/v-" + pick.version + "/inputs.tsv");
+            byte[] inputs = null;
+            if (inEntry != null) {
+                if (inEntry.getSize() > MAX_SMALL) throw new Failure(Why.DAMAGED, "Banana inputs.tsv is too big", "inputs.tsv");
+                try (InputStream in = zf.getInputStream(inEntry)) { inputs = in.readNBytes(MAX_SMALL + 1); }
+            }
+            byte[] hdr;
+            try (InputStream in = zf.getInputStream(pick.entry)) {
+                hdr = in.readNBytes(ShaderLibs.HEADER_SIZE);
+                staged = stagePackLibrary(in, hdr, pick, inputs, t, p);
+            }
+            return held(staged);
+        } catch (IOException | RuntimeException e) {
+            unstage(staged);
+            throw io(e);
+        } finally { unlock(t); }
+    }
+
+    private static Staged readBananaPack(InputStream stream, String name, Target t, Progress p) throws IOException {
+        lock(t);
+        Staged staged = null;
+        try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(stream, 1 << 16))) {
+            boolean foundPack = false;
+            String prefix = null;
+            HeaderPack selected = null;
+            byte[] inputs = null;
+            for (ZipEntry e; (e = zip.getNextEntry()) != null;) {
+                String path = e.getName();
+                if (path.indexOf('\\\\') >= 0 || path.contains("../") || path.startsWith("/"))
+                    throw new Failure(Why.UNSAFE_NAME, "unsafe Banana pack ZIP entry", path);
+                if (path.equals("pack.tsv") || path.matches("[^/]+/pack\\.tsv")) {
+                    prefix = path.substring(0, path.length() - "pack.tsv".length());
+                    byte[] tsv = zip.readNBytes(MAX_SMALL + 1);
+                    packTitle(tsv, t);
+                    foundPack = true;
+                } else if (foundPack && path.startsWith(prefix) &&
+                        isPackLibrary(path.substring(prefix.length())) && selected == null) {
+                    byte[] head = zip.readNBytes(ShaderLibs.HEADER_SIZE);
+                    HeaderPack candidate = packCandidate(path.substring(prefix.length()), head, e.getSize(), e.getCrc(), t);
+                    staged = stagePackLibrary(zip, head, candidate, null, t, p);
+                    selected = candidate;
+                } else if (selected != null && path.equals(prefix + "shaders/v-" + selected.version + "/inputs.tsv")) {
+                    inputs = zip.readNBytes(MAX_SMALL + 1);
+                }
+                zip.closeEntry();
+                if (selected != null && inputs != null) break;
+            }
+            if (!foundPack || selected == null || staged == null)
+                throw new Failure(Why.NO_LIBRARY, "no compatible Banana shader library in this archive", t.titleId);
+            if (inputs != null) {
+                packInputs(inputs, selected, t);
+                write(new File(staged.dir, INPUTS), inputs);
+            }
+            return held(staged);
+        } catch (IOException | RuntimeException e) {
+            unstage(staged);
+            throw io(e);
+        } finally { unlock(t); }
+    }
+
     private static Failure io(Exception e) {
         if (e instanceof Failure) return (Failure) e;
         return new Failure(Why.IO, String.valueOf(e.getMessage()), String.valueOf(e.getMessage()));
