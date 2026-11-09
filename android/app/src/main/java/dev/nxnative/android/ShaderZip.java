@@ -50,6 +50,12 @@ import java.util.zip.ZipOutputStream;
  */
 final class ShaderZip {
     static final String KIND = "swap2-shaders", FORMAT = "1";
+    // The Banana Native fork uses the same three-entry shader ZIP structure.
+    // The library header, full SHA-256, title ID and ABI are still checked below.
+    private static boolean shaderZipKind(String kind) {
+        return KIND.equals(kind) || "banana-shaders".equals(kind)
+                || "banana-native-shaders".equals(kind) || "banananative-shaders".equals(kind);
+    }
     static final String MANIFEST = "manifest.tsv", INPUTS = "inputs.tsv", LIB = "dmsh_vk.lib", SOURCE = "source.tsv";
     static final String IMPORT = ".import-", REPLACED = ".replaced-", PARTIAL = ".partial", PREFIX = "swap2-shaders-";
     /** The largest library taken (Pokemon Pokopia's blob is 9.8 GB), the largest manifest.tsv or inputs.tsv, the room kept free beside an import */
@@ -114,8 +120,16 @@ final class ShaderZip {
     static List<File> found(String titleId, File... dirs) {
         List<File> out = new ArrayList<>();
         String want = (PREFIX + titleId + "-").toLowerCase(Locale.ROOT);
+        String[] prefixes = {want, ("banana-shaders-" + titleId + "-").toLowerCase(Locale.ROOT),
+                ("banana-native-shaders-" + titleId + "-").toLowerCase(Locale.ROOT),
+                ("banananative-shaders-" + titleId + "-").toLowerCase(Locale.ROOT)};
         for (File d : dirs) {
-            File[] l = d == null ? null : d.listFiles(f -> f.isFile() && f.getName().toLowerCase(Locale.ROOT).startsWith(want) && f.getName().toLowerCase(Locale.ROOT).endsWith(".zip"));
+            File[] l = d == null ? null : d.listFiles(f -> {
+                if (!f.isFile() || !f.getName().toLowerCase(Locale.ROOT).endsWith(".zip")) return false;
+                String name = f.getName().toLowerCase(Locale.ROOT);
+                for (String prefix : prefixes) if (name.startsWith(prefix)) return true;
+                return false;
+            });
             if (l != null) for (File f : l) if (!out.contains(f)) out.add(f);
         }
         out.sort((x, y) -> Long.compare(y.lastModified(), x.lastModified()));
@@ -406,6 +420,10 @@ final class ShaderZip {
         String current = BuildConfig.NX_DMSH_VK_CHAIN, abi = BuildConfig.NX_DMSH_VK_ABI, inputs, stamps, name;
         /** The export's read-back: every check of the zip itself, none against this app (its version, the profile's inputs, the free space), nothing written */
         boolean verifyOnly;
+        // Opt-in only for the Android picker, not the strict ZIP import or exporter tests:
+        // accept a foreign library as an older same-ABI fallback. Never re-label it as
+        // this APK's shader version or bypass its own header/hash checks.
+        boolean allowCompatibleFallback;
         Space space = ShaderZip::freeSpace;
 
         Target(File pack, String titleId) {
@@ -519,7 +537,7 @@ final class ShaderZip {
 
         void manifest() throws Failure {
             String kind = one(m, "kind"), format = one(m, "format");
-            if (!KIND.equals(kind) || !FORMAT.equals(format))
+            if (!shaderZipKind(kind) || !FORMAT.equals(format))
                 throw new Failure(Why.NOT_SHADER_ZIP, zipName + " is not a shaders zip (kind " + kind + ", format " + format + ")", zipName, "kind " + kind + ", format " + format);
             String id = one(m, "title_id").toUpperCase(Locale.ROOT);
             if (!id.equals(t.titleId)) {
@@ -544,10 +562,14 @@ final class ShaderZip {
             if (s.libSize < ShaderLibs.HEADER_SIZE) throw new Failure(Why.DAMAGED, "the library is " + s.libSize + " bytes", "lib_size " + s.libSize);
             s.manifest = m;
             if (t.verifyOnly) return;
-            if (!v.equals(t.current) && !restampable(v)) throw new Failure(Why.OTHER_VERSION, "the shaders are of version " + v + ", this app needs " + t.current, v, t.current);
-            if (!"unknown".equals(t.inputs) && !t.inputs.equals(s.inputs))
+            boolean fallback = t.allowCompatibleFallback && !v.equals(t.current) && s.abi.equals(t.abi);
+            if (!v.equals(t.current) && !restampable(v) && !fallback)
+                throw new Failure(Why.OTHER_VERSION, "the shaders are version " + v + " ABI " + s.abi + ", this app needs " + t.current + " ABI " + t.abi, v, t.current);
+            if (!fallback && !"unknown".equals(t.inputs) && !t.inputs.equals(s.inputs))
                 throw new Failure(Why.OTHER_INPUTS, "the shaders were built from other shader tables (" + s.inputs + ") than the profile's (" + t.inputs + ")", s.inputs, t.inputs);
-            long need = (v.equals(t.current) ? s.libSize : 2 * s.libSize) + SPARE;   // an older version is copied once more by its restamp
+            // A fallback stays under its own v-<version>; a restamp needs temporary room
+            // for the old and new copies. Neither path removes other shader libraries.
+            long need = (fallback ? s.libSize : (v.equals(t.current) ? s.libSize : 2 * s.libSize)) + SPARE;
             long free = t.space.free(new File(t.pack, "shaders"));
             if (free < need) throw new Failure(Why.NO_SPACE, "the shaders need " + need + " bytes, " + free + " free", SaveStore.size(need), t.pack.getPath(), SaveStore.size(free));
         }
@@ -765,14 +787,18 @@ final class ShaderZip {
             r.version = s.version;
             if (!s.version.equals(t.current)) {
                 String took = ShaderLibs.restamp(t.pack, t.titleId, t.current, t.abi, t.stamps);
-                if (!s.version.equals(took) || !new File(sh, "v-" + t.current + "/" + LIB).isFile()) {
+                if (s.version.equals(took) && new File(sh, "v-" + t.current + "/" + LIB).isFile()) {
+                    File src = new File(dst, SOURCE), to = new File(sh, "v-" + t.current + "/" + SOURCE);
+                    if (src.isFile() && !to.exists()) Files.copy(src.toPath(), to.toPath());
+                    r.version = t.current;
+                } else if (!(t.allowCompatibleFallback && t.abi.equals(s.abi))) {
                     deleteTree(dst);
                     if (old.exists()) old.renameTo(dst);
                     throw new Failure(Why.OTHER_VERSION, "the shaders of version " + s.version + " could not be made version " + t.current, s.version, t.current);
                 }
-                File src = new File(dst, SOURCE), to = new File(sh, "v-" + t.current + "/" + SOURCE);
-                if (src.isFile() && !to.exists()) Files.copy(src.toPath(), to.toPath());
-                r.version = t.current;
+                // A cross-fork library with an identical Vulkan ABI remains under its
+                // original version. ShaderLibs.playable and the native host use it as
+                // fallback only while this APK's v-current library is absent.
             }
             deleteTree(old);
             r.shaders = s.shaders;
