@@ -310,11 +310,9 @@ int vka_pass_keep(void) { return g_pass_keep; }
 // Ocarina defaults to the existing guarded keep path; 0 explicitly disables it.
 // Other games retain the previous conservative default of 0.
 static int bar_keep_enabled(void) {
-    // Unlike shader-side optimizations, retaining a safe pass does not
-    // change any SPIR-V, shader version, ABI or shader library.
-    const char *v = getenv("DM_VK_BAR_KEEP");
-    if (v && *v) return atoi(v) != 0;
-    return !strcmp(DM_GAME_ID, "0400486024DEC000");
+    // The previously tried Ocarina-specific default did not show a GPU FPS gain.
+    // Keep the guarded code available for diagnostics, but opt out by default.
+    return VKA_ENV("DM_VK_BAR_KEEP", 0) != 0;
 }
 int vka_rp_game_barrier(uint32_t bits) {
     (void)bits;
