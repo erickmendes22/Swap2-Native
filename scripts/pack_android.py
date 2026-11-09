@@ -412,10 +412,8 @@ def main():
             try: rewrite(sys.executable, srcs, out, max(1, a.j), g, a.in_process, patches)
             finally: shutil.rmtree(out / '.nup-src', ignore_errors=True)   # the module copies a NUP game's rewrite read (rewriter_src)
         if a.code_only:
-            # The on-device launcher runs --code-only BEFORE --keep-code.
-            # An initial Prepare has no game_profile.tsv. An existing pack
-            # may also have been prepared by an earlier 30-fps version.
-            # Keep the Ocarina FPS fix scoped to its exact title ID.
+            # Android Prepare runs --code-only before --keep-code.
+            # A fresh pack does not have game_profile.tsv yet.
             if g.id == '0400486024DEC000':
                 rt_path = out / 'game_profile.tsv'
                 if rt_path.is_file():
@@ -425,77 +423,13 @@ def main():
                     cmask, ideal = pack_dump.thread_info(exe / 'main.npdm')
                     rt = game.runtime(g)
                     for row, value in (('SYS_RESOURCE', sysres), ('CORE_MASK', cmask), ('IDEAL_CORE', ideal)):
-                        pat = rf'^{row}\t[0-9]+
-        shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
-        # The system resource is the packed version's NPDM's, as the kernel takes it on hardware (the host answers GetInfo 16 with it; non-zero turns on the SDK's virtual
-        # address memory): a profile key that disagrees is a wrong guess (Zelda: Ocarina of Time's said 0 while its NPDM declares 48 MB, and the SDK's VammManager was null)
-        sysres, prof = pack_dump.system_resource(exe / 'main.npdm'), int(g.get('sys_resource', '0x2000000'), 0)
-        if sysres != prof: print(f'[RED] the profile\'s sys_resource {prof:#x} is not the NPDM\'s {sysres:#x}: the pack takes the NPDM\'s (check the profile\'s memory layout: mem_alias holds virtual address memory)')
-        # The cores are the NPDM's too (its ThreadInfo: the core mask GetInfo(CoreMask) answers, and META's ideal core): a Switch 2 application has six (0x3f), and libraries
-        # size their thread pools and per-core arrays by that mask (docs/reference/threads.md, "The process's cores")
-        cmask, ideal = pack_dump.thread_info(exe / 'main.npdm')
-        pmask, pideal = int(g.get('core_mask', '0x7'), 0), int(g.get('ideal_core', '0'), 0)
-        if (cmask, ideal) != (pmask, pideal): print(f'[RED] the profile\'s core_mask {pmask:#x} / ideal_core {pideal} are not the NPDM\'s {cmask:#x} / {ideal}: the pack takes the NPDM\'s')
-        rt = game.runtime(g)
-        for row in ('SYS_RESOURCE', 'CORE_MASK', 'IDEAL_CORE'):
-            if not re.search(rf'^{row}\t', rt, re.M): raise Error(f'game.runtime wrote no {row} row')
-        for row, v in (('SYS_RESOURCE', sysres), ('CORE_MASK', cmask), ('IDEAL_CORE', ideal)): rt = re.sub(rf'^{row}\t\d+$', f'{row}\t{v}', rt, flags=re.M)
-        (out / 'game_profile.tsv').write_text(rt, encoding='utf-8', newline='\n')   # the profile the host reads at start (dm/host/rt/game_rt.c)
-        shaders = None if a.no_shaders else pack_shaders(a, g, folder.parent / f'{app:016X}-work', out, vdir)
-        top = folder.parent if pack_dump.nup.is_nup(folder) else folder   # a NUP file's paths are `<name>.nup:<package>/...`, relative to its folder
-        rel = lambda p: p.relative_to(top).as_posix()
-        rows = [('format', str(FORMAT)), ('title_id', f'{app:016X}'), ('name', g.get('name', '')), ('version', str(ver)), ('target', 'android'),
-                ('modules', ' '.join(mods)), *[('build', f'{m}={ids[m]}') for m in mods], ('romfs', rel(romfs)),
-                *[('aoc', f'{tid - app - 0x1000}\t{rel(p)}') for tid, p in sorted(dlc.items())],
-                *([('shaders', shaders.relative_to(out).as_posix())] if shaders else []), ('packer', commit())]
-        tmp = out / 'pack.tsv.partial'
-        tmp.write_text(''.join(f'{k}\t{v}\n' for k, v in rows)); tmp.rename(out / 'pack.tsv')
-        size = sum(f.stat().st_size for f in out.rglob('*') if f.is_file())
-    except (Error, pack_dump.Error, exefs_patches.Error) as e: sys.exit(f'[RED] {e}')
-    print(f'done: {out} ({size / 2**20:.1f} MiB); RomFS {rel(romfs)} and {len(dlc)} DLC stay in the game folder')
-
-
-if __name__ == '__main__':
-    main()
-
+                        pat = rf'^{row}\t[0-9]+$'
                         if len(re.findall(pat, rt, re.M)) != 1:
                             raise Error(f'Ocarina: no unique {row} in runtime profile')
                         rt = re.sub(pat, row + '\t' + str(value), rt, count=1, flags=re.M)
                 new = rt
                 for row, value in (('FPS_TARGET', '60'), ('FPS_HOLD', '0')):
-                    pat = rf'^{row}\t[0-9]+
-        shutil.copyfile(g.dir / 'game.tsv', out / 'game.tsv')
-        # The system resource is the packed version's NPDM's, as the kernel takes it on hardware (the host answers GetInfo 16 with it; non-zero turns on the SDK's virtual
-        # address memory): a profile key that disagrees is a wrong guess (Zelda: Ocarina of Time's said 0 while its NPDM declares 48 MB, and the SDK's VammManager was null)
-        sysres, prof = pack_dump.system_resource(exe / 'main.npdm'), int(g.get('sys_resource', '0x2000000'), 0)
-        if sysres != prof: print(f'[RED] the profile\'s sys_resource {prof:#x} is not the NPDM\'s {sysres:#x}: the pack takes the NPDM\'s (check the profile\'s memory layout: mem_alias holds virtual address memory)')
-        # The cores are the NPDM's too (its ThreadInfo: the core mask GetInfo(CoreMask) answers, and META's ideal core): a Switch 2 application has six (0x3f), and libraries
-        # size their thread pools and per-core arrays by that mask (docs/reference/threads.md, "The process's cores")
-        cmask, ideal = pack_dump.thread_info(exe / 'main.npdm')
-        pmask, pideal = int(g.get('core_mask', '0x7'), 0), int(g.get('ideal_core', '0'), 0)
-        if (cmask, ideal) != (pmask, pideal): print(f'[RED] the profile\'s core_mask {pmask:#x} / ideal_core {pideal} are not the NPDM\'s {cmask:#x} / {ideal}: the pack takes the NPDM\'s')
-        rt = game.runtime(g)
-        for row in ('SYS_RESOURCE', 'CORE_MASK', 'IDEAL_CORE'):
-            if not re.search(rf'^{row}\t', rt, re.M): raise Error(f'game.runtime wrote no {row} row')
-        for row, v in (('SYS_RESOURCE', sysres), ('CORE_MASK', cmask), ('IDEAL_CORE', ideal)): rt = re.sub(rf'^{row}\t\d+$', f'{row}\t{v}', rt, flags=re.M)
-        (out / 'game_profile.tsv').write_text(rt, encoding='utf-8', newline='\n')   # the profile the host reads at start (dm/host/rt/game_rt.c)
-        shaders = None if a.no_shaders else pack_shaders(a, g, folder.parent / f'{app:016X}-work', out, vdir)
-        top = folder.parent if pack_dump.nup.is_nup(folder) else folder   # a NUP file's paths are `<name>.nup:<package>/...`, relative to its folder
-        rel = lambda p: p.relative_to(top).as_posix()
-        rows = [('format', str(FORMAT)), ('title_id', f'{app:016X}'), ('name', g.get('name', '')), ('version', str(ver)), ('target', 'android'),
-                ('modules', ' '.join(mods)), *[('build', f'{m}={ids[m]}') for m in mods], ('romfs', rel(romfs)),
-                *[('aoc', f'{tid - app - 0x1000}\t{rel(p)}') for tid, p in sorted(dlc.items())],
-                *([('shaders', shaders.relative_to(out).as_posix())] if shaders else []), ('packer', commit())]
-        tmp = out / 'pack.tsv.partial'
-        tmp.write_text(''.join(f'{k}\t{v}\n' for k, v in rows)); tmp.rename(out / 'pack.tsv')
-        size = sum(f.stat().st_size for f in out.rglob('*') if f.is_file())
-    except (Error, pack_dump.Error, exefs_patches.Error) as e: sys.exit(f'[RED] {e}')
-    print(f'done: {out} ({size / 2**20:.1f} MiB); RomFS {rel(romfs)} and {len(dlc)} DLC stay in the game folder')
-
-
-if __name__ == '__main__':
-    main()
-
+                    pat = rf'^{row}\t[0-9]+$'
                     if len(re.findall(pat, new, re.M)) != 1:
                         raise Error(f'Ocarina: no unique {row} in runtime profile')
                     new = re.sub(pat, row + '\t' + value, new, count=1, flags=re.M)
