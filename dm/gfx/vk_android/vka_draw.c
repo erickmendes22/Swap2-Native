@@ -151,6 +151,7 @@ static VkDescriptorSet set_alloc(VkDescriptorSetLayout l) {
 }
 
 // ---------- The render pass ----------
+static uint64_t g_attachment_discards, g_attachment_loads_avoided;
 static struct {
     int on; VkRect2D area; uint32_t layers, samples;
     uint32_t ncolor; VkFormat cf[8]; uint8_t ckind[8]; VkFormat df, sf;
@@ -222,6 +223,10 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
         vka_tex_own(im, g_cb);   // (a zero-shared image gets memory of its own before it is drawn into: no pass is open here)
         VkImageView v = vka_view(im, f.view, nl > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, lv, 1, l0, nl, NULL);
         if (!v) continue;
+        if (vka_img_discard_take(im, VK_IMAGE_ASPECT_COLOR_BIT, lv, l0, nl)) {
+            ca[i].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            g_attachment_loads_avoided++;
+        }
         ca[i].imageView = v; R.cf[i] = f.view; R.ckind[i] = f.kind; samples = im->samples; fb_im[nfb] = im; fb_lv[nfb++] = lv;
         R.cim[R.nci] = im; R.clv[R.nci] = lv; R.cl0[R.nci++] = l0;
         uint32_t lw = im->w >> lv ? im->w >> lv : 1, lh = im->h >> lv ? im->h >> lv : 1;
@@ -238,7 +243,12 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
             if (lv < im->levels && nl) vka_tex_own(im, g_cb);
             VkImageView v = lv < im->levels && nl ? vka_view(im, im->f.vk, nl > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D, im->aspect, lv, 1, l0, nl, NULL) : VK_NULL_HANDLE;
             if (v) {
-                da = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = v, .imageLayout = VK_IMAGE_LAYOUT_GENERAL, .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+                VkImageAspectFlags aspects = im->aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+                int discarded = vka_img_discard_take(im, aspects, lv, l0, nl);
+                da = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = v, .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+                                                  .loadOp = discarded ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_LOAD,
+                                                  .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+                if (discarded) g_attachment_loads_avoided++;
                 if (im->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) { dp = &da; R.df = im->f.vk; }
                 if (im->aspect & VK_IMAGE_ASPECT_STENCIL_BIT) { sp = &da; R.sf = im->f.vk; }
                 samples = im->samples; fb_im[nfb] = im; fb_lv[nfb++] = lv;
@@ -315,11 +325,37 @@ int vka_rp_game_barrier(uint32_t bits) {
     return 1;
 }
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
-    static uint64_t i0, k0, l0;
-    if (frames <= 0 || g_bar_in == i0) { if (n) b[0] = 0; i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; return; }
-    snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f taken inside it (DM_VK_BAR_KEEP), %.1f of those ended it later at a draw sampling its targets or writing memory",
-             (g_bar_in - i0) / frames, (g_bar_kept - k0) / frames, (g_bar_late - l0) / frames);
-    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late;
+    static uint64_t i0, k0, l0, d0, a0;
+    if (frames <= 0) { if (n) b[0] = 0; return; }
+    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0)
+        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; explicit attachment discards %.1f/frame, render-pass loads avoided %.1f/frame",
+                 (g_bar_in - i0) / frames, (g_bar_kept - k0) / frames, (g_bar_late - l0) / frames,
+                 (g_attachment_discards - d0) / frames, (g_attachment_loads_avoided - a0) / frames);
+    else if (n) b[0] = 0;
+    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; d0 = g_attachment_discards; a0 = g_attachment_loads_avoided;
+}
+// Discard is a real command in the guest's NVN stream, not an opt-in switch.
+// Preserve previous draws, and only track a texture which already has an image.
+// New writing operations invalidate the marker in vka_img_written_at.
+void vka_rp_discard(const p_set_rt *rt, int has_rt, int color_index) {
+    if (!has_rt || !rt || color_index < -1 || color_index >= 8) return;
+    const tex_t *t = color_index < 0 ? rt->depth : color_index < rt->n ? rt->color[color_index] : NULL;
+    if (!t) return;
+    if (R.on || PC.n) vka_rp_end();
+    vka_img *im = vka_tex_acquire(t->serial);
+    if (!im) return;
+    const view_t *view = color_index < 0 ? &rt->dview : &rt->cview[color_index];
+    int has_view = color_index < 0 ? rt->has_dview : rt->has_cview[color_index];
+    uint32_t lv, l0, nl;
+    rt_range(im, view, has_view, &lv, &l0, &nl);
+    if (lv < im->levels && nl) {
+        VkImageAspectFlags asp = color_index < 0 ? im->aspect & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) : VK_IMAGE_ASPECT_COLOR_BIT;
+        if (asp && (im->aspect & asp) == asp) {
+            vka_img_discard_mark(im, asp, lv, l0, nl);
+            g_attachment_discards++;
+        }
+    }
+    vka_tex_drop(im);
 }
 int vka_rp_is_open(void) { return R.on; }
 int vka_rp_open_for(const p_set_rt *rt, int has_rt) { return R.on && rt_same(rt, has_rt, &R.rt, R.has_rt); }
