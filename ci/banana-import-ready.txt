@@ -1,3 +1,3 @@
-Ocarina Banana shader import experimental verification, 2026-11-09.
-Original foreign shader ABI 228b73bd10f6 is preserved, not rewritten.
-One controlled CI build on ocarina-banana-shader-import; no integration or optimization builds.
+Ocarina Banana foreign ABI import test: corrected final fixture assertion to check the most recently imported 228b73bd10f6 library.
+Validated test order: import ffffffff library, then import 228b73bd10f6 into same v-OLD slot, compare to actualBanana.
+Retry gated APK workflow on testing branch; integration branch remains unchanged.

@@ -583,7 +583,7 @@ public final class ShaderZipJvmTest {
         File trialZip = bananaZip(new File(t, "banana-pack-trial.zip"), actualBanana, ID, "228b73bd10f6");
         ShaderZip.install(ShaderZip.readAuto(trialZip, target, ShaderZip.QUIET), target);
         check(Pack.bananaForeignLibrary(dst, ID) != null, "known imported Banana ABI offered as experimental trial");
-        check(Arrays.equals(bytes(new File(dst, "shaders/v-" + OLD + "/dmsh_vk.lib")), incompatible),
+        check(Arrays.equals(bytes(new File(dst, "shaders/v-" + OLD + "/dmsh_vk.lib")), actualBanana),
                 "Banana foreign ABI kept byte-for-byte");
     }
 
