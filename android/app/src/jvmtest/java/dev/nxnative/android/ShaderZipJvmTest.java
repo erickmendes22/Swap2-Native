@@ -205,6 +205,7 @@ public final class ShaderZipJvmTest {
         replace(new File(t, "replace"));
         restamp(new File(t, "restamp"));
         compatibleFallback(new File(t, "foreign"));
+        bananaPack(new File(t, "banana-pack"));
         lists(new File(t, "lists"));
         System.out.println("ok " + n);
     }
@@ -517,6 +518,54 @@ public final class ShaderZipJvmTest {
         byte[] fakeCurrent = lib(ID, CUR, bananaInputs, ABI, 4, 4096, 26);
         File fakeZip = craft(new File(t, "banana-current.zip"), fakeCurrent, in, "kind", "banana-shaders");
         refused("foreign current mismatched inputs", ShaderZip.Why.OTHER_INPUTS, fakeZip, target, false);
+    }
+
+
+    static File bananaZip(File out, byte[] lib, String title, String abi) throws Exception {
+        String v = ShaderLibs.header(lib).vkChain;
+        byte[] packTsv = ("format\t2\ntarget\tandroid\ntitle_id\t" + title +
+                "\nname\tOcarina\nversion\t131072\nmodules\tmain\n").getBytes(StandardCharsets.UTF_8);
+        byte[] inputs = stamp(ID, INPUTS).getBytes(StandardCharsets.UTF_8);
+        zip(out, Arrays.asList(
+                new Object[] {"main.patched.bin", "executable"},
+                new Object[] {"pack.tsv", packTsv},
+                new Object[] {"shaders/v-" + v + "/dmsh_vk.lib", lib},
+                new Object[] {"shaders/v-" + v + "/inputs.tsv", inputs}));
+        return out;
+    }
+
+    static void bananaPack(File t) throws Exception {
+        byte[] lib = lib(ID, OLD, INPUTS, ABI, 4, 1 << 20, 41);
+        File zip = bananaZip(new File(t, "banana-pack-" + ID + "-1.zip"), lib, ID, ABI);
+        File dst = pack(new File(t, "phone"));
+        byte[] current = lib(ID, CUR, INPUTS, ABI, 4, 1200, 42);
+        addLib(dst, CUR, current, stamp(ID, INPUTS));
+        ShaderZip.Target target = new ShaderZip.Target(dst, ID);
+        target.allowCompatibleFallback = true;
+        ShaderZip.Result result = ShaderZip.install(ShaderZip.readAuto(zip, target, ShaderZip.QUIET), target);
+        check(result.version.equals(OLD), "Banana full-pack import preserves the true shader chain");
+        check(Arrays.equals(bytes(new File(dst, "shaders/v-" + OLD + "/dmsh_vk.lib")), lib), "Banana shader library imported byte for byte");
+        check(Arrays.equals(bytes(new File(dst, "shaders/v-" + CUR + "/dmsh_vk.lib")), current), "existing Swap2 shaders not overwritten");
+        check(!new File(dst, "main.patched.bin").isDirectory(), "no game code copied");
+        check(new String(bytes(new File(dst, "main.patched.bin")), StandardCharsets.UTF_8).equals("code"), "existing executable kept");
+        check(noStaging(dst), "no dangling staged libraries after full-pack import");
+        // A SAF file picker can expose only an input stream rather than a filesystem path.
+        File dst2 = pack(new File(t, "stream"));
+        ShaderZip.Target target2 = new ShaderZip.Target(dst2, ID);
+        target2.allowCompatibleFallback = true;
+        try (InputStream in = new FileInputStream(zip)) {
+            result = ShaderZip.install(ShaderZip.readAuto(in, zip.getName(), target2, ShaderZip.QUIET), target2);
+        }
+        check(result.version.equals(OLD) && Arrays.equals(bytes(new File(dst2, "shaders/v-" + OLD + "/dmsh_vk.lib")), lib),
+                "Banana full pack over SAF stream");
+        File wrong = bananaZip(new File(t, "banana-pack-wrong.zip"), lib, MKW, ABI);
+        TreeMap<String, String> before = tree(dst);
+        ShaderZip.Failure e = failure(() -> ShaderZip.readAuto(wrong, target, ShaderZip.QUIET));
+        check(e != null && e.why == ShaderZip.Why.OTHER_GAME && tree(dst).equals(before), "wrong game refused without changes");
+        byte[] incompatible = lib(ID, OLD, INPUTS, "ffffffffffff", 4, 1000, 43);
+        File badAbi = bananaZip(new File(t, "banana-pack-abi.zip"), incompatible, ID, "ffffffffffff");
+        e = failure(() -> ShaderZip.readAuto(badAbi, target, ShaderZip.QUIET));
+        check(e != null && e.why == ShaderZip.Why.OTHER_ABI && tree(dst).equals(before), "bad ABI refused without changes");
     }
 
     static void lists(File t) throws Exception {
