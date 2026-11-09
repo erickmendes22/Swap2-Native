@@ -1,0 +1,3 @@
+Build gate for Ocarina Banana Native import test.
+Validated Android API compatibility fix: replace Files.readString with Files.readAllBytes.
+This marker is deliberately updated only after source and tests are ready.

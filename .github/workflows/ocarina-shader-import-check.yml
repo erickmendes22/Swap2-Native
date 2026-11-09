@@ -1,8 +1,14 @@
 name: Ocarina shader import compatibility tests
+# Build only on an explicit ready marker, not on each source edit.
 on:
+  workflow_dispatch:
   push:
     branches: [ocarina-banana-shader-import]
-  workflow_dispatch:
+    paths:
+      - 'ci/banana-import-ready.txt'
+concurrency:
+  group: banana-import-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
