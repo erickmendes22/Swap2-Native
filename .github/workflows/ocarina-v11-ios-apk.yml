@@ -1,0 +1,111 @@
+name: Ocarina V11 iOS Vulkan Optimizations APK
+on:
+  push:
+    branches: [ocarina-v11-ios-perf-from-v101]
+    paths:
+      - ci/ocarina-ios-ready.txt
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ocarina-v11-ios-apk
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate optional iOS V22 GMEM implementation
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m py_compile scripts/pack_android.py dm/gfx/tools/dmsh_chain.py dm/gfx/tools/vk_android_build.py dm/games/0400486024DEC000/patches.py
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_raw_gmem_fast1.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v101_paths.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v22_gmem.py'
+      - name: Verify shader hashes and ABI without changing the prior stable library
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/tools/dmsh_chain.py --header
+          python3 dm/gfx/tools/vk_android_build.py --header
+          grep -q '#define DMSH_VK_ABI "674db0a4ff79"' dm/gfx/nvn/dmsh_chain_vk.h
+          grep -q 'shader_gmem_revision.*v11_ios_raw_cache' dm/games/0400486024DEC000/game.tsv
+          cat dm/gfx/nvn/dmsh_chain.h dm/gfx/nvn/dmsh_chain_vk.h
+          echo "Shader chain regenerated for this checkout; no cross-ABI Banana library used." >> "$GITHUB_STEP_SUMMARY"
+  apk:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate matching shader headers for the actual APK build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/tools/dmsh_chain.py --header
+          python3 dm/gfx/tools/vk_android_build.py --header
+          grep -q '#define DMSH_VK_ABI "674db0a4ff79"' dm/gfx/nvn/dmsh_chain_vk.h
+          cat dm/gfx/nvn/dmsh_chain_vk.h
+      - name: Install native build prerequisites
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh ninja-build cmake clang zlib1g-dev
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Android NDK and CMake
+        shell: bash
+        run: |
+          set -euxo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "ndk;28.2.13676358" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+      - name: Restore persistent V11 test signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: swap2-ootv11ios-test-signing-v1
+      - name: Generate signing key only on first V11 build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          if [ ! -s "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -keypass android -alias androiddebugkey \
+              -dname "CN=Android Debug,O=Android,C=US" -validity 10000 -keyalg RSA -keysize 2048
+          fi
+      - name: Build Android native shader translator and packer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          zsh android/ondevice/build.sh "$RUNNER_TEMP/oot-v11-ios" all
+      - name: Build separately installable optimized Ocarina APK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd android/app
+          chmod +x gradlew
+          ./gradlew --no-daemon \
+            -PnxGames=0400486024DEC000 \
+            -PnxApp=ootv11ios \
+            -PnxLabel="Swap2 Ocarina iOS V11" \
+            -PnxVersion=0.1.1-oot-v11-ios \
+            -PnxVersionCode="$GITHUB_RUN_NUMBER" \
+            -PnxPackStage="$RUNNER_TEMP/oot-v11-ios/stage" apk
+          test -s out/swap2-native-ootv11ios.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging out/swap2-native-ootv11ios.apk | grep -F "name='com.swap2native.ootv11ios'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose out/swap2-native-ootv11ios.apk
+      - name: Upload V11 iOS optimization test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Swap2-Ocarina-V11-iOS-Optimizations-APK
+          path: android/app/out/swap2-native-ootv11ios.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,4 @@
+Ocarina V11 test build from clean V10.1 stable source, no Banana shader ABI changes.
+One controlled GitHub Actions run requested by user.
+iOS V22-inspired GMEM 8192 entries and last-range cache; known ABI 674db0a4ff79.
+Generated shader versions on both CI jobs, original old Swap2 libraries not rewritten.
