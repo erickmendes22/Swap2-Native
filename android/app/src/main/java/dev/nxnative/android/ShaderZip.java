@@ -164,7 +164,7 @@ final class ShaderZip {
         if (!provenance.isFile() || provenance.length() > MAX_SMALL) return null;
         try {
             String data = Files.readString(provenance.toPath(), StandardCharsets.UTF_8);
-            if (!data.contains("kind\\tbanana-pack-shaders\\n")) return null;
+            if (!data.contains("kind\tbanana-pack-shaders\n")) return null;
             ShaderLibs.Header header = ShaderLibs.header(lib);
             return header != null && titleId.equals(header.game) && header.fits(lib.length()) ? lib : null;
         } catch (IOException e) {
