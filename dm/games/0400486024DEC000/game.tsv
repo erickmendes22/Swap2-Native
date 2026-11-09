@@ -52,7 +52,12 @@ fps_hold	off
 shader_gmem_fast	1
 # New compiler environment was first connected in V10.1; invalidate shader inputs
 # prepared by V10 without the GMEM fast path, even if their VK chain is the same.
-shader_gmem_revision	v101
+shader_gmem_revision	v11_ios_raw_cache
+# V11 iOS: reuse last valid segment in SPIR-V Private memory, plus
+# 8192-entry table when more than 4095 pools are placed (old shaders
+# still access their first 4096 entries unchanged).
+shader_gmem_last	1
+shader_gmem_map_capacity	8192
 
 # ---- Graphics ----
 # agl's render buffer binding wraps its clears in render conditions in Donkey Kong Bananza and Mario Kart World (same engine); assumed here (open)

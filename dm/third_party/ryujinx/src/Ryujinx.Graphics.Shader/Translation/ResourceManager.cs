@@ -159,6 +159,15 @@ namespace Ryujinx.Graphics.Shader.Translation
             }
         }
 
+        // iOS V22: each raw access helper remembers its last valid segment
+        // in Private memory across repeated invocations *within the shader*.
+        // Dedicated words per helper, initialized to zero once per invocation.
+        public int AddRawLastEntryMemory()
+        {
+            return Properties.AddLocalMemory(new MemoryDefinition(
+                $"gmem_last_{Properties.LocalMemories.Count}", AggregateType.U32, 1, zeroInit: true));
+        }
+
         private int AddMemoryDefinition(string name, AggregateType type, int arrayLength = 1)
         {
             return Properties.AddLocalMemory(new MemoryDefinition(name, type, arrayLength));

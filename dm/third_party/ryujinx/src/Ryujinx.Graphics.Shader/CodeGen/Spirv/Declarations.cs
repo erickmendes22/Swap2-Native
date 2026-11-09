@@ -116,8 +116,12 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                 }
 
                 StorageClass memoryStorage = SharedStorageClass(storage, memory);
-                SpvInstruction pointerType = context.TypePointer(memoryStorage, context.GetType(memory.Type, memory.ArrayLength));
-                SpvInstruction variable = context.Variable(pointerType, memoryStorage);
+                SpvInstruction type = context.GetType(memory.Type, memory.ArrayLength);
+                SpvInstruction pointerType = context.TypePointer(memoryStorage, type);
+                // Only private per-invocation cache words use an initializer.
+                // Unchanged for shared/workgroup resources and older shaders.
+                SpvInstruction variable = context.Variable(pointerType, memoryStorage,
+                    memory.ZeroInit && memoryStorage == StorageClass.Private ? context.ConstantNull(type) : null);
 
                 context.AddGlobalVariable(variable);
 

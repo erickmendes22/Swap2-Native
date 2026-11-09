@@ -965,12 +965,41 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                 return context.Load(StorageKind.StorageBuffer, mapBinding, Const(0), context.IAdd(entry, Const(word)));
             }
 
-            // Ocarina V10 opt-in: most repeated raw accesses can be in pool 1.
-            // Check the complete 64-bit [start,end) interval first.
-            // Every miss follows the original twelve-step binary search.
+            // Port of iOS V22's per-invocation last-segment cache. Every valid
+            // hit bypasses the map and binary search, regardless of pool number.
+            // Separate cache words per raw access helper, SPIR-V Private zero-init.
+            // A miss still uses the V10.1 pool-1 shortcut then full binary search.
+            bool cacheLast = Environment.GetEnvironmentVariable("DMSH_GMEM_LAST1") == "1";
             bool fastPool = Environment.GetEnvironmentVariable("DMSH_GMEM_FAST1") == "1";
-            Operand selected = fastPool ? Local() : null;
-            Operand afterSearch = fastPool ? Label() : null;
+            bool extendedMap = Environment.GetEnvironmentVariable("DMSH_GMEM_MAP_8192") == "1";
+            Operand selected = fastPool || cacheLast ? Local() : null;
+            Operand afterSearch = fastPool || cacheLast ? Label() : null;
+            Operand chosen = cacheLast ? Label() : null;
+            Operand cachedDeltaLow = cacheLast ? Local() : null;
+            Operand cachedDeltaHigh = cacheLast ? Local() : null;
+            int[] last = cacheLast ? new int[7] : null;
+            Operand CacheWord(int k) => context.Load(StorageKind.LocalMemory, last[k]);
+            if (cacheLast)
+            {
+                for (int k = 0; k < last.Length; k++)
+                {
+                    last[k] = resourceManager.AddRawLastEntryMemory();
+                }
+                Operand geStart = context.BitwiseOr(
+                    context.ICompareLessUnsigned(CacheWord(2), addrHigh),
+                    context.BitwiseAnd(context.ICompareEqual(CacheWord(2), addrHigh),
+                                       context.ICompareLessOrEqualUnsigned(CacheWord(1), addrLow)));
+                Operand ltEnd = context.BitwiseOr(
+                    context.ICompareLessUnsigned(addrHigh, CacheWord(4)),
+                    context.BitwiseAnd(context.ICompareEqual(addrHigh, CacheWord(4)),
+                                       context.ICompareLessUnsigned(addrLow, CacheWord(3))));
+                context.Copy(selected, CacheWord(0));
+                context.Copy(cachedDeltaLow, CacheWord(5));
+                context.Copy(cachedDeltaHigh, CacheWord(6));
+                context.BranchIfTrue(chosen, context.BitwiseAnd(geStart, ltEnd));
+            }
+
+            // V10.1 full 64-bit bounds-checked pool-1 fast path is preserved.
             if (fastPool)
             {
                 Operand first = Const(GmemMapEntryWords); // first nonempty pool
@@ -994,7 +1023,8 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             // The last entry whose start is at or below the address (entry 0 starts at 0, so there always is one)
             Operand index = Const(0);
 
-            for (int step = 1 << (GmemMapLog2 - 1); step != 0; step >>= 1)
+            int mapLog2 = extendedMap ? 13 : GmemMapLog2;
+            for (int step = 1 << (mapLog2 - 1); step != 0; step >>= 1)
             {
                 Operand candidate = context.IAdd(index, Const(step));
                 Operand entry = context.IMultiply(candidate, Const(GmemMapEntryWords));
@@ -1007,7 +1037,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
                 index = context.ConditionalSelect(atOrBelow, candidate, index);
             }
-            if (fastPool)
+            if (fastPool || cacheLast)
             {
                 context.Copy(selected, index);
                 context.MarkLabel(afterSearch);
@@ -1024,6 +1054,23 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
             Operand lblSkip = Label();
             context.BranchIfFalse(lblSkip, inPool);
+
+            if (cacheLast)
+            {
+                // Cache only a validated [start,end) region. A miss through the
+                // map retains the preceding valid entry so no bogus pointers
+                // are ever returned for unmapped guest addresses.
+                context.Copy(cachedDeltaLow, MapWord(found, 4));
+                context.Copy(cachedDeltaHigh, MapWord(found, 5));
+                context.Store(StorageKind.LocalMemory, last[0], index);
+                context.Store(StorageKind.LocalMemory, last[1], MapWord(found, 0));
+                context.Store(StorageKind.LocalMemory, last[2], MapWord(found, 1));
+                context.Store(StorageKind.LocalMemory, last[3], endLow);
+                context.Store(StorageKind.LocalMemory, last[4], endHigh);
+                context.Store(StorageKind.LocalMemory, last[5], cachedDeltaLow);
+                context.Store(StorageKind.LocalMemory, last[6], cachedDeltaHigh);
+                context.MarkLabel(chosen);
+            }
 
             if (writes)
             {
@@ -1046,9 +1093,9 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
             // A small integer is read or written in its 32-bit word
             Operand wordLow = isSmall ? context.BitwiseAnd(addrLow, Const(~3)) : addrLow;
-            Operand hostLow = context.IAdd(wordLow, MapWord(found, 4));
+            Operand hostLow = context.IAdd(wordLow, cacheLast ? cachedDeltaLow : MapWord(found, 4));
             Operand carry = context.ConditionalSelect(context.ICompareLessUnsigned(hostLow, wordLow), Const(1), Const(0));
-            Operand hostHigh = context.IAdd(context.IAdd(addrHigh, MapWord(found, 5)), carry);
+            Operand hostHigh = context.IAdd(context.IAdd(addrHigh, cacheLast ? cachedDeltaHigh : MapWord(found, 5)), carry);
 
             Operand resultValue = null;
 

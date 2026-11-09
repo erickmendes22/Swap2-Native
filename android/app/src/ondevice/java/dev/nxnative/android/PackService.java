@@ -552,6 +552,11 @@ public final class PackService extends Service {
         // pack_android.py. Enable the GMEM pool-1 fast path there as well.
         // Reset for every step, so a later game never inherits the option.
         PackEngine.setenv("DMSH_GMEM_FAST1", "shaders".equals(s) && "0400486024DEC000".equals(j.titleId()) ? "1" : "0");
+        // iOS V22 raw segment reuse, and 8192-region Vulkan map; only the
+        // shader-translation step sees these, never the old runtime library.
+        boolean ocarinaShaders = "shaders".equals(s) && "0400486024DEC000".equals(j.titleId());
+        PackEngine.setenv("DMSH_GMEM_LAST1", ocarinaShaders ? "1" : "0");
+        PackEngine.setenv("DMSH_GMEM_MAP_8192", ocarinaShaders ? "1" : "0");
         File userProfiles = Profile.userDir();   // a game whose profile is not built into the APK: the tools find it there (dm/games/game.py DM_GAMES_DIR)
         if (userProfiles.isDirectory()) PackEngine.setenv("DM_GAMES_DIR", userProfiles.getPath());
         // The mods folder (<Switch2>/Mods/<title ID>/<mod>/exefs/<build ID>.ips|.pchtxt; an older mods/ while it is there: ExefsMods.root): the rewrite applies a module's exefs patches before rewriting it, and its key names

@@ -338,6 +338,12 @@ def pack_shaders(a, g, work, out, vdir):
         if fast not in ('0', '1'):
             raise Error(f'{g.id}: shader_gmem_fast must be 0 or 1')
         env['DMSH_GMEM_FAST1'] = fast
+        last = g.get('shader_gmem_last', '0')
+        capacity = g.get('shader_gmem_map_capacity', '4096')
+        if last not in ('0', '1') or capacity not in ('4096', '8192'):
+            raise Error(f'{g.id}: invalid shader_gmem_last or shader_gmem_map_capacity')
+        env['DMSH_GMEM_LAST1'] = last
+        env['DMSH_GMEM_MAP_8192'] = '1' if capacity == '8192' else '0'
         r = subprocess.run([py, str(VK_BUILD), '--target', 'vulkan', str(pkg), str(cache)], env=env)
         if r.returncode: raise Error(f'vk_android_build.py exit code {r.returncode} (a package that lacks the profile\'s shaders stops it: delete {pkg} and the split runs again)')
         if not library_current(lib, g): raise Error(f'vk_android_build.py finished but {lib} is not a full library of {g.id} with the current inputs')

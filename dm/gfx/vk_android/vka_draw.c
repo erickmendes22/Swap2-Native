@@ -507,18 +507,22 @@ static int drv_seg(const vka_dstate *d, int st, int bank, int pool, VkDescriptor
     if (bank == 0 && c0) { c0->buf = s.buf; c0->off = s.off; }
     return 1;
 }
+// Port of the iOS dynamic-GMEM capacity fix, without changing the guest ABI.
+// The old v10.1 SPIR-V library still sees its first 4096 entries unchanged.
+// New Ocarina shaders opt into a 13-step lookup that reaches entry 8191.
+#define VKA_GMEM_MAP_ENTRIES 8192
 // Raw global memory's table (dmsh_abi.h DMSH_GMEM_MAP_*): entry 0 empty, then the placed chunks by address with delta = device address - guest address, unused entries at ~0
 // (kept while no segment comes or goes: vka_mem_gen, and DM_VK_DRV_MEMO)
 uint64_t vka_mem_gen(void);
 static int gmem_map(VkDescriptorBufferInfo *bi) {
-    size_t n = (size_t)DMSH_GMEM_MAP_ENTRIES * DMSH_GMEM_MAP_ENTRY;
+    size_t n = (size_t)VKA_GMEM_MAP_ENTRIES * DMSH_GMEM_MAP_ENTRY;
     uint64_t gen = vka_mem_gen();
     if (g_drv_memo && g_gm.valid && g_gm.gen == gen) { *bi = (VkDescriptorBufferInfo){g_gm.s.buf, g_gm.s.off, n}; return 1; }
     vka_span s; if (!vka_scratch(n, V.sb_align, &s)) return 0;
     memset(s.ptr, 0xff, n); memset(s.ptr, 0, DMSH_GMEM_MAP_ENTRY);
-    static uint64_t lo[DMSH_GMEM_MAP_ENTRIES], hi[DMSH_GMEM_MAP_ENTRIES], bda[DMSH_GMEM_MAP_ENTRIES];
-    int k = vka_mem_chunks(lo, hi, bda, DMSH_GMEM_MAP_ENTRIES - 1);
-    for (int i = 0; i < k && i + 1 < DMSH_GMEM_MAP_ENTRIES; i++) { uint64_t e[4] = {lo[i], hi[i], bda[i] - lo[i], 0}; memcpy(s.ptr + (size_t)(i + 1) * DMSH_GMEM_MAP_ENTRY, e, sizeof e); }
+    static uint64_t lo[VKA_GMEM_MAP_ENTRIES], hi[VKA_GMEM_MAP_ENTRIES], bda[VKA_GMEM_MAP_ENTRIES];
+    int k = vka_mem_chunks(lo, hi, bda, VKA_GMEM_MAP_ENTRIES - 1);
+    for (int i = 0; i < k && i + 1 < VKA_GMEM_MAP_ENTRIES; i++) { uint64_t e[4] = {lo[i], hi[i], bda[i] - lo[i], 0}; memcpy(s.ptr + (size_t)(i + 1) * DMSH_GMEM_MAP_ENTRY, e, sizeof e); }
     g_gm.valid = 1; g_gm.gen = gen; g_gm.s = s;   // (a segment that came between the read of gen and the table: the next draw sees a new gen and builds it again)
     *bi = (VkDescriptorBufferInfo){s.buf, s.off, n}; return 1;
 }
