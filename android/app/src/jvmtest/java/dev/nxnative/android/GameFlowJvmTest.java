@@ -93,7 +93,7 @@ public final class GameFlowJvmTest {
         eq("another device's pack, no dump", "PLAY NONE", GameFlow.decide(null, other));
         other.shadersMissing = true;
         other.playable = true;
-        eq("another device's pack, older shaders", "PLAY SHADERS", GameFlow.decide(null, other));
+        eq("another device's pack, older same-ABI shaders", "PLAY NONE", GameFlow.decide(null, other));
         other.playable = false;
         eq("another device's pack, no shaders", "FIX SHADERS", GameFlow.decide(null, other));
         PackFacts unknown = fits();
@@ -105,9 +105,14 @@ public final class GameFlowJvmTest {
         build.shadersMissing = true;
         eq("another build, no shaders", "PREPARE BUILD", GameFlow.decide(null, build));
         build.playable = true;
-        eq("another build, older shaders play", "PREPARE BUILD", GameFlow.decide(null, build));
+        eq("another build, older same-ABI shaders, rewrite code only", "PLAY BUILD auto", GameFlow.decide(null, build));
         build.dump = false;
         eq("another build, no dump", "FIX BUILD", GameFlow.decide(null, build));
+        PackFacts modsCompatible = fits();
+        modsCompatible.mods = true;
+        modsCompatible.shadersMissing = true;
+        modsCompatible.playable = true;
+        eq("mods and compatible external shaders, rewrite only code", "PLAY MODS auto", GameFlow.decide(null, modsCompatible));
         PackFacts sh = fits();
         sh.shadersMissing = true;
         eq("no shaders, dump", "PREPARE SHADERS", GameFlow.decide(null, sh));
@@ -115,7 +120,7 @@ public final class GameFlowJvmTest {
         eq("legacy shaders", "PLAY SHADERS", GameFlow.decide(null, sh));
         sh.legacy = false;
         sh.playable = true;
-        eq("older shaders play", "PLAY SHADERS", GameFlow.decide(null, sh));
+        eq("older same-ABI shaders play without update", "PLAY NONE", GameFlow.decide(null, sh));
         sh.playable = false;
         sh.dump = false;
         eq("no shaders, no dump", "FIX SHADERS", GameFlow.decide(null, sh));

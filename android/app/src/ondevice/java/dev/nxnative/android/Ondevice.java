@@ -226,7 +226,8 @@ final class Ondevice {
      */
     static void autoUpdate(MainActivity a, File dump, File packDir, String titleId) {
         // not while an export or import of the game works (tried again on a later refresh: autoTried is not taken)
-        if (panel == null || panel.a != a || panel.alive() || importBusy(a, titleId, false) || deltaShaders(packDir, titleId) < 0) return;
+        if (panel == null || panel.a != a || panel.alive() || importBusy(a, titleId, false)
+                || Pack.playableLibrary(packDir, titleId) != null || deltaShaders(packDir, titleId) < 0) return;
         // never over another game's unfinished job: re-pointing the remembered job left that game's card without its state (2026-11-08); it waits for that job
         for (Job j : gameJobs(a)) if (unfinished(j) && !j.dump().getPath().equals(dump.getPath())) return;
         if (!autoTried.add(dump.getPath())) return;
@@ -608,7 +609,7 @@ final class Ondevice {
             if (!"done".equals(j.state()) || j.apkChanged()) return false;
             try {
                 Pack p = Pack.read(j.pack());
-                return (Pack.libraryProblem(j.pack(), j.titleId()) == null || ShaderZip.bananaFallback(j.pack(), j.titleId()) != null)
+                return (Pack.libraryProblem(j.pack(), j.titleId()) == null || Pack.playableLibrary(j.pack(), j.titleId()) != null)
                         && p.unfinishedModule() == null && p.titleId.equals(j.titleId());
             } catch (IOException e) {
                 return false;
@@ -720,7 +721,8 @@ final class Ondevice {
             if (f.pack != null) {
                 File pd = f.packDir;
                 String lp = PackCheck.shaders(pd, r.titleId);
-                boolean code = f.build != null || again && !Boolean.TRUE.equals(f.code), shaders = lp != null;
+                boolean code = f.build != null || again && !Boolean.TRUE.equals(f.code),
+                        shaders = lp != null && Pack.playableLibrary(pd, r.titleId) == null;
                 if (!code && !shaders) { adopt(r, pd, false, false, 0, card); return; }
                 long need = (shaders ? DumpCheck.NEED_FULL : DumpCheck.NEED_CODE) + f.tools;
                 Runnable redo = () -> adopt(r, pd, code, shaders, need, card);
@@ -742,7 +744,8 @@ final class Ondevice {
             Profile prof = Profile.of(r.titleId);   // DumpCheck refused a dump without one
             File target = packOverride != null ? packOverride : AppStorage.pack(a, r.titleId);
             // Its shaders imported already (Import shaders… with no pack yet, ShaderZip.ready): the job only rewrites the code (Job.shadersInPack)
-            boolean imported = !"fake".equals(BuildConfig.NX_PACK_ENGINE) && ShaderZip.ready(target, r.titleId);
+            boolean imported = !"fake".equals(BuildConfig.NX_PACK_ENGINE)
+                    && (ShaderZip.ready(target, r.titleId) || Pack.playableLibrary(target, r.titleId) != null);
             long need = (imported ? DumpCheck.NEED_CODE : DumpCheck.NEED_FULL) + f.tools;
             String text = imported ? a.getString(R.string.s2_prepare_code_only, prof.shaderTotal) + "\n\n" + a.getString(R.string.s2_space_line, r.free / 1073741824.0, need / 1073741824.0)
                     : a.getString(R.string.s2_prepare_body, r.version == 0 ? a.getString(R.string.s2_version_base) : a.getString(R.string.s2_version_update, r.version), r.dlc,
@@ -751,7 +754,8 @@ final class Ondevice {
                 try {
                     Job j = Job.create(r, AppStorage.pack(a, r.titleId));
                     if (packOverride != null) j.pack(packOverride);
-                    if (!"fake".equals(BuildConfig.NX_PACK_ENGINE) && ShaderZip.ready(j.pack(), r.titleId)) j.shadersInPack();
+                    if (!"fake".equals(BuildConfig.NX_PACK_ENGINE)
+                            && (ShaderZip.ready(j.pack(), r.titleId) || Pack.playableLibrary(j.pack(), r.titleId) != null)) j.shadersInPack();
                     begin(j, r, need, false);
                 } catch (Exception e) {
                     android.util.Log.e("nxpack", "prepare " + r.titleId + ": " + e);

@@ -111,7 +111,7 @@ final class ShaderLibs {
             if (d.getName().equals("v-" + current)) continue;
             File lib = new File(d, "dmsh_vk.lib");
             Header h = header(lib);
-            if (h == null || !titleId.equals(h.game) || !abi.equals(h.abi)) continue;
+            if (h == null || !titleId.equals(h.game) || !abi.equals(h.abi) || !h.fits(lib.length()) || !d.getName().equals("v-" + h.vkChain)) continue;
             if (best == null || lib.lastModified() > best.lastModified()) best = lib;
         }
         return best;

@@ -299,11 +299,11 @@ public final class PackService extends Service {
                 // the imported one. A library the pack step refused before (Job.importRefused) is not taken again
                 boolean inPack = new File(j.pack(), "shaders").equals(j.shaderCache());
                 boolean currentShaders = ShaderZip.ready(j.pack(), j.titleId());
-                File bananaLibrary = currentShaders ? null : ShaderZip.bananaFallback(j.pack(), j.titleId());
-                if ((s.equals("split") || s.equals("shaders") || s.equals("pack") && !inPack) && !engine.simulated() && (currentShaders || bananaLibrary != null)
-                        && !j.refusedImport(currentShaders ? Pack.libraryOf(j.pack()) : bananaLibrary)) {
+                File compatibleLibrary = currentShaders ? null : Pack.playableLibrary(j.pack(), j.titleId());
+                if ((s.equals("split") || s.equals("shaders") || s.equals("pack") && !inPack) && !engine.simulated() && (currentShaders || compatibleLibrary != null)
+                        && !j.refusedImport(currentShaders ? Pack.libraryOf(j.pack()) : compatibleLibrary)) {
                     Log.i(TAG, s + ": the pack " + j.pack() + " holds " +
-                            (currentShaders ? "this app's current shaders" : "compatible Banana shaders, unchanged") + ": " +
+                            (currentShaders ? "this app's current shaders" : "compatible same-ABI shaders, unchanged") + ": " +
                             (s.equals("pack") ? "keeping the library" : "skipped, no shader translation"));
                     j.shadersInPack();
                     save(j, true);
@@ -532,7 +532,7 @@ public final class PackService extends Service {
             }
             case "pack":
                 tool = "scripts/pack_android.py";
-                if (!ShaderZip.ready(pack, j.titleId()) && ShaderZip.bananaFallback(pack, j.titleId()) != null) {
+                if (!ShaderZip.ready(pack, j.titleId()) && Pack.playableLibrary(pack, j.titleId()) != null) {
                     // Keep Banana's already translated same-ABI shaders; only finish the
                     // local code/NPDM/runtime profile. --no-shaders never copies, replaces
                     // or recompiles the imported library.

@@ -80,11 +80,12 @@ final class GameFlow {
         // A pack whose library must be made too (none, or only an older one) is a real preparation the user starts: the short job never translates shaders
         if (code != Why.NONE) {
             if (!f.dump) return d(Action.FIX, code);
-            if (f.shadersMissing) return d(Action.PREPARE, code);
+            if (f.shadersMissing && !f.playable) return d(Action.PREPARE, code);
             return new Decision(Action.PLAY, code, true);
         }
         if (f.shadersMissing) {
-            if (f.playable || f.legacy) return d(Action.PLAY, Why.SHADERS);   // the older library plays while the update makes this version's
+            if (f.playable) return d(Action.PLAY, Why.NONE); // same ABI: no mandatory shader update
+            if (f.legacy) return d(Action.PLAY, Why.SHADERS); // no ABI: warn, optional shader translation
             return f.dump ? d(Action.PREPARE, Why.SHADERS) : d(Action.FIX, Why.SHADERS);
         }
         return d(Action.PLAY, Why.NONE);

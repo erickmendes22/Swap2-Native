@@ -1514,7 +1514,7 @@ public final class MainActivity extends Activity {
         f.dump = Ondevice.isDump(gd);
         Pack p;
         try { p = Pack.read(pd); } catch (IOException e) {
-            f.shadersImported = ShaderZip.ready(pd, g.titleId) || ShaderZip.bananaFallback(pd, g.titleId) != null;
+            f.shadersImported = ShaderZip.ready(pd, g.titleId) || Pack.playableLibrary(pd, g.titleId) != null;
             f.rewrite = true;   // a whole Prepare: the code, and every shader unless they were imported
             f.toTranslate = f.shadersImported ? 0 : f.mapShaders;
             f.shaders = !f.shadersImported;
@@ -1526,17 +1526,18 @@ public final class MainActivity extends Activity {
         f.build = PackCheck.build(p, gd) != null;
         f.mods = !f.build && PackCheck.mods(p, gd) != null;   // the code lacks a mod the mods folder has now, or has one it no longer has
         f.shadersMissing = Pack.libraryProblem(pd, g.titleId) != null;
-        f.shaders = f.shadersMissing;   // the split and the library run even when the manifest keeps every shader (0 to translate)
         if (f.shadersMissing) {
             f.playable = Pack.playableLibrary(pd, g.titleId) != null;
             f.legacy = !f.playable && Pack.legacyLibrary(pd, g.titleId) != null;
             int delta = Ondevice.deltaShaders(pd, g.titleId);
-            f.deltaKnown = delta >= 0;
-            f.toTranslate = ShaderZip.bananaFallback(pd, g.titleId) != null ? 0
-                    : delta >= 0 ? delta : f.mapShaders;   // imported same-ABI Banana shaders do not need retranslation
+            f.deltaKnown = delta >= 0 && !f.playable;
+            f.toTranslate = f.playable ? 0 : delta >= 0 ? delta : f.mapShaders;
         } else f.toTranslate = 0;
+        // A same-ABI fallback is usable by vka_shader.c without translation
+        // or claiming to be the current shader-chain version.
+        f.shaders = f.shadersMissing && !f.playable;
         f.rewrite = f.build || f.mods;
-        if (!f.build && !f.mods && !f.shadersMissing) f.code = PackCheck.code(this, p, gd);
+        if (!f.build && !f.mods && (!f.shadersMissing || f.playable)) f.code = PackCheck.code(this, p, gd);
         return f;
     }
 
@@ -1568,7 +1569,7 @@ public final class MainActivity extends Activity {
                 tl.facts = facts;
                 tl.own = own;
                 // An APK update's new shaders: made in the background with no question when the pack's older library is one the delta manifest knows (Ondevice.autoUpdate)
-                if (facts.dump && facts.pack && facts.shadersMissing && !facts.build && !facts.mods && facts.deltaKnown)
+                if (facts.dump && facts.pack && facts.shadersMissing && !facts.playable && !facts.build && !facts.mods && facts.deltaKnown)
                     Ondevice.autoUpdate(this, new File(g.gameDir), new File(g.packDir), g.titleId);
                 render(tl, Ondevice.state());
                 if (g.gameDir.equals(selected)) showDetails();
@@ -1926,8 +1927,9 @@ public final class MainActivity extends Activity {
         }
         // The host loads <pack>/shaders/v-<its DMSH_VK_CHAIN>/dmsh_vk.lib: without it the game runs but draws nothing
         String lp = Pack.libraryProblem(new File(g.packDir), g.titleId);
-        if (lp != null && Pack.playableLibrary(new File(g.packDir), g.titleId) != null) {   // the older library plays while the update makes this version's (vka_shader.c lib_load)
-            if (dump) Ondevice.autoUpdate(this, gd, new File(g.packDir), g.titleId);
+        if (lp != null && Pack.playableLibrary(new File(g.packDir), g.titleId) != null) {
+            // Same-ABI libraries work as-is. Do not launch a 4-hour update
+            // just because the shader-chain hash differs from this APK's.
             start(g);
             return;
         }

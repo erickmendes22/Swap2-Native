@@ -181,7 +181,9 @@ final class PackUi {
             try { mods = PackCheck.mods(Pack.read(target), new File(g.gameDir)); } catch (IOException | RuntimeException e) { /* the card's check says it */ }
             // what Play does with it now, in the card's words (GameFlow): ready, or Play first applies the mods to its code; an older library plays while it is updated
             String shaders = lp == null ? a.getString(mods != null ? R.string.s2_pack_imported_mods : R.string.s2_pack_imported_ready)
-                    : Pack.playableLibrary(target, g.titleId) != null || Pack.legacyLibrary(target, g.titleId) != null
+                    : Pack.playableLibrary(target, g.titleId) != null
+                    ? a.getString(R.string.s2_pack_imported_compatible_shaders)
+                    : Pack.legacyLibrary(target, g.titleId) != null
                     ? a.getString(R.string.s2_pack_imported_old_shaders) : a.getString(R.string.s2_pack_imported_no_shaders);
             if (mods != null) android.util.Log.i("Swap2Native", g.titleId + ": imported pack: " + mods);
             new AlertDialog.Builder(a).setTitle(a.getString(R.string.s2_pack_imported_title)).setMessage(shaders + (old != null ? "\n\n" + a.getString(R.string.s2_pack_imported_old_folder, old) : ""))

@@ -13,7 +13,7 @@ final class PackFacts {
     boolean mods;             // the mods changed since the code was rewritten (PackCheck.mods)
     Boolean code;             // PackCheck.code: this APK's rewriter made it (FALSE: other tools, a pack from another device; null: cannot tell)
     boolean shadersMissing;   // no current shader library (Pack.libraryProblem)
-    boolean playable;         // ... but an older one of the same ABI plays (Pack.playableLibrary)
+    boolean playable;         // another version, same Vulkan ABI and valid tables: playable without translation
     boolean legacy;           // ... or one from before versioned updates (Pack.legacyLibrary)
     boolean shadersImported;  // no pack yet, its shader library imported (ShaderZip.ready): Prepare only rewrites the code
     boolean deltaKnown;       // the profile's delta manifest knows the pack's older library (Ondevice.deltaShaders >= 0): an update needs no question

@@ -1,3 +1,2 @@
-Build gate for Ocarina Banana Native import test.
-Validated Android API compatibility fix: replace Files.readString with Files.readAllBytes.
-This marker is deliberately updated only after source and tests are ready.
+Ocarina Banana importer: compatible shader libraries use same-ABI fallback without mandatory retranslation.
+One consolidated CI run for code, shader, launch-flow and localized-message checks.
