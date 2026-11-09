@@ -2035,8 +2035,15 @@ static int fstep_cpu_slowed(uint64_t presents) {
 static int fstep_hold(void) {
     static int h = -1;
     if (h < 0) {
-        const char *e = getenv("DM_FPS_HOLD"); h = e ? strcmp(e, "off") != 0 : DM_GAME_FPS_HOLD;
-        if (!h) LOG("[nvn] frame step: frames are not held longer than the cap's vsyncs (%s)", e ? "DM_FPS_HOLD" : "game profile fps_hold");
+        const char *e = getenv("DM_FPS_HOLD");
+        // Ocarina V3 verified: do not automatically stretch slow frames to 2/3
+        // vsyncs. Older prepared packs can still contain FPS_HOLD=1, so using
+        // only the runtime profile would reintroduce the 20/30 fps limiter.
+        // Explicit DM_FPS_HOLD is authoritative (as in V3).
+        const char *id = DM_GAME_ID;
+        int ocarina = id && !strcmp(id, "0400486024DEC000");
+        h = e ? strcmp(e, "off") != 0 : ocarina ? 0 : DM_GAME_FPS_HOLD;
+        if (!h) LOG("[nvn] frame step: frames are not held longer than the cap's vsyncs (%s)", e ? "DM_FPS_HOLD" : ocarina ? "Ocarina V3 timing fix" : "game profile fps_hold");
     }
     return h;
 }

@@ -548,6 +548,10 @@ public final class PackService extends Service {
         }
         int workers = Math.max(1, Runtime.getRuntime().availableProcessors() - 2);
         PackEngine.setenv("DM_GAME", j.titleId());
+        // V10: translating shaders runs in a separate step, NOT through
+        // pack_android.py. Enable the GMEM pool-1 fast path there as well.
+        // Reset for every step, so a later game never inherits the option.
+        PackEngine.setenv("DMSH_GMEM_FAST1", "shaders".equals(s) && "0400486024DEC000".equals(j.titleId()) ? "1" : "0");
         File userProfiles = Profile.userDir();   // a game whose profile is not built into the APK: the tools find it there (dm/games/game.py DM_GAMES_DIR)
         if (userProfiles.isDirectory()) PackEngine.setenv("DM_GAMES_DIR", userProfiles.getPath());
         // The mods folder (<Switch2>/Mods/<title ID>/<mod>/exefs/<build ID>.ips|.pchtxt; an older mods/ while it is there: ExefsMods.root): the rewrite applies a module's exefs patches before rewriting it, and its key names
