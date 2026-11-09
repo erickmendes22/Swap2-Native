@@ -186,6 +186,20 @@ final class ShaderUi {
         return true;
     }
 
+    /** "Import pack" on an old Banana format-1 archive is a shader-only import.
+     * Never silently replace this game's current executable or its save data.
+     * The normal shader picker uses exactly the same validation and reporting. */
+    static void importLegacyPack(MainActivity a, Game g, File source) {
+        if (source.isDirectory()) {
+            a.error("O pacote Banana no formato 1 deve ser exportado como ZIP para importar os shaders com segurança.");
+            return;
+        }
+        android.widget.Toast.makeText(a,
+                "Pacote Banana formato 1: importando somente os shaders. Código e saves preservados.",
+                android.widget.Toast.LENGTH_LONG).show();
+        importRun(a, g, source, null, null);
+    }
+
     /** Imports a zip: a file (read by name: the entries' order does not matter), or a document's stream (doc, its name) */
     private static void importRun(MainActivity a, Game g, File zip, Uri doc, String docName) {
         if (!ready(a, g)) return;
