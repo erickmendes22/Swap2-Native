@@ -152,6 +152,26 @@ final class ShaderZip {
         return h != null && titleId.equals(h.game) && h.fits(lib.length());
     }
 
+    /** Validated cross-fork Vulkan library explicitly imported from a Banana format-1
+     * pack. Only the same-title, same-ABI library recognized by the host qualifies.
+     * Used by Android's code-only Prepare path; never rewrites its shader header
+     * or claims the old shader version is this APK's newly compiled version.
+     */
+    static File bananaFallback(File pack, String titleId) {
+        File lib = Pack.playableLibrary(pack, titleId);
+        if (lib == null) return null;
+        File provenance = new File(lib.getParentFile(), SOURCE);
+        if (!provenance.isFile() || provenance.length() > MAX_SMALL) return null;
+        try {
+            String data = Files.readString(provenance.toPath(), StandardCharsets.UTF_8);
+            if (!data.contains("kind\\tbanana-pack-shaders\\n")) return null;
+            ShaderLibs.Header header = ShaderLibs.header(lib);
+            return header != null && titleId.equals(header.game) && header.fits(lib.length()) ? lib : null;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     /** Whether the library was imported (its folder has source.tsv) */
     static boolean imported(File pack) {
         File lib = Pack.libraryOf(pack);
