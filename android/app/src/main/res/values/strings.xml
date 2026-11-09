@@ -678,4 +678,6 @@
     <string name="s2_add_added_dump">Added %1$s. It is prepared the first time you play it.</string>
     <string name="s2_add_no_pack_title">Pack not found</string>
     <string name="s2_add_no_pack">No pack was found for it. Pick the pack folder (with pack.tsv), or pick the full dump (with base/ and updates/, or a .nup with the base game) to prepare one on this phone.</string>
+    <string name="s2_shaders_imported_fallback">Imported %1$d shaders from version %2$s. This is a same-ABI fallback library, not a newly prepared Swap2 shader library. The app can use it while its own shader version is absent. The GMEM optimization is present only if it was compiled into the imported shaders. Existing libraries are preserved.</string>
+    <string name="s2_shaders_err_other_abi">Incompatible shader library ABI: file %1$s, this app %2$s. The library was not imported; your existing shaders were kept.</string>
 </resources>
