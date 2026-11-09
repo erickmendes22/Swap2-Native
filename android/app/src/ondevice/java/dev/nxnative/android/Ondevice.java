@@ -608,7 +608,8 @@ final class Ondevice {
             if (!"done".equals(j.state()) || j.apkChanged()) return false;
             try {
                 Pack p = Pack.read(j.pack());
-                return Pack.libraryProblem(j.pack(), j.titleId()) == null && p.unfinishedModule() == null && p.titleId.equals(j.titleId());
+                return (Pack.libraryProblem(j.pack(), j.titleId()) == null || ShaderZip.bananaFallback(j.pack(), j.titleId()) != null)
+                        && p.unfinishedModule() == null && p.titleId.equals(j.titleId());
             } catch (IOException e) {
                 return false;
             }
