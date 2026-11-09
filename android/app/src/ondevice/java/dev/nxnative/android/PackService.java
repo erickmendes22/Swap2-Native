@@ -298,10 +298,13 @@ public final class PackService extends Service {
                 // The pack step too: a job stopped at it (or between the shaders and it) still names its own ondevice/lib, whose library pack_android.py would copy over
                 // the imported one. A library the pack step refused before (Job.importRefused) is not taken again
                 boolean inPack = new File(j.pack(), "shaders").equals(j.shaderCache());
-                if ((s.equals("split") || s.equals("shaders") || s.equals("pack") && !inPack) && !engine.simulated() && ShaderZip.ready(j.pack(), j.titleId())
-                        && !j.refusedImport(Pack.libraryOf(j.pack()))) {
-                    Log.i(TAG, s + ": the pack " + j.pack() + " holds this app's shader library (v-" + BuildConfig.NX_DMSH_VK_CHAIN + "): "
-                            + (s.equals("pack") ? "the pack step takes it there" : "skipped, nothing is translated"));
+                boolean currentShaders = ShaderZip.ready(j.pack(), j.titleId());
+                File bananaLibrary = currentShaders ? null : ShaderZip.bananaFallback(j.pack(), j.titleId());
+                if ((s.equals("split") || s.equals("shaders") || s.equals("pack") && !inPack) && !engine.simulated() && (currentShaders || bananaLibrary != null)
+                        && !j.refusedImport(currentShaders ? Pack.libraryOf(j.pack()) : bananaLibrary)) {
+                    Log.i(TAG, s + ": the pack " + j.pack() + " holds " +
+                            (currentShaders ? "this app's current shaders" : "compatible Banana shaders, unchanged") + ": " +
+                            (s.equals("pack") ? "keeping the library" : "skipped, no shader translation"));
                     j.shadersInPack();
                     save(j, true);
                     if (!s.equals("pack")) continue;
@@ -529,7 +532,14 @@ public final class PackService extends Service {
             }
             case "pack":
                 tool = "scripts/pack_android.py";
-                argv = new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(), "--shader-cache", j.shaderCache().getPath(), "--keep-code", "-j", "1", "--in-process"};
+                if (!ShaderZip.ready(pack, j.titleId()) && ShaderZip.bananaFallback(pack, j.titleId()) != null) {
+                    // Keep Banana's already translated same-ABI shaders; only finish the
+                    // local code/NPDM/runtime profile. --no-shaders never copies, replaces
+                    // or recompiles the imported library.
+                    argv = new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(), "--no-shaders", "--keep-code", "-j", "1", "--in-process"};
+                } else {
+                    argv = new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(), "--shader-cache", j.shaderCache().getPath(), "--keep-code", "-j", "1", "--in-process"};
+                }
                 break;
             default:
                 return "unknown step " + s;
