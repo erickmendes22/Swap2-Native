@@ -204,6 +204,7 @@ public final class ShaderZipJvmTest {
         cancel(new File(t, "cancel"));
         replace(new File(t, "replace"));
         restamp(new File(t, "restamp"));
+        compatibleFallback(new File(t, "foreign"));
         lists(new File(t, "lists"));
         System.out.println("ok " + n);
     }
@@ -485,6 +486,39 @@ public final class ShaderZipJvmTest {
                 "a restamp that does not give the row's library: undone");
     }
 
+    /** Cross-fork import is opt-in: same ABI loads, different ABI refuses, and
+     * an imported older version is never impersonated as the current one. */
+    static void compatibleFallback(File t) throws Exception {
+        String bananaInputs = "112233445566";
+        byte[] lib = lib(ID, OLD, bananaInputs, ABI, 4, 4096, 24);
+        byte[] in = stamp(ID, bananaInputs).getBytes(StandardCharsets.UTF_8);
+        File zip = craft(new File(t, "banana.zip"), lib, in, "kind", "banana-shaders");
+        File dst = pack(new File(t, "pack"));
+        ShaderZip.Target target = new ShaderZip.Target(dst, ID);
+        // Default is strict; only the Android picker opts in.
+        refused("foreign version strict", ShaderZip.Why.OTHER_VERSION, zip, target, false);
+        target.allowCompatibleFallback = true;
+        ShaderZip.Result result = importFile(zip, target);
+        File imported = new File(dst, "shaders/v-" + OLD + "/dmsh_vk.lib");
+        check(result.version.equals(OLD) && result.from.equals(OLD), "the original version is preserved");
+        check(Arrays.equals(bytes(imported), lib) && ShaderLibs.playable(dst, ID, CUR, ABI).equals(imported),
+                "host selects the same-ABI fallback");
+        check(!ShaderZip.ready(dst, ID) && noStaging(dst), "fallback is not stamped as current");
+        // The picker also reads a document's stream.
+        File dst2 = pack(new File(t, "pack-stream"));
+        ShaderZip.Target target2 = new ShaderZip.Target(dst2, ID);
+        target2.allowCompatibleFallback = true;
+        check(importStream(zip, target2).version.equals(OLD), "stream foreign import");
+        // A different ABI is never imported even when the user opted in.
+        byte[] bad = lib(ID, OLD, bananaInputs, "ffffffffffff", 4, 4096, 25);
+        File badZip = craft(new File(t, "banana-bad.zip"), bad, in, "kind", "banana-shaders");
+        refused("foreign incompatible ABI", ShaderZip.Why.OTHER_ABI, badZip, target, false);
+        // Current version still requires the exact shader-input mapping.
+        byte[] fakeCurrent = lib(ID, CUR, bananaInputs, ABI, 4, 4096, 26);
+        File fakeZip = craft(new File(t, "banana-current.zip"), fakeCurrent, in, "kind", "banana-shaders");
+        refused("foreign current mismatched inputs", ShaderZip.Why.OTHER_INPUTS, fakeZip, target, false);
+    }
+
     static void lists(File t) throws Exception {
         File only = new File(t, "only");
         new File(only, "shaders").mkdirs();
@@ -493,13 +527,16 @@ public final class ShaderZipJvmTest {
         File older = new File(dir, "swap2-shaders-" + ID + "-1-v-a.zip"), newer = new File(dl, "swap2-shaders-" + ID + "-2-v-b.zip");
         write(older, "a");
         write(newer, "b");
+        File banana = new File(dir, "banana-shaders-" + ID + "-3-v-c.zip");
+        write(banana, "banana");
         write(new File(dir, "swap2-shaders-" + MKW + "-1-v-a.zip"), "c");
         write(new File(dir, "swap2-pack-" + ID + "-1.zip"), "d");
         write(new File(dir, "swap2-shaders-" + ID + "-1-v-a.txt"), "e");
         older.setLastModified(1_000_000_000_000L);
         newer.setLastModified(1_100_000_000_000L);
+        banana.setLastModified(1_200_000_000_000L);
         List<File> f = ShaderZip.found(ID, dir, dl, new File(t, "missing"));
-        check(f.equals(Arrays.asList(newer, older)), "found: " + f);
+        check(f.equals(Arrays.asList(banana, newer, older)), "found: " + f);
         check(ShaderZip.found(ID).isEmpty(), "no folders");
     }
 
