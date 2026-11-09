@@ -544,9 +544,17 @@ public final class ShaderZipJvmTest {
         target.allowCompatibleFallback = true;
         ShaderZip.Result result = ShaderZip.install(ShaderZip.readAuto(zip, target, ShaderZip.QUIET), target);
         check(result.version.equals(OLD), "Banana full-pack import preserves the true shader chain");
+        check(ShaderZip.bananaFallback(dst, ID) != null,
+                "compatible Banana fallback detected for code-only preparation");
         check(Arrays.equals(bytes(new File(dst, "shaders/v-" + OLD + "/dmsh_vk.lib")), lib), "Banana shader library imported byte for byte");
         check(Arrays.equals(bytes(new File(dst, "shaders/v-" + CUR + "/dmsh_vk.lib")), current), "existing Swap2 shaders not overwritten");
-        check(!new File(dst, "main.patched.bin").isDirectory(), "no game code copied");
+        File fallbackSrc = new File(dst, "shaders/v-" + OLD + "/source.tsv");
+        byte[] provenance = bytes(fallbackSrc);
+        Files.writeString(fallbackSrc.toPath(), "kind\tunknown\n", StandardCharsets.UTF_8);
+        check(ShaderZip.bananaFallback(dst, ID) == null, "unknown shader import cannot skip translation");
+        Files.write(fallbackSrc.toPath(), provenance);
+        check(ShaderZip.bananaFallback(dst, ID) != null, "genuine Banana provenance restored");
+                check(!new File(dst, "main.patched.bin").isDirectory(), "no game code copied");
         check(new String(bytes(new File(dst, "main.patched.bin")), StandardCharsets.UTF_8).equals("code"), "existing executable kept");
         check(noStaging(dst), "no dangling staged libraries after full-pack import");
         // A SAF file picker can expose only an input stream rather than a filesystem path.
