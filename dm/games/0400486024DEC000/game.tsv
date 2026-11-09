@@ -52,7 +52,10 @@ fps_hold	off
 shader_gmem_fast	1
 # New compiler environment was first connected in V10.1; invalidate shader inputs
 # prepared by V10 without the GMEM fast path, even if their VK chain is the same.
-shader_gmem_revision	v101
+shader_gmem_revision	v11
+# V11: 13-step raw search reaches up to 8191 placed Vulkan segments.
+# This log already reached more than 4095 in the current Android build.
+shader_gmem_map_capacity	8192
 
 # ---- Graphics ----
 # agl's render buffer binding wraps its clears in render conditions in Donkey Kong Bananza and Mario Kart World (same engine); assumed here (open)
