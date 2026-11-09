@@ -1,4 +1,4 @@
-"""Source checks for the GPU-side no-rebuild render-pass optimization."""
+"""Source checks for conservative render-pass handling and no shader rebuild."""
 from pathlib import Path
 import unittest
 
@@ -7,9 +7,8 @@ D = (ROOT / "dm/gfx/vk_android/vka_draw.c").read_text()
 E = (ROOT / "dm/gfx/vk_android/vka_exec.c").read_text()
 
 class OcarinaRuntimeGPUTests(unittest.TestCase):
-    def test_keep_pass_is_game_specific_and_switchable(self):
-        self.assertIn('return !strcmp(DM_GAME_ID, "0400486024DEC000");', D)
-        self.assertIn('getenv("DM_VK_BAR_KEEP")', D)
+    def test_pass_keep_not_enabled_by_default(self):
+        self.assertIn('return VKA_ENV("DM_VK_BAR_KEEP", 0) != 0;', D)
         self.assertIn('if (R.swrite || !bar_keep_enabled()) return 0;', D)
         self.assertIn('if (R.on && R.bar_pending && bar_hazard(sh, d))', D)
         self.assertIn('if (draw_writes(sh, d)) return 1;', D)
