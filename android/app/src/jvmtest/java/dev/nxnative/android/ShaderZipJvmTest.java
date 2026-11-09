@@ -578,6 +578,11 @@ public final class ShaderZipJvmTest {
         File badAbi = bananaZip(new File(t, "banana-pack-abi.zip"), incompatible, ID, "ffffffffffff");
         ShaderZip.Result foreign = ShaderZip.install(ShaderZip.readAuto(badAbi, target, ShaderZip.QUIET), target);
         check(foreign.abi.equals("ffffffffffff"), "foreign ABI stored without rewriting the header");
+        check(Pack.bananaForeignLibrary(dst, ID) == null, "arbitrary foreign ABI is not automatically executable");
+        byte[] actualBanana = lib(ID, OLD, INPUTS, "228b73bd10f6", 4, 1000, 44);
+        File trialZip = bananaZip(new File(t, "banana-pack-trial.zip"), actualBanana, ID, "228b73bd10f6");
+        ShaderZip.install(ShaderZip.readAuto(trialZip, target, ShaderZip.QUIET), target);
+        check(Pack.bananaForeignLibrary(dst, ID) != null, "known imported Banana ABI offered as experimental trial");
         check(Arrays.equals(bytes(new File(dst, "shaders/v-" + OLD + "/dmsh_vk.lib")), incompatible),
                 "Banana foreign ABI kept byte-for-byte");
     }

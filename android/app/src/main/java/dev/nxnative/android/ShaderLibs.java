@@ -134,6 +134,30 @@ final class ShaderLibs {
         return best;
     }
 
+    /** The original ABI in a Banana full-pack that the user explicitly imported.
+     * It is *not* considered ABI-compatible; the native host may offer only a
+     * guarded last-resort experimental load. This never relabels the library.
+     */
+    static File bananaForeign(File packDir, String titleId, String current) {
+        File best = null;
+        for (File d : libraries(packDir)) {
+            if (d.getName().equals("v-" + current)) continue;
+            File lib = new File(d, "dmsh_vk.lib");
+            Header h = header(lib);
+            if (h == null || !titleId.equals(h.game) || !d.getName().equals("v-" + h.vkChain)
+                    || !h.abi.equals("228b73bd10f6") || !h.fits(lib.length())) continue;
+            File source = new File(d, "source.tsv");
+            try {
+                if (!source.isFile() || source.length() > 4096) continue;
+                String stamp = new String(java.nio.file.Files.readAllBytes(source.toPath()), StandardCharsets.UTF_8);
+                if (!stamp.contains("kind\tbanana-pack-shaders\n")
+                        || !stamp.contains("abi\t228b73bd10f6\n")) continue;
+                if (best == null || lib.lastModified() > best.lastModified()) best = lib;
+            } catch (IOException ignored) { /* not a verified import */ }
+        }
+        return best;
+    }
+
     /** The warning for a game played on such a library */
     static final String LEGACY_WARNING = "This game's shaders were made before versioned shader updates, so this app version cannot update them in part. "
             + "You can keep playing on them, but updating the shaders once more with Prepare shaders is suggested: after that, shader fixes arrive as small incremental updates.";

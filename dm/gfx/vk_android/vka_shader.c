@@ -84,6 +84,32 @@ VkShaderModule vka_shader_cs_module(vka_shader *s) { return vka_shader_module(s,
 
 const char *vka_shader_lib_path(void) { return g_lib_path; }
 
+// The user explicitly imported this Banana full-pack's Vulkan shader library.
+// Another ABI is *not* ABI-compatible by definition: only offer this exact
+// known foreign build as a last-resort experimental trial, with strict game,
+// library-format and table checks still performed by vka_shlib_open.
+// Never rewrite its ABI or prefer it over a library of this host's ABI.
+#define VKA_BANANA_FOREIGN_ABI "228b73bd10f6"
+static int vka_banana_imported(const char *libpath) {
+    const char *slash = strrchr(libpath, '/');
+    if (!slash) return 0;
+    char src[1024];
+    size_t parent_len = (size_t)(slash - libpath);
+    if (parent_len + sizeof "/source.tsv" > sizeof src) return 0;
+    memcpy(src, libpath, parent_len);
+    memcpy(src + parent_len, "/source.tsv", sizeof "/source.tsv");
+    FILE *f = fopen(src, "rb");
+    if (!f) return 0;
+    int kind = 0, abi = 0;
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        if (!strcmp(line, "kind\tbanana-pack-shaders\n")) kind = 1;
+        if (!strcmp(line, "abi\t" VKA_BANANA_FOREIGN_ABI "\n")) abi = 1;
+    }
+    fclose(f);
+    return kind && abi;
+}
+
 static int lib_load(void) {
     if (g_lib_state) return g_lib_state > 0;
     g_lib_state = -1;
@@ -93,7 +119,7 @@ static int lib_load(void) {
     int have = !access(path, R_OK) && vka_shlib_open(&g_lib, path, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, err, sizeof err);
     if (!have && !(e && *e)) {   // this version's library not in the pack (yet): the newest other v-<V>/ that this host reads the same (its ABI)
         char why[256]; snprintf(why, sizeof why, "%s", access(path, R_OK) ? "missing" : err);
-        char sd[1024], best[1024] = "", old[1024] = ""; time_t bt = 0, ot = 0; snprintf(sd, sizeof sd, "%s/shaders", dir);
+        char sd[1024], best[1024] = "", old[1024] = "", foreign[1024] = ""; time_t bt = 0, ot = 0, ft = 0; snprintf(sd, sizeof sd, "%s/shaders", dir);
         DIR *d = opendir(sd); struct dirent *de;
         while (d && (de = readdir(d))) {
             if (strncmp(de->d_name, DMSH_VK_DIR_PREFIX, strlen(DMSH_VK_DIR_PREFIX))) continue;
@@ -107,7 +133,18 @@ static int lib_load(void) {
             // A library made before the abi field (all zero): its ABI is not known, so it is the last resort, played with a warning rather than nothing drawn
             // (the user's choice: never block Play on it; the app suggests one more shader update, after which updates are deltas of the same ABI)
             int legacy = vka_shlib_open(&t, p, NULL, NULL, DM_GAME_ID, NULL, e2, sizeof e2);
-            if (legacy) { static const char z[12]; legacy = !memcmp(t.h->abi, z, sizeof z); vka_shlib_close(&t); if (!legacy) snprintf(e2, sizeof e2, "another ABI than this host's %s", DMSH_VK_ABI); }
+            if (legacy) {
+                static const char z[12];
+                int no_abi = !memcmp(t.h->abi, z, sizeof z);
+                int trial = !memcmp(t.h->abi, VKA_BANANA_FOREIGN_ABI, sizeof t.h->abi) && vka_banana_imported(p);
+                vka_shlib_close(&t);
+                if (trial) {
+                    if (!*foreign || st.st_mtime > ft) { snprintf(foreign, sizeof foreign, "%s", p); ft = st.st_mtime; }
+                    continue;
+                }
+                legacy = no_abi;
+                if (!legacy) snprintf(e2, sizeof e2, "different Vulkan ABI, no verified import marker");
+            }
             if (!legacy) { VLOG("shader library %s not usable here: %s", p, e2); continue; }
             if (!*old || st.st_mtime > ot) { snprintf(old, sizeof old, "%s", p); ot = st.st_mtime; }
         }
@@ -116,6 +153,10 @@ static int lib_load(void) {
             char v[17]; vka_shlib_str(g_lib.h->vk_chain, v);
             VLOG("shader library %s: this host's version %s is %s (the app's shader update makes it); playing version %s, the same ABI %s", path, DMSH_VK_CHAIN, why, v, DMSH_VK_ABI);
             snprintf(path, sizeof path, "%s", best); have = 1;
+        } else if (!*best && *foreign && vka_shlib_open(&g_lib, foreign, NULL, NULL, DM_GAME_ID, NULL, err, sizeof err)) {
+            VRED("EXPERIMENTAL Banana shader import: ABI " VKA_BANANA_FOREIGN_ABI " differs from host " DMSH_VK_ABI
+                 "; attempting the original unmodified SPIR-V. Rendering or GPU driver stability is NOT guaranteed.");
+            snprintf(path, sizeof path, "%s", foreign); have = 1;
         } else if (!*best && *old && vka_shlib_open(&g_lib, old, NULL, NULL, DM_GAME_ID, NULL, err, sizeof err)) {
             char v[17]; vka_shlib_str(g_lib.h->vk_chain, v);
             VRED("shader library %s: this host's version %s is %s; playing version %s, made before versioned shader updates (no ABI in its header, this host's is %s): "
