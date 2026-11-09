@@ -672,4 +672,6 @@
     <string name="s2_add_added_dump">%1$s adicionado. Ele é preparado na primeira vez que você jogar.</string>
     <string name="s2_add_no_pack_title">Pacote não encontrado</string>
     <string name="s2_add_no_pack">Nenhum pacote foi encontrado para ele. Escolha a pasta do pacote (com pack.tsv), ou escolha o dump completo (com base/ e updates/, ou um .nup com o jogo base) para preparar um neste celular.</string>
+    <string name="s2_shaders_imported_fallback">%1$d shaders importados da versão %2$s. Esta biblioteca será usada como alternativa compatível pela ABI, não como uma biblioteca nova preparada pelo Swap2. O aplicativo pode utilizá-la enquanto a sua versão própria estiver ausente. A otimização GMEM só estará presente se já existir nos shaders importados. As bibliotecas anteriores foram preservadas.</string>
+    <string name="s2_shaders_err_other_abi">ABI da biblioteca de shaders incompatível: arquivo %1$s, aplicativo %2$s. A biblioteca não foi importada; os shaders existentes foram preservados.</string>
 </resources>
