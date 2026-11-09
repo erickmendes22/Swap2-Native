@@ -1,3 +1,4 @@
-Ocarina Banana foreign ABI import test: corrected final fixture assertion to check the most recently imported 228b73bd10f6 library.
-Validated test order: import ffffffff library, then import 228b73bd10f6 into same v-OLD slot, compare to actualBanana.
-Retry gated APK workflow on testing branch; integration branch remains unchanged.
+Ocarina Banana Native import test v2: fix Android INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+Package com.swap2native.ootbananav2 installs alongside com.swap2native.ootbanana and com.swap2native.
+Reuse a persistent Actions cache signing key for *future* v2 updates; previous ephemeral signing keys cannot be recovered.
+Single gated workflow after verifying Java tests, APK package identity and APK signature.

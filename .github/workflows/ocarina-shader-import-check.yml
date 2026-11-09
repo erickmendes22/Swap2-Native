@@ -66,7 +66,28 @@ jobs:
         run: |
           set -euxo pipefail
           zsh android/ondevice/build.sh "$RUNNER_TEMP/oot-banana" all
-      - name: Build separate Ocarina banana-import test APK
+      # The previously installed ootbanana APK has a different ephemeral runner
+      # debug signature. A new package ID is required: Android cannot update
+      # that installation without the old *private* signing key.
+      # Persist the debug-only signing identity for future ootbananav2 updates.
+      - name: Restore stable test-app debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: swap2-ootbananav2-test-debug-signing-v1
+      - name: Generate test signing key only if cache is empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          if [ ! -s "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -noprompt -v -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" -validity 10000 -keyalg RSA -keysize 2048
+          fi
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android \
+            -alias androiddebugkey -v | grep -E 'Alias name:|SHA256:'
+      - name: Build Ocarina banana-import APK with new package and stable signer
         shell: bash
         run: |
           set -euxo pipefail
@@ -74,15 +95,21 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon \
             -PnxGames=0400486024DEC000 \
-            -PnxApp=ootbanana \
-            -PnxLabel="Swap2 Ocarina Banana Import Test" \
-            -PnxVersion=0.1.1-oot-v10.1-banana-import \
+            -PnxApp=ootbananav2 \
+            -PnxLabel="Swap2 Ocarina Banana Import v2" \
+            -PnxVersion=0.1.1-oot-banana-foreign-abi-v2 \
+            -PnxVersionCode="$GITHUB_RUN_NUMBER" \
             -PnxPackStage="$RUNNER_TEMP/oot-banana/stage" apk
-          test -s out/swap2-native-ootbanana.apk
-      - name: Upload test APK
+          test -s out/swap2-native-ootbananav2.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging \
+            out/swap2-native-ootbananav2.apk | grep '^package:' | \
+            grep "name='com.swap2native.ootbananav2'"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose \
+            out/swap2-native-ootbananav2.apk
+      - name: Upload separately installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: Swap2-Ocarina-Banana-Import-Test-APK
-          path: android/app/out/swap2-native-ootbanana.apk
+          name: Swap2-Ocarina-Banana-Import-v2-APK
+          path: android/app/out/swap2-native-ootbananav2.apk
           if-no-files-found: error
           retention-days: 14
