@@ -83,6 +83,7 @@ int vka_shader_cs_variant(vka_shader *s) {
 VkShaderModule vka_shader_cs_module(vka_shader *s) { return vka_shader_module(s, vka_shader_cs_variant(s)); }
 
 const char *vka_shader_lib_path(void) { return g_lib_path; }
+unsigned vka_shader_lib_differs(void) { return g_lib_state > 0 ? g_lib.differs : 0; }
 
 static int lib_load(void) {
     if (g_lib_state) return g_lib_state > 0;
@@ -93,15 +94,17 @@ static int lib_load(void) {
     int have = !access(path, R_OK) && vka_shlib_open(&g_lib, path, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, err, sizeof err);
     if (!have && !(e && *e)) {   // this version's library not in the pack (yet): the newest other v-<V>/ that this host reads the same (its ABI)
         char why[256]; snprintf(why, sizeof why, "%s", access(path, R_OK) ? "missing" : err);
-        char sd[1024], best[1024] = "", old[1024] = ""; time_t bt = 0, ot = 0; snprintf(sd, sizeof sd, "%s/shaders", dir);
+        char sd[1024], best[1024] = "", cbest[1024] = "", old[1024] = ""; time_t bt = 0, cbt = 0, ot = 0; snprintf(sd, sizeof sd, "%s/shaders", dir);
         DIR *d = opendir(sd); struct dirent *de;
         while (d && (de = readdir(d))) {
             if (strncmp(de->d_name, DMSH_VK_DIR_PREFIX, strlen(DMSH_VK_DIR_PREFIX))) continue;
             char p[1024]; struct stat st; vka_shlib t; char e2[256];
             if (snprintf(p, sizeof p, "%s/%s/" DMSH_VK_LIB_FILE, sd, de->d_name) >= (int)sizeof p || stat(p, &st) || !strcmp(p, path)) continue;
             if (vka_shlib_open(&t, p, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, e2, sizeof e2)) {
+                int is_compat = t.by_abi == 2;
                 vka_shlib_close(&t);
-                if (!*best || st.st_mtime > bt) { snprintf(best, sizeof best, "%s", p); bt = st.st_mtime; }
+                if (is_compat) { if (!*cbest || st.st_mtime > cbt) { snprintf(cbest, sizeof cbest, "%s", p); cbt = st.st_mtime; } }
+                else if (!*best || st.st_mtime > bt) { snprintf(best, sizeof best, "%s", p); bt = st.st_mtime; }
                 continue;
             }
             // A library made before the abi field (all zero): its ABI is not known, so it is the last resort, played with a warning rather than nothing drawn
@@ -112,9 +115,12 @@ static int lib_load(void) {
             if (!*old || st.st_mtime > ot) { snprintf(old, sizeof old, "%s", p); ot = st.st_mtime; }
         }
         if (d) closedir(d);
+        if (!*best && *cbest) snprintf(best, sizeof best, "%s", cbest);
         if (*best && vka_shlib_open(&g_lib, best, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, err, sizeof err)) {
             char v[17]; vka_shlib_str(g_lib.h->vk_chain, v);
-            VLOG("shader library %s: this host's version %s is %s (the app's shader update makes it); playing version %s, the same ABI %s", path, DMSH_VK_CHAIN, why, v, DMSH_VK_ABI);
+            if (g_lib.by_abi == 2)
+                VLOG("shader library %s: loading audited Banana ABI 228b73bd10f6 with bitmap write log (host %s)", best, DMSH_VK_ABI);
+            else VLOG("shader library %s: host version %s is %s; using %s, same ABI %s", path, DMSH_VK_CHAIN, why, v, DMSH_VK_ABI);
             snprintf(path, sizeof path, "%s", best); have = 1;
         } else if (!*best && *old && vka_shlib_open(&g_lib, old, NULL, NULL, DM_GAME_ID, NULL, err, sizeof err)) {
             char v[17]; vka_shlib_str(g_lib.h->vk_chain, v);

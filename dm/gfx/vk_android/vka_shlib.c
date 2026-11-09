@@ -1,5 +1,6 @@
 // The Vulkan shader library reader (vka_shlib.h). Every offset in the file is checked once at open, so lookups afterwards index the tables without further checks
 #include "vka_shlib.h"
+#include "vka_abi_compat.h"
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -28,9 +29,10 @@ int vka_shlib_check(vka_shlib *L, const void *base, size_t size, const char *cha
     if (h->magic != DMSH_VK_LIB_MAGIC) return fail(err, errn, "magic %#x, not a Vulkan shader library", h->magic);
     if (h->version != DMSH_VK_LIB_VERSION) return fail(err, errn, "library format %u, this host reads %u", h->version, DMSH_VK_LIB_VERSION);
     // Another version is taken only by the ABI the header records (12 characters, no NUL; zero in a library made before the field): what this host reads of it is the same
-    int by_abi = 0;
+    int by_abi = 0, compat = -1;
     if ((chain && !str_is(h->chain, chain)) || (vk_chain && !str_is(h->vk_chain, vk_chain))) {
         by_abi = abi && strlen(abi) == sizeof h->abi && !memcmp(h->abi, abi, sizeof h->abi);
+        if (!by_abi && abi && !strcmp(abi, DMSH_VK_ABI) && (compat = vka_abi_compat_of(h->abi)) >= 0) by_abi = 2;
         char a[13]; memcpy(a, h->abi, 12); a[12] = 0; for (int i = 0; i < 12; i++) if (a[i] < 32 || a[i] > 126) { a[0] = 0; break; }
         if (!by_abi && chain && !str_is(h->chain, chain)) { vka_shlib_str(h->chain, s); return fail(err, errn, "translator chain %s, this host has %s (library ABI %s, this host's %s)", s, chain, *a ? a : "none", abi ? abi : "not asked"); }
         if (!by_abi) { vka_shlib_str(h->vk_chain, s); return fail(err, errn, "Vulkan chain %s, this host has %s (library ABI %s, this host's %s)", s, vk_chain, *a ? a : "none", abi ? abi : "not asked"); }
@@ -42,7 +44,7 @@ int vka_shlib_check(vka_shlib *L, const void *base, size_t size, const char *cha
     if ((uint64_t)h->mod_off + (uint64_t)h->mod_count * sizeof(dmsh_vk_module) > sz || (h->mod_off & 7)) return fail(err, errn, "module table out of the file");
     if (h->blob_off > sz || h->blob_size > sz - h->blob_off) return fail(err, errn, "blob out of the file");
     const uint8_t *b = base;
-    L->base = b; L->size = size; L->h = h; L->by_abi = by_abi;
+    L->base = b; L->size = size; L->h = h; L->by_abi = by_abi; L->differs = compat > 0 ? (unsigned)compat : 0;
     L->ent = (const dmsh_vk_entry *)(b + h->entry_off); L->bind = (const dmsh_vk_bind *)(b + h->bind_off); L->mod = (const dmsh_vk_module *)(b + h->mod_off); L->blob = b + h->blob_off;
     for (uint32_t i = 0; i < h->entry_count; i++) {
         const dmsh_vk_entry *e = &L->ent[i];

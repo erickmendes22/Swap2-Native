@@ -10,7 +10,8 @@ typedef struct {
     const dmsh_vk_header *h;
     const dmsh_vk_entry *ent; const dmsh_vk_bind *bind; const dmsh_vk_module *mod; const uint8_t *blob;
     int mapped;
-    int by_abi;   // taken by its abi only: its chain or vk_chain is not the host's (an older library played while its update runs)
+    int by_abi;   // 1: host ABI, 2: audited compatible Banana ABI
+    unsigned differs;   // VKA_ABI_LOG_BITMAP for newer Banana shaders
 } vka_shlib;
 
 // Checks a library image against what the host was built with: magic, version, chain, vk_chain and game (NULL = not checked), then every table and range inside the file and the
