@@ -814,7 +814,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
             if (rawFallback)
             {
-                GenerateRawAccess(context, operation, mapBinding, logBinding);
+                GenerateRawAccess(context, resourceManager, operation, mapBinding, logBinding);
             }
 
             bool returnsValue = operation.Dest != null;
@@ -897,7 +897,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
             EmitterContext context = new();
 
-            GenerateRawAccess(context, operation, mapBinding, logBinding);
+            GenerateRawAccess(context, resourceManager, operation, mapBinding, logBinding);
 
             bool returnsValue = operation.Dest != null;
 
@@ -952,7 +952,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
         // nxnative: the raw path's body, in a helper whose arguments are the address (low, high) and the operation's values (as the multi-target helpers'): the pool
         // lookup, the page logged for a write, the access and its return. An address in no pool falls through to the code after it (the caller's miss return)
-        private static void GenerateRawAccess(EmitterContext context, Operation operation, int mapBinding, int logBinding)
+        private static void GenerateRawAccess(EmitterContext context, ResourceManager resourceManager, Operation operation, int mapBinding, int logBinding)
         {
             bool isSmall = IsSmallInt(operation.StorageKind);
             bool writes = operation.Inst == Instruction.Store || operation.Inst.IsAtomic();

@@ -27,6 +27,7 @@ class OcarinaIosV22GmemTests(unittest.TestCase):
         self.assertIn("public bool ZeroInit", memory)
         self.assertIn("AddRawLastEntryMemory()", res)
         self.assertIn("context.Store(StorageKind.LocalMemory, last[6]", raw)
+        self.assertIn("GenerateRawAccess(context, resourceManager, operation, mapBinding, logBinding);", raw)
         self.assertIn('PackEngine.setenv("DMSH_GMEM_LAST1"', service)
         self.assertIn("env['DMSH_GMEM_MAP_8192']", packer)
         for name in ("ResourceManager.cs", "MemoryDefinition.cs", "Declarations.cs"):

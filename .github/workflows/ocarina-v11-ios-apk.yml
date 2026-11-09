@@ -23,6 +23,14 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_raw_gmem_fast1.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v101_paths.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v22_gmem.py'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Compile shader translator in CI before downloading Android dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          dotnet build dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Ryujinx.Graphics.Shader.csproj --configuration Release --verbosity quiet
       - name: Verify shader hashes and ABI without changing the prior stable library
         shell: bash
         run: |
