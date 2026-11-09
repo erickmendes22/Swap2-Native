@@ -510,10 +510,14 @@ public final class ShaderZipJvmTest {
         ShaderZip.Target target2 = new ShaderZip.Target(dst2, ID);
         target2.allowCompatibleFallback = true;
         check(importStream(zip, target2).version.equals(OLD), "stream foreign import");
-        // A different ABI is never imported even when the user opted in.
-        byte[] bad = lib(ID, OLD, bananaInputs, "ffffffffffff", 4, 4096, 25);
+        // Different ABIs may be imported and kept verbatim. The runtime remains
+        // responsible for deciding whether those modules are executable.
+        byte[] bad = lib(ID, OLD, bananaInputs, "228b73bd10f6", 4, 4096, 25);
         File badZip = craft(new File(t, "banana-bad.zip"), bad, in, "kind", "banana-shaders");
-        refused("foreign incompatible ABI", ShaderZip.Why.OTHER_ABI, badZip, target, false);
+        ShaderZip.Result foreign = importFile(badZip, target);
+        check(foreign.version.equals(OLD) && foreign.abi.equals("228b73bd10f6"),
+                "foreign ABI imported without relabelling");
+        check(Arrays.equals(bytes(imported), bad), "foreign ABI library stored byte-for-byte");
         // Current version still requires the exact shader-input mapping.
         byte[] fakeCurrent = lib(ID, CUR, bananaInputs, ABI, 4, 4096, 26);
         File fakeZip = craft(new File(t, "banana-current.zip"), fakeCurrent, in, "kind", "banana-shaders");
@@ -572,8 +576,10 @@ public final class ShaderZipJvmTest {
         check(e != null && e.why == ShaderZip.Why.OTHER_GAME && tree(dst).equals(before), "wrong game refused without changes");
         byte[] incompatible = lib(ID, OLD, INPUTS, "ffffffffffff", 4, 1000, 43);
         File badAbi = bananaZip(new File(t, "banana-pack-abi.zip"), incompatible, ID, "ffffffffffff");
-        e = failure(() -> ShaderZip.readAuto(badAbi, target, ShaderZip.QUIET));
-        check(e != null && e.why == ShaderZip.Why.OTHER_ABI && tree(dst).equals(before), "bad ABI refused without changes");
+        ShaderZip.Result foreign = ShaderZip.install(ShaderZip.readAuto(badAbi, target, ShaderZip.QUIET), target);
+        check(foreign.abi.equals("ffffffffffff"), "foreign ABI stored without rewriting the header");
+        check(Arrays.equals(bytes(new File(dst, "shaders/v-" + OLD + "/dmsh_vk.lib")), incompatible),
+                "Banana foreign ABI kept byte-for-byte");
     }
 
     static void lists(File t) throws Exception {
