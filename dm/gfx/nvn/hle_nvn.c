@@ -2943,11 +2943,19 @@ NVN(nvnCommandBufferSetConservativeRasterEnable, void, NVNcommandBuffer *c, uint
 NVN(nvnCommandBufferSetTiledCacheAction, void, NVNcommandBuffer *c, NVNtiledCacheAction a) { (void)c; (void)a; }        // Tegra tiled cache hint, no Metal equivalent
 // Record guest-declared undefined attachment contents so Vulkan can avoid loading them.
 NVN(nvnCommandBufferDiscardColor, void, NVNcommandBuffer *c, int i) {
+#if defined(__ANDROID__)
     if (i < 0 || i >= 8) return;
     *REC(c, OP_DISCARD_COLOR, int32_t) = i;
+#else
+    (void)c; (void)i; // macOS retains its old no-op path
+#endif
 }
 NVN(nvnCommandBufferDiscardDepthStencil, void, NVNcommandBuffer *c) {
+#if defined(__ANDROID__)
     *REC(c, OP_DISCARD_DS, uint64_t) = 0;
+#else
+    (void)c;
+#endif
 }
 NVN(nvnCommandBufferSetTiledCacheTileSize, void, NVNcommandBuffer *c, int w, int h) { (void)c; (void)w; (void)h; }
 NVN_NOPROTO(nvnCommandBufferSetColorReductionEnable, void, NVNcommandBuffer *c, uint32_t en) { (void)c; (void)en; }   // color compression hints
