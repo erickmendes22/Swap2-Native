@@ -50,6 +50,9 @@ fps_hold	off
 # Full 64-bit bounds check for pool 1, otherwise original binary search.
 # Changes only newly translated shader SPIR-V, not the NVN host ABI.
 shader_gmem_fast	1
+# New compiler environment was first connected in V10.1; invalidate shader inputs
+# prepared by V10 without the GMEM fast path, even if their VK chain is the same.
+shader_gmem_revision	v101
 
 # ---- Graphics ----
 # agl's render buffer binding wraps its clears in render conditions in Donkey Kong Bananza and Mario Kart World (same engine); assumed here (open)

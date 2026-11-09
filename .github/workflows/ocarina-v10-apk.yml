@@ -17,6 +17,7 @@ jobs:
         run: |
           python3 -m py_compile scripts/pack_android.py dm/tools/gsys_dynres.py dm/games/0400486024DEC000/patches.py
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_raw_gmem_fast1.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v101_paths.py'
           python3 dm/gfx/tools/dmsh_chain.py --header
           python3 dm/gfx/tools/vk_android_build.py --header
           git diff --exit-code -- dm/gfx/nvn/dmsh_chain.h dm/gfx/nvn/dmsh_chain_vk.h
