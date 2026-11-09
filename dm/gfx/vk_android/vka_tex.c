@@ -118,6 +118,17 @@ void vka_barrier_at(VkCommandBuffer cb, const char *file, int line) {
     vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
 }
+// End of a dynamic-rendering pass: only graphics commands can execute inside the pass
+// (draws, attachment clears and occlusion queries). Restrict the source stages so the
+// barrier does not unnecessarily include prior compute/transfer work. Preserve the
+// original MEMORY_WRITE -> MEMORY_READ|WRITE dependency and all destination stages.
+// Other barriers, including every transfer and guest OP_BARRIER, remain unchanged.
+void vka_graphics_barrier_at(VkCommandBuffer cb, const char *file, int line) {
+    vka_n_bar++;
+    VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT, .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+    vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+    if (vka_gp_active) vka_gp_mark(cb, file, line);
+}
 void vka_img_barrier(VkCommandBuffer cb, VkImage img, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to) {
     VkImageMemoryBarrier b = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT, .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
         .oldLayout = from, .newLayout = to, .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .image = img,
