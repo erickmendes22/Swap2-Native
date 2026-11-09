@@ -145,7 +145,7 @@ final class PackUi {
             }
         } catch (IOException e) {
             a.error(a.getString(R.string.s2_pack_import_failed, e.getMessage())
-                    + "\\n\\n" + a.getString(R.string.s2_pack_import_nothing));
+                    + "\n\n" + a.getString(R.string.s2_pack_import_nothing));
             return;
         }
         File packs = AppStorage.packs(a), target = AppStorage.pack(a, g.titleId);
