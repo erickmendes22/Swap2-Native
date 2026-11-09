@@ -190,7 +190,7 @@ final class PackZip {
         if (data.length > max) throw new IOException("pack.tsv is too large");
         String value = null;
         for (String row : new String(data, StandardCharsets.UTF_8).split("\\n")) {
-            if (row.startsWith("format\\t")) {
+            if (row.startsWith("format\t")) {
                 if (value != null) throw new IOException("duplicate format field in pack.tsv");
                 value = row.substring(7).trim();
             }
