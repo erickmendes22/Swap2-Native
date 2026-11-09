@@ -994,7 +994,11 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             // The last entry whose start is at or below the address (entry 0 starts at 0, so there always is one)
             Operand index = Const(0);
 
-            for (int step = 1 << (GmemMapLog2 - 1); step != 0; step >>= 1)
+            // Ocarina V11 opt-in: search 8192 Vulkan GMEM entries instead of 4096.
+            // This only changes shader code and never the buffer's entry ABI. Old
+            // libraries still use 12 steps, while new ones can reach segment 8191.
+            int mapLog2 = Environment.GetEnvironmentVariable("DMSH_GMEM_MAP_8192") == "1" ? 13 : GmemMapLog2;
+            for (int step = 1 << (mapLog2 - 1); step != 0; step >>= 1)
             {
                 Operand candidate = context.IAdd(index, Const(step));
                 Operand entry = context.IMultiply(candidate, Const(GmemMapEntryWords));
