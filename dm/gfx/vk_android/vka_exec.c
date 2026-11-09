@@ -221,7 +221,7 @@ static uint64_t g_oq_acc; static pthread_mutex_t g_oq_mu = PTHREAD_MUTEX_INITIAL
 // Host query-result readback is CPU-heavy in Ocarina (>1900 queries/frame).
 // Coalesce vkGetQueryPoolResults for the already completed submission, without
 // modifying the guest's 64-bit counts, the shader library or the query schedule.
-static _Atomic uint64_t g_oq_get_calls, g_oq_batch_queries;
+static _Atomic uint64_t g_oq_get_calls, g_oq_reset_calls, g_oq_batch_queries;
 typedef struct { uint64_t first, count; uint64_t *pairs; } oq_batch;   // the running count (the completion thread; vka_fence_cpu may run a submission's effects on another)
 static uint64_t g_oqs_reset, g_oqs_rep, g_oqs_nores, g_oqs_q, g_oqs_full, g_oqs_skip, g_oqs_fly; static _Atomic uint64_t g_oqs_unav, g_oqs_zero;   // statistics (oq_stats)
 static int oq_on(void) {
@@ -341,8 +341,20 @@ static void oq_done(const pop *o, uint64_t ticks, const oq_batch *batch) {   // 
     }
     if (o->q1 > o->q0) {   // given back, in order
         if (OQ.host) {
-            for (uint64_t q = o->q0; q < o->q1;) { uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(o->q1 - q < OQ_N - s ? o->q1 - q : OQ_N - s); OQ.hreset(V.dev, OQ.pool, s, k); q += k; }
-            atomic_store_explicit(&g_oq_ready, o->q1 + OQ_N, memory_order_release);
+            // Every counter in this completed callback was read before oq_done.
+            // Delay resets until post_run finishes writing every guest result,
+            // reducing thousands of driver calls to one or two per callback.
+            int defer = batch && batch->pairs && o->q0 >= batch->first &&
+                        o->q1 - batch->first <= batch->count;
+            if (!defer) {
+                for (uint64_t q = o->q0; q < o->q1;) {
+                    uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(o->q1 - q < OQ_N - s ? o->q1 - q : OQ_N - s);
+                    OQ.hreset(V.dev, OQ.pool, s, k);
+                    atomic_fetch_add_explicit(&g_oq_reset_calls, 1, memory_order_relaxed);
+                    q += k;
+                }
+                atomic_store_explicit(&g_oq_ready, o->q1 + OQ_N, memory_order_release);
+            }
         } else atomic_store_explicit(&g_oq_freed, o->q1, memory_order_release);
     }
     pthread_mutex_unlock(&g_oq_mu);
@@ -361,14 +373,15 @@ static void oq_stats(char *b, size_t n, double frames) {   // every 300 frames w
     }
     { // A/B: report the *actual* host API call count; unlike a theoretical
       // CPU estimate, this proves whether batching executed on the device.
-        static uint64_t c0, b0;
+        static uint64_t c0, r0batch, b0;
         uint64_t c = atomic_load_explicit(&g_oq_get_calls, memory_order_relaxed);
+        uint64_t resets = atomic_load_explicit(&g_oq_reset_calls, memory_order_relaxed);
         uint64_t q = atomic_load_explicit(&g_oq_batch_queries, memory_order_relaxed);
         size_t used = strlen(b);
         if (frames > 0 && used && used < n)
-            snprintf(b + used, n - used, "; readback %.1f vkGetQueryPoolResults calls/frame, %.1f queries prefetched/frame (DM_VK_OQ_BATCH)",
-                     (double)(c - c0) / frames, (double)(q - b0) / frames);
-        c0 = c; b0 = q;
+            snprintf(b + used, n - used, "; readback %.1f get + %.1f reset calls/frame, %.1f queries batched/frame (DM_VK_OQ_BATCH)",
+                     (double)(c - c0) / frames, (double)(resets - r0batch) / frames, (double)(q - b0) / frames);
+        c0 = c; r0batch = resets; b0 = q;
     }
     r0 = g_oqs_reset; p0 = g_oqs_rep; nr0 = g_oqs_nores; q0 = g_oqs_q; f0 = g_oqs_full; s0 = g_oqs_skip; u0 = un; z0 = ze; g_oqs_fly = 0;
 }
@@ -417,6 +430,22 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
             uint64_t t = ops[i].type, rec[2] = {t == NVN_COUNTER_TYPE_TIMESTAMP || t == NVN_COUNTER_TYPE_TIMESTAMP_TOP ? (DM_GAME_RENDER_COND ? 0 : ticks) : t == NVN_COUNTER_TYPE_SAMPLES_PASSED ? 1 : 0, ticks};
             memcpy((void *)(uintptr_t)ops[i].addr, rec, sizeof rec);
         }
+    }
+    if (batch.pairs && OQ.host) {
+        // The GPU fence has completed, the report data are already copied
+        // to guest memory, and no query in this callback can be read again.
+        pthread_mutex_lock(&g_oq_mu);
+        uint64_t end = batch.first + batch.count;
+        for (uint64_t q = batch.first; q < end;) {
+            uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(end - q < OQ_N - s ? end - q : OQ_N - s);
+            OQ.hreset(V.dev, OQ.pool, s, k);
+            atomic_fetch_add_explicit(&g_oq_reset_calls, 1, memory_order_relaxed);
+            q += k;
+        }
+        uint64_t ready = end + OQ_N;
+        if (ready > atomic_load_explicit(&g_oq_ready, memory_order_relaxed))
+            atomic_store_explicit(&g_oq_ready, ready, memory_order_release);
+        pthread_mutex_unlock(&g_oq_mu);
     }
     free(batch.pairs);
     free(ops);

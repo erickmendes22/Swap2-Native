@@ -296,13 +296,21 @@ int vka_pass_keep(void) { return g_pass_keep; }
 // load of every attachment on a tiler (the next draw reopens it with LOAD). Inside a pass Vulkan already keeps the attachment writes of draws in rasterization order, so
 // what a barrier between two draws of one pass can order is: memory the earlier draws wrote with shader stores (the pass then ends at once, as nvn_mtl.m's OP_BARRIER
 // does for a pass with shader writes), and an attachment of the pass that a later draw samples (a feedback read: the pass ends before that draw, bar_hazard). Everything
-// else the draws read was written before the pass began, behind the barrier that ended what wrote it. DM_VK_BAR_KEEP=1 takes such barriers inside the pass (live;
-// default 0 until phone-checked); the counts are in the replay statistics line either way
+// else the draws read was written before the pass began, behind the barrier that ended what wrote it.
+// Ocarina defaults to the existing guarded keep path; 0 explicitly disables it.
+// Other games retain the previous conservative default of 0.
+static int bar_keep_enabled(void) {
+    // Unlike shader-side optimizations, retaining a safe pass does not
+    // change any SPIR-V, shader version, ABI or shader library.
+    const char *v = getenv("DM_VK_BAR_KEEP");
+    if (v && *v) return atoi(v) != 0;
+    return !strcmp(DM_GAME_ID, "0400486024DEC000");
+}
 int vka_rp_game_barrier(uint32_t bits) {
     (void)bits;
     if (!R.on) return 0;
     g_bar_in++;
-    if (R.swrite || !VKA_ENV("DM_VK_BAR_KEEP", 0)) return 0;
+    if (R.swrite || !bar_keep_enabled()) return 0;
     R.bar_pending = 1; g_bar_kept++;
     return 1;
 }

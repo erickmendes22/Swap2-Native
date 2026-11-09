@@ -43,7 +43,9 @@ class OcclusionBatchTests(unittest.TestCase):
         src=SOURCE.read_text()
         for name in ("oq_prefetch(", "DM_VK_OQ_BATCH", "VK_QUERY_RESULT_WITH_AVAILABILITY_BIT",
                      "oq_done(&ops[i], ticks, &batch)", "free(batch.pairs)",
-                     "readback %.1f vkGetQueryPoolResults calls/frame"):
+                     "readback %.1f get + %.1f reset calls/frame",
+                     "atomic_fetch_add_explicit(&g_oq_reset_calls",
+                     "if (batch.pairs && OQ.host)"):
             self.assertIn(name,src)
     def test_randomized_reports(self):
         rng=random.Random(0xAB911)
