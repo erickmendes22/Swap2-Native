@@ -162,6 +162,44 @@ final class PackZip {
         return top;
     }
 
+    /** What "Import pack" should do with the selected archive.
+     * Banana Native exports format 1, while this host needs format 2 for its code.
+     * Format 1 can safely supply shaders via ShaderZip, without swapping executables.
+     * Read at most 64 KiB of metadata; never extract the whole pack to decide.
+     */
+    static int importFormat(File source) throws IOException {
+        byte[] data;
+        final int max = 65536;
+        if (source.isDirectory()) {
+            File meta = new File(source, "pack.tsv");
+            if (!meta.isFile()) throw new IOException(source + " has no pack.tsv");
+            if (meta.length() > max) throw new IOException("pack.tsv is too large");
+            data = Files.readAllBytes(meta.toPath());
+        } else {
+            try (ZipFile zf = new ZipFile(source)) {
+                ZipEntry entry = zf.getEntry(prefix(zf) + "pack.tsv");
+                if (entry == null || entry.getSize() > max)
+                    throw new IOException("pack.tsv missing or too large");
+                try (InputStream in = zf.getInputStream(entry)) {
+                    data = in.readNBytes(max + 1);
+                }
+            } catch (java.util.zip.ZipException e) {
+                throw new IOException("not a valid pack ZIP: " + e.getMessage(), e);
+            }
+        }
+        if (data.length > max) throw new IOException("pack.tsv is too large");
+        String value = null;
+        for (String row : new String(data, StandardCharsets.UTF_8).split("\\n")) {
+            if (row.startsWith("format\\t")) {
+                if (value != null) throw new IOException("duplicate format field in pack.tsv");
+                value = row.substring(7).trim();
+            }
+        }
+        if ("1".equals(value)) return 1;
+        if ("2".equals(value)) return 2;
+        throw new IOException("unsupported pack format " + (value == null ? "missing" : value));
+    }
+
     /** The title ID pack.tsv names (upper case), of a zip or a pack folder */
     static String titleOf(File source) throws IOException {
         byte[] tsv;
