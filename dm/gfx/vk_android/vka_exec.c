@@ -217,7 +217,12 @@ static int g_oq_count, g_oq_fresh, g_oq_open;   // a samples-passed reset came (
 static uint32_t g_oq_lost;                 // draws of the segment that count 1 sample (no query, or skipped by the replay)
 static uint64_t g_oq_head, g_oq_seg0;      // the next query's sequence number; the segment's first
 static _Atomic uint64_t g_oq_ready, g_oq_freed;   // queries below ready are reset and may begin; (command reset) the completion thread has read every query below freed
-static uint64_t g_oq_acc; static pthread_mutex_t g_oq_mu = PTHREAD_MUTEX_INITIALIZER;   // the running count (the completion thread; vka_fence_cpu may run a submission's effects on another)
+static uint64_t g_oq_acc; static pthread_mutex_t g_oq_mu = PTHREAD_MUTEX_INITIALIZER;
+// Host query-result readback is CPU-heavy in Ocarina (>1900 queries/frame).
+// Coalesce vkGetQueryPoolResults for the already completed submission, without
+// modifying the guest's 64-bit counts, the shader library or the query schedule.
+static _Atomic uint64_t g_oq_get_calls, g_oq_batch_queries;
+typedef struct { uint64_t first, count; uint64_t *pairs; } oq_batch;   // the running count (the completion thread; vka_fence_cpu may run a submission's effects on another)
 static uint64_t g_oqs_reset, g_oqs_rep, g_oqs_nores, g_oqs_q, g_oqs_full, g_oqs_skip, g_oqs_fly; static _Atomic uint64_t g_oqs_unav, g_oqs_zero;   // statistics (oq_stats)
 static int oq_on(void) {
     if (g_oq >= 0) return g_oq;
@@ -280,14 +285,52 @@ static void oq_refill(VkCommandBuffer cb) {   // (no hostQueryReset) at a submis
     for (uint64_t q = r; q < f;) { uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(f - q < OQ_N - s ? f - q : OQ_N - s); OQ.creset(cb, OQ.pool, s, k); q += k; }
     if (f > r) atomic_store_explicit(&g_oq_ready, f, memory_order_release);
 }
-static void oq_done(const pop *o, uint64_t ticks) {   // the completion thread, after the fence of the submission that recorded o
+// Read the contiguous query numbers of this completed submission in one or two
+// Vulkan calls (the ring can wrap once). WITH_AVAILABILITY preserves the exact
+// per-query fallback: unavailable results still count as one sample.
+static oq_batch oq_prefetch(const pop *ops, int n) {
+    oq_batch b = {0};
+    if (g_oq != 1 || !OQ.host || !OQ.get || !VKA_ENV("DM_VK_OQ_BATCH", 1)) return b;
+    uint64_t lo = UINT64_MAX, hi = 0;
+    for (int i = 0; i < n; i++) if ((ops[i].kind == 4 || ops[i].kind == 5) && ops[i].q1 > ops[i].q0) {
+        if (ops[i].q0 < lo) lo = ops[i].q0;
+        if (ops[i].q1 > hi) hi = ops[i].q1;
+    }
+    if (lo == UINT64_MAX || hi <= lo || hi - lo > OQ_N) return b;
+    uint64_t count = hi - lo;
+    uint64_t *pairs = calloc((size_t)count * 2, sizeof *pairs);
+    if (!pairs) return b;   // allocation failure: original per-report path
+    for (uint64_t q = lo; q < hi;) {
+        uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)((hi - q) < (OQ_N - s) ? hi - q : OQ_N - s);
+        uint64_t *part = pairs + 2 * (size_t)(q - lo);
+        VkResult e = OQ.get(V.dev, OQ.pool, s, k, 16 * (size_t)k, part, 16,
+                           VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+        atomic_fetch_add_explicit(&g_oq_get_calls, 1, memory_order_relaxed);
+        if (e < 0) memset(part, 0, 16 * (size_t)k); // same unavailable fallback as the old path
+        q += k;
+    }
+    atomic_fetch_add_explicit(&g_oq_batch_queries, count, memory_order_relaxed);
+    b.first = lo; b.count = count; b.pairs = pairs;
+    return b;
+}
+static void oq_done(const pop *o, uint64_t ticks, const oq_batch *batch) {   // the completion thread, after the fence of the submission that recorded o
     pthread_mutex_lock(&g_oq_mu);
     if (o->kind == 4) {
         uint64_t sum = o->v, r[2 * OQ_RB];   // (the draws that count 1)
-        for (uint64_t q = o->q0; q < o->q1;) {
+        // All results are from an already-fenced submission. Use the prefetched
+        // pairs when available; otherwise the exact original bounded readback.
+        if (batch && batch->pairs && o->q0 >= batch->first &&
+            o->q1 - batch->first <= batch->count) {
+            for (uint64_t q = o->q0; q < o->q1; q++) {
+                const uint64_t *v = batch->pairs + 2 * (size_t)(q - batch->first);
+                if (!v[1]) { sum++; atomic_fetch_add_explicit(&g_oqs_unav, 1, memory_order_relaxed); }
+                else sum += v[0];
+            }
+        } else for (uint64_t q = o->q0; q < o->q1;) {
             uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(o->q1 - q < OQ_N - s ? o->q1 - q : OQ_N - s); if (k > OQ_RB) k = OQ_RB;
             memset(r, 0, 16 * (size_t)k);
-            VkResult e = OQ.get(V.dev, OQ.pool, s, k, 16 * (size_t)k, r, 16, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);   // (no wait: VK_NOT_READY leaves the unavailable ones 0)
+            VkResult e = OQ.get(V.dev, OQ.pool, s, k, 16 * (size_t)k, r, 16, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+            atomic_fetch_add_explicit(&g_oq_get_calls, 1, memory_order_relaxed);
             for (uint32_t i = 0; i < k; i++) if (e < 0 || !r[2 * i + 1]) { sum++; atomic_fetch_add_explicit(&g_oqs_unav, 1, memory_order_relaxed); } else sum += r[2 * i];
             q += k;
         }
@@ -316,6 +359,17 @@ static void oq_stats(char *b, size_t n, double frames) {   // every 300 frames w
                       OQ.precise ? "precise" : "not precise", OQ.host ? "host reset" : "command reset", (g_oqs_reset - r0) / frames, (g_oqs_rep - p0) / frames, (g_oqs_nores - nr0) / frames, (ze - z0) / frames,
                       (g_oqs_q - q0) / frames, (g_oqs_full - f0 + g_oqs_skip - s0) / frames, (g_oqs_full - f0) / frames, (g_oqs_skip - s0) / frames, (un - u0) / frames, (unsigned long long)g_oqs_fly, OQ_N);
     }
+    { // A/B: report the *actual* host API call count; unlike a theoretical
+      // CPU estimate, this proves whether batching executed on the device.
+        static uint64_t c0, b0;
+        uint64_t c = atomic_load_explicit(&g_oq_get_calls, memory_order_relaxed);
+        uint64_t q = atomic_load_explicit(&g_oq_batch_queries, memory_order_relaxed);
+        size_t used = strlen(b);
+        if (frames > 0 && used && used < n)
+            snprintf(b + used, n - used, "; readback %.1f vkGetQueryPoolResults calls/frame, %.1f queries prefetched/frame (DM_VK_OQ_BATCH)",
+                     (double)(c - c0) / frames, (double)(q - b0) / frames);
+        c0 = c; b0 = q;
+    }
     r0 = g_oqs_reset; p0 = g_oqs_rep; nr0 = g_oqs_nores; q0 = g_oqs_q; f0 = g_oqs_full; s0 = g_oqs_skip; u0 = un; z0 = ze; g_oqs_fly = 0;
 }
 uint64_t guest_ns(void);
@@ -342,6 +396,7 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
     }
     if (atomic_load_explicit(&g_synclog, memory_order_relaxed) > 0) for (int i = 0; i < n; i++) if (ops[i].kind == 2 && ops[i].type == NVN_COUNTER_TYPE_TIMESTAMP) {
         VLOG("sync done: %d reports written at %.2f ms (the submission's GPU work done)", n, ms_now()); break; }
+    oq_batch batch = oq_prefetch(ops, n);
     for (int i = 0, q = 0; i < n; i++) {
         if (ops[i].kind == 3) {   // the frame's span to here (the adaptive GPU clock floor)
             uint64_t f = ops[i].addr; unsigned k = f % 64;
@@ -354,7 +409,7 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
             uint64_t rec[2] = {DM_GAME_RENDER_COND ? 0 : tk, tk}; (void)tt;
             memcpy((void *)(uintptr_t)ops[i].addr, rec, sizeof rec); continue;
         }
-        if (ops[i].kind == 4 || ops[i].kind == 5) { oq_done(&ops[i], ticks); continue; }   // a counted samples-passed report, queries given back (Occlusion queries)
+        if (ops[i].kind == 4 || ops[i].kind == 5) { oq_done(&ops[i], ticks, &batch); continue; }   // a counted samples-passed report, queries given back (Occlusion queries)
         if (ops[i].kind == 1) { volatile uint32_t *v = (volatile uint32_t *)(uintptr_t)ops[i].addr; if (ops[i].mode == NVN_EVENT_SIGNAL_MODE_ADD) *v += ops[i].v; else *v = ops[i].v; }
         else {
             // A timestamp report's counter: the time, or 0 under render_cond (as on the GPU, nvn_mtl.m rc_value). Samples passed not counted (oq_report: DM_VK_OCCLUSION=0, no
@@ -363,6 +418,7 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
             memcpy((void *)(uintptr_t)ops[i].addr, rec, sizeof rec);
         }
     }
+    free(batch.pairs);
     free(ops);
 }
 
