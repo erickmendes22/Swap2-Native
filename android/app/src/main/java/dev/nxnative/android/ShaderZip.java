@@ -65,7 +65,7 @@ final class ShaderZip {
     /** Progress phases */
     static final int HASH = 0, WRITE = 1, CHECK = 2, COPY = 3, INSTALL = 4;
 
-    enum Why { NOT_SHADER_ZIP, UNSAFE_NAME, ORDER, OTHER_GAME, OTHER_VERSION, OTHER_INPUTS, DAMAGED, TOO_BIG, NO_SPACE, NO_LIBRARY, BUSY, RUNNING, CANCELLED, IO }
+    enum Why { NOT_SHADER_ZIP, UNSAFE_NAME, ORDER, OTHER_GAME, OTHER_VERSION, OTHER_ABI, OTHER_INPUTS, DAMAGED, TOO_BIG, NO_SPACE, NO_LIBRARY, BUSY, RUNNING, CANCELLED, IO }
 
     /**
      * What an I/O failure of this class's own (io) was, so ShaderUi says it in the user's language (its strings s2_shaders_io_&lt;kind&gt;): its args are {kind, path}.
@@ -563,6 +563,8 @@ final class ShaderZip {
             s.manifest = m;
             if (t.verifyOnly) return;
             boolean fallback = t.allowCompatibleFallback && !v.equals(t.current) && s.abi.equals(t.abi);
+            if (t.allowCompatibleFallback && !v.equals(t.current) && !s.abi.equals(t.abi) && !restampable(v))
+                throw new Failure(Why.OTHER_ABI, "the shader library uses ABI " + s.abi + " but the host needs " + t.abi, s.abi, t.abi);
             if (!v.equals(t.current) && !restampable(v) && !fallback)
                 throw new Failure(Why.OTHER_VERSION, "the shaders are version " + v + " ABI " + s.abi + ", this app needs " + t.current + " ABI " + t.abi, v, t.current);
             if (!fallback && !"unknown".equals(t.inputs) && !t.inputs.equals(s.inputs))
