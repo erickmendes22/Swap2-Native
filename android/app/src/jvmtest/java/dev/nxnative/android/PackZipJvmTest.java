@@ -74,7 +74,7 @@ public final class PackZipJvmTest {
     static void legacyFormatRouting(File t) throws Exception {
         File src = pack(new File(t, "src"), ID, "c0ffee", "banana");
         String current = read(new File(src, "pack.tsv"));
-        String old = current.replace("format\\t2", "format\\t1");
+        String old = current.replace("format\t2", "format\t1");
         write(new File(src, "pack.tsv"), old);
         check(PackZip.importFormat(src) == 1, "Banana format-1 folder detected");
         File zip = new File(t, "banana-pack-" + ID + "-458752.zip");
@@ -91,7 +91,7 @@ public final class PackZipJvmTest {
         map.put("pack.tsv", current);
         zip(currentZip, map);
         check(PackZip.importFormat(currentZip) == 2, "modern full-pack import path unchanged");
-        map.put("pack.tsv", old + "format\\t2\\n");
+        map.put("pack.tsv", old + "format\t2\n");
         File duplicate = new File(t, "duplicate.zip");
         zip(duplicate, map);
         check(error(() -> PackZip.importFormat(duplicate)) != null,
