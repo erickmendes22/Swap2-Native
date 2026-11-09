@@ -122,7 +122,9 @@ final class ShaderZip {
         String want = (PREFIX + titleId + "-").toLowerCase(Locale.ROOT);
         String[] prefixes = {want, ("banana-shaders-" + titleId + "-").toLowerCase(Locale.ROOT),
                 ("banana-native-shaders-" + titleId + "-").toLowerCase(Locale.ROOT),
-                ("banananative-shaders-" + titleId + "-").toLowerCase(Locale.ROOT)};
+                ("banananative-shaders-" + titleId + "-").toLowerCase(Locale.ROOT),
+                ("banana-pack-" + titleId + "-").toLowerCase(Locale.ROOT),
+                ("banananative-pack-" + titleId + "-").toLowerCase(Locale.ROOT)};
         for (File d : dirs) {
             File[] l = d == null ? null : d.listFiles(f -> {
                 if (!f.isFile() || !f.getName().toLowerCase(Locale.ROOT).endsWith(".zip")) return false;
@@ -800,7 +802,7 @@ final class ShaderZip {
             throw new Failure(Why.OTHER_GAME, "library is for " + h.game, h.game, t.titleId);
         if (!h.abi.equals(t.abi))
             throw new Failure(Why.OTHER_ABI, "Banana ABI " + h.abi + " is not Swap2 ABI " + t.abi, h.abi, t.abi);
-        if (!version.equals(t.current) && !t.allowCompatibleFallback && !new Reader(t, "", QUIET).restampable(version))
+        if (!version.equals(t.current) && !t.allowCompatibleFallback )
             throw new Failure(Why.OTHER_VERSION, "shader version " + version + " cannot be used", version, t.current);
         if (version.equals(t.current) && !"unknown".equals(t.inputs) && !t.inputs.equals(h.inputs))
             throw new Failure(Why.OTHER_INPUTS, "current shader inputs are different", h.inputs, t.inputs);
@@ -847,13 +849,13 @@ final class ShaderZip {
             if (h.crc >= 0 && h.crc != crc.getValue())
                 throw new Failure(Why.DAMAGED, "Banana shader library CRC mismatch", "CRC");
             staged.libSize = total;
-            byte[] stamp = inputs == null ? ("game\\t" + t.titleId + "\\ninputs\\t" + h.header.inputs + "\\n").getBytes(StandardCharsets.UTF_8) : inputs;
+            byte[] stamp = inputs == null ? ("game\t" + t.titleId + "\ninputs\t" + h.header.inputs + "\n").getBytes(StandardCharsets.UTF_8) : inputs;
             packInputs(stamp, h, t);
             write(new File(staged.dir, INPUTS), stamp);
-            String origin = "# Shader library imported from Banana full-pack ZIP\\n" +
-                    "kind\\tbanana-pack-shaders\\n" + "game\\t" + t.titleId + "\\n" +
-                    "library_version\\t" + h.version + "\\n" + "abi\\t" + h.header.abi + "\\n" +
-                    "lib_sha256\\t" + hex(sha.digest()) + "\\n";
+            String origin = "# Shader library imported from Banana full-pack ZIP\n" +
+                    "kind\tbanana-pack-shaders\n" + "game\t" + t.titleId + "\n" +
+                    "library_version\t" + h.version + "\n" + "abi\t" + h.header.abi + "\n" +
+                    "lib_sha256\t" + hex(sha.digest()) + "\n";
             write(new File(staged.dir, SOURCE), origin.getBytes(StandardCharsets.UTF_8));
             return staged;
         } catch (IOException | RuntimeException ex) {
@@ -920,7 +922,7 @@ final class ShaderZip {
             byte[] inputs = null;
             for (ZipEntry e; (e = zip.getNextEntry()) != null;) {
                 String path = e.getName();
-                if (path.indexOf('\\\\') >= 0 || path.contains("../") || path.startsWith("/"))
+                if (path.indexOf('\\') >= 0 || path.contains("../") || path.startsWith("/"))
                     throw new Failure(Why.UNSAFE_NAME, "unsafe Banana pack ZIP entry", path);
                 if (path.equals("pack.tsv") || path.matches("[^/]+/pack\\.tsv")) {
                     prefix = path.substring(0, path.length() - "pack.tsv".length());
