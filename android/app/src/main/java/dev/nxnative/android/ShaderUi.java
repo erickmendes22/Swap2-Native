@@ -208,8 +208,8 @@ final class ShaderUi {
             File target = target(a, g);
             if (translating(a, g, target)) throw new ShaderZip.Failure(ShaderZip.Why.BUSY, "its Prepare job translates into " + target);
             ShaderZip.Target t = new ShaderZip.Target(target, g.titleId);
-            // User-picked Banana Native exports may have a different shader version.
-            // Only the same title, file format and Vulkan library ABI can be used.
+            // Import the original shader library even when its ABI differs.
+            // Playability is checked separately. Never forge the ABI.
             t.allowCompatibleFallback = true;
             ShaderZip.Staged s;
             if (zip != null) s = ShaderZip.readAuto(zip, t, p);
@@ -228,9 +228,15 @@ final class ShaderUi {
             if (gone) return;   // the activity was recreated meanwhile: the new one shows the card from the saved list
             a.refresh();
             AlertDialog.Builder b = new AlertDialog.Builder(a).setTitle(R.string.s2_shaders_imported_title);
+            if (!BuildConfig.NX_DMSH_VK_ABI.equals(res.abi)) {
+                // Import succeeded: a foreign ABI must not be reported as playable
+                // unless the optional runtime adapter proves usable on this device.
+                b.setMessage(a.getString(R.string.s2_shaders_imported_foreign_abi,
+                        res.shaders, res.version, res.abi, BuildConfig.NX_DMSH_VK_ABI))
+                        .setPositiveButton(android.R.string.ok, null).show();
+                return;
+            }
             if (!res.version.equals(BuildConfig.NX_DMSH_VK_CHAIN)) {
-                // Another version is a fallback, not a freshly prepared GMEM_FAST1 library.
-                // Do not offer automatic Prepare here: it may translate all shaders again.
                 b.setMessage(a.getString(R.string.s2_shaders_imported_fallback, res.shaders, res.version))
                         .setPositiveButton(android.R.string.ok, null).show();
                 return;

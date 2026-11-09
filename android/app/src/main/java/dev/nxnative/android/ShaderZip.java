@@ -479,6 +479,7 @@ final class ShaderZip {
     static final class Result {
         String version;   // the library's version in the pack now (this APK's, also after a restamp)
         String from;      // the zip's version
+        String abi;       // the imported binary's actual ABI (never rewritten)
         long shaders, libSize;
         File packDir;
         boolean hadPack;  // the folder has a pack.tsv of this game (Play uses it now); else Prepare only rewrites the code
@@ -584,9 +585,12 @@ final class ShaderZip {
             if (s.libSize < ShaderLibs.HEADER_SIZE) throw new Failure(Why.DAMAGED, "the library is " + s.libSize + " bytes", "lib_size " + s.libSize);
             s.manifest = m;
             if (t.verifyOnly) return;
-            boolean fallback = t.allowCompatibleFallback && !v.equals(t.current) && s.abi.equals(t.abi);
-            if (t.allowCompatibleFallback && !v.equals(t.current) && !s.abi.equals(t.abi) && !restampable(v))
-                throw new Failure(Why.OTHER_ABI, "the shader library uses ABI " + s.abi + " but the host needs " + t.abi, s.abi, t.abi);
+            // "Import" records the real library as-is. Runtime compatibility is a
+            // separate question: a foreign ABI is never relabelled as native.
+            // Do not require the app's ABI just to preserve an exported library.
+            boolean fallback = t.allowCompatibleFallback && !v.equals(t.current);
+            if (!s.abi.matches("[0-9a-f]{12}"))
+                throw new Failure(Why.DAMAGED, "the archive does not name a valid Vulkan ABI", s.abi);
             if (!v.equals(t.current) && !restampable(v) && !fallback)
                 throw new Failure(Why.OTHER_VERSION, "the shaders are version " + v + " ABI " + s.abi + ", this app needs " + t.current + " ABI " + t.abi, v, t.current);
             if (!fallback && !"unknown".equals(t.inputs) && !t.inputs.equals(s.inputs))
@@ -820,8 +824,12 @@ final class ShaderZip {
             throw new Failure(Why.DAMAGED, "library header version differs from pack path", "version");
         if (!t.titleId.equals(h.game))
             throw new Failure(Why.OTHER_GAME, "library is for " + h.game, h.game, t.titleId);
-        if (!h.abi.equals(t.abi))
-            throw new Failure(Why.OTHER_ABI, "Banana ABI " + h.abi + " is not Swap2 ABI " + t.abi, h.abi, t.abi);
+        if (!h.abi.matches("[0-9a-f]{12}"))
+            throw new Failure(Why.DAMAGED, "Banana library has no valid ABI", h.abi);
+        // Importing a foreign library is allowed, but overwriting a current
+        // version directory with an incompatible ABI is not.
+        if (version.equals(t.current) && !h.abi.equals(t.abi))
+            throw new Failure(Why.OTHER_ABI, "the current shader version has a different ABI and must not be replaced", h.abi, t.abi);
         if (!version.equals(t.current) && !t.allowCompatibleFallback )
             throw new Failure(Why.OTHER_VERSION, "shader version " + version + " cannot be used", version, t.current);
         if (version.equals(t.current) && !"unknown".equals(t.inputs) && !t.inputs.equals(h.inputs))
@@ -1032,20 +1040,21 @@ final class ShaderZip {
             Result r = new Result();
             r.from = s.version;
             r.version = s.version;
+            r.abi = s.abi;
             if (!s.version.equals(t.current)) {
                 String took = ShaderLibs.restamp(t.pack, t.titleId, t.current, t.abi, t.stamps);
                 if (s.version.equals(took) && new File(sh, "v-" + t.current + "/" + LIB).isFile()) {
                     File src = new File(dst, SOURCE), to = new File(sh, "v-" + t.current + "/" + SOURCE);
                     if (src.isFile() && !to.exists()) Files.copy(src.toPath(), to.toPath());
                     r.version = t.current;
-                } else if (!(t.allowCompatibleFallback && t.abi.equals(s.abi))) {
+                } else if (!t.allowCompatibleFallback) {
                     deleteTree(dst);
                     if (old.exists()) old.renameTo(dst);
                     throw new Failure(Why.OTHER_VERSION, "the shaders of version " + s.version + " could not be made version " + t.current, s.version, t.current);
                 }
-                // A cross-fork library with an identical Vulkan ABI remains under its
-                // original version. ShaderLibs.playable and the native host use it as
-                // fallback only while this APK's v-current library is absent.
+                // All imported older versions retain their original chain and ABI.
+                // Only an independently verified-compatible library is playable.
+                // Other ABIs are preserved for an explicit experimental adapter.
             }
             deleteTree(old);
             r.shaders = s.shaders;

@@ -78,6 +78,12 @@ final class Pack {
     /** A library of another version made before versioned shader updates (no ABI): played with a warning when no playable one is there (ShaderLibs.legacy), null when none */
     static File legacyLibrary(File dir, String titleId) { return ShaderLibs.legacy(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN); }
 
+    /** Explicitly imported Banana ABI 228b73bd10f6; a guarded experimental
+     * Vulkan fallback, never reported as proven ABI compatibility. */
+    static File bananaForeignLibrary(File dir, String titleId) {
+        return ShaderLibs.bananaForeign(dir, titleId, BuildConfig.NX_DMSH_VK_CHAIN);
+    }
+
     /**
      * The first module whose code is unfinished: its &lt;module&gt;.android.key is missing (scripts/pack_android.py removes it before a rewrite and writes it last,
      * after the module's files went in by rename), so its patched.bin and tables may be of two rewrites. null when every module has its key

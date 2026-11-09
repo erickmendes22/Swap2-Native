@@ -300,6 +300,8 @@ public final class PackService extends Service {
                 boolean inPack = new File(j.pack(), "shaders").equals(j.shaderCache());
                 boolean currentShaders = ShaderZip.ready(j.pack(), j.titleId());
                 File compatibleLibrary = currentShaders ? null : Pack.playableLibrary(j.pack(), j.titleId());
+                if (compatibleLibrary == null && !currentShaders)
+                    compatibleLibrary = Pack.bananaForeignLibrary(j.pack(), j.titleId());
                 if ((s.equals("split") || s.equals("shaders") || s.equals("pack") && !inPack) && !engine.simulated() && (currentShaders || compatibleLibrary != null)
                         && !j.refusedImport(currentShaders ? Pack.libraryOf(j.pack()) : compatibleLibrary)) {
                     Log.i(TAG, s + ": the pack " + j.pack() + " holds " +
@@ -532,7 +534,9 @@ public final class PackService extends Service {
             }
             case "pack":
                 tool = "scripts/pack_android.py";
-                if (!ShaderZip.ready(pack, j.titleId()) && Pack.playableLibrary(pack, j.titleId()) != null) {
+                if (!ShaderZip.ready(pack, j.titleId()) &&
+                        (Pack.playableLibrary(pack, j.titleId()) != null
+                         || Pack.bananaForeignLibrary(pack, j.titleId()) != null)) {
                     // Keep Banana's already translated same-ABI shaders; only finish the
                     // local code/NPDM/runtime profile. --no-shaders never copies, replaces
                     // or recompiles the imported library.

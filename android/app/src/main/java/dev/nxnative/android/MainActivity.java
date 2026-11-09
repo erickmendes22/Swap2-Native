@@ -1514,7 +1514,8 @@ public final class MainActivity extends Activity {
         f.dump = Ondevice.isDump(gd);
         Pack p;
         try { p = Pack.read(pd); } catch (IOException e) {
-            f.shadersImported = ShaderZip.ready(pd, g.titleId) || Pack.playableLibrary(pd, g.titleId) != null;
+            f.shadersImported = ShaderZip.ready(pd, g.titleId) || Pack.playableLibrary(pd, g.titleId) != null
+                    || Pack.bananaForeignLibrary(pd, g.titleId) != null;
             f.rewrite = true;   // a whole Prepare: the code, and every shader unless they were imported
             f.toTranslate = f.shadersImported ? 0 : f.mapShaders;
             f.shaders = !f.shadersImported;
@@ -1528,14 +1529,15 @@ public final class MainActivity extends Activity {
         f.shadersMissing = Pack.libraryProblem(pd, g.titleId) != null;
         if (f.shadersMissing) {
             f.playable = Pack.playableLibrary(pd, g.titleId) != null;
-            f.legacy = !f.playable && Pack.legacyLibrary(pd, g.titleId) != null;
+            f.legacy = !f.playable && (Pack.legacyLibrary(pd, g.titleId) != null
+                    || Pack.bananaForeignLibrary(pd, g.titleId) != null);
             int delta = Ondevice.deltaShaders(pd, g.titleId);
             f.deltaKnown = delta >= 0 && !f.playable;
-            f.toTranslate = f.playable ? 0 : delta >= 0 ? delta : f.mapShaders;
+            f.toTranslate = f.playable || f.legacy ? 0 : delta >= 0 ? delta : f.mapShaders;
         } else f.toTranslate = 0;
         // A same-ABI fallback is usable by vka_shader.c without translation
         // or claiming to be the current shader-chain version.
-        f.shaders = f.shadersMissing && !f.playable;
+        f.shaders = f.shadersMissing && !f.playable && !f.legacy;
         f.rewrite = f.build || f.mods;
         if (!f.build && !f.mods && (!f.shadersMissing || f.playable)) f.code = PackCheck.code(this, p, gd);
         return f;
@@ -1930,6 +1932,11 @@ public final class MainActivity extends Activity {
         if (lp != null && Pack.playableLibrary(new File(g.packDir), g.titleId) != null) {
             // Same-ABI libraries work as-is. Do not launch a 4-hour update
             // just because the shader-chain hash differs from this APK's.
+            start(g);
+            return;
+        }
+        if (lp != null && Pack.bananaForeignLibrary(new File(g.packDir), g.titleId) != null) {
+            Toast.makeText(this, R.string.s2_shaders_banana_experimental, Toast.LENGTH_LONG).show();
             start(g);
             return;
         }
