@@ -17,6 +17,7 @@ jobs:
       - name: Test shader import, fallback compatibility and integrity
         run: |
           python3 -m unittest discover -s dm/tools/tests -p 'test_android_shaderzip.py' -v
+          python3 -m unittest discover -s dm/tools/tests -p 'test_android_packzip.py' -v
       - name: Check Android string resources
         run: |
           python3 - <<'PY'
