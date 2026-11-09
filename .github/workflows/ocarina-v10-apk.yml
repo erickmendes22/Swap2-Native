@@ -24,10 +24,17 @@ jobs:
 
   apk:
     needs: validate
-    runs-on: macos-15
+    # Android arm64 build is based on the NDK and .NET NativeAOT (linux-bionic-arm64).
+    # Linux avoids macOS hosted-runner allocation stalls while keeping the same output.
+    runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+      - name: Install native build prerequisites
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh ninja-build cmake clang zlib1g-dev
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
