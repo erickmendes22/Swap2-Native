@@ -187,7 +187,7 @@ void vka_rp_end(void) {
     if (!R.on) return;
     vka_oq_pass_end();   // an occlusion query active in the pass ends inside it
     vk.vkCmdEndRendering(g_cb);
-    vka_barrier(g_cb);   // the pass's writes before whatever reads them next (copies, the present, the next pass's samples)
+    vka_graphics_barrier(g_cb);   // graphics writes -> any later read/write; no global source-stage stall
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
     if (vka_nan_on()) vka_nan_pass(g_cb, R.cim, R.clv, R.cl0, R.nci);
 }
