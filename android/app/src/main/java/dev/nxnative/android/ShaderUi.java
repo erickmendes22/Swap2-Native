@@ -194,6 +194,9 @@ final class ShaderUi {
             File target = target(a, g);
             if (translating(a, g, target)) throw new ShaderZip.Failure(ShaderZip.Why.BUSY, "its Prepare job translates into " + target);
             ShaderZip.Target t = new ShaderZip.Target(target, g.titleId);
+            // User-picked Banana Native exports may have a different shader version.
+            // Only the same title, file format and Vulkan library ABI can be used.
+            t.allowCompatibleFallback = true;
             ShaderZip.Staged s;
             if (zip != null) s = ShaderZip.read(zip, t, p);
             else try (InputStream in = a.getContentResolver().openInputStream(doc)) {
@@ -211,6 +214,13 @@ final class ShaderUi {
             if (gone) return;   // the activity was recreated meanwhile: the new one shows the card from the saved list
             a.refresh();
             AlertDialog.Builder b = new AlertDialog.Builder(a).setTitle(R.string.s2_shaders_imported_title);
+            if (!res.version.equals(BuildConfig.NX_DMSH_VK_CHAIN)) {
+                // Another version is a fallback, not a freshly prepared GMEM_FAST1 library.
+                // Do not offer automatic Prepare here: it may translate all shaders again.
+                b.setMessage(a.getString(R.string.s2_shaders_imported_fallback, res.shaders, res.version))
+                        .setPositiveButton(android.R.string.ok, null).show();
+                return;
+            }
             if (res.hadPack && ShaderZip.ready(res.packDir, g.titleId)) {
                 b.setMessage(a.getString(R.string.s2_shaders_imported_ready, res.shaders, res.version)).setPositiveButton(android.R.string.ok, null).show();
                 return;
@@ -257,6 +267,7 @@ final class ShaderUi {
             case ORDER: return a.getString(R.string.s2_shaders_err_order);
             case OTHER_GAME: return a.getString(R.string.s2_shaders_err_other_game, arg(f, 0), arg(f, 1));
             case OTHER_VERSION: return a.getString(R.string.s2_shaders_err_other_version, arg(f, 0), arg(f, 1));
+            case OTHER_ABI: return a.getString(R.string.s2_shaders_err_other_abi, arg(f, 0), arg(f, 1));
             case OTHER_INPUTS: return a.getString(R.string.s2_shaders_err_other_inputs, arg(f, 0), arg(f, 1));
             case DAMAGED: return export ? a.getString(R.string.s2_shaders_err_export_damaged, arg(f, 0)) : a.getString(R.string.s2_shaders_err_damaged, arg(f, 0));
             case TOO_BIG: return a.getString(R.string.s2_shaders_err_too_big, arg(f, 0));
