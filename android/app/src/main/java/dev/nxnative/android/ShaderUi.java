@@ -198,10 +198,10 @@ final class ShaderUi {
             // Only the same title, file format and Vulkan library ABI can be used.
             t.allowCompatibleFallback = true;
             ShaderZip.Staged s;
-            if (zip != null) s = ShaderZip.read(zip, t, p);
+            if (zip != null) s = ShaderZip.readAuto(zip, t, p);
             else try (InputStream in = a.getContentResolver().openInputStream(doc)) {
                 if (in == null) throw ShaderZip.io("cannot open " + doc, ShaderZip.IO_OPEN, docName);
-                s = ShaderZip.read(in, docName, t, p);
+                s = ShaderZip.readAuto(in, docName, t, p);
             }
             if (SaveUi.gameRunning(a, g)) { ShaderZip.unstage(s); throw new ShaderZip.Failure(ShaderZip.Why.RUNNING, g.name + " was started meanwhile", g.name); }
             p.at(ShaderZip.INSTALL, 0, 1);
