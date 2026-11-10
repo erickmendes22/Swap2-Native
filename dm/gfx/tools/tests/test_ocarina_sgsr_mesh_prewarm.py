@@ -48,6 +48,17 @@ class SgsrMesh(unittest.TestCase):
         self.assertIn('out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));', JAVA)
         self.assertIn('present_filter == 4', PRESENT)
 
+    def test_sampleable_images_do_not_require_native_blit_source(self):
+        # Ocarina's Adreno window format is sampleable with linear filtering,
+        # but may lack VK_FORMAT_FEATURE_BLIT_SRC_BIT. SGSR/FSR should still
+        # render using the shader path, not silently use rot-linear.
+        self.assertIn('int can_sample = im && im->inited', PRESENT)
+        self.assertIn('VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT', PRESENT)
+        self.assertIn('VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT', PRESENT)
+        self.assertIn('int fsr = fsr_wanted() && can_sample && (dw > cw || dh > ch);', PRESENT)
+        self.assertIn('SGSR/FSR upscale unavailable: reason=', PRESENT)
+        self.assertNotIn('int fsr = blit > 0 && fsr_wanted()', PRESENT)
+
     def test_mesh_pipelines_prewarms_task_mesh_and_fragment(self):
         self.assertIn('r->kind > 2', PSO)
         self.assertIn('r.kind == 2', PSO)
