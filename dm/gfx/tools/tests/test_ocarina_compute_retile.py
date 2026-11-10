@@ -65,10 +65,10 @@ class RetileTests(unittest.TestCase):
         original = module()
         ok, changed, why = self.patch(original)
         self.assertEqual(ok, 1, why)
-        self.assertEqual(changed[12:15], [8, 4, 2])
+        self.assertEqual(changed[13:16], [8, 4, 2])
         self.assertEqual(8 * 4 * 4 * 8 * 9 * 12, 8 * 4 * 2 * 8 * 9 * 24)
-        self.assertEqual(original[:14], changed[:14])
-        self.assertEqual(original[15:], changed[15:])
+        self.assertEqual(original[:15], changed[:15])
+        self.assertEqual(original[16:], changed[16:])
 
     def test_refuses_group_or_local_builtins(self):
         for builtin in [24, 25, 26, 27, 29, 36, 40, 41]:
@@ -90,7 +90,10 @@ class RetileTests(unittest.TestCase):
                 self.assertEqual(after, data)
 
     def test_refuses_wrong_local_size_or_unsafe_spirv(self):
-        for raw in [module()[:-1], [0, 1, 2, 3, 4], module(ins(331, 1, 17, 3))]:
+        different = module()
+        different[15] = 3
+        for raw in [different, module()[:-1], [0, 1, 2, 3, 4],
+                    module(ins(331, 1, 17, 3))]:
             with self.subTest(raw=raw[-5:]):
                 ok, after, _ = self.patch(raw)
                 self.assertEqual(ok, 0)
