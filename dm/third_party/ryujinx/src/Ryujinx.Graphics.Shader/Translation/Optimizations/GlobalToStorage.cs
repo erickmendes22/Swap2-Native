@@ -86,6 +86,15 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                 _hfm = hfm;
             }
 
+            // 64/128-bit vector raw helper IDs must not alias scalar helpers.
+            public readonly Dictionary<int, int> RawVectorFunctions = [];
+            public int AddRawVectorFunction(int count, Function function)
+            {
+                int functionId = _hfm.AddFunction(function);
+                RawVectorFunctions[count] = functionId;
+                return functionId;
+            }
+
             public int AddFunction(Operation baseOp, bool isMultiTarget, IReadOnlyList<uint> targetCbs, Function function, bool rawFallback = false)
             {
                 int functionId = _hfm.AddFunction(function);
@@ -399,13 +408,68 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                     targetLanguage,
                     block,
                     operation,
-                    out int functionId))
+                    out int functionId,
+                    out bool raw))
                 {
                     return null;
                 }
-
+                if (raw && operation.Inst == Instruction.Load &&
+                    operation.StorageKind == StorageKind.GlobalMemory &&
+                    operation.GlobalVectorCount > 1 && operation.GlobalVectorWord == 0 &&
+                    TryGetRawVectorFunction(gtsContext, resourceManager, gpuAccessor,
+                                            operation, out int vectorFunctionId))
+                {
+                    return GenerateRawVectorLoad(resourceManager, node, operation, vectorFunctionId);
+                }
                 return GenerateCallStorageOp(node, operation, null, functionId);
             }
+        }
+
+        // One vector fetch replaces the 2/4 scalar loads of an Ampere LDG.
+        // Later words read the local array filled by the single vector helper.
+        private static LinkedListNode<INode> GenerateRawVectorLoad(
+            ResourceManager resourceManager, LinkedListNode<INode> node,
+            Operation operation, int functionId)
+        {
+            int count = operation.GlobalVectorCount;
+            int vectorMemoryId = resourceManager.GetRawVectorMemory();
+            node = GenerateCallStorageOp(node, operation, null, functionId);
+            LinkedListNode<INode> insertAfter = node;
+            for (LinkedListNode<INode> next = node.Next; next != null; next = next.Next)
+            {
+                if (next.Value is not Operation follower) continue;
+                if (follower.Inst == Instruction.Load &&
+                    follower.StorageKind == StorageKind.GlobalMemory &&
+                    follower.GlobalVectorCount == count && follower.GlobalVectorWord > 0)
+                {
+                    Operand word = Local();
+                    Operation load = new(Instruction.Load, StorageKind.LocalMemory,
+                                         word, Const(vectorMemoryId), Const(follower.GlobalVectorWord - 1));
+                    insertAfter = insertAfter.List.AddAfter(insertAfter, load);
+                    Operand dest = follower.Dest;
+                    follower.TurnIntoCopy(word);
+                    word.UseOps.Remove(follower);
+                    follower.Dest = null;
+                    next.Value = new Operation(Instruction.Copy, dest, word);
+                    if (follower.GlobalVectorWord == count - 1) break;
+                    continue;
+                }
+                if (follower.GlobalVectorCount != 0 ||
+                    follower.StorageKind != StorageKind.None ||
+                    follower.Inst == Instruction.Call || follower.Inst == Instruction.Barrier ||
+                    follower.Inst == Instruction.MemoryBarrier || follower.Inst.IsAtomic()) break;
+            }
+            return node;
+        }
+
+        private static bool TryGetRawVectorFunction(
+            GtsContext gtsContext, ResourceManager resourceManager,
+            IGpuAccessor gpuAccessor, Operation operation, out int functionId)
+        {
+            int count = operation.GlobalVectorCount;
+            if (gtsContext.RawVectorFunctions.TryGetValue(count, out functionId)) return true;
+            return TryGenerateRawStorageOp(gtsContext, resourceManager, gpuAccessor,
+                                           operation, out functionId, count);
         }
 
         private static bool CanUseInlineStorageOp(Operation operation, TargetLanguage targetLanguage)
@@ -608,8 +672,10 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             TargetLanguage targetLanguage,
             BasicBlock block,
             Operation operation,
-            out int functionId)
+            out int functionId,
+            out bool raw)
         {
+            raw = false;
             Queue<PhiNode> phis = new();
             HashSet<PhiNode> visited = [];
             List<uint> targetCbs = [];
@@ -698,6 +764,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                     : $"Global memory operation \"{operation.Inst}\" on a small integer has a loaded pointer among its paths: not implemented, an address in none of its {targetCbs.Count} storage buffers is dropped.");
             }
 
+            raw = targetCbs.Count == 0;
             if (gtsContext.TryGetFunctionId(operation, isMultiTarget: true, targetCbs, out functionId, rawFallback))
             {
                 return true;
@@ -869,7 +936,8 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             ResourceManager resourceManager,
             IGpuAccessor gpuAccessor,
             Operation operation,
-            out int functionId)
+            out int functionId,
+            int vectorCount = 1)
         {
             functionId = 0;
 
@@ -897,7 +965,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
             EmitterContext context = new();
 
-            GenerateRawAccess(context, resourceManager, operation, mapBinding, logBinding);
+            GenerateRawAccess(context, resourceManager, operation, mapBinding, logBinding, vectorCount);
 
             bool returnsValue = operation.Dest != null;
 
@@ -912,12 +980,14 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
             Function function = new(
                 ControlFlowGraph.Create(context.GetOperations()).Blocks,
-                GetFunctionName(operation, isMultiTarget: true, []) + "Raw",
+                GetFunctionName(operation, isMultiTarget: true, []) + (vectorCount > 1 ? $"RawV{vectorCount}" : "Raw"),
                 returnsValue,
                 inArgumentsCount,
                 0);
 
-            functionId = gtsContext.AddFunction(operation, isMultiTarget: true, [], function);
+            functionId = vectorCount > 1
+                ? gtsContext.AddRawVectorFunction(vectorCount, function)
+                : gtsContext.AddFunction(operation, isMultiTarget: true, [], function);
 
             return true;
         }
@@ -952,7 +1022,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
         // nxnative: the raw path's body, in a helper whose arguments are the address (low, high) and the operation's values (as the multi-target helpers'): the pool
         // lookup, the page logged for a write, the access and its return. An address in no pool falls through to the code after it (the caller's miss return)
-        private static void GenerateRawAccess(EmitterContext context, ResourceManager resourceManager, Operation operation, int mapBinding, int logBinding)
+        private static void GenerateRawAccess(EmitterContext context, ResourceManager resourceManager, Operation operation, int mapBinding, int logBinding, int vectorCount = 1)
         {
             bool isSmall = IsSmallInt(operation.StorageKind);
             bool writes = operation.Inst == Instruction.Store || operation.Inst.IsAtomic();
@@ -1101,7 +1171,14 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
             if (operation.Inst == Instruction.Load)
             {
-                resultValue = context.Load(StorageKind.GlobalMemory, hostLow, hostHigh);
+                // LDG.64/128: one physical vector load and one pool lookup.
+                // Pools have 4K boundaries; a hardware-aligned vector stays in
+                // the same mapped range as its first 32-bit word.
+                resultValue = vectorCount > 1
+                    ? context.Add(Instruction.Load, StorageKind.GlobalMemoryVector,
+                                  Local(), hostLow, hostHigh, Const(vectorCount),
+                                  Const(resourceManager.GetRawVectorMemory()))
+                    : context.Load(StorageKind.GlobalMemory, hostLow, hostHigh);
 
                 if (isSmall)
                 {
