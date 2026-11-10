@@ -65,7 +65,7 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('g_sw.enc, g_sw.map, kernel, pack', NDSR)
 
     def test_ocarina_default_selects_working_720p_fsr_without_new_toggle(self):
-        self.assertIn('Prefs.OCARINA_TITLE.equals(id) && previous == 0 ? 3 : previous', OPTIONS)
+        self.assertIn('Prefs.OCARINA_TITLE.equals(id) && previous == 0 ? 4 : previous', OPTIONS)
         self.assertIn('if (p.contains(key)) return', OPTIONS)
         self.assertIn('DM_VK_FSR=', OPTIONS)
         self.assertNotIn('DM_VK_FSR_720', OPTIONS)
