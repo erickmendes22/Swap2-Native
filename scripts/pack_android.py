@@ -442,6 +442,16 @@ def pack_shaders(a, g, work, out, vdir):
         s_, d_ = lib / f, dst / f
         method = install_library_file(s_, d_, move_private=a.move_shader_cache)
         print(f'shaders: finalized {f} using {method}', flush=True)
+    # Keep the per-key entry hashes that the just-finished build verified.
+    # A later full-reference update can publish its manifest and the delta
+    # engine can compare exactly which entries must change. Without these
+    # hashes the only way to compare this old baseline later is rehashing its
+    # entire large library. This file is ~1 MB, not another shader rebuild.
+    manifest = 'vk_delta.tsv'
+    if (lib / manifest).is_file():
+        method = install_library_file(lib / manifest, dst / manifest,
+                                      move_private=a.move_shader_cache)
+        print(f'shaders: preserved {manifest} with per-key fingerprints ({method})', flush=True)
     others = sorted(o.name for o in (out / 'shaders').iterdir() if o.name != name and o.name.startswith(VK_PREFIX) and o.is_dir())
     if others:   # kept: another APK (the test and the play app, an older build) may load one of them from this pack; delete by hand to save the space
         print(f'shaders: kept the libraries of other versions in {out / "shaders"}: {", ".join(others)} (about 350 MB each)')
