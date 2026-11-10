@@ -35,8 +35,12 @@ class ExplicitAttachmentDiscard(unittest.TestCase):
     def test_vulkan_load_can_be_discarded_but_store_stays(self):
         self.assertIn("ca[i].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;", DRAW)
         self.assertIn(".loadOp = discarded ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_LOAD", DRAW)
-        self.assertIn(".storeOp = VK_ATTACHMENT_STORE_OP_STORE", DRAW)
-        self.assertIn("render-pass loads avoided", DRAW)
+        self.assertIn("VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE", DRAW)
+        self.assertIn("g_attachment_stores_avoided++", DRAW)
+        self.assertIn("immediate_discards(p + h.size, &depth)", EXEC)
+        self.assertEqual(EXEC.count("vka_rp_predict_discard(0, 0); oq_sk1(sk);"), 2)
+        self.assertIn("loads avoided", DRAW)
+        self.assertIn("stores avoided", DRAW)
         self.assertNotIn("DM_VK_DISCARD", DRAW)
 
 
