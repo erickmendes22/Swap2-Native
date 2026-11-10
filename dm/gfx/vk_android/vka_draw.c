@@ -1545,7 +1545,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
                    if (mdi) vk.vkCmdDrawIndexedIndirectCount(g_cb, b, o, mdi_buffer, mdi_offset, mdi_max, mdi_stride); else vk.vkCmdDrawIndexedIndirect(g_cb, b, o, 1, 20); }
         else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
     }
-    if (vka_gp_active) vka_gp_draw(sh[0] ? sh[0]->key : 0, sh[1] ? sh[1]->key : 0, sh[7] ? sh[7]->key : 0);
+    if (vka_gp_active)
+        vka_gp_draw(sh[0] ? sh[0]->key : 0, sh[1] ? sh[1]->key : 0, sh[7] ? sh[7]->key : 0,
+                    sh[6] ? sh[6]->key : 0,
+                    (uint32_t)(dw ? dw->count : di->count), inst, ind != 0);
     draw_log(d, sh, dw, di);
     g_draws++;
     texstat_at();   // (diagnostic: DM_VK_TEXSTAT_AT)
