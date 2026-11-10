@@ -354,11 +354,10 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     if (V.fps_boost_vrs && sh[1] && (sh[1]->key == UINT64_C(0x5ad65c0eefd09c7f)
                                   || sh[1]->key == UINT64_C(0x1e4d2630d24846d0))
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0) {
-        int level = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0);
-        if (level > 0) {
+        if (V.fps_boost_width) {
             P->fsrate = (VkPipelineFragmentShadingRateStateCreateInfoKHR){
                 VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
-                .pNext = NULL, .fragmentSize = {2, level >= 2 ? 2u : 1u},
+                .pNext = NULL, .fragmentSize = {V.fps_boost_width, V.fps_boost_height},
                 .combinerOps = {VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
                                 VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR}};
             P->ri.pNext = &P->fsrate;
