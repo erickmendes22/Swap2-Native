@@ -1629,7 +1629,14 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         if (sb && (uint64_t)dp->x * dp->y * dp->z > ns) spill_dispatch((uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z, ns);
         else vk.vkCmdDispatch(g_cb, (uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z);
     }
-    vka_barrier(g_cb);   // (also frees the shared memory spill buffer for the next dispatch)
+    // Ocarina's 9e6b compute appears twice per frame in heavy scenes.
+    // Keep every workgroup and shader output. Narrow only the barrier's
+    // producer stages; all later GPU consumers stay synchronized.
+    if (sh[5]->key == UINT64_C(0x9e6b00b050e30801) && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0
+        && VKA_ENV("DM_VK_OOT_CS_SYNC", 1))
+        vka_compute_write_barrier(g_cb);
+    else
+        vka_barrier(g_cb);   // also frees the shared memory spill buffer
     g_dispatches++;
     texstat_at();   // (diagnostic: DM_VK_TEXSTAT_AT, a compute key's textures and buffers)
 }
