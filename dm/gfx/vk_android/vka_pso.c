@@ -829,7 +829,7 @@ static void pw_explain(vka_shader *const sh[5], const vka_gkey *k, uint32_t klen
               ms, linked ? ", linked" : "", same_sh, d[0] ? d : "nothing: the same key (the prewarm threads had not reached it yet)");
 }
 static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int *made);
-static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_imgrt *rt, int prewarm, int *made);
+static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_imgrt *rt, int prewarm, int *made, int retiled);
 // Android memory pressure is not the same as Vulkan's allocation budget:
 // MemAvailable includes reclaimable page cache. This is only a conservative
 // admission guard for speculative shader compilation, never for a demanded
@@ -897,7 +897,7 @@ static void *pw_main(void *a) {
         if (!bad && !vka_layout_of(sh, r.kind == 1, &lay)) bad = 1;
         int made = 0;
         if (bad) { atomic_fetch_add(&g_pw_bad, 1); pw_mark_bad(offs[i]); }
-        else if (r.kind == 1) { vka_imgrt rt; memset(&rt, 0, sizeof rt); memcpy(&rt, kb, r.klen); cs_obtain(sh[5], &lay, &rt, 1, &made); }   // (klen: 0, or a vka_imgrt: pw_rec_ok)
+        else if (r.kind == 1) { vka_imgrt rt; memset(&rt, 0, sizeof rt); memcpy(&rt, kb, r.klen); cs_obtain(sh[5], &lay, &rt, 1, &made, 0); }   // (klen: 0, or a vka_imgrt: pw_rec_ok)
         else {
             vka_gkey k; memset(&k, 0, sizeof k); memcpy(&k, kb, r.klen < sizeof k ? r.klen : sizeof k);
             if (k.vin_static != (uint32_t)!V.vin_dyn) { atomic_fetch_add(&g_pw_bad, 1); }   // a list from a device with the other vertex input (not this one's keys)
@@ -1012,11 +1012,11 @@ VkPipeline vka_gfx_pipeline(vka_shader *const sh[VKA_NSTAGE], const vka_layout *
 }
 
 // ---------- Compute pipelines ----------
-typedef struct { vka_shader *cs; VkPipelineLayout layout; vka_imgrt rt; } ckey;   // rt: the storage and sampled images retyped in its module (vka_shader_img_module), all zero for none
+typedef struct { vka_shader *cs; VkPipelineLayout layout; vka_imgrt rt; uint32_t retiled; } ckey;   // rt: the storage and sampled images retyped in its module (vka_shader_img_module), all zero for none
 static kmap g_cs = {.klen = sizeof(ckey)};
-static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_imgrt *rt, int prewarm, int *made) {
+static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_imgrt *rt, int prewarm, int *made, int retiled) {
     *made = 0;
-    ckey k; memset(&k, 0, sizeof k); k.cs = cs; k.layout = lay->layout; if (rt) k.rt = *rt;
+    ckey k; memset(&k, 0, sizeof k); k.cs = cs; k.layout = lay->layout; if (rt) k.rt = *rt; k.retiled = retiled != 0;
     int img = k.rt.b[0] != 0;
     uint64_t h = fnv(&k, sizeof k, 1469598103934665603ull);
     pthread_mutex_lock(&g_mu);
@@ -1035,7 +1035,7 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_img
     int spill = 0;   // shared memory in the spill buffer (vka_draw.c spill_dispatch): dispatched in parts with a base workgroup
     for (unsigned i = 0; i < cs->e->bind_count; i++) if (cs->b[i].kind == DMSH_VK_KIND_SHARED_SPILL) spill = 1;
     VkComputePipelineCreateInfo ci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .flags = spill ? VK_PIPELINE_CREATE_DISPATCH_BASE_BIT : 0, .layout = lay->layout,
-        .stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = pin ? &rsg : NULL, .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = img ? vka_shader_img_module(cs, &k.rt) : vka_shader_cs_module(cs), .pName = "main"}};
+        .stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = pin ? &rsg : NULL, .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = retiled ? vka_shader_oot_cs_retile_module(cs) : img ? vka_shader_img_module(cs, &k.rt) : vka_shader_cs_module(cs), .pName = "main"}};
     VkPipeline p = VK_NULL_HANDLE; VkResult r; int over = 0;
     // Shared memory past the device's limit is invalid usage (the driver may refuse, crash or run it with less). The translator keeps a program's shared memory past
     // DMSH_VK_SHARED_MAX in a storage buffer (DMSH_VK_KIND_SHARED_SPILL), and e->shared is then what stays in workgroup memory; a program still over this device's
@@ -1053,10 +1053,21 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_img
     pthread_mutex_unlock(&g_mu);
     if (r && !over) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("compute pipeline %016llx: %d; its dispatches are skipped", (unsigned long long)cs->key, r); }
     { double ms_ = (now_ns() - t0) / 1e6; static _Atomic int n; if (!r && ms_ > 50 && atomic_fetch_add(&n, 1) < 200) VLOG("compute pipeline %016llx took %.0f ms%s", (unsigned long long)cs->key, ms_, prewarm ? " (prewarm)" : ""); }
-    if (!prewarm && !over) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(1, s5, img ? (const void *)&k.rt : "", img ? (uint32_t)sizeof k.rt : 0); }   // (one not made stays out of the prewarm list)
+    if (!prewarm && !over && !retiled) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(1, s5, img ? (const void *)&k.rt : "", img ? (uint32_t)sizeof k.rt : 0); }   // (one not made stays out of the prewarm list)
     *made = 1;
     return p;
 }
-VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, NULL, 0, &made); }
-VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, const vka_imgrt *rt) { int made; return cs_obtain(cs, lay, rt, 0, &made); }
+VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay) { int made; return cs_obtain(cs, lay, NULL, 0, &made, 0); }
+VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, const vka_imgrt *rt) { int made; return cs_obtain(cs, lay, rt, 0, &made, 0); }
+// The caller requests this ONLY for a direct, known-size 8x9x12 dispatch.
+// A different pipeline-key bit keeps the original variant available for
+// other dimensions and indirect dispatches, with no shader changes.
+VkPipeline vka_cs_pipeline_oot_retile(vka_shader *cs, const vka_layout *lay, int *changed) {
+    if (changed) *changed = 0;
+    if (!vka_shader_oot_cs_retile_module(cs)) return VK_NULL_HANDLE;
+    int made = 0;
+    VkPipeline p = cs_obtain(cs, lay, NULL, 0, &made, 1);
+    if (p && changed) *changed = 1;
+    return p;
+}
 #endif
