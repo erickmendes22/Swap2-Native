@@ -71,3 +71,9 @@ Build 20 · iOS dispatch_overlap port to Vulkan, not a shader change:
 Build 20 retry: adjust test_ocarina_fps_boost_vrs to accept the existing Ocarina-only settings block; no new native changes. Require validation and Android native build before publishing artifact.
 
 Build 20 final correction: NVN compute sequences include OP_BIND_PROGRAM, OP_BIND_TEX and OP_BIND_UBO state records between dispatches. These are CPU-only; do not flush GPU pending writes on state/binding records. Flush on all GPU work, events, queries, explicit barriers, list and command-buffer boundaries. New tests cover the interleaved sequence; supersedes previous run. No shader rebuild.
+
+Build 21 (GPU cost reduction, no new knob; requires prior working game shader library only):
+- Ocarina 7c511 light NDSR 854x480->2048x1152: replace redundant full-size EASU taps with its existing encoded-colour preserving bilinear shader kernel; no skipped writes or framebuffer dimensions.
+- Final FSR now uses two real capped GPU attachments for EASU and RCAS (max 1280x720, aspect preserved), then a single inexpensive bilinear draw to the native swapchain with exact pre-rotation and letterboxing.
+- The 720p path is selected by default for Ocarina when no explicit per-game output filter was chosen. Existing chosen mode is honored.
+- Full source-level size, lifetime, shader, and UI regression tests; compile Android native APK using existing imported shader ABI/package and signer. Benchmark GPU p50 at same heavy scene and log real FSR working dimensions, no invented FPS claims.
