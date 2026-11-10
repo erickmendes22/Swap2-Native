@@ -114,6 +114,7 @@ static int compressed(const vka_fmt *f) { return f->bw > 1 || f->bh > 1; }
 uint64_t vka_n_bar;   // full barriers recorded (vka_exec.c replay statistics)
 uint64_t vka_n_transfer_bar; // scoped transfer-write dependencies, tracked separately
 uint64_t vka_n_compute_bar;  // compute+transfer producer dependencies for Ocarina hot shader
+uint64_t vka_n_graphics_bar; // all graphics producer writes (shader + attachments), not earlier compute/transfer
 uint64_t vka_n_attachment_bar; // attachment-only pass barriers: fragment attachment writers, not all GPU stages
 void vka_barrier_at(VkCommandBuffer cb, const char *file, int line) {
     vka_n_bar++;
@@ -148,6 +149,19 @@ void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int l
 // storage, vertex/index input, further transfers, or indirect draws.
 // This is narrower than ALL_COMMANDS -> ALL_COMMANDS but preserves every
 // guest-visible read-after-write / write-after-write dependency.
+// A render pass with storage buffer/image writes produces memory only through
+// graphics stages (including task/mesh). When no earlier explicit guest barrier,
+// CPU-side copy, or diagnostic intervened, all graphics stages suffice on the
+// producer side. Destination remains ALL_COMMANDS with both read/write access.
+void vka_graphics_write_barrier_at(VkCommandBuffer cb, const char *file, int line) {
+    vka_n_graphics_bar++;
+    VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+    vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+    if (vka_gp_active) vka_gp_mark(cb, file, line);
+}
 // A compute dispatch can write through its shader and nearby transfer copies.
 // Keep ALL_COMMANDS as a destination so task/mesh/fragment/compute reads and
 // later transfers have the same memory visibility as the original barrier.
