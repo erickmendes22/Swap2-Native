@@ -7,3 +7,5 @@ Testes 0.1.2 e NVN attachment discard no workflow existente.
 
 Correção do build V11.3: OP_COUNT_ 56 e cap_rec_fields/cap_layout atualizados para os comandos de descarte NVN; teste de captura incluído.
 Nova tentativa usa exatamente a mesma configuração, assinatura, package id e arquivos de shaders.
+
+Assinatura V11.5: Gradle usa explicitamente a keystore restaurada; cert esperado SHA-256 9abe09af47fb9231705bc1bd8d9876e4add9be7b3f30d1a3688925c287e2e23e; aborta se cache ou APK divergir.
