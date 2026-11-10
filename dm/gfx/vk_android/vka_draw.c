@@ -151,7 +151,13 @@ static VkDescriptorSet set_alloc(VkDescriptorSetLayout l) {
 }
 
 // ---------- The render pass ----------
-static uint64_t g_attachment_discards, g_attachment_loads_avoided;
+static uint64_t g_attachment_discards, g_attachment_loads_avoided, g_attachment_stores_avoided;
+static uint32_t g_next_discard_colors;
+static int g_next_discard_depth;
+void vka_rp_predict_discard(uint32_t colors, int depth) {
+    g_next_discard_colors = colors;
+    g_next_discard_depth = depth != 0;
+}
 static struct {
     int on; VkRect2D area; uint32_t layers, samples;
     uint32_t ncolor; VkFormat cf[8]; uint8_t ckind[8]; VkFormat df, sf;
@@ -210,7 +216,8 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
     if (has_rt) R.rt = *rt; R.has_rt = has_rt;
     int n = has_rt ? (rt->n < 8 ? rt->n : 8) : 0;
     for (int i = 0; i < n; i++) {
-        ca[i] = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageLayout = VK_IMAGE_LAYOUT_GENERAL, .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+        ca[i] = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageLayout = VK_IMAGE_LAYOUT_GENERAL, .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+                                       .storeOp = (g_next_discard_colors & (1u << i)) ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE};
         R.cf[i] = VK_FORMAT_UNDEFINED;
         const tex_t *t = rt->color[i]; if (!t) continue;
         vka_img *im = vka_tex_get(t, g_cb); vka_fmt f;
@@ -227,6 +234,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
             ca[i].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             g_attachment_loads_avoided++;
         }
+        if (ca[i].storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE) g_attachment_stores_avoided++;
         ca[i].imageView = v; R.cf[i] = f.view; R.ckind[i] = f.kind; samples = im->samples; fb_im[nfb] = im; fb_lv[nfb++] = lv;
         R.cim[R.nci] = im; R.clv[R.nci] = lv; R.cl0[R.nci++] = l0;
         uint32_t lw = im->w >> lv ? im->w >> lv : 1, lh = im->h >> lv ? im->h >> lv : 1;
@@ -247,8 +255,9 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
                 int discarded = vka_img_discard_take(im, aspects, lv, l0, nl);
                 da = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = v, .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                                   .loadOp = discarded ? VK_ATTACHMENT_LOAD_OP_DONT_CARE : VK_ATTACHMENT_LOAD_OP_LOAD,
-                                                  .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+                                                  .storeOp = g_next_discard_depth ? VK_ATTACHMENT_STORE_OP_DONT_CARE : VK_ATTACHMENT_STORE_OP_STORE};
                 if (discarded) g_attachment_loads_avoided++;
+                if (g_next_discard_depth) g_attachment_stores_avoided++;
                 if (im->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) { dp = &da; R.df = im->f.vk; }
                 if (im->aspect & VK_IMAGE_ASPECT_STENCIL_BIT) { sp = &da; R.sf = im->f.vk; }
                 samples = im->samples; fb_im[nfb] = im; fb_lv[nfb++] = lv;
@@ -323,14 +332,14 @@ int vka_rp_game_barrier(uint32_t bits) {
     return 1;
 }
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
-    static uint64_t i0, k0, l0, d0, a0;
+    static uint64_t i0, k0, l0, d0, a0, s0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
-    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0)
-        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; explicit attachment discards %.1f/frame, render-pass loads avoided %.1f/frame",
+    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0)
+        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
                  (g_bar_in - i0) / frames, (g_bar_kept - k0) / frames, (g_bar_late - l0) / frames,
-                 (g_attachment_discards - d0) / frames, (g_attachment_loads_avoided - a0) / frames);
+                 (g_attachment_discards - d0) / frames, (g_attachment_loads_avoided - a0) / frames, (g_attachment_stores_avoided - s0) / frames);
     else if (n) b[0] = 0;
-    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; d0 = g_attachment_discards; a0 = g_attachment_loads_avoided;
+    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; d0 = g_attachment_discards; a0 = g_attachment_loads_avoided; s0 = g_attachment_stores_avoided;
 }
 // Discard is a real command in the guest's NVN stream, not an opt-in switch.
 // Preserve previous draws, and only track a texture which already has an image.
