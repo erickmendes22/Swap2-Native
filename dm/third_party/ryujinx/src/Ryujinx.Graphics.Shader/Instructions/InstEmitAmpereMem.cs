@@ -258,6 +258,10 @@ namespace Ryujinx.Graphics.Shader.Instructions
                 (los[index], his[index]) = AGlobalAddress(context, x, 90, 32, index * 4);
             }
 
+            // V21: one aligned LDG.64 / LDG.128 through the raw pool table
+            // is one vector fetch, not 2/4 unrelated 32-bit transactions.
+            bool vector = count > 1 && storageKind == StorageKind.GlobalMemory &&
+                          x.Rd + count <= RegisterConsts.RegisterZeroIndex;
             for (int index = 0; index < count; index++)
             {
                 if (x.Rd + index >= RegisterConsts.RegisterZeroIndex)
@@ -265,7 +269,13 @@ namespace Ryujinx.Graphics.Shader.Instructions
                     break;
                 }
 
-                context.Copy(Register(x.Rd + index, RegisterType.Gpr), context.Load(storageKind, los[index], his[index]));
+                Operand value = context.Load(storageKind, los[index], his[index]);
+                if (vector && value.AsgOp is Operation load)
+                {
+                    load.GlobalVectorCount = count;
+                    load.GlobalVectorWord = index;
+                }
+                context.Copy(Register(x.Rd + index, RegisterType.Gpr), value);
             }
 
             if (lblSkip != null)
