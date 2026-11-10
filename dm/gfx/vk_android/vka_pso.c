@@ -21,6 +21,9 @@ static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static _Atomic int g_pso_paused;
 void vka_pso_pause(int on) { atomic_store(&g_pso_paused, on != 0); }
 static void pause_point(void) { while (atomic_load_explicit(&g_pso_paused, memory_order_relaxed)) usleep(100000); }
+// Number of gameplay threads waiting for an existing prewarm compilation.
+// New speculative builds yield while a demanded pipeline is finishing.
+static _Atomic int g_pw_demand_waiters;
 // The keys' hash, 8 bytes a step: the draw path hashes a pipeline key (about 1 KB) per draw, and FNV a byte at a time took 1 us of it on the Adreno 840 phone's cores
 static uint64_t fnv(const void *p, size_t n, uint64_t h) {
     const uint8_t *b = p; size_t i = 0;
@@ -211,14 +214,14 @@ static void *saver_main(void *a) {
     }
     return NULL;
 }
-// From the replay thread at each submission: a save is due DM_VK_PCACHE_SAVE_S seconds (default 20) after the last one when pipelines were made since; it runs on the saver
+// From the replay thread at each submission: a save is due DM_VK_PCACHE_SAVE_S seconds (default 60) after the last one when pipelines were made since; it runs on the saver
 // thread. force (the end of the run, the shader library check): now, on the caller's thread
 void vka_pso_save(int force) {
     if (!g_pc) return;
     uint64_t t = now_ns();
     if (!force) {
         if (__atomic_load_n(&g_made, __ATOMIC_RELAXED) == g_saved_at) return;
-        int s = VKA_ENV("DM_VK_PCACHE_SAVE_S", 20); if (s < 1) s = 1;
+        int s = VKA_ENV("DM_VK_PCACHE_SAVE_S", 60); if (s < 1) s = 1;
         if (t - g_save_ns < (uint64_t)s * 1000000000ull) return;
         g_save_ns = t;
         if (g_sv_up) { pthread_mutex_lock(&g_sv_mu); g_sv_want = 1; pthread_cond_signal(&g_sv_cv); pthread_mutex_unlock(&g_sv_mu); return; }
@@ -804,6 +807,22 @@ static void pw_explain(vka_shader *const sh[5], const vka_gkey *k, uint32_t klen
 }
 static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int *made);
 static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_imgrt *rt, int prewarm, int *made);
+// Android memory pressure is not the same as Vulkan's allocation budget:
+// MemAvailable includes reclaimable page cache. This is only a conservative
+// admission guard for speculative shader compilation, never for a demanded
+// pipeline; failure to read procfs leaves the old behaviour unchanged.
+static int pw_memory_pressure(void) {
+    int floor_mb = VKA_ENV("DM_VK_PREWARM_RAM_FLOOR_MB", 512);
+    if (floor_mb <= 0) return 0;
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (!f) return 0;
+    char line[160]; unsigned long long kb = 0; int got = 0;
+    while (fgets(line, sizeof line, f)) {
+        if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) { got = 1; break; }
+    }
+    fclose(f);
+    return got && kb < (unsigned long long)floor_mb * 1024u;
+}
 static void *pw_main(void *a) {
     (void)a; pthread_setname_np(pthread_self(), "vk-prewarm"); vka_host_fp("vk-prewarm");
     setpriority(PRIO_PROCESS, 0, 10);   // this thread (Linux: per-thread nice), under the game's threads
@@ -813,6 +832,19 @@ static void *pw_main(void *a) {
     if (offs) for (size_t o = 0, i = 0; i < n; i++) { offs[i] = o; pwrec r; memcpy(&r, g_pw_load + o, sizeof r); o += pw_size(&r); }
     for (;;) {
         pause_point();
+        // Give gameplay a pipeline it is awaiting before starting unrelated
+        // prewarm work. This only delays *new* speculative pipeline builds.
+        if (atomic_load_explicit(&g_pw_demand_waiters, memory_order_relaxed)) {
+            usleep(5000);
+            continue;
+        }
+        if (pw_memory_pressure()) {
+            static _Atomic int warnings;
+            if (atomic_fetch_add(&warnings, 1) < 2)
+                VLOG("prewarm: paused speculative Vulkan pipelines under RAM pressure (DM_VK_PREWARM_RAM_FLOOR_MB)");
+            usleep(250000);
+            continue;
+        }
         // Newest first: the list grows at its end (the loaded records in file order, then each run's new ones; pw_save drops the oldest), so its end holds what the latest
         // runs needed. Walked from the front (before 2026-11-06), a list longer than DM_VK_PREWARM_MAX stopped before the newest records and never made them, and a shorter
         // one made the oldest sessions' pipelines first while the game, back where it was last played, made its own on the frame path or waited for them
@@ -867,7 +899,11 @@ static void pw_start(void) {
 static void busy_wait(gval *g) {
     uint64_t t0 = now_ns();
     if (g->pw && g->tid > 0) { errno = 0; int me = getpriority(PRIO_PROCESS, 0); if (!(me == -1 && errno)) setpriority(PRIO_PROCESS, (id_t)g->tid, me); }
+    // Prevent other background prewarm threads from beginning unrelated
+    // compilations while this demanded graphics/compute pipeline is pending.
+    atomic_fetch_add_explicit(&g_pw_demand_waiters, 1, memory_order_relaxed);
     while (g->busy) pthread_cond_wait(&g_busy_cv, &g_mu);
+    atomic_fetch_sub_explicit(&g_pw_demand_waiters, 1, memory_order_relaxed);
     atomic_fetch_add(&g_pw_wait_ns, now_ns() - t0);
 }
 static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k, int prewarm, int *made) {
