@@ -346,6 +346,8 @@ typedef struct vka_shader {
     int bad;                            // refused: no module, an unknown binding, an NV-only capability (logged once with its key)
     int gs_fx;                          // a geometry shader's memory writes (vka_spv_gs_claim): above 0, its draws bind a claim buffer at VKA_GS_CLAIM_BINDING
     VkShaderModule gs_claim;            // its module with those writes under the per-primitive claim, made when a pipeline first asks
+    VkShaderModule oot_cs_retile_mod;    // optional distinct 64-thread Ocarina compute module
+    int oot_cs_retile_checked;           // 1 once either the safe rewrite or fallback was determined
 } vka_shader;
 typedef struct { vka_shader *sh[VKA_NSTAGE]; unsigned bad; } vka_progsh;   // by NVN stage; bad: stages whose shader is refused (bit = NVN stage) or VKA_BAD_MISSING (their draws are skipped)
 #define VKA_BAD_MISSING (1u << VKA_NSTAGE)   // vka_progsh.bad: a stage's shader is not in the library (its NVN stage unknown)
@@ -356,6 +358,7 @@ const char *vka_shader_lib_path(void);   // the library file loaded ("" before o
 vka_shader *vka_shader_by_key(uint64_t key);   // the game library's shader of key (the library loaded first if needed); NULL = not there or refused
 VkShaderModule vka_shader_module(vka_shader *s, int variant);
 uint32_t vka_shader_sg_pin(int stage);              // DMSH_VK_STAGE_*: the subgroup size its subgroup shaders' pipelines require (vka_shader.c sg_plan), 0 = none
+VkShaderModule vka_shader_oot_cs_retile_module(vka_shader *s); // NULL = not safely retileable; original pipeline remains usable
 VkShaderModule vka_shader_cs_module(vka_shader *s);  // a compute shader's module: its DMSH_VK_MOD_SHUFFLE_LDS one where the device takes it (vka_shader.c shuffle_plan), else the base
 int vka_shader_cs_variant(vka_shader *s);            // the DMSH_VK_MOD_* variant vka_shader_cs_module gives (DMSH_VK_MOD_SHUFFLE_LDS or DMSH_VK_MOD_BASE)
 VkShaderModule vka_shader_gs_module(vka_shader *s);   // a geometry shader's module with its memory writes made once per primitive (vka_spv_gs_claim)
