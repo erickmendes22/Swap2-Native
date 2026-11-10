@@ -205,6 +205,10 @@ final class GameSettings {
                 .value(GraphicsOptions.REGISTRY[GraphicsOptions.regDedup(a, id)] + " · aplica no próximo início").chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Espera do encoder (experimental)", v -> GraphicsOptions.choice(a, id, "encoder_idle", again))
                 .value(GraphicsOptions.ENCODER_IDLE[GraphicsOptions.encoderIdle(a, id)] + " · aplica no próximo início").chevron(a).view);
+        if (Prefs.OCARINA_TITLE.equals(id)) {
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "FPS Boost — VRS (experimental)", v -> GraphicsOptions.choice(a, id, "oot_fps_boost", again))
+                    .value(GraphicsOptions.FPS_BOOST[GraphicsOptions.fpsBoost(a, id)] + " · reiniciar o jogo").chevron(a).view);
+        }
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
             String cur = on ? Prefs.sceneLabel(Prefs.sceneScale(a, id, prof.sceneScale())) : a.getString(R.string.s2_scene_game);
