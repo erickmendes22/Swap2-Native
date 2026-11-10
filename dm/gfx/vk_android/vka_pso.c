@@ -263,7 +263,8 @@ typedef struct {
     VkPipelineVertexInputDivisorStateCreateInfo vds; VkPipelineVertexInputStateCreateInfo vi; VkPipelineInputAssemblyStateCreateInfo ia; VkPipelineTessellationStateCreateInfo ts;
     VkPipelineViewportStateCreateInfo vp; VkPipelineRasterizationStateCreateInfo rs; VkPipelineMultisampleStateCreateInfo ms; VkPipelineDepthStencilStateCreateInfo ds;
     VkPipelineColorBlendAttachmentState cb[8]; VkPipelineColorBlendStateCreateInfo bs; VkDynamicState dyn[24]; VkPipelineDynamicStateCreateInfo dy;
-    VkFormat cf[8]; VkPipelineRenderingCreateInfo ri; VkGraphicsPipelineCreateInfo ci; int tess, mesh;   // mesh: a task / mesh pipeline (pstate_fill)
+    VkFormat cf[8]; VkPipelineRenderingCreateInfo ri; VkPipelineFragmentShadingRateStateCreateInfoKHR fsrate;
+    VkGraphicsPipelineCreateInfo ci; int tess, mesh;   // mesh: a task / mesh pipeline (pstate_fill)
     VkDescriptorSetLayout set0;   // the layout's set 0 (the library probe's independent-sets layout)
 } pstate;
 
@@ -345,6 +346,29 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     P->ri = (VkPipelineRenderingCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .colorAttachmentCount = k->ncolor, .pColorAttachmentFormats = P->cf,
                                             .depthAttachmentFormat = (VkFormat)k->dfmt, .stencilAttachmentFormat = (VkFormat)k->sfmt};
     P->tess = !mesh && (sh[3] || sh[4]); P->mesh = mesh;
+    // The GPU profiler on Ocarina v131072 identified these FS keys as hot:
+    // 5ad65c... (427x240 mesh+task draw, 2.6–7ms) and
+    // 1e4d26... (many draws in 854x480 scene passes).
+    // Unlike skipping guest draws/compute, coarse VRS keeps all geometry and
+    // shading outputs. It can change pixel detail, hence opt-in only.
+    if (V.fps_boost_vrs && sh[1] && (sh[1]->key == UINT64_C(0x5ad65c0eefd09c7f)
+                                  || sh[1]->key == UINT64_C(0x1e4d2630d24846d0))
+        && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0) {
+        int level = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0);
+        if (level > 0) {
+            P->fsrate = (VkPipelineFragmentShadingRateStateCreateInfoKHR){
+                VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
+                .pNext = NULL, .fragmentSize = {2, level >= 2 ? 2u : 1u},
+                .combinerOps = {VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
+                                VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR}};
+            P->ri.pNext = &P->fsrate;
+            static _Atomic int nboost;
+            if (atomic_fetch_add(&nboost, 1) < 6)
+                VLOG("Ocarina FPS Boost VRS %ux%u shader %016llx, all draws preserved",
+                     P->fsrate.fragmentSize.width, P->fsrate.fragmentSize.height,
+                     (unsigned long long)sh[1]->key);
+        }
+    }
     P->ci = (VkGraphicsPipelineCreateInfo){VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &P->ri, .stageCount = P->ns, .pStages = P->ss, .pVertexInputState = mesh ? NULL : &P->vi,
         .pInputAssemblyState = mesh ? NULL : &P->ia,
         .pTessellationState = P->tess ? &P->ts : NULL, .pViewportState = &P->vp, .pRasterizationState = &P->rs, .pMultisampleState = &P->ms, .pDepthStencilState = &P->ds, .pColorBlendState = &P->bs,
