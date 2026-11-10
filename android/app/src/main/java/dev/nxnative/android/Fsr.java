@@ -23,8 +23,8 @@ final class Fsr {
     private Fsr() {}
 
     /** RCAS sharpness in stops: 0 is the strongest, each stop halves it (AMD's default 0.25) */
-    static final float[] SHARPS = {0f, 0.25f, 0.5f, 1f};
-    private static final int[] SHARP_NAMES = {R.string.s2_fsr_sharp_max, R.string.s2_fsr_sharp_default, R.string.s2_fsr_sharp_soft, R.string.s2_fsr_sharp_softer};
+    static final float[] SHARPS = {-1f, 0f, 0.25f, 0.5f, 1f};
+    private static final int[] SHARP_NAMES = {R.string.s2_off, R.string.s2_fsr_sharp_max, R.string.s2_fsr_sharp_default, R.string.s2_fsr_sharp_soft, R.string.s2_fsr_sharp_softer};
 
     /** A sharpness value's name (the nearest of SHARPS): the launcher's Settings › Performance shows and picks the same values as the in-game panel */
     static int sharpName(float v) {
