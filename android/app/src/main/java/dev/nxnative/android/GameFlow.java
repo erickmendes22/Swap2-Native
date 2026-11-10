@@ -131,7 +131,7 @@ final class GameFlow {
     }
 
     static boolean noSpace(String s) {
-        return s != null && (s.contains("ENOSPC") || s.contains("No space left") || s.contains("no space left"));
+        return s != null && (s.contains("ENOSPC") || s.contains("No space left") || s.contains("no space left") || s.contains("not enough free space"));
     }
 
     /** The code of an exception that ended the worker (PackService.work): a full disk, the tools that did not start, else a file error */
