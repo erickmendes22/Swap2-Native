@@ -1,6 +1,6 @@
 """Regression checks: avoid duplicate Vulkan full barrier after ending a draw pass.
 
-Only one pass-end ALL_COMMANDS barrier is removed from the command stream;
+An explicit guest barrier still gets a FULL pass-end memory dependency;
 this is not a relaxation of dependency masks or guest command ordering.
 This test requires neither the Android toolchain nor compiled guest shaders.
 """
@@ -17,13 +17,16 @@ HEADER = (ROOT / "dm/gfx/vk_android/vka.h").read_text()
 class TestRedundantRenderPassBarrier(unittest.TestCase):
     def test_pass_end_already_has_a_full_barrier(self):
         # The replacement is safe only while this full barrier still exists.
-        self.assertIn('vk.vkCmdEndRendering(g_cb);\n    vka_barrier(g_cb);', DRAW)
+        self.assertIn('vk.vkCmdEndRendering(g_cb);', DRAW)
+        self.assertIn('if (full) { g_rp_full++; vka_barrier(g_cb); }', DRAW)
+        self.assertIn('g_rp_force_full = 1;\\n    vka_rp_end();\\n    g_rp_force_full = 0;', DRAW)
         self.assertIn('VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT', TEX)
         self.assertIn('VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT', TEX)
 
     def test_no_skip_if_pass_closed_or_nan_diagnostics_add_work(self):
         self.assertIn('int covered = R.on && !vka_nan_on();', DRAW)
-        self.assertIn('vka_rp_end();\n    if (covered) g_bar_duplicate_avoided++;', DRAW)
+        self.assertIn('g_rp_force_full = 1;\\n    vka_rp_end();\\n    g_rp_force_full = 0;', DRAW)
+        self.assertIn('if (covered) g_bar_duplicate_avoided++;', DRAW)
         self.assertIn('return covered;', DRAW)
         self.assertIn('int vka_rp_end_covers_barrier(void);', HEADER)
 
