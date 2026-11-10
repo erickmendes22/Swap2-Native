@@ -3,3 +3,5 @@ Separar NDSR/EASU (reconstrução da cena) do filtro de apresentação FSR e cor
 Registrar o modo aplicado no Vulkan e a escala de render interna; sem recompilar shaders do jogo.
 Nome exibido Swap2-Native Ocarina, versão 0.1.2, mesmo package com política de assinatura verificada.
 APK de teste liberada apenas com aviso se o certificado não corresponder ao último APK testado; não chamar de release oficial.
+
+Retry 0.1.2: corrigida somente asserção estática de --scale em gsys_dynres; nenhuma outra alteração de CPU/GPU/shaders nesta tentativa.
