@@ -102,6 +102,15 @@ static int init_once(void) {
     if (x_mesh) dext[ndext++] = VK_EXT_MESH_SHADER_EXTENSION_NAME;
     int x_ph = has_ext(de, nde, "VK_QCOM_queue_perf_hint");
     if (x_ph) dext[ndext++] = "VK_QCOM_queue_perf_hint";
+    // Ocarina issues shading-rate image/palette commands. They are still
+    // unsupported by the NVN frontend. Record extension availability before
+    // attempting a translation: KHR fragment shading rate is not the same API
+    // as NV shading rate images, and a missing extension cannot be emulated
+    // simply by enabling a device feature.
+    if (VKA_ENV("DM_VK_VRS_PROBE", 0))
+        VLOG("VRS capabilities: KHR_fragment_shading_rate=%d NV_shading_rate_image=%d; NVN shading-rate palette/bind not implemented",
+            has_ext(de, nde, "VK_KHR_fragment_shading_rate"),
+            has_ext(de, nde, "VK_NV_shading_rate_image"));
     free(de);
 
     // Every feature the device has, but robustness and capture-replay (they cost and nothing needs them); the shader side takes what it needs from the same device
