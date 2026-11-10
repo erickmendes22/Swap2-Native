@@ -168,6 +168,41 @@ typedef struct view_ent { struct view_ent *next; VkImageView v; VkFormat f; VkIm
 typedef struct { uint64_t serial; vka_img *im; } smap_ent;   // serial 0 = empty, im NULL with a serial = a texture that has no image (format refused)
 static smap_ent *g_map; static size_t g_mapcap, g_mapn;
 static vka_img **g_live; static int g_nlive, g_livecap;
+// Fast conservative prefilter for the exact-storage alias scan in vka_tex_get.
+// A new texture can only share a live VkImage if its guest storage address
+// equals that image's address. With thousands of distinct texture addresses,
+// checking all g_live images for each new serial wastes CPU. Two counting
+// hashes permit O(1) rejection of addresses with no live images. Collisions
+// are harmless (the original scan still runs); the counters change only when
+// a live image is inserted/removed, under g_tmu. Unlike caching one image,
+// this preserves all format-compatibility learning and lookup order.
+enum { LIVE_MEM_BITS = 15, LIVE_MEM_N = 1u << LIVE_MEM_BITS };
+static uint32_t g_live_mem[LIVE_MEM_N];
+static inline void live_mem_slots(const void *p, unsigned *a, unsigned *b) {
+    uint64_t x = (uint64_t)(uintptr_t)p;
+    x ^= x >> 33; x *= UINT64_C(0xff51afd7ed558ccd);
+    x ^= x >> 33; x *= UINT64_C(0xc4ceb9fe1a85ec53);
+    x ^= x >> 33;
+    *a = (unsigned)x & (LIVE_MEM_N - 1);
+    *b = (unsigned)(x >> LIVE_MEM_BITS) & (LIVE_MEM_N - 1);
+}
+static void live_mem_add(const void *p) {
+    if (!p) return;
+    unsigned a, b; live_mem_slots(p, &a, &b);
+    g_live_mem[a]++; g_live_mem[b]++;
+}
+static void live_mem_del(const void *p) {
+    if (!p) return;
+    unsigned a, b; live_mem_slots(p, &a, &b);
+    // Only called on actual removal from g_live; even when a == b the
+    // two increments above are balanced by these two decrements.
+    g_live_mem[a]--; g_live_mem[b]--;
+}
+static int live_mem_possible(const void *p) {
+    if (!p) return 0;
+    unsigned a, b; live_mem_slots(p, &a, &b);
+    return g_live_mem[a] != 0 && g_live_mem[b] != 0;
+}
 static uint64_t *g_cpuw; static size_t g_cpuwcap, g_cpuwn;   // serials the CPU wrote before their image existed (a set, open addressing)
 static pthread_mutex_t g_tmu = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t g_img_bytes;
@@ -243,7 +278,7 @@ static vka_img *g_big[64]; static int g_nbig;   // large images (DM_VK_BIGIMG_MB
 static void unref_locked(vka_img *im) {
     atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
     if (--im->refs) return;
-    for (int i = 0; i < g_nlive; i++) if (g_live[i] == im) { g_live[i] = g_live[--g_nlive]; break; }
+    for (int i = 0; i < g_nlive; i++) if (g_live[i] == im) { live_mem_del(im->mem); g_live[i] = g_live[--g_nlive]; break; }
     for (int i = 0; i < g_nbig; i++) if (g_big[i] == im) { g_big[i] = g_big[--g_nbig]; break; }
     g_img_bytes -= im->bytes;
     vka_after(vka_fence_last(), img_destroy, im);
@@ -1280,7 +1315,10 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
     vka_fmt f; vka_img *im = NULL; int throttle = 0;
     if (vka_fmt_of(t->d.format, &f)) {
         // (not an image whose pool was finalized: a new pool over the same memory has new content. Shared with a texture of another live pool, the image follows the newest one's)
-        for (int i = 0; i < g_nlive && !im; i++) if (t->mem && same_shape(g_live[i], t, &f, 1) && !img_pool_dead(g_live[i]) && !(g_live[i]->base && sparse_gpu(t, &f))) {   // (drawn into at level 0)
+        // Keep the original full-order search for all possible aliases.
+        // Most brand-new guest addresses have no live image to share.
+        if (live_mem_possible(t->mem))
+        for (int i = 0; i < g_nlive && !im; i++) if (same_shape(g_live[i], t, &f, 1) && !img_pool_dead(g_live[i]) && !(g_live[i]->base && sparse_gpu(t, &f))) {   // (drawn into at level 0)
             im = g_live[i]; im->refs++;
             if (t->pool && im->pool != t->pool) { uint64_t fin = nvn_pool_fin(), g = nvn_pool_live(t->pool, NULL, NULL); if (g) { im->pool = t->pool; im->pfin = fin; im->pgen = g; } } }
         if (im) big_share(im, t);   // (another texture object of the same storage and shape: DM_VK_BIGIMG_MB diagnostic)
@@ -1291,6 +1329,7 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
             im->vmin = vmin;
             if (g_nlive == g_livecap) { g_livecap = g_livecap ? g_livecap * 2 : 256; g_live = realloc(g_live, (size_t)g_livecap * sizeof *g_live); }
             g_live[g_nlive++] = im;
+            live_mem_add(im->mem);
             big_note(im, t);
             // Its first content through the upload batch when cb is the replay's (vka_dev.c "Upload batches"): staging that retires on the batch's own completion
             VkCommandBuffer ucb = cb && cb == vka_rp_cb() && vka_up_on() ? vka_up_begin() : VK_NULL_HANDLE;
