@@ -692,8 +692,10 @@ static uint32_t gkey_layout(void) {
 // A record of the file before it is used: a file from another build, a truncated or damaged one must not reach pstate_fill (an ncolor of 200 indexes past cf[8]).
 // 0 = skipped
 static int pw_rec_ok(const pwrec *r, const uint8_t *kb) {
-    if (r->kind > 2 || !r->key[0] || r->klen > sizeof(vka_gkey)) return 0;
-    if (r->kind == 2 && (!r->key[1] || r->key[3] || r->key[4])) return 0; // must contain a mesh shader
+    if (r->kind > 2 || r->klen > sizeof(vka_gkey)) return 0;
+    if (r->kind == 2) {
+        if (!r->key[1] || r->key[3] || r->key[4]) return 0; // mesh mandatory, task optional
+    } else if (!r->key[0]) return 0;
     if (r->kind == 1) {   // a compute key: nothing more, or the storage and sampled images its module retypes (vka_imgrt: a binding, a class 1 or 2 and an integer format or 0 per entry)
         if (r->klen == 0) return 1;
         if (r->klen != sizeof(vka_imgrt)) return 0;
@@ -907,10 +909,10 @@ static void *pw_main(void *a) {
             // slots 6, 7 and 1, not the five classic vertex slots.
             // Record the same full graphics state but rebuild the exact
             // mesh pipeline on a background worker, like Banana v0.2.2.
-            sh[6] = vka_shader_by_key(r.key[0]);
+            if (r.key[0]) sh[6] = vka_shader_by_key(r.key[0]);
             sh[7] = vka_shader_by_key(r.key[1]);
             if (r.key[2]) sh[1] = vka_shader_by_key(r.key[2]);
-            if (!sh[6] || !sh[7] || (r.key[2] && !sh[1])) bad = 1;
+            if ((r.key[0] && !sh[6]) || !sh[7] || (r.key[2] && !sh[1])) bad = 1;
         }
         else for (int s = 0; s < 5; s++) if (r.key[s] && !(sh[s] = vka_shader_by_key(r.key[s]))) bad = 1;
         vka_layout lay;
