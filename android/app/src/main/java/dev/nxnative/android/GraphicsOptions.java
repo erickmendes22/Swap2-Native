@@ -29,6 +29,7 @@ final class GraphicsOptions {
     static final String[] ASPECTS = {"Preservar proporção", "Esticar para preencher"};
     static final String[] BACKGROUND = {"Desativada", "Ativada"};
     static final String[] TIMINGS = {"Perfil do jogo", "Por segmento", "Por submissão"};
+    static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
 
     static int mode(Context c) {
         SharedPreferences p = Prefs.of(c);
@@ -50,6 +51,10 @@ final class GraphicsOptions {
     static int timing(Context c) { return clamp(Prefs.of(c).getInt("gpu_timestamps", 0), 0, 2); }
     static int timing(Context c, String id) {
         return Prefs.of(c).getInt(Prefs.gameKey("gpu_timestamps", id), timing(c));
+    }
+    static int regDedup(Context c) { return clamp(Prefs.of(c).getInt("reg_dedup", 0), 0, 1); }
+    static int regDedup(Context c, String id) {
+        return clamp(Prefs.of(c).getInt(Prefs.gameKey("reg_dedup", id), regDedup(c)), 0, 1);
     }
     static float sharp(Context c) { return Fsr.sharp(c); }
     static float sharp(Context c, String id) {
@@ -96,6 +101,9 @@ final class GraphicsOptions {
             out.add("DM_VK_GPL=1");
             out.add("DM_VK_PREWARM=2");
         }
+        // Optional: skip redundant registration of unchanged texture/sampler descriptors.
+        // This is not NX2navi\'s lazy GPU writeback boost, which needs separate validation.
+        if (regDedup(c, id) != 0) out.add("DM_VK_REG_DEDUP=1");
         int ts = timing(c, id);
         if (ts != 0) out.add("DM_NVN_GPU_TS=" + (ts == 1 ? "segment" : "submission"));
     }
@@ -132,7 +140,7 @@ final class GraphicsOptions {
     }
     static void reset(Context c, String id) {
         SharedPreferences.Editor e = Prefs.of(c).edit();
-        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp"})
+        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup"})
             e.remove(Prefs.gameKey(k, id));
         e.commit();
     }
@@ -159,6 +167,8 @@ final class GraphicsOptions {
             values = BACKGROUND; current = background(c, id); title = "Pipelines em segundo plano"; break;
         case "gpu_timestamps":
             values = TIMINGS; current = timing(c, id); title = "Medição de GPU"; break;
+        case "reg_dedup":
+            values = REGISTRY; current = regDedup(c, id); title = "Registro de texturas otimizado"; break;
         case "fsr_sharp":
             values = SHARP_NAMES; current = sharpIndex(sharp(c, id)); title = "Nitidez FSR (saída)"; break;
         default: return;
