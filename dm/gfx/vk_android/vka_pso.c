@@ -679,7 +679,7 @@ void vka_gpl_line(char *out, size_t n) {
 // frame path. A key names shaders by their library key and the state bytes (vka_gkey), not driver code, so one list serves every driver and survives a shader library
 // change (a shader that is no longer in the library drops its records). Records whose shaders are missing are dropped at the next save; the list keeps at most
 // DM_VK_PREWARM_KEEP records (default 16384), and a run makes at most DM_VK_PREWARM_MAX of them (default 8192), newest first (pw_main): about 1 KB of host memory each, plus the driver's pipeline
-typedef struct { uint8_t kind, bad, pad[2]; uint32_t klen; uint64_t key[5]; } pwrec;   // then klen bytes of vka_gkey, padded to 8; kind 0 graphics, 1 compute (key[0])
+typedef struct { uint8_t kind, bad, pad[2]; uint32_t klen; uint64_t key[5]; } pwrec;   // klen bytes padded to 8; kind 0 vertex graphics (key[0..4]), 1 compute (key[0]), 2 mesh graphics (task key[0], mesh key[1], fragment key[2])
 typedef struct { char magic[8]; uint32_t gkey_size, n; } pwhdr;      // NXVKPW1 (read only)
 typedef struct { char magic[8]; uint32_t gkey_size, n, layout, pad; } pwhdr2;   // NXVKPW2: layout = gkey_layout(), the key's field offsets (a size that stays the same hides a reordering)
 static const char PW_MAGIC[8] = "NXVKPW1", PW_MAGIC2[8] = "NXVKPW2";
@@ -692,7 +692,8 @@ static uint32_t gkey_layout(void) {
 // A record of the file before it is used: a file from another build, a truncated or damaged one must not reach pstate_fill (an ncolor of 200 indexes past cf[8]).
 // 0 = skipped
 static int pw_rec_ok(const pwrec *r, const uint8_t *kb) {
-    if (r->kind > 1 || !r->key[0] || r->klen > sizeof(vka_gkey)) return 0;
+    if (r->kind > 2 || !r->key[0] || r->klen > sizeof(vka_gkey)) return 0;
+    if (r->kind == 2 && (!r->key[1] || r->key[3] || r->key[4])) return 0; // must contain a mesh shader
     if (r->kind == 1) {   // a compute key: nothing more, or the storage and sampled images its module retypes (vka_imgrt: a binding, a class 1 or 2 and an integer format or 0 per entry)
         if (r->klen == 0) return 1;
         if (r->klen != sizeof(vka_imgrt)) return 0;
@@ -901,6 +902,16 @@ static void *pw_main(void *a) {
         vka_shader *sh[VKA_NSTAGE]; memset(sh, 0, sizeof sh); int bad = !pw_rec_ok(&r, kb);
         if (bad) {}
         else if (r.kind == 1) { if (!(sh[5] = vka_shader_by_key(r.key[0]))) bad = 1; }
+        else if (r.kind == 2) {
+            // Ocarina NVN2 mesh pipelines: task, mesh and fragment are
+            // slots 6, 7 and 1, not the five classic vertex slots.
+            // Record the same full graphics state but rebuild the exact
+            // mesh pipeline on a background worker, like Banana v0.2.2.
+            sh[6] = vka_shader_by_key(r.key[0]);
+            sh[7] = vka_shader_by_key(r.key[1]);
+            if (r.key[2]) sh[1] = vka_shader_by_key(r.key[2]);
+            if (!sh[6] || !sh[7] || (r.key[2] && !sh[1])) bad = 1;
+        }
         else for (int s = 0; s < 5; s++) if (r.key[s] && !(sh[s] = vka_shader_by_key(r.key[s]))) bad = 1;
         vka_layout lay;
         if (!bad && !vka_layout_of(sh, r.kind == 1, &lay)) bad = 1;
@@ -991,8 +1002,19 @@ static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader 
         if (!p && !linked) p = full_pipeline(P, sh, prewarm ? " (prewarm)" : NULL);
     }
     free(P);
-    // (mesh pipelines stay out of the prewarm list: its records name the five vertex pipeline stages only; open)
-    if (!prewarm && !sh[7]) { pw_note(0, sh, k, (uint32_t)(len - offsetof(gkey_full, k))); pw_explain(sh, k, (uint32_t)(len - offsetof(gkey_full, k)), (now_ns() - t_make) / 1e6, linked); }
+    if (!prewarm) {
+        if (sh[7]) {
+            // Make the expensive NVN2 mesh pipeline part of the persistent
+            // prewarm list instead of compiling it in the first outdoor
+            // gameplay frame. Prewarm uses the same gfx_obtain key and
+            // full_pipeline path; no shader-library rebuild.
+            vka_shader *record[5] = {sh[6], sh[7], sh[1], NULL, NULL};
+            pw_note(2, record, k, (uint32_t)(len - offsetof(gkey_full, k)));
+        } else {
+            pw_note(0, sh, k, (uint32_t)(len - offsetof(gkey_full, k)));
+            pw_explain(sh, k, (uint32_t)(len - offsetof(gkey_full, k)), (now_ns() - t_make) / 1e6, linked);
+        }
+    }
     pthread_mutex_lock(&g_mu);
     g->p = p; g->linked = (uint8_t)linked; g->busy = 0;
     pthread_cond_broadcast(&g_busy_cv);
