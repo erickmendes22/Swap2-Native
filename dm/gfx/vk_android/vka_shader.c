@@ -19,7 +19,10 @@
 #include <sys/stat.h>
 #include <time.h>
 
-static vka_shlib g_lib; static int g_lib_state;   // 0 not tried, 1 loaded, -1 none
+// Full imported shader library (up to 42k shaders) stays untouched. A newly
+// compiled small hot-shader library can override only its listed keys while
+// everything else keeps running from the stable full library.
+static vka_shlib g_lib, g_hot; static int g_lib_state, g_hot_loaded;   // 0 not tried, 1 loaded, -1 none
 static char g_lib_path[1024];                       // the library loaded (vka_shader_lib_path)
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 
@@ -187,6 +190,26 @@ static int lib_load(void) {
     VLOG("shader library %s: %u shaders, %u modules, %.1f MB (chain %s, Vulkan chain %s, inputs %s; %u-lane subgroups, storage buffers at %u)", path, g_lib.h->entry_count, g_lib.h->mod_count,
          g_lib.size / 1e6, DMSH_CHAIN, DMSH_VK_CHAIN, inputs, sg, sa ? sa : 1);
     g_lib_state = 1;
+    // Selective translator updates: compile only a small list of bottleneck
+    // shaders with the new V21/V22 vector/GMEM translator and place the
+    // resulting partial dmsh_vk.lib in shaders/hot/v-<current>/.
+    // The full older library remains completely intact, so no 4-hour
+    // 42k-shader rebuild is required to test/replace foliage mesh shaders.
+    // This overlay is strictly same-game, same-ABI and same-current-toolchain.
+    // An absent, invalid or incomplete overlay never blocks the full library.
+    if (!(e && *e)) {
+        char hp[1024], he[256];
+        if (snprintf(hp, sizeof hp, "%s/shaders/hot/" DMSH_VK_DIR_PREFIX "%s/" DMSH_VK_LIB_FILE,
+                     dir, DMSH_VK_CHAIN) < (int)sizeof hp && !access(hp, R_OK)) {
+            if (vka_shlib_open(&g_hot, hp, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, he, sizeof he)) {
+                g_hot_loaded = 1;
+                VLOG("GPU hot-shader overlay: %u new shaders from %s; untouched %u stable shaders from %s remain available",
+                     g_hot.h->entry_count, hp, g_lib.h->entry_count, path);
+            } else {
+                VRED("GPU hot-shader overlay %s rejected (%s); using full stable library unchanged", hp, he);
+            }
+        }
+    }
     const char *ck = getenv("DM_VK_SHLIB_CHECK");
     if (ck && atoi(ck)) vka_shlib_check_all(&g_lib);
     return 1;
@@ -466,10 +489,15 @@ vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
     return s->bad ? NULL : s;
 }
 
-// A shader of the game's library by key, the library loaded if it is not yet (the prewarm threads, vka_pso.c); NULL = no library, not in it, or refused
+// A shader of the game's libraries by key: prefer the small current-chain
+// overlay, then fall back to the original complete imported library.
+static const vka_shlib *library_for_key(uint64_t key) {
+    if (g_hot_loaded && vka_shlib_find(&g_hot, key)) return &g_hot;
+    return &g_lib;
+}
 vka_shader *vka_shader_by_key(uint64_t key) {
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
-    return ok ? vka_shader_make(&g_lib, key) : NULL;
+    return ok ? vka_shader_make(library_for_key(key), key) : NULL;
 }
 
 // Every shader of a library through the device's compiler: each module made, each stage's set-0 layout made, each compute shader's pipeline built (graphics pipelines need
@@ -533,7 +561,8 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
         uint8_t md[8];
         if (!prog_key(p, i, md)) continue;
         uint64_t key = vka_shlib_key(md);
-        const dmsh_vk_entry *en = vka_shlib_find(&g_lib, key);
+        const vka_shlib *source = library_for_key(key);
+        const dmsh_vk_entry *en = vka_shlib_find(source, key);
         if (!en) {
             out->bad |= VKA_BAD_MISSING; static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32) VRED("shader %016llx (program stage %u) is not in the shader library", (unsigned long long)key, i);
             // DM_NVN_SHDUMP=directory, as nvn_mtl.m: <key>.ctl (the whole NVN2 control section) and <key>.code (the code area), which shader_split.py nvn_dumps takes into the map
@@ -553,7 +582,7 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
         int st = vka_nvn_stage(en->stage);
         if (st < 0) { out->bad |= VKA_BAD_MISSING; continue; }   // (vka_shlib_open refuses a stage past DMSH_VK_STAGE_MS)
         if (out->sh[st]) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("program serial %llu has two %s shaders (%016llx, %016llx): the second is used", (unsigned long long)p->serial, stage_name(en->stage), (unsigned long long)out->sh[st]->key, (unsigned long long)key); }
-        out->sh[st] = vka_shader_make(&g_lib, key);
+        out->sh[st] = vka_shader_make(source, key);
         if (!out->sh[st]) out->bad |= 1u << st;
     }
     vka_prog_put(p->serial, out);
