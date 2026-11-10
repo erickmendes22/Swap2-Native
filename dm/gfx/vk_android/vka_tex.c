@@ -113,13 +113,33 @@ static int compressed(const vka_fmt *f) { return f->bw > 1 || f->bh > 1; }
 
 uint64_t vka_n_bar;   // full barriers recorded (vka_exec.c replay statistics)
 uint64_t vka_n_transfer_bar; // scoped transfer-write dependencies, tracked separately
+uint64_t vka_n_attachment_bar; // attachment-only pass barriers: fragment attachment writers, not all GPU stages
 void vka_barrier_at(VkCommandBuffer cb, const char *file, int line) {
     vka_n_bar++;
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT, .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
     vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
 }
-// OP_UPDATE_UB copies inline data from a staging buffer into guest buffer
+// A render pass that only wrote color/depth/stencil attachments has no earlier
+// shader-memory writer inside that pass. Restrict the producer scope to actual
+// fragment attachment write stages, while still making those bytes visible to
+// ALL later stages and reads/writes (vertex samples, fragment, compute, copies,
+// later attachment writes). A pass with shader stores, an explicit NVN barrier,
+// or a pending in-pass NVN barrier still requires the original full barrier.
+// Unlike removing a barrier between passes, this maintains a Vulkan memory
+// dependency; only unrelated earlier stage work stops being a producer.
+void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int line) {
+    vka_n_attachment_bar++;
+    VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+    vk.vkCmdPipelineBarrier(cb,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+    if (vka_gp_active) vka_gp_mark(cb, file, line);
+}
+// OP_UPDATE_UB copies inline data from a staging buffer
 // memory; it does not generate shader writes or image writes. The transfer
 // stage is therefore the only new writer after the previous pass already
 // ended with its own full barrier. Keep ALL_COMMANDS and broad destination
