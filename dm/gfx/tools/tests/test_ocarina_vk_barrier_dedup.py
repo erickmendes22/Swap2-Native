@@ -18,7 +18,9 @@ class TestRedundantRenderPassBarrier(unittest.TestCase):
     def test_pass_end_already_has_a_full_barrier(self):
         # The replacement is safe only while this full barrier still exists.
         self.assertIn('vk.vkCmdEndRendering(g_cb);', DRAW)
-        self.assertIn('if (full) { g_rp_full++; vka_barrier(g_cb); }', DRAW)
+        self.assertIn('g_rp_force_full || R.bar_pending || had_clears || vka_nan_on()', DRAW)
+        self.assertIn('if (full || (R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0)) {', DRAW)
+        self.assertIn('g_rp_full++; vka_barrier(g_cb);', DRAW)
         self.assertIn('g_rp_force_full = 1;\n    vka_rp_end();\n    g_rp_force_full = 0;', DRAW)
         self.assertIn('VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT', TEX)
         self.assertIn('VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT', TEX)
