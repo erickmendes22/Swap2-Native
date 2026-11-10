@@ -199,6 +199,10 @@ final class Job {
         int from = new File(dir(), "split").isDirectory() ? FIRST_CHAIN_STEP : FIRST_CHAIN_STEP - 1;
         for (int i = from; i < STEPS.length; i++) o.getJSONObject("steps").put(STEPS[i], new JSONObject().put("state", "pending").put("done", 0).put("total", 0).put("stage", ""));
         o.remove("shader_cache");
+        // A scoped update may have completed just 4 shaders. Its count is
+        // specific to the prior APK; an ordinary full rebuild must never keep
+        // showing that stale total until the translator starts reporting.
+        o.remove("expected_shaders");
         o.remove("shaders_imported");   // translated again: the preparation screen shows the translation's count, not "imported"
         o.put("apk", apk());
         if ("done".equals(state())) o.put("state", "paused").put("reason", "apk");
