@@ -1039,7 +1039,11 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             // hit bypasses the map and binary search, regardless of pool number.
             // Separate cache words per raw access helper, SPIR-V Private zero-init.
             // A miss still uses the V10.1 pool-1 shortcut then full binary search.
-            bool cacheLast = Environment.GetEnvironmentVariable("DMSH_GMEM_LAST1") == "1";
+            // V22: the common case is repeated raw accesses within the same
+            // placed guest range. Translate a 7-word last-range register cache
+            // into every raw helper instead of paying 12/13 table probes for
+            // each read. This is a compiler transformation, not a runtime toggle.
+            bool cacheLast = true;
             bool fastPool = Environment.GetEnvironmentVariable("DMSH_GMEM_FAST1") == "1";
             bool extendedMap = Environment.GetEnvironmentVariable("DMSH_GMEM_MAP_8192") == "1";
             Operand selected = fastPool || cacheLast ? Local() : null;
@@ -1090,6 +1094,30 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                 context.MarkLabel(slow);
             }
 
+            // V22: if the previous exact-range cache missed, try a 2-MiB
+            // tagged map hint. The host writes a tag + actual segment index to
+            // words 6-7 of a separate hashed map row, only if that entire chunk
+            // is contained in one placed segment. Collisions are checked by
+            // the tag and fall back to the original binary search. No invalid
+            // or partial segment can pass the later 64-bit end-range check.
+            Operand hintChunk = context.BitwiseOr(
+                context.ShiftLeft(addrHigh, Const(11)),
+                context.ShiftRightU32(addrLow, Const(21)));
+            Operand hintRow = context.IMultiply(
+                context.BitwiseAnd(hintChunk, Const(8192 - 1)),
+                Const(GmemMapEntryWords));
+            Operand hintTag = MapWord(hintRow, 6);
+            Operand hintIndex = MapWord(hintRow, 7);
+            Operand hintFits = context.BitwiseAnd(
+                context.ICompareEqual(hintTag, hintChunk),
+                context.BitwiseAnd(
+                    context.ICompareNotEqual(hintIndex, Const(0)),
+                    context.ICompareLessUnsigned(hintIndex, Const(8192))));
+            Operand hintMiss = Label();
+            context.BranchIfFalse(hintMiss, hintFits);
+            context.Copy(selected, hintIndex);
+            context.Branch(afterSearch);
+            context.MarkLabel(hintMiss);
             // The last entry whose start is at or below the address (entry 0 starts at 0, so there always is one)
             Operand index = Const(0);
 
