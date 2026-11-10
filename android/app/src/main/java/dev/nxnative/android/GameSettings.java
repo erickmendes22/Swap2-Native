@@ -160,6 +160,7 @@ final class GameSettings {
             GpuDriver.choice(a, id, null);
             Prefs.gameEnv(a, id, null);
             Prefs.ndsr(a, id, null);
+            GraphicsOptions.reset(a, id);  // restore only per-game graphics overrides
             sceneWant(id, false);
             Prefs.scene720(a, id, false);   // (the overlay's files stay in the app's folder: made again at once if 720p is chosen again)
             Prefs.of(a).edit().remove(Prefs.gameKey("pause_return", id)).commit();
@@ -187,6 +188,18 @@ final class GameSettings {
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, a.getString(R.string.s2_upscaler), v -> upscaler(a, g, again))
                     .value(cur + " · " + a.getString(R.string.s2_upscaler_note)).chevron(a).view);
         }
+        // The 0.1.2 output controls are independent of the game's shader library:
+        // nearest/bilinear/FSR scale the final image, not the GMEM shaders.
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Filtro de imagem", v -> GraphicsOptions.choice(a, id, "present_filter", again))
+                .value(GraphicsOptions.modeLabel(a, id)).chevron(a).view);
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Nitidez FSR (saída)", v -> GraphicsOptions.choice(a, id, "fsr_sharp", again))
+                .value(GraphicsOptions.sharpLabel(GraphicsOptions.sharp(a, id))).chevron(a).view);
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_display, "Proporção da tela", v -> GraphicsOptions.choice(a, id, "picture_stretch", again))
+                .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
+                .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Medição de GPU", v -> GraphicsOptions.choice(a, id, "gpu_timestamps", again))
+                .value(GraphicsOptions.TIMINGS[GraphicsOptions.timing(a, id)]).chevron(a).view);
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
             String cur = a.getString(on ? R.string.s2_scene_720p : R.string.s2_scene_game);
