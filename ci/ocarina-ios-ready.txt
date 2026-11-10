@@ -48,3 +48,10 @@ Build 18 · FPS Boost correction after the 13:02:34 (mode 2) and 13:04:45 (mode 
 - When 2x2 unsupported but 2x1 supported use 2x1 rather than silently leaving VRS disabled. If driver has neither, use unmodified shaders and report unsupported status.
 - Device's 9e6b compute uses local/group-dependent builtin and safely rejects workgroup retile; original compute preserved, while scoped dependencies are active in mode 2. Do not disable necessary shader ops.
 - Add pNext/fallback regression coverage, keep update-over signing, package name, and shader library compatibility; build to validate Vulkan and Android code, not to claim measured FPS gains.
+
+Build 19 · Ocarina GPU synchronization fallback based on Build18 real gameplay log 20261110-140503:
+- Confirmed selected GPU FPS Boost=2 but shader 9e6b rejected local/group-dependent workgroup retile, VRS device path disabled; 38.34 and 38.97 ms GPU p50 in frames 601–1200 (25–26 GPU-equivalent FPS), without profiler.
+- Implement GPU work scheduling optimization that does not require VK_KHR_fragment_shading_rate: with FPS Boost ON, TRANSFER-only memory producers (pure buffer fills, buffer/image copies, resolve/blit and bounce) use src TRANSFER -> dst ALL_COMMANDS. OFF preserves previous barriers for controlled A/B.
+- For storage-writing graphics passes without explicit NVN barriers or outside clears, replace global ALL_COMMANDS producer with ALL_GRAPHICS -> ALL_COMMANDS, preserving mesh/task shader writes and all consumers. Explicit NVN barriers, nan diagnostics, pending clears retain full barriers.
+- Keep existing compute 9e6b scoped memory dependency (safe) and unmodified shader if local/group-dependent.
+- New regression contracts in workflow, identical package/version/signature, no shader ABI changes. No claim of FPS uplift until real device measurement.
