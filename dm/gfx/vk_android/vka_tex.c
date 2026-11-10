@@ -1868,13 +1868,34 @@ VkImageView vka_tex_id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage
     return id_view(id, cb, dim, storage, NULL);
 }
 static int in_fb(const vka_img *im) { for (int i = 0; i < g_nfb; i++) if (g_fb_im[i] == im) return 1; return 0; }   // (a view of a pass's own target is cut to its other levels: view_of)
+// For a pending NVN barrier, a read from another image that overlays a bound
+// target's guest storage is ALSO a feedback hazard. Different image serials
+// can alias the same guest pool bytes, so pointer equality alone is not enough.
+// Unknown storage is conservatively a hazard: end the pass, never risk a stale
+// sample or incorrect attachment contents. This test is ONLY for bar_hazard,
+// not for the mip-chain view truncation in view_of.
+static int in_fb_or_alias(const vka_img *im) {
+    if (in_fb(im)) return 1;
+    if (!im || !im->mem || !im->L.size) return 1;
+    uintptr_t a = (uintptr_t)im->mem;
+    for (int i = 0; i < g_nfb; i++) {
+        const vka_img *f = g_fb_im[i];
+        if (!f || !f->mem || !f->L.size) return 1;
+        uintptr_t b = (uintptr_t)f->mem;
+        if (a <= b ? (uint64_t)(b - a) < im->L.size : (uint64_t)(a - b) < f->L.size) return 1;
+    }
+    return 0;
+}
 // Texture ID id stands for an image the open pass draws into (any level): a draw sampling it after a game barrier inside the pass needs the pass ended first (vka_draw.c
 // bar_hazard). An ID whose image is not made yet is not one (the pass's attachments were made when it opened; make_images ends the pass for a new one anyway)
 int vka_tex_id_in_pass(int id) {
     if (!g_nfb || id <= 0) return 0;
     pthread_mutex_lock(&g_tmu);
     int r = 0;
-    if (id < g_ntreg && g_treg[id].t.serial) { smap_ent *e = map_get(g_treg[id].t.serial); r = e && e->im && in_fb(e->im); }
+    if (id < g_ntreg && g_treg[id].t.serial) {
+        smap_ent *e = map_get(g_treg[id].t.serial);
+        r = !e || !e->im || in_fb_or_alias(e->im);
+    }
     pthread_mutex_unlock(&g_tmu);
     return r;
 }
