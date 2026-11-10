@@ -287,62 +287,131 @@ static uint32_t fsr_bits(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
 // The texture's crop [cx, cx + cw) x [cy, cy + ch) scaled to [dx, dx + dw) x [dy, dy + dh) of swapchain image idx, the rest black. The constants are AMD's FsrEasuConOffset and
 // FsrRcasCon (ffx_fsr1.h) in C; for a lower-left origin (the texture stored bottom-up) EASU's rows are read from the bottom: con0's y scale negated and its offset from the crop's top.
 // 0 = nothing recorded (the texture has no view to sample): the caller blits
-static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, int cx, int cy, int cw, int ch, int dx, int dy, int dw, int dh) {
-    VkImageView src = vka_view(im, im->f.vk, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1, NULL);
-    if (!src) { VRED_ONCE("FSR: window texture serial %llu (format %#x) has no view to sample: blitted", (unsigned long long)im->serial, im->d.format); return 0; }
-    vka_barrier(cb);   // the replay's writes to the window texture (earlier submissions, in submission order)
-    VkDescriptorImageInfo ii[2] = {{g_fsr.samp, src, VK_IMAGE_LAYOUT_GENERAL}, {g_fsr.samp, g_fsr.view[k], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
-    VkWriteDescriptorSet w[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_fsr.set[k][0], .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii[0]},
-                                 {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_fsr.set[k][1], .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii[1]}};
+// EASU and RCAS process *only* the 720p working image. A final inexpensive
+// bilinear draw displays the finished 720p picture on the native swapchain,
+// including pre-rotation and letterboxing. This avoids the old full-panel
+// EASU/RCAS work, not merely a viewport or presentation label.
+static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im,
+                    int cx, int cy, int cw, int ch, int dx, int dy, int dw, int dh,
+                    int fw, int fh) {
+    VkImageView src = vka_view(im, im->f.vk, VK_IMAGE_VIEW_TYPE_2D,
+                               VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1, NULL);
+    if (!src) { VRED_ONCE("FSR: window texture serial %llu has no sampled view; native copy retained",
+                          (unsigned long long)im->serial); return 0; }
+    vka_barrier(cb);  // all game writes to its display image become visible
+    VkDescriptorImageInfo ii[2] = {
+        {g_fsr.samp, src, VK_IMAGE_LAYOUT_GENERAL},
+        {g_fsr.samp, g_fsr.view[k], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+    };
+    VkWriteDescriptorSet w[2] = {
+        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_fsr.set[k][0],
+            .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii[0]},
+        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_fsr.set[k][1],
+            .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii[1]}
+    };
     vk.vkUpdateDescriptorSets(V.dev, 2, w, 0, NULL);
-    float sx = (float)cw / dw, sy = (float)ch / dh, rw = 1.0f / im->w, rh = 1.0f / im->h;
-    float easu[16] = {sx, sy, 0.5f * sx - 0.5f + cx, 0.5f * sy - 0.5f + cy, rw, rh, rw, -rh, -rw, 2 * rh, rw, 2 * rh, 0, 4 * rh, 0, 0};
+
+    // Source crop scaled into a 16:9-or-native-aspect working image <=1280x720.
+    // The shader's EASU constants must use fw,fh, never the physical display.
+    float sx = (float)cw / fw, sy = (float)ch / fh;
+    float rw = 1.0f / im->w, rh = 1.0f / im->h;
+    float easu[16] = {sx, sy, 0.5f * sx - 0.5f + cx, 0.5f * sy - 0.5f + cy,
+                       rw, rh, rw, -rh, -rw, 2 * rh, rw, 2 * rh, 0, 4 * rh, 0, 0};
     if (vka_origin_ll()) { easu[1] = -sy; easu[3] = cy + ch - 0.5f * sy - 0.5f; }
     uint32_t pc[16];
     for (int i = 0; i < 16; i++) pc[i] = fsr_bits(easu[i]);
-    VkViewport v = {0, 0, (float)dw, (float)dh, 0, 1}; VkRect2D sc = {{0, 0}, {(uint32_t)dw, (uint32_t)dh}};
-    vka_img_barrier(cb, g_fsr.mid[k], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = g_fsr.view[k], .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+
+    VkViewport v = {0, 0, (float)fw, (float)fh, 0, 1};
+    VkRect2D sc = {{0, 0}, {(uint32_t)fw, (uint32_t)fh}};
+    vka_img_barrier(cb, g_fsr.mid[k], VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = g_fsr.view[k], .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
-    VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = sc, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &ca};
+    VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = sc,
+        .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &ca};
     vk.vkCmdBeginRendering(cb, &ri);
     rk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.easu);
-    rk.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.lay, 0, 1, &g_fsr.set[k][0], 0, NULL);
+    rk.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.lay,
+                                0, 1, &g_fsr.set[k][0], 0, NULL);
     rk.vkCmdPushConstants(cb, g_fsr.lay, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, pc);
     rk.vkCmdSetViewport(cb, 0, 1, &v);
     rk.vkCmdSetScissor(cb, 0, 1, &sc);
     rk.vkCmdDraw(cb, 3, 1, 0, 0);
     vk.vkCmdEndRendering(cb);
-    vka_img_barrier(cb, g_fsr.mid[k], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-    // RCAS: con0 = FsrRcasCon's (its packed half at word 1 is for the 16-bit path, unused here); words 4-9 turn the swapchain pixel q back to the picture's,
-    // q.x * (4, 5) + q.y * (6, 7) + (8, 9): rot_copy's turns in whole pixels (ROTATE_90: the picture's (x, y) = (q.y - dx, W - 1 - dy - q.x)), the viewport as rot_copy's
-    int W = (int)g_ext.width, H = (int)g_ext.height, m[6];
-    switch (g_pre) {
-    case VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR:  v = (VkViewport){(float)(W - dy - dh), (float)dx, (float)dh, (float)dw, 0, 1}; memcpy(m, (int[6]){0, -1, 1, 0, -dx, W - 1 - dy}, sizeof m); break;
-    case VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR: v = (VkViewport){(float)dy, (float)(H - dx - dw), (float)dh, (float)dw, 0, 1}; memcpy(m, (int[6]){0, 1, -1, 0, H - 1 - dx, -dy}, sizeof m); break;
-    case VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR: v = (VkViewport){(float)(W - dx - dw), (float)(H - dy - dh), (float)dw, (float)dh, 0, 1}; memcpy(m, (int[6]){-1, 0, 0, -1, W - 1 - dx, H - 1 - dy}, sizeof m); break;
-    default:                                      v = (VkViewport){(float)dx, (float)dy, (float)dw, (float)dh, 0, 1}; memcpy(m, (int[6]){1, 0, 0, 1, -dx, -dy}, sizeof m); break;
-    }
+    vka_img_barrier(cb, g_fsr.mid[k], VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // RCAS also stays at <=720p, on a second image; it can never make the
+    // native swapchain run this expensive sharpening shader at 2K resolution.
     memset(pc, 0, sizeof pc);
-    // Negative means FSR sharpening Off: zero RCAS lobe yields the exact EASU
-    // centre sample (no added sharpening), using the already bundled SPIR-V.
     float sharp = (float)VKA_ENVF("DM_VK_FSR_SHARP", 0.25);
     pc[0] = fsr_bits(sharp < 0 ? 0.0f : exp2f(-sharp));
-    memcpy(&pc[4], m, sizeof m);
-    sc = (VkRect2D){{0, 0}, g_ext};
-    vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    ca = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO, .imageView = g_sview[idx], .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE, .clearValue = {.color = {{0, 0, 0, 1}}}};   // the bars
-    ri.renderArea = sc;
+    int matrix[6] = {1, 0, 0, 1, 0, 0}; // unrotated working image coordinates
+    memcpy(&pc[4], matrix, sizeof matrix);
+    vka_img_barrier(cb, g_fsr.finish[k], VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    ca = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = g_fsr.fview[k], .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+    ri.pColorAttachments = &ca;
     vk.vkCmdBeginRendering(cb, &ri);
     rk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.rcas);
-    rk.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.lay, 0, 1, &g_fsr.set[k][1], 0, NULL);
+    rk.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.lay,
+                                0, 1, &g_fsr.set[k][1], 0, NULL);
     rk.vkCmdPushConstants(cb, g_fsr.lay, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, pc);
     rk.vkCmdSetViewport(cb, 0, 1, &v);
     rk.vkCmdSetScissor(cb, 0, 1, &sc);
     rk.vkCmdDraw(cb, 3, 1, 0, 0);
     vk.vkCmdEndRendering(cb);
-    vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    vka_img_barrier(cb, g_fsr.finish[k], VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // Final native-size pass is a single ordinary texture sample per pixel,
+    // not EASU or RCAS. Reuse the proven pre-rotation pipeline for landscape
+    // phones whose Vulkan surface itself is rotated 90/270 degrees.
+    VkDescriptorImageInfo fin = {g_rot.samp[1], g_fsr.fview[k], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet finWrite = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = g_rot.set[k], .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &fin};
+    vk.vkUpdateDescriptorSets(V.dev, 1, &finWrite, 0, NULL);
+    float W = (float)g_ext.width, H = (float)g_ext.height;
+    float a, b, c, d, e, foff;
+    switch (g_pre) {
+    case VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR:
+        v = (VkViewport){W - dy - dh, (float)dx, (float)dh, (float)dw, 0, 1};
+        a = 0; b = 1; e = 0; c = -1; d = 0; foff = 1; break;
+    case VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR:
+        v = (VkViewport){(float)dy, H - dx - dw, (float)dh, (float)dw, 0, 1};
+        a = 0; b = -1; e = 1; c = 1; d = 0; foff = 0; break;
+    case VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR:
+        v = (VkViewport){W - dx - dw, H - dy - dh, (float)dw, (float)dh, 0, 1};
+        a = -1; b = 0; e = 1; c = 0; d = -1; foff = 1; break;
+    default:
+        v = (VkViewport){(float)dx, (float)dy, (float)dw, (float)dh, 0, 1};
+        a = 1; b = 0; e = 0; c = 0; d = 1; foff = 0; break;
+    }
+    float uv[6] = {a, b, c, d, e, foff};  // 720p image is top-left origin
+    sc = (VkRect2D){{0, 0}, g_ext};
+    vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    ca = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = g_sview[idx], .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = {.color = {{0, 0, 0, 1}}}};
+    ri.renderArea = sc;
+    ri.pColorAttachments = &ca;
+    vk.vkCmdBeginRendering(cb, &ri);
+    rk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_rot.pipe);
+    rk.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_rot.lay,
+                                0, 1, &g_rot.set[k], 0, NULL);
+    rk.vkCmdPushConstants(cb, g_rot.lay, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof uv, uv);
+    rk.vkCmdSetViewport(cb, 0, 1, &v);
+    rk.vkCmdSetScissor(cb, 0, 1, &sc);
+    rk.vkCmdDraw(cb, 3, 1, 0, 0);
+    vk.vkCmdEndRendering(cb);
+    vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     return 1;
 }
 
@@ -578,7 +647,20 @@ static int present_one(const pq_item *it) {
         fsr = 0;
     }
     int fsr_applied = 0, rotated_copy = 0;
-    if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)dw, (uint32_t)dh) && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh)) {
+    // Process the expensive EASU/RCAS chain at at most 1280x720, preserving
+    // aspect ratio. The inexpensive final screen draw handles all display sizes.
+    double fs = fmin(1.0, fmin(1280.0 / dw, 720.0 / dh));
+    int fw = (int)(dw * fs + 0.5), fh = (int)(dh * fs + 0.5);
+    if (fw < 1) fw = 1;
+    if (fh < 1) fh = 1;
+    if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)fw, (uint32_t)fh)
+        && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh, fw, fh)) {
+        static int log_fw, log_fh, log_dw, log_dh;
+        if (log_fw != fw || log_fh != fh || log_dw != dw || log_dh != dh) {
+            VLOG("FSR actual GPU work: EASU+RCAS %dx%d (%.1f%% of native %dx%d pixels), final single-sample display only",
+                 fw, fh, 100.0 * (double)fw * fh / (double)dw / dh, dw, dh);
+            log_fw = fw; log_fh = fh; log_dw = dw; log_dh = dh;
+        }
         blit = -1;
         fsr_applied = 1;
     } else if (rot_rotates(g_pre)) {
