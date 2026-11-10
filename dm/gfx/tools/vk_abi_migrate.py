@@ -25,6 +25,7 @@ ABI_VK = ROOT / "dm/gfx/nvn/dmsh_abi_vk.h"
 ABI_COMMON = ROOT / "dm/gfx/nvn/dmsh_abi.h"
 CHAIN_VK = ROOT / "dm/gfx/nvn/dmsh_chain_vk.h"
 TARGET = ROOT / "dm/gfx/vk_android/vka_abi_compat.h"
+TARGET_JAVA = ROOT / "android/app/src/main/java/dev/nxnative/android/ShaderAbiCert.java"
 MANIFEST = PROFILE / "vk_abi_compat.tsv"
 HEX12 = re.compile(r"[a-f0-9]{12}\Z")
 DEFINE = re.compile(r"^\s*#define\s+([A-Z][A-Z0-9_]*)\s+(\S+)\s*$")
@@ -174,6 +175,35 @@ def c_header(certs):
     )
 
 
+
+def java_source(certs):
+    records = "".join(
+        f'        new Cert("{old}", "{abi}", "{inp}"),\n'
+        for old, abi, _new, _newabi, inp in certs
+    )
+    return (
+        "package dev.nxnative.android;\n\n"
+        "/** Build-time audited ABI extensions. Generated with Vulkan host certificates. */\n"
+        "final class ShaderAbiCert {\n"
+        "    private ShaderAbiCert() {}\n"
+        "    private static final class Cert {\n"
+        "        final String oldVk, oldAbi, inputs;\n"
+        "        Cert(String v, String a, String i) { oldVk = v; oldAbi = a; inputs = i; }\n"
+        "    }\n"
+        "    private static final Cert[] CERTS = {\n"
+        + records +
+        "    };\n"
+        "    static boolean approved(String game, String oldVk, String oldAbi, String inputs) {\n"
+        '        if (!"0400486024DEC000".equals(game)) return false;\n'
+        "        for (Cert c : CERTS) {\n"
+        "            if (c.oldVk.equals(oldVk) && c.oldAbi.equals(oldAbi) && c.inputs.equals(inputs)) return true;\n"
+        "        }\n"
+        "        return false;\n"
+        "    }\n"
+        "}\n"
+    )
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--header", action="store_true")
@@ -184,8 +214,11 @@ def main():
         if args.check:
             if not TARGET.is_file() or TARGET.read_text() != c_header(certs):
                 raise UnsafeMigration("generated ABI transition header is missing/stale")
+            if not TARGET_JAVA.is_file() or TARGET_JAVA.read_text() != java_source(certs):
+                raise UnsafeMigration("generated launcher ABI approval table is missing/stale")
         if args.header:
             TARGET.write_text(c_header(certs))
+            TARGET_JAVA.write_text(java_source(certs))
         print(f"ABI migrations audited: {len(certs)} additive-compatible transitions; all unsafe changes require per-key reference hashes")
         return 0
     except UnsafeMigration as e:
