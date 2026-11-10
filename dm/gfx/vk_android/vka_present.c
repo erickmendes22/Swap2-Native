@@ -692,12 +692,13 @@ static int present_one(const pq_item *it) {
     if (fh < 1) fh = 1;
     if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)fw, (uint32_t)fh)
         && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh, fw, fh, present_filter == 4)) {
-        static int log_fw, log_fh, log_dw, log_dh;
-        if (log_fw != fw || log_fh != fh || log_dw != dw || log_dh != dh) {
+        static int log_fw, log_fh, log_dw, log_dh, log_method = -1;
+        int effective_method = present_filter == 4 && g_fsr.sgsr ? 4 : 3;
+        if (log_fw != fw || log_fh != fh || log_dw != dw || log_dh != dh || log_method != effective_method) {
             VLOG("%s actual GPU work: %dx%d (%.1f%% of native %dx%d pixels), final single-sample display only",
                  present_filter == 4 && g_fsr.sgsr ? "SGSR 1 one pass" : "FSR EASU+RCAS two passes",
                  fw, fh, 100.0 * (double)fw * fh / (double)dw / dh, dw, dh);
-            log_fw = fw; log_fh = fh; log_dw = dw; log_dh = dh;
+            log_fw = fw; log_fh = fh; log_dw = dw; log_dh = dh; log_method = effective_method;
         }
         blit = -1;
         fsr_applied = 1;
@@ -728,11 +729,12 @@ static int present_one(const pq_item *it) {
     int method = fsr_applied ? (present_filter == 4 && g_fsr.sgsr ? 4 : 3) : rotated_copy ? 2 : blit > 0 ? 1 : 0;
     if (present_filter != last_mode || stretch != last_stretch || cw != last_w || ch != last_h ||
         dw != last_dstw || dh != last_dsth || method != last_method) {
-        VLOG("present output filter=%d (0 auto,1 nearest,2 bilinear,3 FSR), stretch=%d; image %dx%d -> %dx%d, method=%s%s",
+        VLOG("present output filter=%d (0 auto,1 nearest,2 bilinear,3 FSR 720p,4 SGSR 720p), stretch=%d; image %dx%d -> %dx%d, method=%s%s",
              present_filter, stretch, cw, ch, dw, dh,
-             fsr_applied ? "FSR1" : rotated_copy ? (nearest ? "rot-nearest" : "rot-linear") :
+             fsr_applied ? (method == 4 ? "SGSR1-single-pass" : "FSR1-two-pass") : rotated_copy ? (nearest ? "rot-nearest" : "rot-linear") :
              blit > 0 ? (nearest ? "blit-nearest" : "blit-linear-if-supported") : "unavailable",
-             present_filter == 3 && !fsr_applied ? " (FSR requested but fell back)" : "");
+             present_filter >= 3 && !fsr_applied ? " (upscale requested but fell back)" :
+             present_filter == 4 && method == 3 ? " (SGSR pipeline unavailable, FSR fallback)" : "");
         last_mode = present_filter; last_stretch = stretch; last_w = cw; last_h = ch;
         last_dstw = dw; last_dsth = dh; last_method = method;
     }
