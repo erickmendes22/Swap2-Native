@@ -124,10 +124,18 @@ final class Pack {
             return "The pack's shader library was built from other shader tables (inputs " + st.get("inputs") + ") than this app's (" + inputs
                     + "): its shaders need making again.";
         }
+        // The Vulkan replay already loads a previous shader library when its
+        // title ID and binary ABI match. Do not require a rebuild only because
+        // the chain version digest changed for this APK (see vka_shader.c).
+        // Actual missing shader keys are still logged during gameplay.
+        File compatible = playableLibrary(dir, titleId);
+        if (compatible != null) return null;
         List<String> have = libraryVersions(dir);
         String need = BuildConfig.NX_DMSH_VK_CHAIN;
         if (have.isEmpty()) return "The pack folder " + dir + " has no shader library: this app needs shaders/v-" + need + "/dmsh_vk.lib in it.";
-        return "The pack folder " + dir + " has the shader library version " + String.join(", ", have) + ", but this app needs version " + need + " (shaders/v-" + need + "/dmsh_vk.lib).";
+        return "The pack folder " + dir + " has the shader library version " + String.join(", ", have)
+                + ", but none matches the game's required ABI " + BuildConfig.NX_DMSH_VK_ABI
+                + ". A shader update may be required; do not rename folders to bypass this check.";
     }
 
     private static String one(Map<String, List<String>> rows, String key) throws IOException {
