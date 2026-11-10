@@ -1472,9 +1472,32 @@ void mtl_tex_release(tex_t *t) {
 // (agl reads small linear render targets back on the CPU, such as a 1x1 R16F one in Donkey Kong Bananza's level); here the image is copied back into the storage
 static vka_img **g_wb; static int g_nwb, g_wbcap;
 static int lin_room(void); static int is_linear(const vka_img *im);   // (Linear textures' diagnostics, below)
+// The guest explicitly invalidated one exact attachment view. Other views and
+// subsequent writes remain conservative: default LOAD. No guesswork about lifetime.
+void vka_img_discard_mark(vka_img *im, VkImageAspectFlags aspect, uint32_t level, uint32_t layer, uint32_t layers) {
+    if (!im || !aspect || !layers) return;
+    pthread_mutex_lock(&g_tmu);
+    if (im->gpu_owned) {
+        im->discard_aspect = aspect;
+        im->discard_level = level;
+        im->discard_layer = layer;
+        im->discard_layers = layers;
+    }
+    pthread_mutex_unlock(&g_tmu);
+}
+int vka_img_discard_take(vka_img *im, VkImageAspectFlags aspect, uint32_t level, uint32_t layer, uint32_t layers) {
+    if (!im || !aspect || !layers) return 0;
+    pthread_mutex_lock(&g_tmu);
+    int take = (im->discard_aspect & aspect) == aspect && im->discard_level == level
+               && im->discard_layer == layer && im->discard_layers == layers;
+    if (take) im->discard_aspect &= ~aspect;
+    pthread_mutex_unlock(&g_tmu);
+    return take;
+}
 void vka_img_written_at(vka_img *im, const char *file, int line) {
     if (!im) return;
     pthread_mutex_lock(&g_tmu);
+    im->discard_aspect = 0; // a GPU write invalidates the earlier discard hint
     // A zero-shared image must have memory of its own before any write (vka_tex_own at the write's site): this one did not, so every image sharing its memory sees the write
     if (im->m.z) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("zero-shared image serial %llu %ux%u format %#x written at %s:%d without memory of its own (a write path without vka_tex_own): the images that share its memory see the write",
                                                                             (unsigned long long)im->serial, im->w, im->h, im->d.format, file, line); }
