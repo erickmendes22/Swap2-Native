@@ -90,6 +90,12 @@ jobs:
             exit 1
           fi
           keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+          cached_fingerprint="$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sha256sum | awk '{print $1}')"
+          echo "Cached V11 signer SHA-256: $cached_fingerprint"
+          if [ "$cached_fingerprint" != "9abe09af47fb9231705bc1bd8d9876e4add9be7b3f30d1a3688925c287e2e23e" ]; then
+            echo "::error::Cached V11 signing certificate differs from the previous tested APK; refusing to build a non-updatable APK." >&2
+            exit 1
+          fi
       - name: Build Android native shader translator and packer
         shell: bash
         run: |
@@ -104,6 +110,7 @@ jobs:
           ./gradlew --no-daemon \
             -PnxGames=0400486024DEC000 \
             -PnxApp=ootv11ios \
+            -PnxV11SignStore="$HOME/.android/debug.keystore" \
             -PnxLabel="Swap2 Ocarina iOS V11" \
             -PnxVersion=0.1.1-oot-v11-ios \
             -PnxVersionCode="$GITHUB_RUN_NUMBER" \
@@ -111,6 +118,9 @@ jobs:
           test -s out/swap2-native-ootv11ios.apk
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging out/swap2-native-ootv11ios.apk | grep -F "name='com.swap2native.ootv11ios'"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose out/swap2-native-ootv11ios.apk
+          built_fingerprint="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs out/swap2-native-ootv11ios.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}')"
+          echo "Built V11 signer SHA-256: $built_fingerprint"
+          test "$built_fingerprint" = "9abe09af47fb9231705bc1bd8d9876e4add9be7b3f30d1a3688925c287e2e23e" || { echo "::error::Built V11 APK is not signed with the previous tested APK's certificate" >&2; exit 1; }
       - name: Upload V11 iOS optimization test APK
         uses: actions/upload-artifact@v4
         with:
