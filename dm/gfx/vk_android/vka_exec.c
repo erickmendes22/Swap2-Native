@@ -942,14 +942,14 @@ static void exec(const uint8_t *p, int depth) {
     for (;;) {
         op_hdr h; memcpy(&h, p, sizeof h);
         const void *a = p + 8;
-        int bar_kept = 0;   // a game barrier taken inside the open pass (vka_rp_game_barrier): no pass end, no full barrier
+        int bar_kept = 0, bar_covered = 0;   // bar_covered: this pass ended with the same full GPU memory barrier that OP_BARRIER needs
         if (h.op == OP_DRAW || h.op == OP_DRAW_IDX) chunk_check();   // before a draw that opens a new pass
         switch (h.op) {   // a render pass a draw opened stays open across draws and state; anything else closes it first
         case OP_END: case OP_BEGIN: case OP_JUMP: case OP_CALL: case OP_SIGNAL_EVENT: case OP_REPORT_COUNTER: case OP_FENCE_SYNC: case OP_RENDER_COND: case OP_RESET_COUNTER:
         case OP_SCISSOR: case OP_COPY_STRIDE: case OP_DRAW: case OP_DRAW_IDX: break;
         case OP_SET_RT: if (g_cb && !vka_pass_keep()) vka_rp_end(); break;
         case OP_DISCARD_COLOR: case OP_DISCARD_DS: break; // the handler ends an active pass if needed
-        case OP_BARRIER: if (g_cb) { int32_t bits; memcpy(&bits, a, 4); bar_kept = vka_rp_game_barrier((uint32_t)bits); if (!bar_kept) vka_rp_end(); } break;
+        case OP_BARRIER: if (g_cb) { int32_t bits; memcpy(&bits, a, 4); bar_kept = vka_rp_game_barrier((uint32_t)bits); if (!bar_kept) bar_covered = vka_rp_end_covers_barrier(); } break;
         case OP_CLEAR_COLOR: case OP_CLEAR_DS: break;   // the pass is ended by the next draw over other targets, or the clear (vka_rp_clear)
         default: if (g_cb && !vka_state_op(&S.d, h.op, a)) vka_rp_end(); else if (!g_cb) vka_state_op(&S.d, h.op, a); break;
         }
@@ -991,7 +991,7 @@ static void exec(const uint8_t *p, int depth) {
         case OP_COPY_B2T: if (g_cb) copy_bt(a, 1); break;
         case OP_COPY_T2B: if (g_cb) copy_bt(a, 0); break;
         case OP_COPY_T2T: if (g_cb) copy_t2t(a); break;
-        case OP_BARRIER: if (g_cb && !bar_kept) vka_barrier(g_cb); break;
+        case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb); break;
         case OP_DRAW: if (!S.rc_skip && g_cb) { p_draw t; g_stat_draws++; uint64_t sk = oq_sk0();
                           int d = 0; uint32_t colors = !vka_rp_is_open() && h.size >= 8 ? immediate_discards(p + h.size, &d) : 0;
                           vka_rp_predict_discard(colors, d);
