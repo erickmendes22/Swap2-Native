@@ -82,6 +82,59 @@ int vka_shader_cs_variant(vka_shader *s) {
 }
 VkShaderModule vka_shader_cs_module(vka_shader *s) { return vka_shader_module(s, vka_shader_cs_variant(s)); }
 
+// Optional alternative module for Ocarina's heavy 9e6b compute. Not an
+// in-place change to the game's shader library: the original VkShaderModule
+// stays available for indirect and different-size dispatches.
+VkShaderModule vka_shader_oot_cs_retile_module(vka_shader *s) {
+    if (!s || s->key != UINT64_C(0x9e6b00b050e30801) || !s->e ||
+        s->e->stage != DMSH_VK_STAGE_CS || s->e->shared != 0 ||
+        (s->e->flags & DMSH_VK_F_SUBGROUP) ||
+        s->e->local[0] != 8 || s->e->local[1] != 4 || s->e->local[2] != 4)
+        return VK_NULL_HANDLE;
+    pthread_mutex_lock(&g_mu);
+    if (s->oot_cs_retile_checked) {
+        VkShaderModule hit = s->oot_cs_retile_mod;
+        pthread_mutex_unlock(&g_mu);
+        return hit;
+    }
+    pthread_mutex_unlock(&g_mu);
+    char why[256] = "";
+    VkShaderModule mod = VK_NULL_HANDLE;
+    // The vendor's native compute shuffle variant is the base module in
+    // this Qualcomm driver. If another driver chooses a shuffle-LDS
+    // variant, fall back rather than silently bypass its optimization.
+    int variant = vka_shader_cs_variant(s);
+    if (variant == DMSH_VK_MOD_BASE) {
+        const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, variant);
+        size_t bytes = 0;
+        uint32_t *words = m ? vka_shlib_spirv(s->lib, m, &bytes, why, sizeof why) : NULL;
+        if (words) {
+            if (vka_spv_oot_cs_retile(words, bytes / 4, why, sizeof why)) {
+                VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                                .codeSize = bytes, .pCode = words};
+                VkResult result = vk.vkCreateShaderModule(V.dev, &ci, NULL, &mod);
+                if (result) snprintf(why, sizeof why, "VkShaderModule rejected %d", result);
+            }
+            free(words);
+        }
+    } else snprintf(why, sizeof why, "different compute module variant (%d)", variant);
+    pthread_mutex_lock(&g_mu);
+    if (!s->oot_cs_retile_checked) {
+        s->oot_cs_retile_checked = 1;
+        s->oot_cs_retile_mod = mod;
+    } else if (mod) {
+        vk.vkDestroyShaderModule(V.dev, mod, NULL);
+    }
+    VkShaderModule actual = s->oot_cs_retile_mod;
+    pthread_mutex_unlock(&g_mu);
+    if (actual == mod) {
+        VLOG("Ocarina compute FPS Boost 9e6b: %s (%s); original shader preserved",
+             actual ? "8x4x2 optimized workgroups enabled" : "safe retiling unavailable",
+             why[0] ? why : "no compatible module");
+    }
+    return actual;
+}
+
 const char *vka_shader_lib_path(void) { return g_lib_path; }
 
 static int lib_load(void) {
