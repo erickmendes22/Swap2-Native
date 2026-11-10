@@ -55,3 +55,5 @@ Build 19 · Ocarina GPU synchronization fallback based on Build18 real gameplay 
 - For storage-writing graphics passes without explicit NVN barriers or outside clears, replace global ALL_COMMANDS producer with ALL_GRAPHICS -> ALL_COMMANDS, preserving mesh/task shader writes and all consumers. Explicit NVN barriers, nan diagnostics, pending clears retain full barriers.
 - Keep existing compute 9e6b scoped memory dependency (safe) and unmodified shader if local/group-dependent.
 - New regression contracts in workflow, identical package/version/signature, no shader ABI changes. No claim of FPS uplift until real device measurement.
+
+Build 19 retry — fix outdated single-line expectation in vk_barrier_dedup regression; keep the full explicit NVN barrier and unchanged OFF behavior. No new APK features or branches.
