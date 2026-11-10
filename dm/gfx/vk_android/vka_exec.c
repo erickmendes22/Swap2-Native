@@ -911,6 +911,28 @@ static void copy_t2t(const p_copy_t2t *c) {
     vka_barrier(g_cb);
 }
 
+// Peek at an immediately following explicit discard sequence. NVN records are
+// aligned to 8 bytes; both discard records are 16 bytes. Stop on any other
+// command, malformed size, call, jump, barrier or rendering operation.
+// The recorder supplies an OP_END sentinel as in exec() itself.
+static uint32_t immediate_discards(const uint8_t *next, int *depth) {
+    uint32_t mask = 0;
+    *depth = 0;
+    for (int i = 0; i < 9; i++) {
+        op_hdr h;
+        memcpy(&h, next, sizeof h);
+        if (h.size != 16) break;
+        if (h.op == OP_DISCARD_COLOR) {
+            int32_t index;
+            memcpy(&index, next + sizeof h, sizeof index);
+            if (index < 0 || index >= 8) break;
+            mask |= 1u << index;
+        } else if (h.op == OP_DISCARD_DS) *depth = 1;
+        else break;
+        next += h.size;
+    }
+    return mask;
+}
 static void not_yet(uint32_t op) {
     g_stat_skipped++;
     VRED_ONCE("DrawTexture (op %u) is not on Vulkan yet: skipped from now on", op);
@@ -970,9 +992,17 @@ static void exec(const uint8_t *p, int depth) {
         case OP_COPY_T2B: if (g_cb) copy_bt(a, 0); break;
         case OP_COPY_T2T: if (g_cb) copy_t2t(a); break;
         case OP_BARRIER: if (g_cb && !bar_kept) vka_barrier(g_cb); break;
-        case OP_DRAW: if (!S.rc_skip && g_cb) { p_draw t; g_stat_draws++; uint64_t sk = oq_sk0(); vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, draw_rec(a, h.size, &t), NULL); oq_sk1(sk); }
+        case OP_DRAW: if (!S.rc_skip && g_cb) { p_draw t; g_stat_draws++; uint64_t sk = oq_sk0();
+                          int d = 0; uint32_t colors = !vka_rp_is_open() && h.size >= 8 ? immediate_discards(p + h.size, &d) : 0;
+                          vka_rp_predict_discard(colors, d);
+                          vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, draw_rec(a, h.size, &t), NULL);
+                          vka_rp_predict_discard(0, 0); oq_sk1(sk); }
                       else if (!S.rc_skip && g_oq_count) { g_oq_lost++; g_oqs_skip++; } break;   // (dropped with no command buffer: counts 1, Occlusion queries)
-        case OP_DRAW_IDX: if (!S.rc_skip && g_cb) { p_draw_idx t; g_stat_draws++; uint64_t sk = oq_sk0(); vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, NULL, draw_idx_rec(a, h.size, &t)); oq_sk1(sk); }
+        case OP_DRAW_IDX: if (!S.rc_skip && g_cb) { p_draw_idx t; g_stat_draws++; uint64_t sk = oq_sk0();
+                              int d = 0; uint32_t colors = !vka_rp_is_open() && h.size >= 8 ? immediate_discards(p + h.size, &d) : 0;
+                              vka_rp_predict_discard(colors, d);
+                              vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, NULL, draw_idx_rec(a, h.size, &t));
+                              vka_rp_predict_discard(0, 0); oq_sk1(sk); }
                           else if (!S.rc_skip && g_oq_count) { g_oq_lost++; g_oqs_skip++; } break;
         case OP_DISPATCH: if (g_cb) vka_dispatch(&S.d, a); break;
         case OP_DRAW_TEX: not_yet(h.op); if (g_oq_count && !S.rc_skip) { g_oq_lost++; g_oqs_skip++; } break;
