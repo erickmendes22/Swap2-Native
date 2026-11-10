@@ -346,6 +346,11 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     P->ri = (VkPipelineRenderingCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .colorAttachmentCount = k->ncolor, .pColorAttachmentFormats = P->cf,
                                             .depthAttachmentFormat = (VkFormat)k->dfmt, .stencilAttachmentFormat = (VkFormat)k->sfmt};
     P->tess = !mesh && (sh[3] || sh[4]); P->mesh = mesh;
+    if (VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 && !V.fps_boost_vrs) {
+        static _Atomic int logged_unsupported;
+        if (!atomic_exchange(&logged_unsupported, 1))
+            VLOG("Ocarina FPS Boost requested but Vulkan driver exposes no selected 2x1/2x2 pipeline fragment shading rate; VRS not applied (original passes kept)");
+    }
     // The GPU profiler on Ocarina v131072 identified these FS keys as hot:
     // 5ad65c... (427x240 mesh+task draw, 2.6–7ms) and
     // 1e4d26... (many draws in 854x480 scene passes).
@@ -360,7 +365,10 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                 .pNext = NULL, .fragmentSize = {V.fps_boost_width, V.fps_boost_height},
                 .combinerOps = {VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
                                 VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR}};
-            P->ri.pNext = &P->fsrate;
+            // VK_KHR_fragment_shading_rate extends VkGraphicsPipelineCreateInfo,
+            // NOT VkPipelineRenderingCreateInfo. Chain both peer structs at
+            // the graphics pipeline root, otherwise the VRS state is invalid.
+            P->fsrate.pNext = &P->ri;
             static _Atomic int nboost;
             if (atomic_fetch_add(&nboost, 1) < 6)
                 VLOG("Ocarina FPS Boost VRS %ux%u shader %016llx, all draws preserved",
@@ -368,7 +376,8 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                      (unsigned long long)sh[1]->key);
         }
     }
-    P->ci = (VkGraphicsPipelineCreateInfo){VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, .pNext = &P->ri, .stageCount = P->ns, .pStages = P->ss, .pVertexInputState = mesh ? NULL : &P->vi,
+    P->ci = (VkGraphicsPipelineCreateInfo){VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = P->fsrate.sType ? (const void *)&P->fsrate : (const void *)&P->ri, .stageCount = P->ns, .pStages = P->ss, .pVertexInputState = mesh ? NULL : &P->vi,
         .pInputAssemblyState = mesh ? NULL : &P->ia,
         .pTessellationState = P->tess ? &P->ts : NULL, .pViewportState = &P->vp, .pRasterizationState = &P->rs, .pMultisampleState = &P->ms, .pDepthStencilState = &P->ds, .pColorBlendState = &P->bs,
         .pDynamicState = &P->dy, .layout = lay->layout};
