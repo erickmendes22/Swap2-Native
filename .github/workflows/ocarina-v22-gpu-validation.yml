@@ -1,0 +1,29 @@
+name: Ocarina Vulkan V22 GPU Translator Validation (no APK)
+on:
+  push:
+    branches: [wip-ocarina-v22-gpu-structural]
+  workflow_dispatch:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Compile shader translator after structural V21/V22 optimizations
+        shell: bash
+        run: |
+          set -euxo pipefail
+          dotnet build dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Ryujinx.Graphics.Shader.csproj --configuration Release --verbosity quiet
+      - name: Validate raw memory hint collision safety and 128-bit vector rewrite
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v22_gpu_raw_vector_hints.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v22_gmem.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_raw_gmem_fast1.py'
+          python3 dm/gfx/tools/dmsh_chain.py --header
+          python3 dm/gfx/tools/vk_android_build.py --header
+          echo 'Shader translation/ABI checked; no APK created.' >> "$GITHUB_STEP_SUMMARY"
