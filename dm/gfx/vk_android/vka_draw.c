@@ -330,7 +330,10 @@ int vka_pass_keep(void) { return g_pass_keep; }
 // what a barrier between two draws of one pass can order is: memory the earlier draws wrote with shader stores (the pass then ends at once, as nvn_mtl.m's OP_BARRIER
 // does for a pass with shader writes), and an attachment of the pass that a later draw samples (a feedback read: the pass ends before that draw, bar_hazard). Everything
 // else the draws read was written before the pass began, behind the barrier that ended what wrote it. DM_VK_BAR_KEEP=1 takes such barriers inside the pass (live;
-// default 0 until phone-checked); the counts are in the replay statistics line either way
+// default 0 for all other games; Ocarina's launcher enables it for a phone
+// A/B with an env.txt fallback to 0. Alias views of attachment guest memory
+// are also checked by vka_tex_id_in_pass; the counts in replay statistics
+// show how many passes and loads/stores were avoided.
 int vka_rp_game_barrier(uint32_t bits) {
     (void)bits;
     if (!R.on) return 0;
