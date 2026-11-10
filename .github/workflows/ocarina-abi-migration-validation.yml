@@ -1,0 +1,32 @@
+name: Ocarina ABI + Partial Shader Update Safety (no APK)
+on:
+  push:
+    branches:
+      - wip-ocarina-incremental-shader-updates
+  workflow_dispatch:
+jobs:
+  abi-safety:
+    name: Audit ABI and test selective shader migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit checked-in ABI certificate before accepting old shader libraries
+        run: |
+          set -euo pipefail
+          python3 dm/gfx/tools/vk_abi_migrate.py --check
+          python3 -m py_compile dm/gfx/tools/vk_abi_migrate.py scripts/ocarina_shader_hot_delta.py scripts/pack_android.py
+      - name: Verify exact ABI extensions, rejection of incompatible structures and safe hot shaders
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_abi_migration.py' -v
+          python3 -m unittest discover -s dm/tools/tests -p 'test_ocarina_shader_delta.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_hot_shader_overlay.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pack_finalize_atomic.py' -v
+      - name: Ensure build and runtime use the same signed ABI approvals
+        run: |
+          set -euo pipefail
+          grep -F 'certified_abi_open' dm/gfx/vk_android/vka_shader.c
+          grep -F 'ShaderAbiCert.approved' android/app/src/main/java/dev/nxnative/android/ShaderLibs.java
+          grep -F 'DMSH_VK_DELTA_FROM' android/app/src/ondevice/java/dev/nxnative/android/PackService.java
+          echo 'No APK emitted; certified ABI changes only, original full library remains unchanged.' >> "$GITHUB_STEP_SUMMARY"
