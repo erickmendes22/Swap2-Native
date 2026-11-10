@@ -1,9 +1,14 @@
 name: Ocarina incremental shaders (tests only)
 on:
   push:
-    branches: [wip-ocarina-incremental-shader-updates]
+    branches: [wip-ocarina-incremental-shader-updates, ocarina-v11-ios-perf-from-v101]
     paths:
       - 'scripts/ocarina_shader_hot_delta.py'
+      - 'scripts/build_ocarina_hot_shaders.py'
+      - 'dm/gfx/tools/tests/test_ocarina_hot_shader_overlay.py'
+      - 'dm/gfx/vk_android/vka_shlib.c'
+      - 'dm/gfx/vk_android/vka_shader.c'
+      - 'dm/host/tests/t_android_shlib.c'
       - 'scripts/pack_android.py'
       - 'android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/PackService.java'
@@ -18,9 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python source compile
-        run: python3 -m py_compile scripts/ocarina_shader_hot_delta.py scripts/pack_android.py dm/tools/tests/test_ocarina_shader_delta.py
+        run: python3 -m py_compile scripts/ocarina_shader_hot_delta.py scripts/build_ocarina_hot_shaders.py scripts/pack_android.py dm/tools/tests/test_ocarina_shader_delta.py
       - name: Synthetic full-library and partial-overlay regression
         run: python3 -m unittest discover -s dm/tools/tests -p test_ocarina_shader_delta.py -v
+      - name: Verified hot shader release manifest and ABI guards
+        run: |
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_hot_shader_overlay.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_abi_migration.py -v
+          cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c
       - name: On-device finalization retry regressions
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_pack_finalize_atomic.py -v
       - name: Test static engine integration against source versions
