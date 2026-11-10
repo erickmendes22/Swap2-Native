@@ -387,6 +387,20 @@ def pack_shaders(a, g, work, out, vdir):
     """shaders/v-<V>/ in the pack: an up-to-date library from the cache (built there first when it is missing or stale, from the shader package, split from the dump
     first when there is none and --shader-pkg names none). → the library path in the pack, or None"""
     v = vk_chain(); name = VK_PREFIX + v
+    if a.hot_keys:
+        if g.id != '0400486024DEC000':
+            raise Error('--hot-keys is supported only for the reviewed Ocarina shader-update scope')
+        from ocarina_shader_hot_delta import validated_hot_base
+        from vk_android_delta import abi_digest
+        keys = [k for k in a.hot_keys.split(',') if k]
+        try:
+            base = validated_hot_base(out, g.id, dmsh_chain.version(), v,
+                                      abi_digest(), dmsh_chain.inputs(g), keys)
+        except ValueError as e:
+            raise Error(str(e)) from e
+        print(f'shaders: incremental update: {len(keys)} selected shaders in the hot overlay; '
+              f'{base} remains the unchanged complete Vulkan fallback', flush=True)
+        return base
     cache = (a.shader_cache or work / 'android-shaders' / 'lib').resolve(); lib = cache / name
     dst = out / 'shaders' / name
     if a.move_shader_cache and not library_current(lib, g) and library_current(dst, g):
@@ -449,6 +463,8 @@ def main():
     ap.add_argument('--shader-cache', type=Path, help='the folder of Vulkan shader libraries v-<V>/ (default: <title ID>-work/android-shaders/lib)')
     ap.add_argument('--move-shader-cache', action='store_true',
                     help='on-device ONLY: allow moving the private finished shader cache into the pack without duplicating GB of data; interrupted runs recover it there')
+    ap.add_argument('--hot-keys',
+                    help='REVIEWED Ocarina incremental update: comma-separated modified shader keys. Require a validated complete older same-ABI library and exact partial overlay; never relabel it or compile the other 42k shaders')
     ap.add_argument('--shader-pkg', type=Path, help='the Switch shader package to build the library from, split from the dump into it when it is not there (default: <title ID>-work/android-shaders/pkg)')
     ap.add_argument('--shader-python', help='the Python 3.14 (or one with backports.zstd) that runs vk_android_build.py')
     ap.add_argument('-J', type=int, default=8, help='shaders translated at once when the library is built (default 8)')
