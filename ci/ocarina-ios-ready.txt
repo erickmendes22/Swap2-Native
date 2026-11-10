@@ -25,3 +25,5 @@ Build 14 — real GPU change, not a configuration toggle:
 - Preserve the original FULL barrier for explicit NVN barriers, pending NVN barriers, shader memory stores, diagnostic paths, external clears.
 - Hardware FPS benefit not assumed; test per-frame scoped-vs-full pass-end counts and GPU p50.
 - Same Ocarina 0.1.2 Android package and a1c468af signature, no shader library rebuild.
+
+Build 14 rerun: validate changed full-barrier fallback assertions for attachment-scoped render-pass synchronization. The source implementation remains unchanged. Run the complete tests and compile Android only if all pass; same 0.1.2 a1c468af signer, versionCode increment, game shader library unchanged.
