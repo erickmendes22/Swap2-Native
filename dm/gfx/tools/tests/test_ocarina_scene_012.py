@@ -20,7 +20,7 @@ class InternalSceneResolution(unittest.TestCase):
             self.assertIn(label, PREFS)
         self.assertIn("Prefs.OCARINA_SCENE_SCALES[w - 1]", UI)
         self.assertIn("SceneService.start(a, id, in[1], scale, expect, in[0]", UI)
-        self.assertIn('"--scale"', DYN)
+        self.assertIn("ap.add_argument('--scale'", DYN)
         self.assertIn("DynamicResolutionParam", DYN)
         self.assertIn("ResolutionReduceScale", DYN)
 
