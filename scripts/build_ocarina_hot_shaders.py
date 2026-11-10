@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Build ONLY selected Ocarina GPU bottleneck shaders for the Vulkan hot overlay.
+
+Usage (PC/Mac with the matching translator, game shader package and SPIRV-Tools):
+ python3 scripts/build_ocarina_hot_shaders.py \\
+   --pkg /path/to/previously-split/pkg \\
+   --pack /path/to/installed/game/pack \\
+   --key 066f5daf12e43c71 --key efaa4fa6a80ba719
+
+The original 42k-shader library is not modified. The runtime opens the new
+partial library at <pack>/shaders/hot/v-<DMSH_VK_CHAIN>/dmsh_vk.lib and
+prefers its keys; every other key is read from the existing full library.
+This does NOT regenerate all shaders. No changes to the Android package/signing
+and no new environment variable are necessary.
+
+The tool requires shader source split/pkg to still exist (or to be regenerated).
+A new shader cannot be translated from an old SPIR-V .lib alone.
+"""
+from pathlib import Path
+import argparse
+import os
+import re
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+GAME = "0400486024DEC000"
+DEFAULT_KEYS = (
+    "066f5daf12e43c71",  # heavy foliage mesh, from on-device logs
+    "efaa4fa6a80ba719",  # task stage paired with heavy foliage mesh
+    "5ad65c0eefd09c7f",  # heavy fragment
+    "9e6b00b050e30801",  # heavy compute
+)
+KEY = re.compile(r"[0-9a-fA-F]{16}\Z")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--pkg", required=True, type=Path,
+                    help="previously split game shader package directory (NOT the full game dump)")
+    ap.add_argument("--pack", required=True, type=Path,
+                    help="game pack directory containing the original full shaders/ library")
+    ap.add_argument("--key", action="append", default=[], help="additional 16-digit shader key")
+    ap.add_argument("--keys-file", type=Path,
+                    help="one 16-digit key per line, optionally followed by # comment")
+    ap.add_argument("--no-default-keys", action="store_true",
+                    help="only translate the --key / --keys-file entries")
+    args = ap.parse_args()
+
+    keys = set() if args.no_default_keys else set(DEFAULT_KEYS)
+    keys.update(args.key)
+    if args.keys_file:
+        for line in args.keys_file.read_text().splitlines():
+            line = line.partition("#")[0].strip()
+            if line: keys.add(line)
+    if not keys or any(not KEY.fullmatch(k) for k in keys):
+        ap.error("provide one or more valid 16-hex-digit shader keys")
+    keys = sorted(k.lower() for k in keys)
+
+    pkg, pack = args.pkg.expanduser().resolve(), args.pack.expanduser().resolve()
+    if not pkg.is_dir():
+        ap.error(f"no shader source folder: {pkg}; old SPIR-V .lib alone cannot compile changed GPU code")
+    shaders = pack / "shaders"
+    if not shaders.is_dir() or not any(shaders.glob("v-*/dmsh_vk.lib")):
+        ap.error(f"{shaders} has no original complete shader library; refusing to build an unsafe overlay")
+
+    env = os.environ.copy()
+    env["DM_GAME"] = GAME
+    env.update(DMSH_GMEM_FAST1="1", DMSH_GMEM_MAP_8192="1",
+               DMSH_GMEM_LAST1="1", DMSH_VK_REQUIRE_ALL="1")
+    tool = ROOT / "dm/gfx/tools/vk_android_build.py"
+    chain = ROOT / "dm/gfx/tools/dmsh_chain.py"
+    # Explicit headers ensure the just-built overlay agrees with the running
+    # native host's expected game, toolchain and ABI.
+    subprocess.run([sys.executable, str(chain), "--header"], cwd=ROOT, env=env, check=True)
+    subprocess.run([sys.executable, str(tool), "--header"], cwd=ROOT, env=env, check=True)
+    version = subprocess.check_output(
+        [sys.executable, str(tool), "--version"], cwd=ROOT, env=env, text=True).strip()
+
+    overlay_root = shaders / "hot"
+    print(f"Rebuilding {len(keys)} selected GPU shaders, NOT the entire 42k library:")
+    for k in keys: print(" ", k)
+    subprocess.run([sys.executable, str(tool), "--target", "vulkan", str(pkg),
+                    str(overlay_root), *keys], cwd=ROOT, env=env, check=True)
+    output = overlay_root / f"v-{version}" / "dmsh_vk.lib"
+    if not output.is_file():
+        raise RuntimeError(f"hot overlay build produced no library: {output}")
+    subprocess.run([sys.executable, str(tool), "--check", str(output)],
+                   cwd=ROOT, env=env, check=True)
+    print(f"Validated selective GPU overlay: {output}")
+    print("The original stable shader library was not replaced or rebuilt.")
+
+
+if __name__ == "__main__":
+    main()
