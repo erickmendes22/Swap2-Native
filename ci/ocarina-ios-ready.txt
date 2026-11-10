@@ -67,3 +67,5 @@ Build 20 · iOS dispatch_overlap port to Vulkan, not a shader change:
 - Consecutive direct compute dispatches with no guest NVN barrier now share GPU execution rather than 1 full ALL_COMMANDS barrier each; flush before every draw, transfer, query, barrier, list boundary and command-buffer switch.
 - Exclude shared host spill, indirect, GPU profiler and NaN instrumentation; keep standard sync after final dispatch, and allow DM_VK_OOT_DISPATCH_OVERLAP=0 as a compatibility fallback.
 - This is a code-level GPU change based on iOS 5.7->3.7ms compute sequence on M4 Pro, not a guaranteed Adreno result; no shader library regeneration, same package/signature/ABI.
+
+Build 20 retry: adjust test_ocarina_fps_boost_vrs to accept the existing Ocarina-only settings block; no new native changes. Require validation and Android native build before publishing artifact.
