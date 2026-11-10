@@ -32,8 +32,10 @@ class InternalSceneResolution(unittest.TestCase):
 
     def test_no_default_change_and_overlay_stamped(self):
         self.assertIn('gameKey("scene_scale", titleId), profileScale', PREFS)
+        self.assertIn("static void setSceneScale(Context c, String titleId, String v)", PREFS)
+        self.assertNotIn("static void sceneScale(Context c, String titleId, String v)", PREFS)
         self.assertIn("sceneWanted(id, scale)", UI)
-        self.assertIn("Prefs.sceneScale(a, id, scale)", UI)
+        self.assertIn("Prefs.setSceneScale(a, id, scale)", UI)
         self.assertIn("Prefs.sceneScale(this, id, prof.sceneScale())", RUN)
         self.assertIn("SceneOverlay.stampText(scale, expect, version)", SERVICE)
         self.assertIn("internal render scene scale", RUN)
