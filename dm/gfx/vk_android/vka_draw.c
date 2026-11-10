@@ -19,6 +19,19 @@
 static VkCommandBuffer g_cb; static unsigned g_slot; static int g_prof, g_dyn_filter = 1, g_pass_keep = 1, g_vb_filter = 1;   // g_prof: DM_VK_PROF
 uint64_t vka_n_rp;   // render passes the draws opened (vka_exec.c replay statistics)
 static uint64_t g_draws, g_skipped, g_dispatches;
+static int g_dispatch_overlap_pending;
+static uint64_t g_dispatch_overlap_skipped;
+// The Metal port can overlap successive compute dispatches when NVN issued no
+// explicit barrier between them. The Vulkan replay had inserted a full GPU
+// barrier after every single dispatch. Defer that dependency across adjacent
+// dispatches only when their host spill/indirect buffers are not in use. Any
+// draw, transfer, guest barrier, query, list boundary or command-buffer switch
+// flushes first, preserving the ordering of all non-compute work.
+void vka_dispatch_overlap_flush(void) {
+    if (g_dispatch_overlap_pending && g_cb) vka_barrier(g_cb);
+    g_dispatch_overlap_pending = 0;
+}
+uint64_t vka_dispatch_overlap_skips(void) { return g_dispatch_overlap_skipped; }
 static uint32_t g_claim_words;   // the draw's claim words (an upper bound of its primitives): 0 = its geometry shader takes no claim
 uint64_t vka_frame(void);
 #define SKIPQ() do { g_skipped++; if (VKA_ENV("DM_VK_SKIP_LOG", 0)) VLOG("skip log: draw or dispatch skipped at vka_draw.c:%d (frame %llu)", __LINE__, (unsigned long long)vka_frame()); return; } while (0)   // diagnostic: DM_VK_SKIP_LOG=1
@@ -117,6 +130,7 @@ static VkDescriptorPool g_dp[NSLOT][MAXPOOLS]; static int g_ndp[NSLOT], g_cur_dp
 void vka_dyn_invalidate(void);
 static void drv_memo_reset(void);
 void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot) {
+    vka_dispatch_overlap_flush(); // never carry an outstanding compute dependency to a new command buffer
     g_cb = cb; g_slot = slot % NSLOT; vka_dyn_invalidate();
     { void vka_mem_rec_thread(void); vka_mem_rec_thread(); }   // the address lookups' cache outside TLS for the recording thread (vka_mem.c)
     drv_memo_reset();   // the last submission's scratch spans go with its fence
@@ -401,7 +415,7 @@ int vka_rp_is_open(void) { return R.on; }
 int vka_rp_open_for(const p_set_rt *rt, int has_rt) { return R.on && rt_same(rt, has_rt, &R.rt, R.has_rt); }
 // The draw about to come may start a new part of the submission: no pass is open over its targets and no clear waits for them (an open pass over other targets ends at it anyway)
 int vka_rp_split_ok(const p_set_rt *rt, int has_rt) { return R.on ? !rt_same(rt, has_rt, &R.rt, R.has_rt) : PC.n ? has_rt && !rt_same(rt, has_rt, &PC.rt, 1) : 1; }
-void vka_draw_cb_switch(VkCommandBuffer cb) { g_cb = cb; vka_dyn_invalidate(); }   // the submission goes on in another command buffer (vka_exec.c chunk): its bound state is gone
+void vka_draw_cb_switch(VkCommandBuffer cb) { vka_dispatch_overlap_flush(); g_cb = cb; vka_dyn_invalidate(); }   // the submission goes on in another command buffer (vka_exec.c chunk): its bound state is gone
 // Before a clear of these targets records anything (vka_tex_get may record a first upload): a pass over other targets ends, pending clears of other targets are done
 void vka_rp_prep_clear(const p_set_rt *rt, int has_rt) {
     if (R.on) { if (!rt_same(rt, has_rt, &R.rt, R.has_rt)) vka_rp_end(); }
@@ -1566,7 +1580,7 @@ int dm_sdk_ounce(void);
 static int g_nvn2 = -1;
 void vka_set_nvn2(int on) { g_nvn2 = on != 0; }
 int vka_nvn2(void) { if (g_nvn2 < 0) g_nvn2 = dm_sdk_ounce(); return g_nvn2; }   // first called at a dispatch or a capture, after the modules are loaded
-void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
+void vka_dispatch(vka_dstate *d, const p_dispatch *dp, int next_is_dispatch) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
     vka_rp_end();
@@ -1603,6 +1617,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     VkBuffer ib = VK_NULL_HANDLE; VkDeviceSize io = 0;
     if (dp->ind && (!vka_addr(dp->ind, 12, &ib, &io, NULL) || (io & 3))) SKIP("indirect dispatch arguments at %#llx are not in placed guest RAM: skipped", (unsigned long long)dp->ind);
     uint32_t sb = spill_bytes(sh[5]); uint64_t ns = 0;   // shared memory in the spill buffer: the slices this dispatch binds (spill_buf)
+    if (sb || dp->ind) vka_dispatch_overlap_flush(); // spill slices or GPU-sourced indirect arguments cannot overlap an earlier dispatch
     if (sb) {
         if (!spill_buf(sb)) SKIP("dispatch of %016llx skipped: no shared memory spill buffer of %u bytes", (unsigned long long)sh[5]->key, sb);
         uint64_t cap = g_spill_cap / sb, total = dp->ind ? cap : (uint64_t)(dp->x > 0 ? dp->x : 0) * (uint64_t)(dp->y > 0 ? dp->y : 0) * (uint64_t)(dp->z > 0 ? dp->z : 0);
@@ -1657,11 +1672,25 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     // Ocarina's 9e6b compute appears twice per frame in heavy scenes.
     // Keep every workgroup and shader output. Narrow only the barrier's
     // producer stages; all later GPU consumers stay synchronized.
-    if (sh[5]->key == UINT64_C(0x9e6b00b050e30801) && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0
-        && VKA_ENV("DM_VK_OOT_CS_SYNC", 1))
-        vka_compute_write_barrier(g_cb);
-    else
-        vka_barrier(g_cb);   // also frees the shared memory spill buffer
+    // Backport of the iOS dispatch_overlap mechanism: when the next NVN
+    // command is another direct compute dispatch and the guest requested no
+    // barrier, there is no guest-visible producer/consumer ordering to force.
+    // Group them on the GPU; close the group with a single barrier before any
+    // non-dispatch operation (or before another dispatch using host spill).
+    // Never group indirect dispatches, shared-memory spill, the GPU profiler
+    // or NaN instrumentation. The explicit NVN OP_BARRIER is never skipped.
+    if (next_is_dispatch && !sb && !dp->ind && !vka_gp_active && !vka_nan_on()
+        && VKA_ENV("DM_VK_OOT_DISPATCH_OVERLAP", 0)) {
+        g_dispatch_overlap_pending = 1;
+        g_dispatch_overlap_skipped++;
+    } else {
+        g_dispatch_overlap_pending = 0;
+        if (sh[5]->key == UINT64_C(0x9e6b00b050e30801) && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0
+            && VKA_ENV("DM_VK_OOT_CS_SYNC", 1))
+            vka_compute_write_barrier(g_cb);
+        else
+            vka_barrier(g_cb); // the final dispatch publishes all grouped writes
+    }
     g_dispatches++;
     texstat_at();   // (diagnostic: DM_VK_TEXSTAT_AT, a compute key's textures and buffers)
 }
