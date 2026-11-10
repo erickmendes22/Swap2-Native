@@ -39,11 +39,11 @@ final class GraphicsOptions {
     static int mode(Context c, String id) {
         return Prefs.of(c).getInt(Prefs.gameKey("present_filter", id), mode(c));
     }
-    static int stretch(Context c) { return Prefs.of(c).getBoolean("picture_stretch", false) ? 1 : 0; }
+    static int stretch(Context c) { return clamp(Prefs.of(c).getInt("picture_stretch", 0), 0, 1); }
     static int stretch(Context c, String id) {
         return Prefs.of(c).getInt(Prefs.gameKey("picture_stretch", id), stretch(c));
     }
-    static int background(Context c) { return Prefs.of(c).getBoolean("bg_pipelines", true) ? 1 : 0; }
+    static int background(Context c) { return clamp(Prefs.of(c).getInt("bg_pipelines", 1), 0, 1); }
     static int background(Context c, String id) {
         return Prefs.of(c).getInt(Prefs.gameKey("bg_pipelines", id), background(c));
     }
