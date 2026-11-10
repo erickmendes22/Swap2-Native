@@ -221,6 +221,10 @@ typedef struct vka_img {
     VkImage img; vka_imem m; vka_fmt f; VkImageUsageFlags usage; VkImageAspectFlags aspect;
     uint32_t w, h, depth, layers, levels, samples; uint64_t bytes;
     int refs, inited, gpu_owned, cpu_dirty;
+    // An explicitly discarded attachment range may be loaded as DONT_CARE.
+    // Cleared on subsequent GPU writes; exact level and layer match required.
+    VkImageAspectFlags discard_aspect;
+    uint32_t discard_level, discard_layer, discard_layers;
     int no_storage;          // remaking it with storage use was refused (img_storage_upgrade): not tried again
     int holds;               // references taken from outside the recording thread (vka_tex_acquire / vka_tex_ref: the present, frame generation, capture), which read img unlocked: the image is not remade while held (img_storage_upgrade)
     // Content from guest storage (vka_tex.c storage_mode): track = re-uploaded when the CPU writes its pages (write-protected after each upload, nvn_dirty.c),
@@ -267,6 +271,8 @@ int vka_tex_live_refs(vka_img **out, int max);       // references to every live
 vka_img *vka_tex_ref(vka_img *im);                  // one more reference to im (dropped with vka_tex_drop)
 // The GPU writes im (render target, clear, copy destination, storage image): its content is the GPU's from now on (no re-upload from storage), and a linear texture's level 0
 // is copied back into its storage when the submission ends (vka_tex_writeback), where the CPU reads it as it would on the Switch
+void vka_img_discard_mark(vka_img *im, VkImageAspectFlags aspect, uint32_t level, uint32_t layer, uint32_t layers);
+int vka_img_discard_take(vka_img *im, VkImageAspectFlags aspect, uint32_t level, uint32_t layer, uint32_t layers);
 void vka_img_written_at(vka_img *im, const char *file, int line);
 #define vka_img_written(im) vka_img_written_at(im, __FILE_NAME__, __LINE__)   // (the site is logged for a large image's first write, DM_VK_BIGIMG_MB)
 // Before a write is recorded into im (an attachment, a clear, a copy destination, a storage image): a zero-shared image gets memory of its own, cleared (vka_tex.c img_own).
@@ -390,6 +396,7 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a);   // 1 = a state re
 // The render pass the draws of a submission go into: opened at a draw, closed by anything that is not a draw or state (vka_rp_end), and by a new SET_RT
 void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot);    // the slot's per-draw descriptor sets are free again (its last fence is done)
 void vka_rp_end(void);
+void vka_rp_discard(const p_set_rt *rt, int has_rt, int color_index); // -1 depth/stencil; 0..7 color
 int vka_rp_split_ok(const p_set_rt *rt, int has_rt);
 void vka_draw_cb_switch(VkCommandBuffer cb);
 void vka_dyn_invalidate(void);                       // the draws' dynamic state is set again in full at the next draw (another pipeline was bound)
