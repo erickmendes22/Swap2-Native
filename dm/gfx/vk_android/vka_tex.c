@@ -112,10 +112,28 @@ static VkImageAspectFlags aspect_of(int kind) { return kind == 3 ? VK_IMAGE_ASPE
 static int compressed(const vka_fmt *f) { return f->bw > 1 || f->bh > 1; }
 
 uint64_t vka_n_bar;   // full barriers recorded (vka_exec.c replay statistics)
+uint64_t vka_n_transfer_bar; // scoped transfer-write dependencies, tracked separately
 void vka_barrier_at(VkCommandBuffer cb, const char *file, int line) {
     vka_n_bar++;
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT, .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
     vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+    if (vka_gp_active) vka_gp_mark(cb, file, line);
+}
+// OP_UPDATE_UB copies inline data from a staging buffer into guest buffer
+// memory; it does not generate shader writes or image writes. The transfer
+// stage is therefore the only new writer after the previous pass already
+// ended with its own full barrier. Keep ALL_COMMANDS and broad destination
+// access masks, because the same guest buffer may later be used for uniforms,
+// storage, vertex/index input, further transfers, or indirect draws.
+// This is narrower than ALL_COMMANDS -> ALL_COMMANDS but preserves every
+// guest-visible read-after-write / write-after-write dependency.
+void vka_transfer_write_barrier_at(VkCommandBuffer cb, const char *file, int line) {
+    vka_n_transfer_bar++;
+    VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                          .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                          .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+    vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                            0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
 }
 void vka_img_barrier(VkCommandBuffer cb, VkImage img, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to) {
