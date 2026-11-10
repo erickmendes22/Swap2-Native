@@ -30,7 +30,7 @@ class Actual720pGpuWork(unittest.TestCase):
             self.assertGreater(w, 0)
             self.assertGreater(h, 0)
         w, h = cap720(2162, 1216)
-        self.assertEqual((w, h), (1279, 720))
+        self.assertEqual((w, h), (1280, 720))
         self.assertLess(w * h, 2162 * 1216 * .36)
 
     def test_easu_and_rcas_are_both_rendered_at_capped_size(self):
