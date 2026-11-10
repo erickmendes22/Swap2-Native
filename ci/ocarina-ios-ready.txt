@@ -9,3 +9,9 @@ bloquear publicação se o certificado diferir do instalado.
 Ocarina 0.1.2 — Vulkan GPU barrier dedup. OP_BARRIER terminating a live render pass no longer emits a second identical ALL_COMMANDS memory barrier; retain it with NaN instrumentation or without a live pass. Static regression tests and count in per-300-frame metrics. Same package, keystore SHA256 a1c468af, shader pack unchanged; V10 baseline untouched.
 
 Build 11 Ocarina 0.1.2: Vulkan retained render passes for guest barriers when no shader stores and no following framebuffer read alias, via DM_VK_BAR_KEEP=1 only for title 0400486024DEC000. DM_VK_BAR_KEEP=0 in per-game env reverts. Same signer a1c468af, package, game shader ABI/library and versionCode increment. Tests validate alias overlap and non-barrier hazard paths.
+
+Build 12 (real algorithm changes, no new environment toggle):
+- vka_exec.c render conditions: constant-time open-addressed index, latest pending address, rebuild after prune
+- occlusion results: prefetch contiguous query reports per fence, batch VkGetQueryPoolResults and host-query resets, exact report count/order and gap fallback
+- structural tests and synthetic benchmark: 7038 pending reports, 2114 lookups; same results with ~3ms -> ~0.0056ms per round on the test host
+- same package com.swap2native.ootv11ios, 0.1.2, existing a1c468af signer, game shaders unchanged.
