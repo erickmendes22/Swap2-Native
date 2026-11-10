@@ -58,6 +58,34 @@ class ShaderPackFinalization(unittest.TestCase):
         self.assertFalse(os.path.samefile(self.source, self.output))
         self.assertTrue(self.source.exists())
 
+    def test_android_fuse_rejects_links_but_atomic_move_needs_no_space(self):
+        # FUSE may prohibit hard links even on the same filesystem.
+        with mock.patch.object(os, 'link', side_effect=OSError(errno.EPERM, 'hard link blocked')):
+            with mock.patch.object(shutil, 'copyfileobj', side_effect=AssertionError('duplicate shader library')):
+                with mock.patch.object(shutil, 'disk_usage', side_effect=AssertionError('no copy performed')):
+                    method = publish(self.source, self.output, move_private=True)
+        self.assertIn('atomic move', method)
+        self.assertFalse(self.source.exists())
+        self.assertTrue(self.output.exists())
+        self.assertEqual(self.output.read_bytes()[:21], b'shader-library-header')
+
+    def test_source_cannot_be_moved_when_user_did_not_opt_in(self):
+        with mock.patch.object(os, 'link', side_effect=OSError(errno.EPERM, 'FUSE denied')):
+            with mock.patch.object(shutil, 'disk_usage', return_value=shutil._ntuple_diskusage(1 << 31, 1 << 30, 1 << 30)):
+                method = publish(self.source, self.output)
+        self.assertIn('streamed copy', method)
+        self.assertTrue(self.source.exists())
+
+    def test_android_retry_recovers_finished_library_after_atomic_move(self):
+        code = SOURCE
+        self.assertIn('a.move_shader_cache and not library_current(lib, g) and library_current(dst, g)', code)
+        self.assertIn('recovered completed library in', code)
+        self.assertIn("'--move-shader-cache'", code)
+        java = (REPO / 'android/app/src/ondevice/java/dev/nxnative/android/PackService.java').read_text()
+        self.assertIn('boolean ownedCache = j.shaderCache().getCanonicalFile()', java)
+        self.assertIn('"--move-shader-cache", "-j", "1", "--in-process"', java)
+        self.assertIn('Math.min(need, 256L << 20)', java)
+
     def test_insufficient_space_refuses_duplicate_early_preserves_both(self):
         self.output.parent.mkdir(parents=True)
         self.output.write_bytes(b'old installed library')
