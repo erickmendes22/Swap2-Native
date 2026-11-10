@@ -1168,6 +1168,14 @@ static void dirty(int **list, int *n, int *cap, uint8_t **flag, int nslots, int 
 static int *g_tdirty, g_ntd, g_tdcap; static uint8_t *g_tdflag;
 typedef struct { tex_t t; view_t v; uint8_t has_v, img; uint64_t pgen; } treg_ent;   // pgen: the texture's pool's Initialize serial at registration (nvn_pool_live)
 static treg_ent *g_treg; static int g_ntreg;   // indexed by host texture ID
+// The update-after-bind texture pool is shared across in-flight queue parts.
+// Rewriting an unchanged VkImageView is unnecessary work for the driver and
+// may race with a pending read of the same descriptor slot. Keep separate
+// per-ID sampled/storage slot states: the two bindings must not alias.
+// A changed texture generation conservatively forces a fresh descriptor
+// (old VkImageView handles can eventually be recycled by Vulkan).
+typedef struct { VkImageView view[2]; uint32_t gen[2]; uint8_t valid; } pool_written;
+static pool_written *g_pool_written; static int g_pool_written_cap;
 // The image made again from texture level base (caller holds g_tmu): the old image, its memory and views go when the GPU is done with them, and the texture IDs that name it
 // are written again at this submission (vka_tex_prepare); then everything is uploaded
 static uint64_t g_rebase;
@@ -1753,7 +1761,23 @@ static void dirty(int **list, int *n, int *cap, uint8_t **flag, int nslots, int 
 static void treg(int id, const tex_t *t, const view_t *v, int img) {
     if (id < 0 || id >= (1 << 20)) return;
     pthread_mutex_lock(&g_tmu);
-    if (id >= g_ntreg) { int n = g_ntreg ? g_ntreg : 1024; while (n <= id) n *= 2; g_treg = realloc(g_treg, (size_t)n * sizeof *g_treg); memset(g_treg + g_ntreg, 0, (size_t)(n - g_ntreg) * sizeof *g_treg); g_ntreg = n; }
+    if (id >= g_ntreg) {
+        int n = g_ntreg ? g_ntreg : 1024; while (n <= id) n *= 2;
+        g_treg = realloc(g_treg, (size_t)n * sizeof *g_treg);
+        memset(g_treg + g_ntreg, 0, (size_t)(n - g_ntreg) * sizeof *g_treg);
+        g_ntreg = n;
+    }
+    if (id >= g_pool_written_cap) {
+        pool_written *p = realloc(g_pool_written, (size_t)g_ntreg * sizeof *p);
+        if (p) {
+            memset(p + g_pool_written_cap, 0,
+                   (size_t)(g_ntreg - g_pool_written_cap) * sizeof *p);
+            g_pool_written = p; g_pool_written_cap = g_ntreg;
+        } else {
+            // Allocation failure falls back to the original always-write path.
+            free(g_pool_written); g_pool_written = NULL; g_pool_written_cap = 0;
+        }
+    }
     treg_ent *e = &g_treg[id];
     uint64_t pgen = nvn_pool_live(t->pool, NULL, NULL);
     // An identical re-registration does not invalidate the texture ID's memo
@@ -2433,7 +2457,25 @@ void vka_tex_prepare(VkCommandBuffer cb) {
         int id = g_tdirty[k]; g_tdflag[id] = 0;
         if (id >= (int)(g_treg[id].img ? g_nimg_slots : g_ntex_slots)) { VRED_ONCE("texture ID %d beyond the table", id); continue; }
         write_tex(id, cb, &w[nw], &ii[nw]);
-        if (w[nw].pImageInfo->imageView) nw++;
+        if (w[nw].pImageInfo->imageView) {
+            int kind = w[nw].dstBinding == 2 ? 1 : 0;
+            VkImageView view = ii[nw].imageView;
+            uint32_t gen = atomic_load_explicit(&g_tgen, memory_order_acquire);
+            int unchanged = 0;
+            if (VKA_ENV("DM_VK_POOL_SLOT_DEDUP", 1) && id < g_pool_written_cap) {
+                pool_written *slot = &g_pool_written[id];
+                unchanged = (slot->valid & (1u << kind)) && slot->view[kind] == view
+                         && slot->gen[kind] == gen;
+            }
+            if (!unchanged) {
+                if (id < g_pool_written_cap) {
+                    pool_written *slot = &g_pool_written[id];
+                    slot->view[kind] = view; slot->gen[kind] = gen;
+                    slot->valid |= (uint8_t)(1u << kind);
+                }
+                nw++;
+            }
+        }
         if (nw == BATCH) { vk.vkUpdateDescriptorSets(V.dev, (uint32_t)nw, w, 0, NULL); nw = 0; }
     }
     g_ntd = 0;
