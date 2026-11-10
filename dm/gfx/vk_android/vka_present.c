@@ -183,7 +183,7 @@ static void rot_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, 
 // DM_VK_FSR=1 replaces the bilinear blit, or the rotated copy, when the picture is scaled up; DM_VK_FSR_SHARP is RCAS's sharpness in stops (0 = the most,
 // each stop halves it; AMD's default 0.25). Both are live. The intermediate image has the picture's size on the window, one per frame in flight
 static struct { int state; VkFormat fmt; VkPipeline easu, rcas; VkPipelineLayout lay; VkDescriptorSetLayout dsl; VkDescriptorPool pool; VkDescriptorSet set[NFRAME][2]; VkSampler samp;
-                VkImage mid[NFRAME]; VkDeviceMemory mem[NFRAME]; VkImageView view[NFRAME]; uint32_t mw[NFRAME], mh[NFRAME]; } g_fsr;
+                VkImage mid[NFRAME], finish[NFRAME]; VkDeviceMemory mem[NFRAME], fmem[NFRAME]; VkImageView view[NFRAME], fview[NFRAME]; uint32_t mw[NFRAME], mh[NFRAME]; } g_fsr;
 static int fsr_wanted(void) { return VKA_ENV("DM_VK_FSR", 0) != 0; }
 static VkPipeline fsr_pipe(const uint32_t *frag, size_t fsize, VkFormat fmt) {
     VkShaderModule sm[2] = {0}; VkPipeline p = VK_NULL_HANDLE;
@@ -212,7 +212,7 @@ static VkPipeline fsr_pipe(const uint32_t *frag, size_t fsize, VkFormat fmt) {
 }
 // The layout, sets, sampler and the EASU pipeline once, the RCAS pipeline per swapchain format: 1 = ready. A failure is logged once and leaves the bilinear blit
 static int fsr_ready(VkFormat fmt) {
-    if (g_fsr.state > 0 && g_fsr.fmt == fmt) return 1;
+    if (g_fsr.state > 0 && g_fsr.fmt == fmt) return rot_ready(fmt);
     if (g_fsr.state < 0) return 0;
     if (!g_fsr.state) {
         if (!rk_load()) { g_fsr.state = -1; return 0; }
@@ -235,22 +235,28 @@ static int fsr_ready(VkFormat fmt) {
         if (!(g_fsr.easu = fsr_pipe(vka_fsr_easu_frag, sizeof vka_fsr_easu_frag, VK_FORMAT_R8G8B8A8_UNORM))) { g_fsr.state = -1; return 0; }
     }
     if (g_fsr.rcas) { vka_queue_idle(); rk.vkDestroyPipeline(V.dev, g_fsr.rcas, NULL); g_fsr.rcas = VK_NULL_HANDLE; }   // a new swapchain format: no pass in flight
-    if (!(g_fsr.rcas = fsr_pipe(vka_fsr_rcas_frag, sizeof vka_fsr_rcas_frag, fmt))) { g_fsr.state = -1; return 0; }
+    if (!(g_fsr.rcas = fsr_pipe(vka_fsr_rcas_frag, sizeof vka_fsr_rcas_frag, VK_FORMAT_R8G8B8A8_UNORM))) { g_fsr.state = -1; return 0; }
     g_fsr.state = 1; g_fsr.fmt = fmt;
-    VLOG("FSR 1 upscale on (RCAS sharpness %.2f stops)", VKA_ENVF("DM_VK_FSR_SHARP", 0.25));
-    return 1;
+    VLOG("FSR 1 upscale on (EASU+RCAS limited to 1280x720; final display scaling is a single bilinear sample; sharpness %.2f stops)", VKA_ENVF("DM_VK_FSR_SHARP", 0.25));
+    return rot_ready(fmt);
 }
 // Frame k's intermediate image freed: only frame k's submissions use it, so the caller has waited for frame k's fence (or the queue idle). Its descriptor set
 // g_fsr.set[k][1] is written again before its next use
 static void fsr_free(unsigned k) {
     if (g_fsr.view[k]) vk.vkDestroyImageView(V.dev, g_fsr.view[k], NULL);
+    if (g_fsr.fview[k]) vk.vkDestroyImageView(V.dev, g_fsr.fview[k], NULL);
     if (g_fsr.mid[k]) vk.vkDestroyImage(V.dev, g_fsr.mid[k], NULL);
+    if (g_fsr.finish[k]) vk.vkDestroyImage(V.dev, g_fsr.finish[k], NULL);
     if (g_fsr.mem[k]) vk.vkFreeMemory(V.dev, g_fsr.mem[k], NULL);
-    g_fsr.view[k] = VK_NULL_HANDLE; g_fsr.mid[k] = VK_NULL_HANDLE; g_fsr.mem[k] = VK_NULL_HANDLE; g_fsr.mw[k] = g_fsr.mh[k] = 0;
+    if (g_fsr.fmem[k]) vk.vkFreeMemory(V.dev, g_fsr.fmem[k], NULL);
+    g_fsr.view[k] = g_fsr.fview[k] = VK_NULL_HANDLE;
+    g_fsr.mid[k] = g_fsr.finish[k] = VK_NULL_HANDLE;
+    g_fsr.mem[k] = g_fsr.fmem[k] = VK_NULL_HANDLE;
+    g_fsr.mw[k] = g_fsr.mh[k] = 0;
 }
 // Frame k's intermediate image at w x h: made again when the size changes (frame k's fence is waited for, so nothing reads the old one). 1 = ready
 static int fsr_mid(unsigned k, uint32_t w, uint32_t h) {
-    if (g_fsr.mid[k] && g_fsr.mw[k] == w && g_fsr.mh[k] == h) return 1;
+    if (g_fsr.mid[k] && g_fsr.finish[k] && g_fsr.mw[k] == w && g_fsr.mh[k] == h) return 1;
     fsr_free(k);
     VkImageCreateInfo ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {w, h, 1}, .mipLevels = 1, .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
@@ -262,7 +268,18 @@ static int fsr_mid(unsigned k, uint32_t w, uint32_t h) {
     if (!r) r = vk.vkBindImageMemory(V.dev, g_fsr.mid[k], g_fsr.mem[k], 0);
     VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = g_fsr.mid[k], .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM, .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
     if (!r) r = vk.vkCreateImageView(V.dev, &vi, NULL, &g_fsr.view[k]);
-    if (r) { VRED_ONCE("FSR: intermediate image %ux%u: %d; the picture is blitted", w, h, r); return 0; }
+    // The second 720p attachment takes RCAS's output. The physical panel is
+    // sampled only once afterwards; neither EASU nor RCAS draws at 2K/3K.
+    if (!r) r = vk.vkCreateImage(V.dev, &ci, NULL, &g_fsr.finish[k]);
+    if (!r) vk.vkGetImageMemoryRequirements(V.dev, g_fsr.finish[k], &mr);
+    ai.allocationSize = mr.size;
+    ai.memoryTypeIndex = vka_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+    if (!r && ai.memoryTypeIndex == UINT32_MAX) r = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    if (!r) r = vk.vkAllocateMemory(V.dev, &ai, NULL, &g_fsr.fmem[k]);
+    if (!r) r = vk.vkBindImageMemory(V.dev, g_fsr.finish[k], g_fsr.fmem[k], 0);
+    vi.image = g_fsr.finish[k];
+    if (!r) r = vk.vkCreateImageView(V.dev, &vi, NULL, &g_fsr.fview[k]);
+    if (r) { VRED_ONCE("FSR: 720p intermediate images %ux%u: %d; falling back to native blit", w, h, r); fsr_free(k); return 0; }
     g_fsr.mw[k] = w; g_fsr.mh[k] = h;
     return 1;
 }
