@@ -21,3 +21,8 @@ typedef struct { uint32_t set, binding; uint8_t cls, fmt; } vka_spv_imgsel;
 // class (and format), each read, fetch, sample and gather bit-cast back to float and each written texel bit-cast to the integer vector, for integer textures bound to
 // formatted surface operations and texture reads; a depth comparison on one is refused: malloc'd (*out_nw words), NULL with the reason in err (vka_spvpatch.c)
 uint32_t *vka_spv_img_retype(const uint32_t *w, size_t nw, const vka_spv_imgsel *sel, int nsel, size_t *out_nw, char *err, size_t errn);
+
+// Conservative Ocarina-specific compute retile: in-place SPIR-V rewrite of
+// 8x4x4 local size to 8x4x2 only if no local/group-dependent operations exist.
+// The caller must launch twice as many groups in Z. 1 = safe rewrite applied.
+int vka_spv_oot_cs_retile(uint32_t *w, size_t nw, char *why, size_t whylen);
