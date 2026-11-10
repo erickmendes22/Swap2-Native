@@ -317,16 +317,18 @@ def split_shaders(a, g, vdir, pkg):
 
 
 
-def install_library_file(src, dst):
+def install_library_file(src, dst, move_private=False):
     """Publish a finished shader library without allocating a second 1.2+ GB copy.
 
     The on-device compiler writes the complete library into the job's lib/
     cache before the pack step. Both directories normally live on the same
     filesystem, so a hard link adds only a directory entry and safely keeps
-    the compiler's original file for Retry. If the pack is on external storage
-    that rejects hard links, fall back to streaming copy with a real free-space
-    check. The destination is always replaced atomically; a failed attempt
-    leaves both the previous pack and the complete source library intact.
+    the compiler's original file for Retry. If the device's FUSE layer denies
+    hard links, an app-owned private cache can instead be atomically MOVED
+    into the game pack: there is still no duplicate and any interrupted run
+    recovers the finished library from the pack. Non-owned caches and external
+    filesystems use a space-checked streaming fallback. An interrupted copy
+    preserves the previous pack and original translation results.
     """
     src, dst = Path(src), Path(dst)
     if not src.is_file():
@@ -345,9 +347,19 @@ def install_library_file(src, dst):
             os.link(src, tmp)
             method = 'hard link (no duplicated shader bytes)'
         except OSError:
-            # Cross-filesystem/FUSE/SAF: links may be forbidden. Do not attempt
-            # to duplicate a multi-GB library when only the historical 768 MiB
-            # preflight allowance remains. Catch this BEFORE copy fills storage.
+            if move_private:
+                try:
+                    # On Android's emulated-storage FUSE, hard links are often
+                    # forbidden while atomic same-volume rename is supported.
+                    # The private job cache belongs to this one job; move is
+                    # allowed only with an explicit flag from PackService.
+                    # A power loss leaves either src or dst valid (no .partial).
+                    os.replace(src, dst)
+                    return 'atomic move (zero-copy, FUSE-safe)'
+                except OSError:
+                    pass  # cross-filesystem or read-only; try safe copy below
+            # External storage may deny link AND rename. Do not start a
+            # multi-GB duplicate unless sufficient free space actually exists.
             need = src.stat().st_size + (64 << 20)
             available = shutil.disk_usage(dst.parent).free
             if available < need:
@@ -377,6 +389,12 @@ def pack_shaders(a, g, work, out, vdir):
     v = vk_chain(); name = VK_PREFIX + v
     cache = (a.shader_cache or work / 'android-shaders' / 'lib').resolve(); lib = cache / name
     dst = out / 'shaders' / name
+    if a.move_shader_cache and not library_current(lib, g) and library_current(dst, g):
+        # Previous attempt moved the app-owned library into the final pack,
+        # then the process was killed before pack.tsv was written. Recover
+        # from the fully validated header/stamp there; do not translate again.
+        print(f'shaders: recovered completed library in {dst} after interrupted finalization', flush=True)
+        lib = dst
     if not library_current(lib, g):
         if a.in_process: raise Error(f'no current shader library {lib}: --in-process does not build one yet (vk_android_build.py starts the translator and spirv-val as programs); --no-shaders packs without')
         pkg = (a.shader_pkg or work / 'android-shaders' / 'pkg').resolve()
@@ -408,7 +426,7 @@ def pack_shaders(a, g, work, out, vdir):
         st = lib_stamp(lib); dmsh_chain.write_stamp(str(lib), st['game'], st['inputs'])
     for f in (VK_LIB, dmsh_chain.STAMP):
         s_, d_ = lib / f, dst / f
-        method = install_library_file(s_, d_)
+        method = install_library_file(s_, d_, move_private=a.move_shader_cache)
         print(f'shaders: finalized {f} using {method}', flush=True)
     others = sorted(o.name for o in (out / 'shaders').iterdir() if o.name != name and o.name.startswith(VK_PREFIX) and o.is_dir())
     if others:   # kept: another APK (the test and the play app, an older build) may load one of them from this pack; delete by hand to save the space
@@ -429,6 +447,8 @@ def main():
     ap.add_argument('--out', type=Path, help='the pack folder (default: <game folder>/../<title ID>-work/android-pack)')
     ap.add_argument('-j', type=int, default=2, help='modules rewritten at once (default 2)')
     ap.add_argument('--shader-cache', type=Path, help='the folder of Vulkan shader libraries v-<V>/ (default: <title ID>-work/android-shaders/lib)')
+    ap.add_argument('--move-shader-cache', action='store_true',
+                    help='on-device ONLY: allow moving the private finished shader cache into the pack without duplicating GB of data; interrupted runs recover it there')
     ap.add_argument('--shader-pkg', type=Path, help='the Switch shader package to build the library from, split from the dump into it when it is not there (default: <title ID>-work/android-shaders/pkg)')
     ap.add_argument('--shader-python', help='the Python 3.14 (or one with backports.zstd) that runs vk_android_build.py')
     ap.add_argument('-J', type=int, default=8, help='shaders translated at once when the library is built (default 8)')
