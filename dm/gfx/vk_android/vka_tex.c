@@ -1663,7 +1663,30 @@ static void treg(int id, const tex_t *t, const view_t *v, int img) {
     if (id < 0 || id >= (1 << 20)) return;
     pthread_mutex_lock(&g_tmu);
     if (id >= g_ntreg) { int n = g_ntreg ? g_ntreg : 1024; while (n <= id) n *= 2; g_treg = realloc(g_treg, (size_t)n * sizeof *g_treg); memset(g_treg + g_ntreg, 0, (size_t)(n - g_ntreg) * sizeof *g_treg); g_ntreg = n; }
-    treg_ent *e = &g_treg[id]; e->t = *t; e->has_v = v != NULL; if (v) e->v = *v; e->img = (uint8_t)img; e->pgen = nvn_pool_live(t->pool, NULL, NULL);
+    treg_ent *e = &g_treg[id];
+    uint64_t pgen = nvn_pool_live(t->pool, NULL, NULL);
+    // An identical re-registration does not invalidate the texture ID's memo
+    // or ask Vulkan to rewrite a descriptor. Exact bytes may yield false
+    // negatives from padding but never treat distinct descriptors as equal.
+    // Keep this experiment off until the game A/B validates it.
+    static uint64_t attempts, identical;
+    const int dedup = VKA_ENV("DM_VK_REG_DEDUP", 0);
+    if (dedup) {
+        attempts++;
+        if (e->t.serial && e->pgen == pgen && e->img == (uint8_t)img && e->has_v == (v != NULL)
+            && !memcmp(&e->t, t, sizeof *t) && (!v || !memcmp(&e->v, v, sizeof *v))) {
+            identical++;
+            if (VKA_ENV("DM_VK_REG_STATS", 0) && !(attempts & 8191))
+                VLOG("unchanged texture registrations: %llu of %llu (DM_VK_REG_DEDUP)",
+                    (unsigned long long)identical, (unsigned long long)attempts);
+            pthread_mutex_unlock(&g_tmu);
+            return;
+        }
+        if (VKA_ENV("DM_VK_REG_STATS", 0) && !(attempts & 8191))
+            VLOG("unchanged texture registrations: %llu of %llu (DM_VK_REG_DEDUP)",
+                (unsigned long long)identical, (unsigned long long)attempts);
+    }
+    e->t = *t; e->has_v = v != NULL; if (v) e->v = *v; e->img = (uint8_t)img; e->pgen = pgen;
     dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
     if (!g_tver) g_tver = calloc(1 << 20, sizeof *g_tver);
     if (g_tver) atomic_fetch_add_explicit(&g_tver[id], 1, memory_order_release);
@@ -1675,6 +1698,14 @@ void mtl_reg_samp(int id, const samp_par *p) {
     if (id < 0 || id >= 4096 * 4) return;
     pthread_mutex_lock(&g_tmu);
     if (id >= g_nsreg) { int n = g_nsreg ? g_nsreg : 256; while (n <= id) n *= 2; g_sreg = realloc(g_sreg, (size_t)n * sizeof *g_sreg); memset(g_sreg + g_nsreg, 0, (size_t)(n - g_nsreg) * sizeof *g_sreg); g_nsreg = n; }
+    // Sampler descriptors are immutable: if this ID's complete specification
+    // has not changed, keep its VkSampler and descriptor-set version.
+    if (VKA_ENV("DM_VK_REG_DEDUP", 0) && g_sver
+        && atomic_load_explicit(&g_sver[id], memory_order_acquire)
+        && !memcmp(&g_sreg[id], p, sizeof *p)) {
+        pthread_mutex_unlock(&g_tmu);
+        return;
+    }
     if (id < g_nsres) g_sres[id][0] = g_sres[id][1] = VK_NULL_HANDLE;
     g_sreg[id] = *p; dirty(&g_sdirty, &g_nsd, &g_sdcap, &g_sdflag, 4096 * 4, id);
     if (!g_sver) g_sver = calloc(4096 * 4, sizeof *g_sver);
