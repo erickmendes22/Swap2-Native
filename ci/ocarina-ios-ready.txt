@@ -1,11 +1,5 @@
-Ocarina V11 iOS — integração das opções gráficas 0.1.2 sem recompilar a biblioteca de shaders do jogo.
-Base: última V11 iOS instalável por cima (mesmo applicationId e cache de assinatura).
-Filtro nativo / nearest / bilinear / FSR 1 global e por jogo; troca ao vivo.
-Nitidez FSR Off, proporção ou esticar com touch alinhado.
-Compilação background e GPU timing configuráveis; manter resolução/FPS anteriores.
-Testes 0.1.2 e NVN attachment discard no workflow existente.
-
-Correção do build V11.3: OP_COUNT_ 56 e cap_rec_fields/cap_layout atualizados para os comandos de descarte NVN; teste de captura incluído.
-Nova tentativa usa exatamente a mesma configuração, assinatura, package id e arquivos de shaders.
-
-Assinatura V11.5: Gradle usa explicitamente a keystore restaurada; cert esperado SHA-256 9abe09af47fb9231705bc1bd8d9876e4add9be7b3f30d1a3688925c287e2e23e; aborta se cache ou APK divergir.
+Ocarina Android 0.1.2: teste de escala interna 720p (preservado), 540p, 480p, 360p (experimental).
+Separar NDSR/EASU (reconstrução da cena) do filtro de apresentação FSR e corrigir o controle dos pipelines.
+Registrar o modo aplicado no Vulkan e a escala de render interna; sem recompilar shaders do jogo.
+Nome exibido Swap2-Native Ocarina, versão 0.1.2, mesmo package com política de assinatura verificada.
+APK de teste liberada apenas com aviso se o certificado não corresponder ao último APK testado; não chamar de release oficial.
