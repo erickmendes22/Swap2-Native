@@ -111,7 +111,11 @@ final class ShaderLibs {
             if (d.getName().equals("v-" + current)) continue;
             File lib = new File(d, "dmsh_vk.lib");
             Header h = header(lib);
-            if (h == null || !h.fits(lib.length()) || !titleId.equals(h.game) || !abi.equals(h.abi)) continue;
+            if (h == null || !h.fits(lib.length()) || !titleId.equals(h.game)) continue;
+            // A different ABI may use the old full library only when both
+            // headers were compared at build time and certified additive-safe.
+            // An arbitrary ABI/header change is never treated as compatible.
+            if (!abi.equals(h.abi) && !ShaderAbiCert.approved(titleId, h.vkChain, h.abi, h.inputs)) continue;
             if (best == null || lib.lastModified() > best.lastModified()) best = lib;
         }
         return best;
