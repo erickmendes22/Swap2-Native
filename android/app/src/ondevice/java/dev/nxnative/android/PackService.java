@@ -288,7 +288,8 @@ public final class PackService extends Service {
                 // progress when the completed job's only change is the APK:
                 // otherwise a version-string change incorrectly starts
                 // 42,339 translations again.
-                File previous = Pack.playableLibrary(j.pack(), j.titleId());
+                File previous = Pack.libraryOf(j.pack());
+                if (previous == null) previous = Pack.playableLibrary(j.pack(), j.titleId());
                 Profile profile = Profile.of(j.titleId());
                 ShaderLibs.Header header = previous != null ? ShaderLibs.header(previous) : null;
                 if ("done".equals(j.state()) && hot.isEmpty()
