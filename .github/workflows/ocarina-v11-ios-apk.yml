@@ -89,6 +89,12 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             "ndk;28.2.13676358" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+      - name: Compile and verify SGSR1 720p shader from Qualcomm source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py --check
       - name: Restore persistent V11 test signing key
         uses: actions/cache@v4
         with:
