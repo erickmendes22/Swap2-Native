@@ -37,6 +37,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_retile.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_graphics_barrier_scopes.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_dispatch_overlap.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_720p_upscale_real_gpu.py'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
