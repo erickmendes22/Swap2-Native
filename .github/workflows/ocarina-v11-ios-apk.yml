@@ -80,16 +80,15 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: swap2-ootv11ios-test-signing-v1
-      - name: Generate signing key only on first V11 build
+      - name: Require existing V11 signing key for install-over updates
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.android"
           if [ ! -s "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" \
-              -storepass android -keypass android -alias androiddebugkey \
-              -dname "CN=Android Debug,O=Android,C=US" -validity 10000 -keyalg RSA -keysize 2048
+            echo "::error::V11 iOS signing key cache missing. Refusing to generate a new signer: that APK would not install over the previous V11." >&2
+            exit 1
           fi
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
       - name: Build Android native shader translator and packer
         shell: bash
         run: |
