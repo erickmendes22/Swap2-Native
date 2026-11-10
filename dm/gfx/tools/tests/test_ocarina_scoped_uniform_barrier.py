@@ -4,7 +4,8 @@ Inline uniform updates execute VkCmdCopyBuffer outside dynamic rendering and
 previously used full ALL_COMMANDS -> ALL_COMMANDS after each transfer.
 The replacement only scopes the writers to TRANSFER, leaving every possible
 subsequent guest consumer (all stages and read/write) in the destination scope.
-Other image and copy dependencies must retain their original full barriers.
+Pure buffer and image copies are now also TRANSFER producers, with broad
+consumer access. Guest OP_BARRIER and mixed-producer paths keep full barriers.
 """
 from pathlib import Path
 import re
@@ -18,12 +19,12 @@ HEADER = (ROOT / "dm/gfx/vk_android/vka.h").read_text()
 
 
 class TestUniformUpdateTransferBarrier(unittest.TestCase):
-    def test_only_the_inline_update_uses_the_new_scope(self):
+    def test_inline_update_and_pure_transfers_use_the_new_scope(self):
         update = next(x for x in EXEC.splitlines() if "case OP_UPDATE_UB:" in x)
         self.assertIn("buf_update((const uint8_t *)a + 16, d, n);", update)
         self.assertIn("vka_transfer_write_barrier(g_cb);", update)
         self.assertNotIn("vka_barrier(g_cb)", update)
-        self.assertEqual(EXEC.count("vka_transfer_write_barrier(g_cb)"), 1)
+        self.assertGreaterEqual(EXEC.count("vka_transfer_write_barrier(g_cb)"), 7)
         self.assertIn("vk.vkCmdCopyBuffer(g_cb, s.buf, b, 1, &c)", EXEC)
 
     def test_transfer_write_is_only_source_writer(self):
@@ -38,11 +39,12 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
     def test_prior_pass_and_general_barrier_untouched(self):
         self.assertIn("vk.vkCmdEndRendering(g_cb);", DRAW)
         self.assertIn("if (full) { g_rp_full++; vka_barrier(g_cb); }", DRAW)
-        self.assertIn("g_rp_force_full || R.bar_pending || R.swrite", DRAW)
+        self.assertIn("g_rp_force_full || R.bar_pending || had_clears || vka_nan_on()", DRAW)
         self.assertIn("VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT", TEX)
         self.assertIn("case OP_CLEAR_BUF: if (g_cb)", EXEC)
-        self.assertIn("buf_fill(cb->addr, cb->size, cb->value); vka_barrier(g_cb);", EXEC)
-        self.assertIn("buf_copy(s_, d, n); vka_barrier(g_cb);", EXEC)
+        self.assertIn("buf_fill(cb->addr, cb->size, cb->value); vka_transfer_write_barrier(g_cb);", EXEC)
+        self.assertIn("buf_copy(s_, d, n); vka_transfer_write_barrier(g_cb);", EXEC)
+        self.assertIn("else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }", DRAW)
         self.assertIn("case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);", EXEC)
         self.assertIn("default: if (g_cb && !vka_state_op(&S.d, h.op, a)) vka_rp_end()", EXEC)
 
