@@ -22,13 +22,18 @@ static uint64_t g_sub_frame; static int g_sub_frame_set;
 static struct { uint64_t key; unsigned count; } g_fs[SHADERS];
 static unsigned g_pass_draws, g_fs_over;
 static int g_nfs;
-static uint64_t g_first_vs, g_first_mesh;
+static uint64_t g_first_vs, g_first_mesh, g_first_task;
+static uint32_t g_first_units, g_first_instances, g_first_indirect;
 static char g_compute[DESC];
 static int g_compute_new;
 
-void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh) {
+void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh, uint64_t task,
+                 uint32_t units, uint32_t instances, int indirect) {
     if (!vka_gp_active) return;
-    if (!g_pass_draws) { g_first_vs = vertex; g_first_mesh = mesh; }
+    if (!g_pass_draws) {
+        g_first_vs = vertex; g_first_mesh = mesh; g_first_task = task;
+        g_first_units = units; g_first_instances = instances; g_first_indirect = indirect != 0;
+    }
     g_pass_draws++;
     for (int i = 0; i < g_nfs; i++) if (g_fs[i].key == fragment) { g_fs[i].count++; return; }
     if (g_nfs < SHADERS) { g_fs[g_nfs].key = fragment; g_fs[g_nfs++].count = 1; }
@@ -65,8 +70,12 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
         if (g_pass_draws && used < DESC) {
             used += (size_t)snprintf(m->desc + used, DESC - used, " | %u draws", g_pass_draws);
             if (g_pass_draws == 1 && used < DESC)
-                used += (size_t)snprintf(m->desc + used, DESC - used, " vs=%016llx mesh=%016llx",
-                    (unsigned long long)g_first_vs, (unsigned long long)g_first_mesh);
+                used += (size_t)snprintf(m->desc + used, DESC - used,
+                    " %s=%u inst=%u%s vs=%016llx mesh=%016llx task=%016llx",
+                    g_first_mesh ? "mesh_groups" : "vertices_or_indices", g_first_units,
+                    g_first_instances, g_first_indirect ? " indirect" : "",
+                    (unsigned long long)g_first_vs, (unsigned long long)g_first_mesh,
+                    (unsigned long long)g_first_task);
             unsigned char picked[SHADERS] = {0};
             for (int rank = 0; rank < 3 && used < DESC; rank++) {
                 int best = -1;
