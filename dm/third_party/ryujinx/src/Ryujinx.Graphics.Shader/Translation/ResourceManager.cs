@@ -168,6 +168,19 @@ namespace Ryujinx.Graphics.Shader.Translation
                 $"gmem_last_{Properties.LocalMemories.Count}", AggregateType.U32, 1, zeroInit: true));
         }
 
+        // V21: each shader invocation keeps the additional words of a
+        // vector raw global-memory load in private memory for its consumers.
+        private int _rawVectorMemoryId = -1;
+        public int GetRawVectorMemory()
+        {
+            if (_rawVectorMemoryId < 0)
+            {
+                _rawVectorMemoryId = Properties.AddLocalMemory(
+                    new MemoryDefinition("gmem_vec", AggregateType.Array | AggregateType.U32, 3));
+            }
+            return _rawVectorMemoryId;
+        }
+
         private int AddMemoryDefinition(string name, AggregateType type, int arrayLength = 1)
         {
             return Properties.AddLocalMemory(new MemoryDefinition(name, type, arrayLength));
