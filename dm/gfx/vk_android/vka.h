@@ -288,6 +288,8 @@ VkDescriptorSet vka_bindless_set(void);
 VkDescriptorSetLayout vka_bindless_layout(void);
 void vka_barrier_at(VkCommandBuffer cb, const char *file, int line);   // a full memory barrier (the replay orders every transfer op after the previous one)
 void vka_transfer_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // after a buffer copy: transfer write -> any later consumer
+void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // after an attachment-only render pass: fragment attachment writes -> any later consumer
+#define vka_attachment_write_barrier(cb) vka_attachment_write_barrier_at(cb, __FILE_NAME__, __LINE__)
 #define vka_transfer_write_barrier(cb) vka_transfer_write_barrier_at(cb, __FILE_NAME__, __LINE__)
 #define vka_barrier(cb) vka_barrier_at(cb, __FILE_NAME__, __LINE__)   // the site names the step that ends there in DM_VK_GPUPROF's report (vka_gprof.c)
 // DM_VK_GPUPROF (vka_gprof.c): GPU timestamps between the steps of a profiled frame
