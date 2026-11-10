@@ -33,6 +33,18 @@ jobs:
         run: |
           set -euxo pipefail
           dotnet build dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Ryujinx.Graphics.Shader.csproj --configuration Release --verbosity quiet
+      - name: Compile-check changed Android Vulkan C code (no APK)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" >/dev/null
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang"
+          python3 dm/games/game.py header 0400486024DEC000 "$RUNNER_TEMP/game_profile.h"
+          INC=(-I "$RUNNER_TEMP" -I dm/gfx/nvn/include -I dm/third_party/vulkan-headers/include -I dm/third_party/libvpx -I dm/third_party/libvpx/config -I dm/third_party/stb_vorbis -I dm/host)
+          for src in dm/gfx/vk_android/vka_shader.c dm/gfx/vk_android/vka_pso.c dm/gfx/vk_android/vka_present.c dm/gfx/vk_android/vka_draw.c; do
+            "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" "$src"
+          done
       - name: Validate raw memory hint collision safety and 128-bit vector rewrite
         shell: bash
         run: |
