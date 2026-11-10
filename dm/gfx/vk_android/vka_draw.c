@@ -621,6 +621,28 @@ static int gmem_map(VkDescriptorBufferInfo *bi) {
     static uint64_t lo[VKA_GMEM_MAP_ENTRIES], hi[VKA_GMEM_MAP_ENTRIES], bda[VKA_GMEM_MAP_ENTRIES];
     int k = vka_mem_chunks(lo, hi, bda, VKA_GMEM_MAP_ENTRIES - 1);
     for (int i = 0; i < k && i + 1 < VKA_GMEM_MAP_ENTRIES; i++) { uint64_t e[4] = {lo[i], hi[i], bda[i] - lo[i], 0}; memcpy(s.ptr + (size_t)(i + 1) * DMSH_GMEM_MAP_ENTRY, e, sizeof e); }
+    // V22 raw-memory lookup: use the unused final two uint32 words of each
+    // 32-byte entry as a collision-checked 2 MiB guest-address hint table.
+    // Only a chunk entirely inside one mapped segment is eligible. A hash
+    // collision merely evicts a hint, never changes the primary range table.
+    // Existing shader libraries ignore these formerly zero/padding words.
+    // Entry 0 also keeps its required empty [0,0) primary range.
+    uint32_t hint_count = 0;
+    for (int i = 0; i < k && i + 1 < VKA_GMEM_MAP_ENTRIES; i++) {
+        const uint64_t granule = UINT64_C(1) << 21, mask = granule - 1;
+        uint64_t start = (lo[i] >> 21) + ((lo[i] & mask) != 0);
+        uint64_t stop = hi[i] >> 21;  // exclusive: only complete chunks
+        for (uint64_t tag = start; tag < stop && tag <= UINT32_MAX; tag++) {
+            uint32_t h = (uint32_t)(tag & (VKA_GMEM_MAP_ENTRIES - 1));
+            uint32_t hint[2] = {(uint32_t)tag, (uint32_t)(i + 1)};
+            memcpy(s.ptr + (size_t)h * DMSH_GMEM_MAP_ENTRY + 24, hint, sizeof hint);
+            hint_count++;
+        }
+    }
+    static int hint_log_once;
+    if (!hint_log_once && hint_count) { hint_log_once = 1;
+        VLOG("raw GMEM: built %u tagged 2-MiB lookup hints for %d placed pool ranges (no guest shader ABI change)", hint_count, k);
+    }
     g_gm.valid = 1; g_gm.gen = gen; g_gm.s = s;   // (a segment that came between the read of gen and the table: the next draw sees a new gen and builds it again)
     *bi = (VkDescriptorBufferInfo){s.buf, s.off, n}; return 1;
 }
