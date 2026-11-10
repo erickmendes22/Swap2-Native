@@ -49,6 +49,43 @@ static double ms_now(void) { return (now_ns() % 1000000000000ull) / 1e6; }
 typedef struct { uint64_t addr, fence; int kind; } rc_rep;   // kind 1 timestamp (counter 0), 2 another counter (unknown), 3 a counted samples-passed report (unknown in flight); fence 0 = the submission being recorded
 enum { RC_PEND_MAX = 32768 };   // (counted samples-passed reports take entries: Ocarina of Time makes hundreds a frame)
 static rc_rep *g_rcp; static int g_nrcp, g_rcpcap, g_rc_over_cur; static uint64_t g_rc_over;   // g_rc_over: the fence of a submission that overflowed the list
+// Exact latest-by-address index for pending reports. rc_known used to scan all
+// g_nrcp entries twice per condition; Ocarina issues >1,000 conditions/frame
+// with up to 7,038 reports in flight. A fixed 2x-capacity open-addressed table
+// avoids those repeated linear scans without changing whether a report is
+// unknown, timestamp-zero, or complete. Rebuild after rc_prune compacts indices.
+enum { RC_IDX_CAP = RC_PEND_MAX * 2 };
+typedef struct { uint64_t addr; uint32_t latest, epoch; } rc_slot;
+static rc_slot g_rc_ix[RC_IDX_CAP]; static uint32_t g_rc_epoch = 1;
+static uint64_t g_rc_ix_lookups, g_rc_ix_probes, g_rc_ix_found;
+static unsigned rc_ix_hash(uint64_t a) {
+    return (unsigned)(((a >> 4) * UINT64_C(11400714819323198485)) >> 48);
+}
+static void rc_ix_put(uint64_t a, uint32_t i) {
+    unsigned h = rc_ix_hash(a);
+    for (;;) {
+        rc_slot *s = &g_rc_ix[h];
+        if (s->epoch != g_rc_epoch || s->addr == a) {
+            s->addr = a; s->latest = i; s->epoch = g_rc_epoch; return;
+        }
+        h = (h + 1) & (RC_IDX_CAP - 1);
+    }
+}
+static int rc_ix_find(uint64_t a) {
+    unsigned h = rc_ix_hash(a);
+    g_rc_ix_lookups++;
+    for (;;) {
+        rc_slot *s = &g_rc_ix[h];
+        g_rc_ix_probes++;
+        if (s->epoch != g_rc_epoch) return -1;
+        if (s->addr == a) { g_rc_ix_found++; return (int)s->latest; }
+        h = (h + 1) & (RC_IDX_CAP - 1);
+    }
+}
+static void rc_ix_rebuild(void) {
+    if (!++g_rc_epoch) { memset(g_rc_ix, 0, sizeof g_rc_ix); g_rc_epoch = 1; }
+    for (int i = 0; i < g_nrcp; i++) rc_ix_put(g_rcp[i].addr, (uint32_t)i);
+}
 static uint64_t *g_rc_occ; static size_t g_rc_occ_cap, g_rc_occ_n;   // addresses ever written by a non-timestamp report (open addressing, grows at half full)
 // Per-frame counts: SetRenderEnable(true / false); the conditional ones by result (skipped / drawn by the comparison, drawn as unknown: an uncounted occlusion report, another
 // report in flight, the list overflowed, not in guest RAM, a counted occlusion report in flight); and of the compared ones, those that took a timestamp report in flight as 0
@@ -83,12 +120,14 @@ static void rc_note(uint64_t a, int kind) {
     }
     if (g_nrcp == g_rcpcap) { int nc = g_rcpcap ? 2 * g_rcpcap : 256; rc_rep *n = realloc(g_rcp, (size_t)nc * sizeof *n); if (!n) { g_rc_over_cur = 1; return; } g_rcp = n; g_rcpcap = nc; }
     g_rcp[g_nrcp++] = (rc_rep){a, 0, kind};
+    rc_ix_put(a, (uint32_t)(g_nrcp - 1));
     if (g_nrcp > g_rcp_max) g_rcp_max = g_nrcp;
 }
 static void rc_prune(void) {   // the reports whose submissions are done are in memory now (post_run runs before the fence reads as done)
     uint64_t done = vka_done(); int j = 0;
     for (int i = 0; i < g_nrcp; i++) if (!g_rcp[i].fence || g_rcp[i].fence > done) g_rcp[j++] = g_rcp[i];
     g_nrcp = j;
+    rc_ix_rebuild();   // compacting the vector changes indices, but not report order
     if (g_rc_over && g_rc_over <= done) g_rc_over = 0;
 }
 static void rc_commit(uint64_t fence) {   // the submission's reports take its fence
@@ -99,8 +138,8 @@ static void rc_commit(uint64_t fence) {   // the submission's reports take its f
 static int rc_known(uint64_t a, uint64_t *v, int *why) {
     if (rc_occ_has(a)) { *why = RCS_OCC; return 0; }
     uint64_t done = vka_done();
-    for (int i = g_nrcp - 1; i >= 0; i--) if (g_rcp[i].addr == a) {   // the newest report at a decides: when it is done, memory holds it
-        if (g_rcp[i].fence && g_rcp[i].fence <= done) break;
+    int i = rc_ix_find(a);   // always the newest report at this exact address
+    if (i >= 0 && (!g_rcp[i].fence || g_rcp[i].fence > done)) {
         if (g_rcp[i].kind != 1) { *why = g_rcp[i].kind == 3 ? RCS_OQ : RCS_PEND; return 0; }
         *v = 0; *why = RCS_TS; return 1;
     }
@@ -136,6 +175,9 @@ static void rc_stats(char *b, size_t n, double frames) {
                  "overflowed, %.1f not in guest RAM; reports in flight up to %d",
                  d[RCS_ON] / frames, d[RCS_OFF] / frames, d[RCS_SKIP] / frames, d[RCS_DRAW] / frames, d[RCS_TS] / frames, d[RCS_OCC] / frames, d[RCS_OQ] / frames, d[RCS_PEND] / frames,
                  d[RCS_OVER] / frames, d[RCS_NOMEM] / frames, g_rcp_max);
+    if (frames > 0 && g_rc_ix_lookups) VLOG("render pending index: %.1f lookups/frame, %.2f probes/lookup, %.1f newest reports found/frame (capacity %d)",
+                  g_rc_ix_lookups / frames, (double)g_rc_ix_probes / (double)g_rc_ix_lookups, g_rc_ix_found / frames, RC_IDX_CAP);
+    g_rc_ix_lookups = g_rc_ix_probes = g_rc_ix_found = 0;
     g_rcp_max = g_nrcp;
 }
 static void oq_stats(char *b, size_t n, double frames);   // (Occlusion queries)
