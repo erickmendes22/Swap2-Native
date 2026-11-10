@@ -165,10 +165,14 @@ static int init_once(void) {
             }
         }
     }
-    V.fps_boost_vrs = x_fsr_rate && frate.pipelineFragmentShadingRate
-                        && (want_boost >= 2 ? has_2x2 : want_boost == 1 && has_2x1);
+    // If the driver exposes 2x1 but not 2x2, keep the requested boost as
+    // the supported lighter rate rather than silently disabling it entirely.
+    // Do not invent rates the driver did not advertise.
+    unsigned selected_h = want_boost >= 2 && has_2x2 ? 2u :
+                          want_boost > 0 && has_2x1 ? 1u : 0u;
+    V.fps_boost_vrs = x_fsr_rate && frate.pipelineFragmentShadingRate && selected_h != 0;
     V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;
-    V.fps_boost_height = V.fps_boost_vrs && want_boost >= 2 ? 2u : 1u;
+    V.fps_boost_height = V.fps_boost_vrs ? selected_h : 0u;
     if (want_boost > 0)
         VLOG("Ocarina FPS Boost VRS: requested=%d, extension=%d, pipeline feature=%d, 2x1=%d, 2x2=%d, active=%d, chosen=%ux%u",
              want_boost, x_fsr_rate, frate.pipelineFragmentShadingRate, has_2x1, has_2x2,
