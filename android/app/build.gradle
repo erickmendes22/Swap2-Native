@@ -33,6 +33,12 @@ def nxLive = providers.gradleProperty('nxLive').getOrElse('false') == 'true'
 if (nxLive && (nxPlay || nxApp)) throw new GradleException('nxLive builds the release app: give neither nxPlay nor nxApp')
 def nxVersion = providers.gradleProperty('nxVersion').getOrElse('0.1-bringup')
 def nxVersionCode = providers.gradleProperty('nxVersionCode').getOrElse('1') as int
+// Only the V11 iOS update workflow supplies this path. All other apps keep their
+// original signing behavior. Explicit keystore prevents Gradle from picking up
+// a different, ephemeral debug key on the CI runner.
+def v11SignStore = providers.gradleProperty('nxV11SignStore').getOrElse('')
+if (v11SignStore && (nxApp != 'ootv11ios' || !new File(v11SignStore).isFile()))
+    throw new GradleException('nxV11SignStore is supported only for the V11 iOS test package with an existing keystore')
 def signStore = System.getenv('NX_SIGN_STORE'), signAlias = System.getenv('NX_SIGN_ALIAS'), signPass = System.getenv('NX_SIGN_PASS')
 if (nxLive && !(signStore && signAlias && signPass && new File(signStore).isFile()))
     throw new GradleException('nxLive needs the release key: NX_SIGN_STORE (an existing keystore), NX_SIGN_ALIAS and NX_SIGN_PASS')
@@ -151,13 +157,14 @@ android {
     }
     signingConfigs {
         if (nxLive) live { storeFile file(signStore); storePassword signPass; keyAlias signAlias; keyPassword signPass }
+        if (v11SignStore) v11ios { storeFile file(v11SignStore); storePassword 'android'; keyAlias 'androiddebugkey'; keyPassword 'android' }
     }
     buildTypes {
         debug { jniDebuggable true }
         release {
             minifyEnabled false
             debuggable !nxLive       // bring-up builds: run-as and the app's files stay reachable over adb; the release is not debuggable
-            signingConfig nxLive ? signingConfigs.live : signingConfigs.debug
+            signingConfig nxLive ? signingConfigs.live : v11SignStore ? signingConfigs.v11ios : signingConfigs.debug
         }
     }
     externalNativeBuild {
