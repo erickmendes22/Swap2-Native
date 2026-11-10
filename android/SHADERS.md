@@ -35,6 +35,20 @@ python3 dm/gfx/tools/vk_android_build.py --check <output cache dir>/v-<V>/dmsh_v
 
 A change that cannot change the libraries (a cache, progress, how a tool is called) need not move the version and make every library already on a phone stale: build the full library of a game with the new tools, compare `dmsh_vk.lib` (and `index.json`, `_vk_build.json`) with the current version's byte for byte, and only when they are equal add the row `<new digest>\t<current version>\t<what changed and the evidence>` to `vk_android_same.tsv` (then `--header` leaves the header as it is). A change of output never gets a row. A `DMSH_CHAIN` change can get one too (the translator front end rebuilt with the same output, row `586b45a36297`): the library header's `chain` field (bytes 8-23) then names the new chain, so the comparison is every byte but that field, and the replay takes a library of the earlier chain by its ABI (`vka_shlib_check`), as it takes any other version's. The result files are stamped with the digest, so the build cache starts over either way. The library header records both versions and the ABI; the replay loads a library whose `chain` and `vk_chain` are the ones it was compiled with, or, while that one is missing, an older one of the same ABI ([Delta updates](#delta-updates)). A version that moves sends phones a delta update, not a full build, once its manifest is published.
 
+### Ocarina: selective hot-shader updates (future translator changes)
+
+The Ocarina profile has no published full-library `vk_delta.tsv` manifest yet; the empty file does **not** authorize reusing 42,339 shaders under a different compiler. Until a new complete reference manifest exists, the normal translator cannot prove which individual shader outputs stayed identical. On-device Prepare therefore keeps the conservative full-library route unless the *release author* has reviewed a narrower shader change.
+
+For a reviewed change affecting only specific keys, commit a line to `dm/games/0400486024DEC000/vk_hot_delta.tsv`:
+
+```text
+<previous 12-hex Vulkan chain><TAB><new 12-hex Vulkan chain><TAB><profile inputs digest><TAB><ABI digest><TAB><changed_shader_key>,<changed_shader_key>
+```
+
+The on-device shader step then invokes `vk_android_build.py --target vulkan <split-pkg> <pack>/shaders/hot <key>...` **only on those keys**, keeping resumable keyed results. The produced partial library must contain *exactly* the approved keys and must match the game's new chain, ABI and profile inputs; `pack_android.py --hot-keys` validates it and the complete, older 42k library together. The Vulkan runtime chooses the overlaid keys and falls back to the original *unmodified* library for everything else. The older full library is not restamped or misrepresented as freshly compiled. As before, a compatible ABI is required. No scope row -> the existing verified full / profile-manifest delta route continues unchanged.
+
+A branch may include these changes and CI before enabling the manifest; the current, already-running complete translation is never interrupted or restarted. To use the *full* BananaNative-like arbitrary changed-shader delta (not limited to explicitly reviewed hot keys), publish `vk_delta.tsv` from a complete reference build for the **target** translator version via `vk_android_build.py --publish-delta`; the existing delta engine then verifies per-key SPIR-V entry hashes and reuses all matching entries from the older installed library.
+
 ### Delta updates
 
 A tools change moves `DMSH_VK_CHAIN`, and a phone then needs the library of the new version. Most shaders come out the same (the upstream translator change of 2026-11-03 changed 2,322 of DKB's 22,852), so the phone keeps those and translates only the rest (`dm/gfx/tools/vk_android_delta.py`, used by `vk_android_build.py`):
