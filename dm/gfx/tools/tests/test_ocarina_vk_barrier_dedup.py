@@ -19,13 +19,13 @@ class TestRedundantRenderPassBarrier(unittest.TestCase):
         # The replacement is safe only while this full barrier still exists.
         self.assertIn('vk.vkCmdEndRendering(g_cb);', DRAW)
         self.assertIn('if (full) { g_rp_full++; vka_barrier(g_cb); }', DRAW)
-        self.assertIn('g_rp_force_full = 1;\\n    vka_rp_end();\\n    g_rp_force_full = 0;', DRAW)
+        self.assertIn('g_rp_force_full = 1;\n    vka_rp_end();\n    g_rp_force_full = 0;', DRAW)
         self.assertIn('VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT', TEX)
         self.assertIn('VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT', TEX)
 
     def test_no_skip_if_pass_closed_or_nan_diagnostics_add_work(self):
         self.assertIn('int covered = R.on && !vka_nan_on();', DRAW)
-        self.assertIn('g_rp_force_full = 1;\\n    vka_rp_end();\\n    g_rp_force_full = 0;', DRAW)
+        self.assertIn('g_rp_force_full = 1;\n    vka_rp_end();\n    g_rp_force_full = 0;', DRAW)
         self.assertIn('if (covered) g_bar_duplicate_avoided++;', DRAW)
         self.assertIn('return covered;', DRAW)
         self.assertIn('int vka_rp_end_covers_barrier(void);', HEADER)
