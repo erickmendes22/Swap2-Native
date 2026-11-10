@@ -82,24 +82,25 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: swap2-ootv11ios-test-signing-v1
-      - name: Require existing V11 signing key for install-over updates
+      - name: Require installed 0.1.2 signing key for install-over updates
         shell: bash
         run: |
           set -euo pipefail
           if [ ! -s "$HOME/.android/debug.keystore" ]; then
-            echo "::error::V11 iOS signing key cache missing. Refusing to generate a new signer: that APK would not install over the previous V11." >&2
+            echo "::error::0.1.2 signing key cache missing. Refusing to generate an incompatible signer." >&2
             exit 1
           fi
           keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
           cached_fingerprint="$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sha256sum | awk '{print $1}')"
           echo "Cached V11 signer SHA-256: $cached_fingerprint"
-          # The last APK actually tested on the phone was build #4, signer 022a...
-          # Its private key is NOT the key recovered from this CI cache. Build may
-          # proceed to validate compilation, but an incompatible artifact is not
+          # The user's most recent 0.1.2 game log confirms signer a1c468af...
+          # The restored cache key matches that installed 0.1.2 app. Build may
+          # proceed only while the signer matches; an incompatible artifact is not
           # a release and will be marked as such after signing.
-          echo "Previous tested APK signer: 022aab2f3b302f0e829950d406210d1e4d475026116088eb21ab5a92276922df"
-          if [ "$cached_fingerprint" != "022aab2f3b302f0e829950d406210d1e4d475026116088eb21ab5a92276922df" ]; then
-            echo "::warning::Cached signing key differs from the latest tested APK; this build will NOT be an install-over release." >&2
+          echo "Most recently tested 0.1.2 APK signer: a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad"
+          if [ "$cached_fingerprint" != "a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad" ]; then
+            echo "::error::Cached signing key differs from installed 0.1.2 app; cannot produce install-over APK." >&2
+            exit 1
           fi
       - name: Build Android native shader translator and packer
         shell: bash
@@ -126,26 +127,26 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose out/swap2-native-ootv11ios.apk
           built_fingerprint="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs out/swap2-native-ootv11ios.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}')"
           echo "Built V11 signer SHA-256: $built_fingerprint"
-          if [ "$built_fingerprint" = "022aab2f3b302f0e829950d406210d1e4d475026116088eb21ab5a92276922df" ]; then
+          if [ "$built_fingerprint" = "a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad" ]; then
             echo "UPDATE_SIGNER_MATCH=1" >> "$GITHUB_ENV"
           else
             echo "UPDATE_SIGNER_MATCH=0" >> "$GITHUB_ENV"
-            echo "::warning::Built 0.1.2 APK has a different signer from last tested build #4. DO NOT install over existing app." >&2
+            echo "::warning::Built 0.1.2 APK has a different signer from the installed 0.1.2 app. DO NOT install over existing app." >&2
             printf '%s\n' "AVISO: esta APK foi compilada para teste, mas a assinatura difere da ultima V11 instalada. NAO instala por cima. NAO e um release publico." > out/ASSINATURA-INCOMPATIVEL.txt
           fi
           cp out/swap2-native-ootv11ios.apk out/swap2-native-ocarina-0.1.2.apk
       - name: Upload signed 0.1.2 build and any signing warning
         uses: actions/upload-artifact@v4
         with:
-          name: Swap2-Native-Ocarina-0.1.2-Build
+          name: Swap2-Native-Ocarina-0.1.2-Update
           path: |
             android/app/out/swap2-native-ocarina-0.1.2.apk
             android/app/out/ASSINATURA-INCOMPATIVEL.txt
           if-no-files-found: error
           retention-days: 14
-      - name: Gate public release on signer from last tested APK
+      - name: Gate update on signer matching installed 0.1.2 APK
         if: env.UPDATE_SIGNER_MATCH == '0'
         shell: bash
         run: |
-          echo "::error::Not publishing a release signed with another key. A private keystore matching the last tested app is required." >&2
+          echo "::error::Not publishing an APK signed with a different key than the installed 0.1.2 app." >&2
           exit 1
