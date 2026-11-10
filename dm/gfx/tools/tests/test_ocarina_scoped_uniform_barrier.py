@@ -36,7 +36,9 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         self.assertIn("vka_n_transfer_bar++", code)
 
     def test_prior_pass_and_general_barrier_untouched(self):
-        self.assertIn("vk.vkCmdEndRendering(g_cb);\n    vka_barrier(g_cb);", DRAW)
+        self.assertIn("vk.vkCmdEndRendering(g_cb);", DRAW)
+        self.assertIn("if (full) { g_rp_full++; vka_barrier(g_cb); }", DRAW)
+        self.assertIn("g_rp_force_full || R.bar_pending || R.swrite", DRAW)
         self.assertIn("VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT", TEX)
         self.assertIn("case OP_CLEAR_BUF: if (g_cb)", EXEC)
         self.assertIn("buf_fill(cb->addr, cb->size, cb->value); vka_barrier(g_cb);", EXEC)
