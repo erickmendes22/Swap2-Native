@@ -27,6 +27,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v11_012_graphics.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_scene_012.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_vk_barrier_dedup.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_bar_keep.py'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
