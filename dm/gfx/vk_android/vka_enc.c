@@ -402,11 +402,20 @@ static void *enc_main(void *arg) {
         uint64_t h = atomic_load_explicit(&g_head, memory_order_acquire);
         if (t == h) {
             // Empty: spin while the replay thread is recording (its next call comes within microseconds), then sleep until a call comes
-            uint64_t t0 = 0; int i = 0;
-            for (;;) {
-                h = atomic_load_explicit(&g_head, memory_order_acquire); if (h != t) break;
-                wait_change(&g_head, t);
-                if (++i % 64 == 0) { uint64_t n = mono_ns(); if (!t0) t0 = n; else if (n - t0 > 200000) break; }
+            // The old encoder polled for about 200 us whenever the ring
+            // emptied. NX2navi's idle-recorder fix suggests comparing an
+            // immediate futex sleep on CPU-constrained phones, without
+            // changing the default latency-sensitive behaviour.
+            int spin_us = VKA_ENV("DM_VK_ENC_SPIN_US", 200);
+            if (spin_us < 0) spin_us = 0;
+            if (spin_us > 1000) spin_us = 1000;
+            if (spin_us) {
+                uint64_t t0 = mono_ns(); int i = 0;
+                for (;;) {
+                    h = atomic_load_explicit(&g_head, memory_order_acquire); if (h != t) break;
+                    wait_change(&g_head, t);
+                    if (++i % 64 == 0 && mono_ns() - t0 > (uint64_t)spin_us * 1000) break;
+                }
             }
             if (h == t) {
                 uint32_t s = atomic_load(&g_cseq);   // (an event count, as wait_tail's)
