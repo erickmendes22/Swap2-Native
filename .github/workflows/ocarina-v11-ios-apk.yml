@@ -41,6 +41,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_mesh_prewarm.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_hot_shader_overlay.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v22_gpu_raw_vector_hints.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pack_finalize_atomic.py'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
