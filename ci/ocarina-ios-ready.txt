@@ -42,3 +42,9 @@ Build 17 · Ocarina Android 0.1.2 heavy-pass + compute work:
 - Ocarina compute 9e6b00b050e30801: preserve 8x9x12 dispatch's 110592 invocations, replace post-dispatch global producer barrier with scoped COMPUTE_SHADER|TRANSFER -> ALL_COMMANDS memory-write dependency (DM_VK_OOT_CS_SYNC=0 revert).
 - Experimental SPIR-V checked 8x4x4 -> 8x4x2 + 8x9x24 workgroup retile on Qualcomm: only when there are no workgroup/local-id, subgroup, atomics, workgroup shared storage or barriers; exact-size direct dispatch only. Otherwise use the original full shader/pipeline.
 - Native host C SPIR-V regression tests compiled in validate; signer, package, 0.1.2 update-over and imported shader ABI unchanged. This is the next build after both heavy-pass and compute changes.
+
+Build 18 · FPS Boost correction after the 13:02:34 (mode 2) and 13:04:45 (mode 0) device logs:
+- Fix VkPipelineFragmentShadingRateStateCreateInfoKHR chaining to VkGraphicsPipelineCreateInfo, not VkPipelineRenderingCreateInfo; maintain VkPipelineRenderingCreateInfo peer structure.
+- When 2x2 unsupported but 2x1 supported use 2x1 rather than silently leaving VRS disabled. If driver has neither, use unmodified shaders and report unsupported status.
+- Device's 9e6b compute uses local/group-dependent builtin and safely rejects workgroup retile; original compute preserved, while scoped dependencies are active in mode 2. Do not disable necessary shader ops.
+- Add pNext/fallback regression coverage, keep update-over signing, package name, and shader library compatibility; build to validate Vulkan and Android code, not to claim measured FPS gains.
