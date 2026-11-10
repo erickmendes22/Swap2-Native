@@ -783,9 +783,9 @@ public final class MainActivity extends Activity {
         play.addView(lsfgRow.view);
         Ui.add(p, Ui.section(this, getString(R.string.s2_fsr_head)), 24);
         LinearLayout up = Ui.add(p, Ui.panel(this), 8);
-        fsrRow = new Ui.Setting(this, R.drawable.s2_ic_image, "Filtro de imagem", v -> GraphicsOptions.choice(this, null, "present_filter", this::refreshSettings)).chevron(this);
+        fsrRow = new Ui.Setting(this, R.drawable.s2_ic_image, "Filtro da tela (não reduz render)", v -> GraphicsOptions.choice(this, null, "present_filter", this::refreshSettings)).chevron(this);
         up.addView(fsrRow.view);
-        fsrSharpRow = new Ui.Setting(this, R.drawable.s2_ic_image, getString(R.string.s2_fsr_sharpness), v -> fsrSharp()).chevron(this);
+        fsrSharpRow = new Ui.Setting(this, R.drawable.s2_ic_image, getString(R.string.s2_fsr_sharpness), v -> GraphicsOptions.choice(this, null, "fsr_sharp", this::refreshSettings)).chevron(this);
         up.addView(fsrSharpRow.view);
         aspectRow = new Ui.Setting(this, R.drawable.s2_ic_display, "Proporção da tela", v -> GraphicsOptions.choice(this, null, "picture_stretch", this::refreshSettings)).chevron(this);
         up.addView(aspectRow.view);
