@@ -109,6 +109,30 @@ final class Prefs {
         else of(c).edit().remove(gameKey("scene_720p", titleId)).commit();
     }
 
+    // These are the dynamic-resolution palette values before upscaling.
+    // Existing 720p choice remains exactly the same after an APK update.
+    static final String OCARINA_TITLE = "0400486024DEC000";
+    static final String[] OCARINA_SCENE_SCALES = {"0.6133", "0.46875", "0.4166667", "0.3125"};
+    static final String[] OCARINA_SCENE_NAMES = {"720p · atual", "540p · 960×540", "480p · 853×480", "360p · 640×360 (experimental)"};
+    static String sceneScale(Context c, String titleId, String profileScale) {
+        if (!OCARINA_TITLE.equals(titleId)) return profileScale;
+        String v = of(c).getString(gameKey("scene_scale", titleId), profileScale);
+        for (String s : OCARINA_SCENE_SCALES) if (s.equals(v)) return v;
+        return profileScale;
+    }
+    static void sceneScale(Context c, String titleId, String v) {
+        if (!OCARINA_TITLE.equals(titleId)) return;
+        SharedPreferences.Editor e = of(c).edit();
+        if (v == null) e.remove(gameKey("scene_scale", titleId));
+        else e.putString(gameKey("scene_scale", titleId), v);
+        e.commit();
+    }
+    static String sceneLabel(String scale) {
+        for (int i = 0; i < OCARINA_SCENE_SCALES.length; i++)
+            if (OCARINA_SCENE_SCALES[i].equals(scale)) return OCARINA_SCENE_NAMES[i];
+        return "Perfil do jogo";
+    }
+
     /** Pause on return (per game, on by default): the game's screen coming back from the background shows it paused, suspended until a tap (GameActivity.onStart) */
     static boolean pauseOnReturn(Context c, String titleId) { return of(c).getBoolean(gameKey("pause_return", titleId), true); }
     static void pauseOnReturn(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("pause_return", titleId), on).commit(); }
