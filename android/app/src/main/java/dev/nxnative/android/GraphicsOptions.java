@@ -22,8 +22,8 @@ import java.util.List;
 final class GraphicsOptions {
     private GraphicsOptions() {}
 
-    // 0 game/native (unchanged host scaling); 1 nearest; 2 bilinear; 3 FSR 1 EASU+RCAS.
-    static final String[] MODES = {"Automático (bilinear se suportado)", "Vizinho mais próximo", "Bilinear", "FSR 1 (EASU + RCAS até 720p)"};
+    // 0 native; 1 nearest; 2 bilinear; 3 FSR EASU+RCAS 720p; 4 Qualcomm SGSR1 single-pass 720p.
+    static final String[] MODES = {"Automático (bilinear se suportado)", "Vizinho mais próximo", "Bilinear", "FSR 1 (EASU + RCAS até 720p)", "SGSR 1 (1 passagem até 720p)"};
     static final String[] SHARP_NAMES = {"Desligado", "Máxima", "Padrão", "Suave", "Muito suave"};
     static final float[] SHARPS = {-1f, 0f, 0.25f, 0.5f, 1f};
     static final String[] ASPECTS = {"Preservar proporção", "Esticar para preencher"};
@@ -35,14 +35,14 @@ final class GraphicsOptions {
 
     static int mode(Context c) {
         SharedPreferences p = Prefs.of(c);
-        if (p.contains("present_filter")) return clamp(p.getInt("present_filter", 0), 0, 3);
+        if (p.contains("present_filter")) return clamp(p.getInt("present_filter", 0), 0, 4);
         // Keep old FSR setting from previously installed V11.
         return p.getBoolean("fsr", false) ? 3 : 0;
     }
     static int mode(Context c, String id) {
         SharedPreferences p = Prefs.of(c);
         String key = Prefs.gameKey("present_filter", id);
-        if (p.contains(key)) return clamp(p.getInt(key, 0), 0, 3);
+        if (p.contains(key)) return clamp(p.getInt(key, 0), 0, 4);
         int previous = mode(c);
         // Ocarina's final output is already 2048x1152 before Vulkan presents
         // it. Prefer the real 720p FSR pipeline rather than the old native-size
@@ -87,26 +87,26 @@ final class GraphicsOptions {
 
     static void started(Context c, String id, List<String> env) {
         int m = mode(c, id);
-        boolean fsr = m == 3;
+        boolean fsr = m == 3 || m == 4;
         float sh = sharp(c, id);
         for (String v : env) {
             try {
-                if (v.startsWith("DM_VK_PRESENT_FILTER=")) m = clamp(Integer.parseInt(v.substring(21).trim()), 0, 3);
+                if (v.startsWith("DM_VK_PRESENT_FILTER=")) m = clamp(Integer.parseInt(v.substring(21).trim()), 0, 4);
                 else if (v.startsWith("DM_VK_FSR=")) fsr = Double.parseDouble(v.substring(10).trim()) != 0;
                 else if (v.startsWith("DM_VK_FSR_SHARP=")) sh = Float.parseFloat(v.substring(16).trim());
             } catch (RuntimeException ignored) { /* unrecognized env.txt value: keep the last valid one */ }
         }
         runningFsr = fsr;
-        runningMode = fsr ? 3 : m == 3 ? 0 : m;
+        runningMode = fsr ? (m == 4 ? 4 : 3) : m >= 3 ? 0 : m;
         runningSharp = sh;
     }
 
     /** Applies to the next launch; game-specific settings override global defaults.
      * Existing user env.txt remains last and takes precedence. */
     static void env(Context c, String id, List<String> out) {
-        int m = clamp(mode(c, id), 0, 3);
+        int m = clamp(mode(c, id), 0, 4);
         out.add("DM_VK_PRESENT_FILTER=" + m);
-        out.add("DM_VK_FSR=" + (m == 3 ? 1 : 0));
+        out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));
         out.add("DM_VK_FSR_SHARP=" + sharp(c, id));
         out.add("DM_VK_PICTURE_STRETCH=" + (stretch(c, id) != 0 ? 1 : 0));
         // 0: avoid optimization thread and prewarm; 1: retain driver-supported
@@ -140,7 +140,7 @@ final class GraphicsOptions {
         if (dir == null) return;
         try (FileWriter f = new FileWriter(new File(dir, "ctl.txt"), true)) {
             f.write("env DM_VK_PRESENT_FILTER=" + m + "\n");
-            f.write("env DM_VK_FSR=" + (m == 3 ? 1 : 0) + "\n");
+            f.write("env DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0) + "\n");
             f.write("env DM_VK_FSR_SHARP=" + sharp + "\n");
         } catch (IOException e) {
             Native.note("[RED] Graphics: live output setting unavailable (" + e.getMessage() + ")");
@@ -148,12 +148,12 @@ final class GraphicsOptions {
     }
 
     static void setMode(Context c, String id, int value, boolean updateLive) {
-        value = clamp(value, 0, 3);
+        value = clamp(value, 0, 4);
         String key = id == null ? "present_filter" : Prefs.gameKey("present_filter", id);
         Prefs.of(c).edit().putInt(key, value).commit();
         if (updateLive && id != null) {
             runningMode = value;
-            runningFsr = value == 3;
+            runningFsr = value == 3 || value == 4;
             live(c, value, runningSharp(c, id));
         }
     }
@@ -187,7 +187,7 @@ final class GraphicsOptions {
         final String title;
         switch (key) {
         case "present_filter":
-            values = MODES; current = mode(c, id); title = "Filtro da tela (não reduz render)"; break;
+            values = MODES; current = mode(c, id); title = "Upscale de saída (processamento GPU até 720p)"; break;
         case "picture_stretch":
             values = ASPECTS; current = stretch(c, id); title = "Proporção da tela"; break;
         case "bg_pipelines":
@@ -254,7 +254,7 @@ final class GraphicsOptions {
         });
         box.addView(m);
         TextView l = new TextView(c);
-        l.setText("Nitidez FSR (saída)");
+        l.setText("Nitidez FSR (saída; não se aplica ao SGSR)");
         box.addView(l);
         RadioGroup sh = new RadioGroup(c);
         for (int i = 0; i < SHARPS.length; i++) {
@@ -270,7 +270,7 @@ final class GraphicsOptions {
         });
         box.addView(sh);
         TextView note = new TextView(c);
-        note.setText("Este filtro atua depois da cena já renderizada. Para ganhar FPS, reduza a Resolução interna da cena no launcher. Filtro e nitidez aplicam ao vivo.");
+        note.setText("FSR usa 2 passagens de GPU, SGSR usa 1 passagem até 720p. A resolução interna continua separada; trocar o filtro aplica ao vivo.");
         note.setTextSize(12);
         box.addView(note);
     }
