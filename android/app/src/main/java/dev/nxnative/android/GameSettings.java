@@ -185,13 +185,13 @@ final class GameSettings {
         } else box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_frame_cap), v -> cap(a, g, again)).value(a.getString(R.string.s2_frame_cap_note))
                 .override(a, Prefs.ownFpsCap(a, id), MainActivity.capLabel(Prefs.fpsCap(a, id))).chevron(a).view);
         if (prof != null && prof.hasNdsr()) {   // only where agl's NDSR networks are in the game's shaders (Profile.ndsrEnv)
-            String cur = a.getString(Prefs.NDSR_FSR.equals(Prefs.ndsr(a, id)) ? R.string.s2_upscaler_fsr : R.string.s2_upscaler_net);
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, a.getString(R.string.s2_upscaler), v -> upscaler(a, g, again))
-                    .value(cur + " · " + a.getString(R.string.s2_upscaler_note)).chevron(a).view);
+            String cur = Prefs.NDSR_FSR.equals(Prefs.ndsr(a, id)) ? "Rápida (EASU, menos GPU)" : "Rede original NDSR";
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Reconstrução da cena (GPU)", v -> upscaler(a, g, again))
+                    .value(cur + " · depois do render interno, antes da imagem final").chevron(a).view);
         }
         // The 0.1.2 output controls are independent of the game's shader library:
         // nearest/bilinear/FSR scale the final image, not the GMEM shaders.
-        box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Filtro de imagem", v -> GraphicsOptions.choice(a, id, "present_filter", again))
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Filtro da tela (não reduz render)", v -> GraphicsOptions.choice(a, id, "present_filter", again))
                 .value(GraphicsOptions.modeLabel(a, id)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Nitidez FSR (saída)", v -> GraphicsOptions.choice(a, id, "fsr_sharp", again))
                 .value(GraphicsOptions.sharpLabel(GraphicsOptions.sharp(a, id))).chevron(a).view);
@@ -204,7 +204,7 @@ final class GameSettings {
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
             String cur = on ? Prefs.sceneLabel(Prefs.sceneScale(a, id, prof.sceneScale())) : a.getString(R.string.s2_scene_game);
-            Ui.Setting row = new Ui.Setting(a, R.drawable.s2_ic_display, a.getString(R.string.s2_scene_res), v -> scene(a, g, again))
+            Ui.Setting row = new Ui.Setting(a, R.drawable.s2_ic_display, "Resolução interna da cena (GPU)", v -> scene(a, g, again))
                     .value(cur + " · " + a.getString(R.string.s2_scene_note));
             box.addView(row.chevron(a).view);
             if (on) sceneCheck(a, g, prof, row, cur);
@@ -638,9 +638,9 @@ final class GameSettings {
 
     /** Upscaler: the game's NDSR network or FSR 1 in its place (Prefs.ndsr, the profile's ndsr_default without a choice; the host's lines at the next start, Profile.ndsrEnv) */
     private static void upscaler(MainActivity a, Game g, Runnable done) {
-        String[] labels = {a.getString(R.string.s2_upscaler_net), a.getString(R.string.s2_upscaler_fsr)};
+        String[] labels = {"Rede original NDSR (mais pesada)", "Modo rápido EASU (menos GPU)"};
         int checked = Prefs.NDSR_FSR.equals(Prefs.ndsr(a, g.titleId)) ? 1 : 0;
-        new AlertDialog.Builder(a).setTitle(a.getString(R.string.s2_upscaler) + " · " + g.name).setSingleChoiceItems(labels, checked, (x, w) -> {
+        new AlertDialog.Builder(a).setTitle("Reconstrução da cena · " + g.name).setSingleChoiceItems(labels, checked, (x, w) -> {
             Prefs.ndsr(a, g.titleId, w == 1 ? Prefs.NDSR_FSR : Prefs.NDSR_NET);   // (one equal to the profile's default is not kept: Prefs.ndsr)
             x.dismiss();
             done.run();
