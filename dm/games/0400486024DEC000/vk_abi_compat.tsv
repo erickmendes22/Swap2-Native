@@ -1,0 +1,10 @@
+# Audited compatible Vulkan ABI transitions for Ocarina.
+# Each APPROVED row is old_vk<TAB>old_abi<TAB>new_vk<TAB>new_abi<TAB>game_inputs.
+# To approve one, commit EXACT source snapshots from the old release under
+# dm/games/0400486024DEC000/abi_history/<old_vk>/dmsh_abi_vk.h
+# and dmsh_abi.h. vk_abi_migrate.py audits the transition against the current
+# headers: only additive descriptor kinds, shader flag bits or module variants
+# are accepted, and all old constants, enum values, structs, NVN common ABI
+# and ABI_REV must be unchanged. Incompatible changes require per-key hashes
+# from a new reference translation, not header relabelling.
+# Current ABI unchanged: no migration is necessary; no row is approved.
