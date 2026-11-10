@@ -14,6 +14,7 @@ TOOLS = Path(__file__).resolve().parents[1] / "dm/gfx/tools"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 import vk_android_delta as delta
+import vk_abi_migrate
 
 HOT_KEYS = re.compile(r"[0-9a-f]{16}\Z")
 
@@ -56,7 +57,14 @@ def validated_hot_base(pack, game, current_chain, current_vk, abi, inputs, keys)
         base = None
         try:
             base = delta.Library(str(p))
-            if (base.game, base.abi, base.inputs) != (game, abi, inputs):
+            # A change of ABI is safe only when audited against both exact
+            # versions of the ABI source headers. Reuse the old, complete
+            # library unmodified; the Vulkan host checks the same certificate.
+            approved = (base.abi == abi) or any(
+                (base.version, base.abi, current_vk, abi, inputs) == tuple(cert)
+                for cert in vk_abi_migrate.certificates()
+            )
+            if base.game != game or base.inputs != inputs or not approved:
                 continue
             if base.version == current_vk or base.ne <= len(keys):
                 continue  # never treat a partial library as the fallback full game
