@@ -1,4 +1,4 @@
-name: Ocarina V11 iOS Vulkan Optimizations APK
+name: Swap2-Native Ocarina 0.1.2 Android APK
 on:
   push:
     branches: [ocarina-v11-ios-perf-from-v101]
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate optional iOS V22 GMEM implementation
+      - name: Validate shader ABI and internal scene resolution profiles
         shell: bash
         run: |
           set -euxo pipefail
@@ -25,6 +25,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v22_gmem.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v11_gpu_discards.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v11_012_graphics.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_scene_012.py'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -92,9 +93,13 @@ jobs:
           keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
           cached_fingerprint="$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey 2>/dev/null | sha256sum | awk '{print $1}')"
           echo "Cached V11 signer SHA-256: $cached_fingerprint"
-          if [ "$cached_fingerprint" != "9abe09af47fb9231705bc1bd8d9876e4add9be7b3f30d1a3688925c287e2e23e" ]; then
-            echo "::error::Cached V11 signing certificate differs from the previous tested APK; refusing to build a non-updatable APK." >&2
-            exit 1
+          # The last APK actually tested on the phone was build #4, signer 022a...
+          # Its private key is NOT the key recovered from this CI cache. Build may
+          # proceed to validate compilation, but an incompatible artifact is not
+          # a release and will be marked as such after signing.
+          echo "Previous tested APK signer: 022aab2f3b302f0e829950d406210d1e4d475026116088eb21ab5a92276922df"
+          if [ "$cached_fingerprint" != "022aab2f3b302f0e829950d406210d1e4d475026116088eb21ab5a92276922df" ]; then
+            echo "::warning::Cached signing key differs from the latest tested APK; this build will NOT be an install-over release." >&2
           fi
       - name: Build Android native shader translator and packer
         shell: bash
@@ -111,8 +116,9 @@ jobs:
             -PnxGames=0400486024DEC000 \
             -PnxApp=ootv11ios \
             -PnxV11SignStore="$HOME/.android/debug.keystore" \
-            -PnxLabel="Swap2 Ocarina iOS V11" \
-            -PnxVersion=0.1.1-oot-v11-ios \
+            -PnxLabel="Swap2-Native Ocarina" \
+            -PnxBranchLabel=ocarina-0.1.2 \
+            -PnxVersion=0.1.2 \
             -PnxVersionCode="$GITHUB_RUN_NUMBER" \
             -PnxPackStage="$RUNNER_TEMP/oot-v11-ios/stage" apk
           test -s out/swap2-native-ootv11ios.apk
@@ -120,11 +126,26 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose out/swap2-native-ootv11ios.apk
           built_fingerprint="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs out/swap2-native-ootv11ios.apk | awk -F': ' '/Signer #1 certificate SHA-256 digest:/ {print $2}')"
           echo "Built V11 signer SHA-256: $built_fingerprint"
-          test "$built_fingerprint" = "9abe09af47fb9231705bc1bd8d9876e4add9be7b3f30d1a3688925c287e2e23e" || { echo "::error::Built V11 APK is not signed with the previous tested APK's certificate" >&2; exit 1; }
-      - name: Upload V11 iOS optimization test APK
+          if [ "$built_fingerprint" = "022aab2f3b302f0e829950d406210d1e4d475026116088eb21ab5a92276922df" ]; then
+            echo "UPDATE_SIGNER_MATCH=1" >> "$GITHUB_ENV"
+          else
+            echo "UPDATE_SIGNER_MATCH=0" >> "$GITHUB_ENV"
+            echo "::warning::Built 0.1.2 APK has a different signer from last tested build #4. DO NOT install over existing app." >&2
+            printf '%s\n' "AVISO: esta APK foi compilada para teste, mas a assinatura difere da ultima V11 instalada. NAO instala por cima. NAO e um release publico." > out/ASSINATURA-INCOMPATIVEL.txt
+          fi
+          cp out/swap2-native-ootv11ios.apk out/swap2-native-ocarina-0.1.2.apk
+      - name: Upload signed 0.1.2 build and any signing warning
         uses: actions/upload-artifact@v4
         with:
-          name: Swap2-Ocarina-V11-iOS-Optimizations-APK
-          path: android/app/out/swap2-native-ootv11ios.apk
+          name: Swap2-Native-Ocarina-0.1.2-Build
+          path: |
+            android/app/out/swap2-native-ocarina-0.1.2.apk
+            android/app/out/ASSINATURA-INCOMPATIVEL.txt
           if-no-files-found: error
           retention-days: 14
+      - name: Gate public release on signer from last tested APK
+        if: env.UPDATE_SIGNER_MATCH == '0'
+        shell: bash
+        run: |
+          echo "::error::Not publishing a release signed with another key. A private keystore matching the last tested app is required." >&2
+          exit 1
