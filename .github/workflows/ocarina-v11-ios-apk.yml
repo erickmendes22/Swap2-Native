@@ -20,6 +20,10 @@ jobs:
         run: |
           set -euxo pipefail
           python3 -m py_compile scripts/pack_android.py dm/gfx/tools/dmsh_chain.py dm/gfx/tools/vk_android_build.py dm/games/0400486024DEC000/patches.py
+          python3 dm/gfx/tools/vk_abi_migrate.py --check
+          python3 -m py_compile dm/gfx/tools/vk_abi_migrate.py scripts/ocarina_shader_hot_delta.py
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_abi_migration.py'
+          python3 -m unittest discover -s dm/tools/tests -p 'test_ocarina_shader_delta.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_raw_gmem_fast1.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v101_paths.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v22_gmem.py'
