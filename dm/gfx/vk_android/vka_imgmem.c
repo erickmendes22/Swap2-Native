@@ -22,8 +22,14 @@
 typedef struct iblock { struct iblock *next; VkDeviceMemory dm; uint32_t type; vke_list free; } iblock;
 static iblock *g_blocks[VK_MAX_MEMORY_TYPES];
 static pthread_mutex_t g_imu = PTHREAD_MUTEX_INITIALIZER;
+// Several Vulkan recording/prewarm threads can request blocks of the same
+// memory type concurrently. Let one allocate the next 64-MiB block while
+// other callers wait and reuse it, instead of transiently allocating one
+// redundant block per caller. Never wait while holding a Vulkan object lock.
+static pthread_cond_t g_block_cv = PTHREAD_COND_INITIALIZER;
+static unsigned char g_block_allocating[VK_MAX_MEMORY_TYPES];
 // Stats (under g_imu): blocks, images in blocks (count, units' bytes, the images' own sizes), dedicated allocations (count, bytes), blocks freed, block allocations that failed
-static struct { uint64_t blocks, runs, run_bytes, req_bytes, ded, ded_bytes, freed, fail; } S;
+static struct { uint64_t blocks, runs, run_bytes, req_bytes, ded, ded_bytes, freed, fail, waited; } S;
 
 // Shared memory for the image (it fits a block): 1, or 0 (a dedicated allocation)
 static int sharable(VkImage img, uint32_t type, const VkMemoryRequirements *mr) {
@@ -63,8 +69,17 @@ VkResult vka_imem_bind(VkImage img, uint32_t type, const VkMemoryRequirements *m
     pthread_mutex_lock(&g_imu);
     int got = 0;
     for (iblock *b = g_blocks[type]; b && !got; b = b->next) got = take(b, n, al, mr, m);
+    // Another thread is already allocating this type. Wait for that one
+    // allocation to finish and retry the existing blocks under the mutex.
+    // This is a CPU-side wait; the GPU cannot reference the new block yet.
+    while (!got && g_block_allocating[type]) {
+        S.waited++;
+        pthread_cond_wait(&g_block_cv, &g_imu);
+        for (iblock *b = g_blocks[type]; b && !got; b = b->next) got = take(b, n, al, mr, m);
+    }
+    if (!got) g_block_allocating[type] = 1;
     pthread_mutex_unlock(&g_imu);
-    if (!got) {   // a new block, allocated without the lock; another thread may have added one meanwhile, which is tried first
+    if (!got) {   // only one allocation of this memory type is in flight
         iblock *nb = calloc(1, sizeof *nb);
         VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = BLOCK, .memoryTypeIndex = type};
         int ok = nb && vke_init(&nb->free, (uint32_t)(BLOCK / UNIT)) && !vk.vkAllocateMemory(V.dev, &ai, NULL, &nb->dm);
@@ -73,6 +88,10 @@ VkResult vka_imem_bind(VkImage img, uint32_t type, const VkMemoryRequirements *m
         for (iblock *b = g_blocks[type]; b && !got; b = b->next) got = take(b, n, al, mr, m);
         if (!got && ok) { nb->type = type; nb->next = g_blocks[type]; g_blocks[type] = nb; S.blocks++; got = take(nb, n, al, mr, m); nb = NULL; }
         if (!ok) S.fail++;
+        // Always release this reservation, even when Vulkan allocation fails
+        // and the caller must fall back to a dedicated image allocation.
+        g_block_allocating[type] = 0;
+        pthread_cond_broadcast(&g_block_cv);
         pthread_mutex_unlock(&g_imu);
         if (nb) { if (nb->dm) vk.vkFreeMemory(V.dev, nb->dm, NULL); vke_fini(&nb->free); free(nb); }   // not needed (another thread's block had room) or not allocated
         if (!got) return dedicated(img, type, mr, m);   // the block could not be allocated: this image as before
@@ -157,7 +176,9 @@ void vka_imem_stats(char *o, size_t n) {
     snprintf(o, n, "image memory: %llu blocks (%.0f MiB, %llu freed), used %.1f MiB by %llu images (wasted %.2f MiB rounding to units, %.1f MiB free in blocks), %llu dedicated (%.0f MiB)",
              (unsigned long long)S.blocks, S.blocks * (double)BLOCK / 1048576.0, (unsigned long long)S.freed, S.req_bytes / 1048576.0, (unsigned long long)S.runs,
              (S.run_bytes - S.req_bytes) / 1048576.0, (S.blocks * (double)BLOCK - S.run_bytes) / 1048576.0, (unsigned long long)S.ded, S.ded_bytes / 1048576.0);
-    if (S.fail) { size_t l = strlen(o); snprintf(o + l, n - l, "; %llu block allocations failed (those images dedicated)", (unsigned long long)S.fail); }
+    if (S.fail || S.waited) { size_t l = strlen(o);
+        snprintf(o + l, n - l, "; %llu block allocations failed (those images dedicated), %llu concurrent block requests shared/waited",
+                 (unsigned long long)S.fail, (unsigned long long)S.waited); }
     if (Z.made) { uint64_t zi, za, zb, zs; vkz_stats(&Z, &zi, &za, &zb, &zs); size_t l = strlen(o);
         snprintf(o + l, n - l, "; zero-shared: %llu images in %llu allocations (%.0f MiB, %.0f MiB saved), %llu made their own", (unsigned long long)zi, (unsigned long long)za, zb / 1048576.0, zs / 1048576.0, (unsigned long long)Z.owned); }
     pthread_mutex_unlock(&g_imu);
