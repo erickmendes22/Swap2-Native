@@ -120,7 +120,7 @@ final class Prefs {
         for (String s : OCARINA_SCENE_SCALES) if (s.equals(v)) return v;
         return profileScale;
     }
-    static void sceneScale(Context c, String titleId, String v) {
+    static void setSceneScale(Context c, String titleId, String v) {
         if (!OCARINA_TITLE.equals(titleId)) return;
         SharedPreferences.Editor e = of(c).edit();
         if (v == null) e.remove(gameKey("scene_scale", titleId));
