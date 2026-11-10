@@ -2941,9 +2941,22 @@ NVN(nvnCommandBufferSetRasterizerDiscard, void, NVNcommandBuffer *c, uint32_t en
 NVN(nvnCommandBufferSetSampleMask, void, NVNcommandBuffer *c, int m) { (void)c; if ((m & 0xffff) != 0xffff) ONCE_LOG("SetSampleMask %#x: ignored by the host for now", m); }
 NVN(nvnCommandBufferSetConservativeRasterEnable, void, NVNcommandBuffer *c, uint32_t en) { (void)c; if (en & 0xff) ONCE_LOG("SetConservativeRasterEnable on: ignored by the host for now"); }
 NVN(nvnCommandBufferSetTiledCacheAction, void, NVNcommandBuffer *c, NVNtiledCacheAction a) { (void)c; (void)a; }        // Tegra tiled cache hint, no Metal equivalent
-// A bound target's contents may be discarded: they are undefined afterwards, so keeping them is correct (The Great Ace Attorney Chronicles discards colour target 0)
-NVN(nvnCommandBufferDiscardColor, void, NVNcommandBuffer *c, int i) { (void)c; (void)i; }
-NVN(nvnCommandBufferDiscardDepthStencil, void, NVNcommandBuffer *c) { (void)c; }
+// On Android, replay guest-declared attachment invalidations to avoid Vulkan loads.
+NVN(nvnCommandBufferDiscardColor, void, NVNcommandBuffer *c, int i) {
+#if defined(__ANDROID__)
+    if (i < 0 || i >= 8) return;
+    *REC(c, OP_DISCARD_COLOR, int32_t) = i;
+#else
+    (void)c; (void)i;
+#endif
+}
+NVN(nvnCommandBufferDiscardDepthStencil, void, NVNcommandBuffer *c) {
+#if defined(__ANDROID__)
+    *REC(c, OP_DISCARD_DS, uint64_t) = 0;
+#else
+    (void)c;
+#endif
+}
 NVN(nvnCommandBufferSetTiledCacheTileSize, void, NVNcommandBuffer *c, int w, int h) { (void)c; (void)w; (void)h; }
 NVN_NOPROTO(nvnCommandBufferSetColorReductionEnable, void, NVNcommandBuffer *c, uint32_t en) { (void)c; (void)en; }   // color compression hints
 NVN_NOPROTO(nvnCommandBufferSetColorReductionThresholds, void, NVNcommandBuffer *c, int cls, const int *t) { (void)c; (void)cls; (void)t; }
