@@ -12,6 +12,20 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Validate Qualcomm SGSR1 SPIR-V shader (no APK)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y glslc spirv-tools
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py --check
+      - name: Source and sizing regression tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_mesh_prewarm.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_720p_upscale_real_gpu.py'
       - name: Compile shader translator after structural V21/V22 optimizations
         shell: bash
         run: |
