@@ -144,9 +144,35 @@ static int init_once(void) {
     // Mesh shading: the task and mesh stages only (multiview, shading-rate and query support each need more of the device than the replay enables or uses)
     fmesh.multiviewMeshShader = VK_FALSE; fmesh.primitiveFragmentShadingRateMeshShader = VK_FALSE; fmesh.meshShaderQueries = VK_FALSE;
     frate.primitiveFragmentShadingRate = VK_FALSE; frate.attachmentFragmentShadingRate = VK_FALSE;
-    V.fps_boost_vrs = x_fsr_rate && frate.pipelineFragmentShadingRate;
-    if (want_boost > 0) VLOG("Ocarina FPS Boost (coarse fragment VRS): requested=%d, extension=%d, pipeline feature=%d, active=%d; targeted hot shaders only",
-                              want_boost, x_fsr_rate, frate.pipelineFragmentShadingRate, V.fps_boost_vrs);
+    // Query legal pipeline rates for single-sample rendering instead of
+    // assuming 2x1/2x2 are available. A rate the device did not advertise
+    // must not be sent to vkCreateGraphicsPipelines (would drop hot draws).
+    int has_2x1 = 0, has_2x2 = 0;
+    if (x_fsr_rate && frate.pipelineFragmentShadingRate) {
+        PFN_vkGetPhysicalDeviceFragmentShadingRatesKHR get_rates =
+            (PFN_vkGetPhysicalDeviceFragmentShadingRatesKHR)vk.vkGetInstanceProcAddr(V.inst, "vkGetPhysicalDeviceFragmentShadingRatesKHR");
+        uint32_t count = 0;
+        if (get_rates && get_rates(V.pd, &count, NULL) == VK_SUCCESS && count && count <= 256) {
+            VkPhysicalDeviceFragmentShadingRateKHR *rates = calloc(count, sizeof *rates);
+            if (rates) {
+                for (uint32_t i = 0; i < count; i++) rates[i].sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR;
+                if (get_rates(V.pd, &count, rates) == VK_SUCCESS) for (uint32_t i = 0; i < count; i++) {
+                    if (!(rates[i].sampleCounts & VK_SAMPLE_COUNT_1_BIT)) continue;
+                    if (rates[i].fragmentSize.width == 2 && rates[i].fragmentSize.height == 1) has_2x1 = 1;
+                    if (rates[i].fragmentSize.width == 2 && rates[i].fragmentSize.height == 2) has_2x2 = 1;
+                }
+                free(rates);
+            }
+        }
+    }
+    V.fps_boost_vrs = x_fsr_rate && frate.pipelineFragmentShadingRate
+                        && (want_boost >= 2 ? has_2x2 : want_boost == 1 && has_2x1);
+    V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;
+    V.fps_boost_height = V.fps_boost_vrs && want_boost >= 2 ? 2u : 1u;
+    if (want_boost > 0)
+        VLOG("Ocarina FPS Boost VRS: requested=%d, extension=%d, pipeline feature=%d, 2x1=%d, 2x2=%d, active=%d, chosen=%ux%u",
+             want_boost, x_fsr_rate, frate.pipelineFragmentShadingRate, has_2x1, has_2x2,
+             V.fps_boost_vrs, V.fps_boost_width, V.fps_boost_height);
     if (x_mesh && !fmesh.meshShader) fmesh.taskShader = VK_FALSE;   // (task shading is of no use without mesh shading)
     V.indirect_count = f12.drawIndirectCount && f2.features.multiDrawIndirect;
     V.push_desc = x_push; V.vin_dyn = x_vin && fvin.vertexInputDynamicState; V.null_desc = x_rob && frob.nullDescriptor; V.ext_storage = f2.features.shaderStorageImageExtendedFormats; V.idx8 = x_i8 && fi8.indexTypeUint8;
