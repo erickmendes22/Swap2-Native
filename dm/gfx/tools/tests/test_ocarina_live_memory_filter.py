@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 TEX = (ROOT / "dm/gfx/vk_android/vka_tex.c").read_text()
 MASK64 = (1 << 64) - 1
-N = 1 << 15
+N = 1 << 16
 
 def slots(addr):
     x = addr & MASK64
@@ -21,7 +21,7 @@ def slots(addr):
     x ^= x >> 33
     x = x * 0xc4ceb9fe1a85ec53 & MASK64
     x ^= x >> 33
-    return x & (N - 1), (x >> 15) & (N - 1)
+    return x & (N - 1), (x >> 16) & (N - 1)
 
 class LiveMemoryFilter:
     def __init__(self):
