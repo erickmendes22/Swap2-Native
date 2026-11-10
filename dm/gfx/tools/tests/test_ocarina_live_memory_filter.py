@@ -68,6 +68,7 @@ class LiveMemTests(unittest.TestCase):
         self.assertIn("while (at && at->live_index < im->live_index)", TEX)
         self.assertIn("candidate->mem == t->mem && same_shape(candidate, t, &f, 1)", TEX)
         self.assertIn("im->live_index = g_nlive;", TEX)
+        self.assertIn("int i = im->live_index;", TEX)
         self.assertIn("g_live[i] = moved;", TEX)
         self.assertIn("moved->live_index = i;", TEX)
         self.assertIn("live_mem_del(moved);", TEX)

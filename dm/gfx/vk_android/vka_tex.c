@@ -306,7 +306,14 @@ static vka_img *g_big[64]; static int g_nbig;   // large images (DM_VK_BIGIMG_MB
 static void unref_locked(vka_img *im) {
     atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
     if (--im->refs) return;
-    for (int i = 0; i < g_nlive; i++) if (g_live[i] == im) {
+    // Each live image already knows its g_live index. Releasing a texture in
+    // a streamed scene no longer scans every other resident image to find it.
+    // Keep the defensive scan for an old or unexpected index.
+    int i = im->live_index;
+    if (i < 0 || i >= g_nlive || g_live[i] != im) {
+        for (i = 0; i < g_nlive && g_live[i] != im; i++) {}
+    }
+    if (i < g_nlive) {
         live_mem_del(im);
         int last = --g_nlive;
         if (i != last) {
@@ -316,7 +323,6 @@ static void unref_locked(vka_img *im) {
             moved->live_index = i;
             live_mem_add(moved);
         }
-        break;
     }
     for (int i = 0; i < g_nbig; i++) if (g_big[i] == im) { g_big[i] = g_big[--g_nbig]; break; }
     g_img_bytes -= im->bytes;
