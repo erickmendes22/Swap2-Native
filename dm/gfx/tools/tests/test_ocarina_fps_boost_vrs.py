@@ -31,6 +31,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('VK_SAMPLE_COUNT_1_BIT', DEV)
         self.assertIn('has_2x1', DEV)
         self.assertIn('has_2x2', DEV)
+        self.assertIn('want_boost > 0 && has_2x1 ? 1u : 0u', DEV)
         self.assertIn('vkGetPhysicalDeviceFragmentShadingRatesKHR', DEV)
         self.assertIn('V.fps_boost_vrs =', DEV)
 
@@ -40,7 +41,11 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('if (V.fps_boost_vrs && sh[1]', PSO)
         self.assertIn('(k->samples ? k->samples : 1) == 1', PSO)
         self.assertIn('VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR', PSO)
-        self.assertIn('P->ri.pNext = &P->fsrate;', PSO)
+        # Both Vulkan structs must extend VkGraphicsPipelineCreateInfo,
+        # not one another through VkPipelineRenderingCreateInfo.pNext.
+        self.assertIn('P->fsrate.pNext = &P->ri;', PSO)
+        self.assertIn('.pNext = P->fsrate.sType ? (const void *)&P->fsrate', PSO)
+        self.assertNotIn('P->ri.pNext = &P->fsrate;', PSO)
         self.assertIn('P->ci = (VkGraphicsPipelineCreateInfo)', PSO)
         self.assertNotIn('SKIP("Ocarina FPS Boost', PSO)
         self.assertNotIn('VK_NULL_HANDLE; // FPS Boost', PSO)
