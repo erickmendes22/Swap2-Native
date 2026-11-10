@@ -85,3 +85,13 @@ Build 22 validation correction: historical V11 workflow contract still pins orig
 Build 23 shader preparation rescue: stage-5 library installation now hard-links the already-generated full 42,339 shader library whenever storage permits; if hard links are blocked, checks actual free capacity before a streamed atomic copy; never deletes the source on failure and Retry resumes packaging without retranslation. Classify not-enough-space clearly. SGSR now accepts sampleable images without BLIT_SRC and reports fallback reasons. Regression tests cover cross-filesystem, interruption and low disk. APK uses the original package and signer.
 
 Build 23 FUSE-safe finalization: staging cache under ondevice/lib can be atomically moved into the pack if hard links are rejected; on retry, detect the library already in the pack and finish pack.tsv without rebuilding 42,339 shaders. Never move externally imported or user-managed cache. Stage-5 preflight accounts for zero-copy relocation. Device and 96-percent regression tests included.
+
+Build 24 (same install-over signer, 0.1.2 original release branch): Ocarina incremental shader and ABI-safe migration.
+- Preserve the complete 42,339-shader library and old per-key result checkpoints across APK updates.
+- If an older full shader library with the same ABI/profile is already playable, accept it without restarting a 4-hour translation. Reuse it even with a new translator version when the host's ABI contract still matches.
+- Scoped future shader updates compile only individually approved shader keys into a small partial overlay and keep the full library unchanged; exact target/old version, ABI and profile guard it.
+- For additive Vulkan ABI extensions, use old complete library without rewriting headers only if a source-header audit proves all existing constants, struct layout, ABI_REV and the common NVN contract unchanged. CI-generated matching native + Java approval tables.
+- For incompatible ABI transitions, refuse unsafe binary reuse; use existing per-shader reference digest delta to reuse exactly matching modules when a reference manifest exists, retranslate only changed entries.
+- Current ABI unchanged (674db0a4ff79), as is current full shader chain 600c17b98391: no need to repeat ongoing translation.
+- CI validates source-level ABI guards, old 42k-lib fallback, selective overlay, Android source, and existing signer before publishing.
+- Retain all graphics optimizations introduced through Builds 21-23 (720p FSR, SGSR1, mesh prewarm, NDSR and GMEM optimizations), no artificial FPS claim.
