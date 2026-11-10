@@ -352,7 +352,16 @@ static void oq_batch_init(oq_batch *b, const pop *ops, int n) {
         VkResult e = OQ.get(V.dev, OQ.pool, slot, k, 16 * (size_t)k, dst, 16,
                             VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
         atomic_fetch_add_explicit(&g_oq_get_calls, 1, memory_order_relaxed);
-        if (e < 0) memset(dst, 0, 16 * (size_t)k);
+        if (e < 0) { // a failed wide query must not make unrelated reports all read 'visible'
+            for (uint32_t j = 0; j < k; j++) {
+                uint64_t *one = &dst[2 * j];
+                one[0] = one[1] = 0;
+                VkResult single = OQ.get(V.dev, OQ.pool, slot + j, 1, 16, one, 16,
+                                        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+                atomic_fetch_add_explicit(&g_oq_get_calls, 1, memory_order_relaxed);
+                if (single < 0) one[0] = one[1] = 0;
+            }
+        }
         q += k;
     }
     b->first = first; b->last = last; b->pairs = pairs;
