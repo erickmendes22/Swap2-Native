@@ -23,7 +23,7 @@ final class GraphicsOptions {
     private GraphicsOptions() {}
 
     // 0 game/native (unchanged host scaling); 1 nearest; 2 bilinear; 3 FSR 1 EASU+RCAS.
-    static final String[] MODES = {"Automático (bilinear se suportado)", "Vizinho mais próximo", "Bilinear", "FSR 1 (filtro final)"};
+    static final String[] MODES = {"Automático (bilinear se suportado)", "Vizinho mais próximo", "Bilinear", "FSR 1 (EASU + RCAS até 720p)"};
     static final String[] SHARP_NAMES = {"Desligado", "Máxima", "Padrão", "Suave", "Muito suave"};
     static final float[] SHARPS = {-1f, 0f, 0.25f, 0.5f, 1f};
     static final String[] ASPECTS = {"Preservar proporção", "Esticar para preencher"};
