@@ -24,7 +24,7 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         self.assertIn("buf_update((const uint8_t *)a + 16, d, n);", update)
         self.assertIn("vka_transfer_write_barrier(g_cb);", update)
         self.assertNotIn("vka_barrier(g_cb)", update)
-        self.assertEqual(EXEC.count("vka_transfer_write_barrier(g_cb)"), 2)
+        self.assertEqual(EXEC.count("vka_transfer_write_barrier(g_cb)"), 1)
         self.assertIn('static void boost_transfer_barrier(VkCommandBuffer cb)', EXEC)
         self.assertIn('VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0', EXEC)
         self.assertIn('else vka_barrier(cb);', EXEC)
