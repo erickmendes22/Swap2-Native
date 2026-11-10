@@ -31,6 +31,7 @@ final class GraphicsOptions {
     static final String[] TIMINGS = {"Perfil do jogo", "Por segmento", "Por submissão"};
     static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
     static final String[] ENCODER_IDLE = {"Normal (padrão)", "Dormir quando vazio (experimental)"};
+    static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: VRS 2×1", "Agressivo: VRS 2×2"};
 
     static int mode(Context c) {
         SharedPreferences p = Prefs.of(c);
@@ -60,6 +61,10 @@ final class GraphicsOptions {
     static int encoderIdle(Context c) { return clamp(Prefs.of(c).getInt("encoder_idle", 0), 0, 1); }
     static int encoderIdle(Context c, String id) {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("encoder_idle", id), encoderIdle(c)), 0, 1);
+    }
+    static int fpsBoost(Context c) { return clamp(Prefs.of(c).getInt("oot_fps_boost", 0), 0, 2); }
+    static int fpsBoost(Context c, String id) {
+        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_fps_boost", id), fpsBoost(c)), 0, 2);
     }
     static float sharp(Context c) { return Fsr.sharp(c); }
     static float sharp(Context c, String id) {
@@ -110,6 +115,10 @@ final class GraphicsOptions {
         // This is not NX2navi\'s lazy GPU writeback boost, which needs separate validation.
         if (regDedup(c, id) != 0) out.add("DM_VK_REG_DEDUP=1");
         if (encoderIdle(c, id) != 0) out.add("DM_VK_ENC_SPIN_US=0");
+        // Zelda-specific GPU FPS Boost: opt-in coarse Vulkan shading for two
+        // hot fragment shaders, not NX2navi's incompatible mirror write-back.
+        // The native host checks driver feature support and logs fallback.
+        if (Prefs.OCARINA_TITLE.equals(id)) out.add("DM_VK_OOT_FPS_BOOST=" + fpsBoost(c, id));
         int ts = timing(c, id);
         if (ts != 0) out.add("DM_NVN_GPU_TS=" + (ts == 1 ? "segment" : "submission"));
     }
@@ -146,7 +155,7 @@ final class GraphicsOptions {
     }
     static void reset(Context c, String id) {
         SharedPreferences.Editor e = Prefs.of(c).edit();
-        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup", "encoder_idle"})
+        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup", "encoder_idle", "oot_fps_boost"})
             e.remove(Prefs.gameKey(k, id));
         e.commit();
     }
@@ -177,6 +186,8 @@ final class GraphicsOptions {
             values = REGISTRY; current = regDedup(c, id); title = "Registro de texturas otimizado"; break;
         case "encoder_idle":
             values = ENCODER_IDLE; current = encoderIdle(c, id); title = "Espera do encoder"; break;
+        case "oot_fps_boost":
+            values = FPS_BOOST; current = fpsBoost(c, id); title = "FPS Boost — VRS (pode reduzir detalhes)"; break;
         case "fsr_sharp":
             values = SHARP_NAMES; current = sharpIndex(sharp(c, id)); title = "Nitidez FSR (saída)"; break;
         default: return;
