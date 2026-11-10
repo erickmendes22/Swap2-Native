@@ -1556,7 +1556,7 @@ void vka_img_written_at(vka_img *im, const char *file, int line) {
 }
 void vka_tex_writeback(VkCommandBuffer cb) {
     pthread_mutex_lock(&g_tmu);
-    int any = 0;
+    int any = 0; uint64_t wb_bytes = 0; unsigned wb_copies = 0;
     for (int i = 0; i < g_nwb; i++) {
         vka_img *im = g_wb[i]; im->wb_pending = 0;
         uint32_t bpb = im->f.bpb, h = im->h; size_t row = im->d.stride ? im->d.stride : (size_t)im->w * bpb;
@@ -1566,10 +1566,25 @@ void vka_tex_writeback(VkCommandBuffer cb) {
         if (!any) { vka_barrier(cb); any = 1; }
         VkBufferImageCopy c = {o, (uint32_t)(row / bpb), h, {im->aspect, 0, 0, 1}, {0, 0, 0}, {im->w, h, 1}};
         vk.vkCmdCopyImageToBuffer(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, b, 1, &c);
+        wb_bytes += (uint64_t)im->w * h * bpb; wb_copies++;
         static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VLOG("linear texture serial %llu %ux%u format %#x: the GPU's content copied back into its storage", (unsigned long long)im->serial, im->w, h, im->d.format);
         unref_locked(im);
     }
     g_nwb = 0;
+    // Counts only explicit linear-image GPU -> placed guest-buffer copies. The
+    // ordinary placed memory path needs no copy at all. Off by default.
+    if (VKA_ENV("DM_VK_WB_STATS", 0)) {
+        static uint64_t frame, frames, bytes, ops;
+        uint64_t now = vka_frame();
+        if (now != frame) {
+            if (frame && ++frames % 120 == 0)
+                VLOG("GPU writeback: %llu frames, %llu linear copies, %.2f MiB total (%.3f MiB/frame), DM_VK_WB_STATS",
+                    (unsigned long long)frames, (unsigned long long)ops,
+                    bytes / 1048576.0, frames ? bytes / (1048576.0 * frames) : 0.0);
+            frame = now;
+        }
+        bytes += wb_bytes; ops += wb_copies;
+    }
     pthread_mutex_unlock(&g_tmu);
 }
 int mtl_tex_gpu_owned(uint64_t serial) {   // hle_nvn.c nvn_ft_poll: the GPU has written the image (render target, copy or clear destination)
