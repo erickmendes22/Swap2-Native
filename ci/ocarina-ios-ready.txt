@@ -36,3 +36,9 @@ Build 16 · GPU FPS Boost for Ocarina v131072:
 - keeps all mesh/compute draws, scene scale, games' shader library, update-over package/signature/ABI
 - new settings and regression test; build APK to verify Android native + UI compilation
 - compare device FPS on same scene with GPU profiler disabled after validation.
+
+Build 17 · Ocarina Android 0.1.2 heavy-pass + compute work:
+- Keep Build16's optional VRS 2x1/2x2 on profiled hot mesh-pass fragment shader 5ad65c0eefd09c7f; no draws omitted.
+- Ocarina compute 9e6b00b050e30801: preserve 8x9x12 dispatch's 110592 invocations, replace post-dispatch global producer barrier with scoped COMPUTE_SHADER|TRANSFER -> ALL_COMMANDS memory-write dependency (DM_VK_OOT_CS_SYNC=0 revert).
+- Experimental SPIR-V checked 8x4x4 -> 8x4x2 + 8x9x24 workgroup retile on Qualcomm: only when there are no workgroup/local-id, subgroup, atomics, workgroup shared storage or barriers; exact-size direct dispatch only. Otherwise use the original full shader/pipeline.
+- Native host C SPIR-V regression tests compiled in validate; signer, package, 0.1.2 update-over and imported shader ABI unchanged. This is the next build after both heavy-pass and compute changes.
