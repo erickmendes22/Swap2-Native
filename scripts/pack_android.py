@@ -316,6 +316,61 @@ def split_shaders(a, g, vdir, pkg):
     tmp.rmdir()
 
 
+
+def install_library_file(src, dst):
+    """Publish a finished shader library without allocating a second 1.2+ GB copy.
+
+    The on-device compiler writes the complete library into the job's lib/
+    cache before the pack step. Both directories normally live on the same
+    filesystem, so a hard link adds only a directory entry and safely keeps
+    the compiler's original file for Retry. If the pack is on external storage
+    that rejects hard links, fall back to streaming copy with a real free-space
+    check. The destination is always replaced atomically; a failed attempt
+    leaves both the previous pack and the complete source library intact.
+    """
+    src, dst = Path(src), Path(dst)
+    if not src.is_file():
+        raise Error(f'shader library source missing: {src} (translation results were not deleted)')
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.is_file():
+        if os.path.samefile(src, dst):
+            return 'already linked'
+        a, b = src.stat(), dst.stat()
+        if a.st_size == b.st_size and a.st_mtime_ns == b.st_mtime_ns:
+            return 'already current'
+    tmp = dst.with_name(dst.name + '.partial')
+    tmp.unlink(missing_ok=True)  # interrupted previous copy, never the source
+    try:
+        try:
+            os.link(src, tmp)
+            method = 'hard link (no duplicated shader bytes)'
+        except OSError:
+            # Cross-filesystem/FUSE/SAF: links may be forbidden. Do not attempt
+            # to duplicate a multi-GB library when only the historical 768 MiB
+            # preflight allowance remains. Catch this BEFORE copy fills storage.
+            need = src.stat().st_size + (64 << 20)
+            available = shutil.disk_usage(dst.parent).free
+            if available < need:
+                raise Error(
+                    f'not enough free space to finish shaders: {available >> 20} MiB '
+                    f'available in {dst.parent}, need {need >> 20} MiB for a '
+                    f'cross-filesystem copy. The translated library is still '
+                    f'saved at {src}; Retry will not translate the shaders again. '
+                    f'Use internal storage or free space and retry.')
+            with src.open('rb') as inp, tmp.open('wb') as output:
+                shutil.copyfileobj(inp, output, length=4 << 20)
+            shutil.copystat(src, tmp)
+            method = 'streamed copy (hard links unavailable)'
+        os.replace(tmp, dst)
+        return method
+    except BaseException as e:
+        tmp.unlink(missing_ok=True)
+        if isinstance(e, OSError):
+            raise Error(f'could not finalize the shader library at {dst}: {e}. '
+                        f'Original at {src} was preserved for Retry.') from e
+        raise
+
+
 def pack_shaders(a, g, work, out, vdir):
     """shaders/v-<V>/ in the pack: an up-to-date library from the cache (built there first when it is missing or stale, from the shader package, split from the dump
     first when there is none and --shader-pkg names none). → the library path in the pack, or None"""
@@ -353,8 +408,8 @@ def pack_shaders(a, g, work, out, vdir):
         st = lib_stamp(lib); dmsh_chain.write_stamp(str(lib), st['game'], st['inputs'])
     for f in (VK_LIB, dmsh_chain.STAMP):
         s_, d_ = lib / f, dst / f
-        if d_.is_file() and d_.stat().st_size == s_.stat().st_size and d_.stat().st_mtime_ns == s_.stat().st_mtime_ns: continue
-        tmp = d_.with_name(f + '.partial'); shutil.copy2(s_, tmp); tmp.rename(d_)
+        method = install_library_file(s_, d_)
+        print(f'shaders: finalized {f} using {method}', flush=True)
     others = sorted(o.name for o in (out / 'shaders').iterdir() if o.name != name and o.name.startswith(VK_PREFIX) and o.is_dir())
     if others:   # kept: another APK (the test and the play app, an older build) may load one of them from this pack; delete by hand to save the space
         print(f'shaders: kept the libraries of other versions in {out / "shaders"}: {", ".join(others)} (about 350 MB each)')
