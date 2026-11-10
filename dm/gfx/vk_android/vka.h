@@ -430,7 +430,9 @@ void vka_clear_outside(const vka_pclear *c);         // the clear on the image, 
 // the next draw's pass (loadOp CLEAR), or is done outside when anything else comes first (vka_rp_end). 0 = not taken: the caller ends the pass and clears outside
 int vka_rp_clear(const p_set_rt *rt, int has_rt, const vka_dstate *d, const vka_pclear *c);
 void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di);
-void vka_dispatch(vka_dstate *d, const p_dispatch *dp);
+void vka_dispatch(vka_dstate *d, const p_dispatch *dp, int next_is_dispatch);
+void vka_dispatch_overlap_flush(void);
+uint64_t vka_dispatch_overlap_skips(void);
 // Whether the game is a Switch 2 one (NVN2: its compute reads the group counts at c0 + DMSH_C0_DISPATCH_NVN2): dm_sdk_ounce() unless set (the replayer sets it from the capture)
 int vka_nvn2(void);
 void vka_set_nvn2(int on);
