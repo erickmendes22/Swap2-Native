@@ -163,7 +163,7 @@ final class GameSettings {
             GraphicsOptions.reset(a, id);  // restore only per-game graphics overrides
             sceneWant(id, null);
             Prefs.scene720(a, id, false);
-            Prefs.sceneScale(a, id, null); // restore only this game's resolution choice
+            Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
             Prefs.of(a).edit().remove(Prefs.gameKey("pause_return", id)).commit();
             again.run();
         });
@@ -725,7 +725,7 @@ final class GameSettings {
                 boolean gone = a.isFinishing() || a.isDestroyed();
                 if (in == null || files == null || have) {
                     if (!gone) { try { wait.dismiss(); } catch (RuntimeException ignored) { /* its window is gone */ } }
-                    if (have) { if (sceneWanted(id, scale)) { Prefs.sceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); } }
+                    if (have) { if (sceneWanted(id, scale)) { Prefs.setSceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); } }
                     else if (gone) modToast(a, a.getString(R.string.s2_scene_failed, a.getString(R.string.s2_scene_no_pack)));
                     else a.error(a.getString(R.string.s2_scene_failed, a.getString(R.string.s2_scene_no_pack)));
                     if (!gone) a.gameSettingsChanged(g);
@@ -738,7 +738,7 @@ final class GameSettings {
                         if (!end) { try { wait.dismiss(); } catch (RuntimeException ignored) { /* its window is gone */ } }
                         if (code == 0) {
                             // made, but turned on only when the player has not chosen otherwise meanwhile (the overlay stays: a later 720p takes it at once)
-                            if (sceneWanted(id, scale)) { Prefs.sceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); }
+                            if (sceneWanted(id, scale)) { Prefs.setSceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); }
                         } else if (code == SceneService.RUNNING) {
                             // an earlier run (its wait dialog closed with Back) is still making it; its answer turns 720p on while 720p is still the choice
                             modToast(a, a.getString(R.string.s2_scene_running));
