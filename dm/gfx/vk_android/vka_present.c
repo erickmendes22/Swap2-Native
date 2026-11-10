@@ -676,8 +676,28 @@ static int present_one(const pq_item *it) {
     int blit = im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && im->f.kind == 0 && im->samples == 1 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT);
     // FSR in place of the blit or the rotated copy for a picture scaled up; switched on live, the swapchain has no attachment views yet: blitted once, and the next swapchain has them.
     // A view that failed on a swapchain made for FSR is not asked for again: each present would make a new swapchain (a queue idle) and fail the same way
-    int fsr = blit > 0 && fsr_wanted() && (dw > cw || dh > ch) && (im->usage & VK_IMAGE_USAGE_SAMPLED_BIT)
-              && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+    // The SGSR/FSR path renders by *sampling* the window image into a color
+    // attachment. It never calls vkCmdBlitImage on its source. Some Adreno
+    // formats support sampling + linear filtering but NOT BLIT_SRC: the old
+    // blit > 0 guard silently forced method=rot-linear, so the advertised
+    // one-pass GPU optimization was never executed in Ocarina gameplay.
+    // Source legality is checked independently of the native blit fallback.
+    int can_sample = im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT
+                  && im->f.kind == 0 && im->samples == 1
+                  && (im->usage & VK_IMAGE_USAGE_SAMPLED_BIT)
+                  && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)
+                  && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+    int fsr = fsr_wanted() && can_sample && (dw > cw || dh > ch);
+    if (fsr_wanted() && !fsr) {
+        static int last_reason = -1;
+        int reason = !im || !im->inited ? 1 : !can_sample ? 2 : 3;
+        if (last_reason != reason) {
+            VLOG("SGSR/FSR upscale unavailable: reason=%d (1 missing image,2 not filterable,3 no enlargement); native blit=%d, src format=%d, features=%#x, image usage=%#x, image=%dx%d, output=%dx%d",
+                 reason, blit, im ? im->f.vk : 0, fp.optimalTilingFeatures,
+                 im ? im->usage : 0, cw, ch, dw, dh);
+            last_reason = reason;
+        }
+    }
     if (fsr && !g_sview[idx]) {
         if (!g_sview_fsr) g_recreate = 1;
         else VRED_ONCE("FSR: swapchain image %u has no attachment view: blitted", idx);
