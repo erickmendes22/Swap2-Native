@@ -57,7 +57,8 @@ class V11Graphics012Tests(unittest.TestCase):
         self.assertIn('-PnxApp=ootv11ios', WF)
         self.assertIn('com.swap2native.ootv11ios', WF)
         self.assertIn('key: swap2-ootv11ios-test-signing-v1', WF)
-        self.assertIn('Refusing to generate a new signer', WF)
+        self.assertIn('Refusing to generate an incompatible signer', WF)
+        self.assertIn('a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad', WF)
         self.assertIn('-PnxVersionCode="$GITHUB_RUN_NUMBER"', WF)
         self.assertIn('ci/ocarina-ios-ready.txt', WF)
 
