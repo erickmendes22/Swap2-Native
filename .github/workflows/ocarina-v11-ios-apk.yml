@@ -33,6 +33,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_attachment_stage_dependencies.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_live_memory_filter.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_upstream_013_015_memory.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_fps_boost_vrs.py'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
