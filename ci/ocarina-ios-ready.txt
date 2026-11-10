@@ -62,3 +62,8 @@ Build 19 · Ocarina 0.1.2 — non-overlapping inline uniform Vulkan transfer bat
 - Group consecutive OP_UPDATE_UB staging regions by Vulkan src/dst buffer into one vkCmdCopyBuffer call with multiple VkBufferCopy regions; one TRANSFER_WRITE -> ALL_COMMANDS dependency after the group.
 - Flush before any other command, when source/destination buffers change, ranges overlap or batch reaches 64; keep the original ordering and existing shader libraries. DM_VK_UB_BATCH=0 opt-out for A/B.
 - Update GPU copy-command/region stats and structural test; same package, existing signer, no shader rebuild.
+
+Build 20 · iOS dispatch_overlap port to Vulkan, not a shader change:
+- Consecutive direct compute dispatches with no guest NVN barrier now share GPU execution rather than 1 full ALL_COMMANDS barrier each; flush before every draw, transfer, query, barrier, list boundary and command-buffer switch.
+- Exclude shared host spill, indirect, GPU profiler and NaN instrumentation; keep standard sync after final dispatch, and allow DM_VK_OOT_DISPATCH_OVERLAP=0 as a compatibility fallback.
+- This is a code-level GPU change based on iOS 5.7->3.7ms compute sequence on M4 Pro, not a guaranteed Adreno result; no shader library regeneration, same package/signature/ABI.
