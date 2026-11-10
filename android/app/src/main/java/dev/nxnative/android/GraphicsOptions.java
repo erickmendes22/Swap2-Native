@@ -23,7 +23,7 @@ final class GraphicsOptions {
     private GraphicsOptions() {}
 
     // 0 game/native (unchanged host scaling); 1 nearest; 2 bilinear; 3 FSR 1 EASU+RCAS.
-    static final String[] MODES = {"Nativo do jogo", "Vizinho mais próximo", "Bilinear", "FSR 1"};
+    static final String[] MODES = {"Automático (bilinear se suportado)", "Vizinho mais próximo", "Bilinear", "FSR 1 (filtro final)"};
     static final String[] SHARP_NAMES = {"Desligado", "Máxima", "Padrão", "Suave", "Muito suave"};
     static final float[] SHARPS = {-1f, 0f, 0.25f, 0.5f, 1f};
     static final String[] ASPECTS = {"Preservar proporção", "Esticar para preencher"};
@@ -93,6 +93,7 @@ final class GraphicsOptions {
             out.add("DM_VK_GPL=0");
             out.add("DM_VK_PREWARM=0");
         } else {
+            out.add("DM_VK_GPL=1");
             out.add("DM_VK_PREWARM=2");
         }
         int ts = timing(c, id);
@@ -151,7 +152,7 @@ final class GraphicsOptions {
         final String title;
         switch (key) {
         case "present_filter":
-            values = MODES; current = mode(c, id); title = "Filtro de imagem"; break;
+            values = MODES; current = mode(c, id); title = "Filtro da tela (não reduz render)"; break;
         case "picture_stretch":
             values = ASPECTS; current = stretch(c, id); title = "Proporção da tela"; break;
         case "bg_pipelines":
@@ -194,7 +195,7 @@ final class GraphicsOptions {
     /** In-game controls: final output upscaler and sharpness change live; other settings restart the game. */
     static void rows(Context c, LinearLayout box, String id) {
         TextView title = new TextView(c);
-        title.setText("Imagem · 0.1.2");
+        title.setText("Imagem final · 0.1.2");
         title.setPadding(0, 24, 0, 0);
         box.addView(title);
         RadioGroup m = new RadioGroup(c);
@@ -228,7 +229,7 @@ final class GraphicsOptions {
         });
         box.addView(sh);
         TextView note = new TextView(c);
-        note.setText("Filtro e nitidez: aplicados durante o jogo. Proporção, compilação de pipelines e medição GPU: ajuste no launcher e reinicie o jogo.");
+        note.setText("Este filtro atua depois da cena já renderizada. Para ganhar FPS, reduza a Resolução interna da cena no launcher. Filtro e nitidez aplicam ao vivo.");
         note.setTextSize(12);
         box.addView(note);
     }
