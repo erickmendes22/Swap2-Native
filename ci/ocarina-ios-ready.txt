@@ -4,3 +4,6 @@ Filtro nativo / nearest / bilinear / FSR 1 global e por jogo; troca ao vivo.
 Nitidez FSR Off, proporção ou esticar com touch alinhado.
 Compilação background e GPU timing configuráveis; manter resolução/FPS anteriores.
 Testes 0.1.2 e NVN attachment discard no workflow existente.
+
+Correção do build V11.3: OP_COUNT_ 56 e cap_rec_fields/cap_layout atualizados para os comandos de descarte NVN; teste de captura incluído.
+Nova tentativa usa exatamente a mesma configuração, assinatura, package id e arquivos de shaders.
