@@ -5,3 +5,5 @@ Correções: aceite de biblioteca com mesmo ABI e tamanho válido, status da pre
 toast de resolução escolhida e rótulos que não prometem tamanho fixo.
 Release build com o mesmo applicationId, versão 0.1.2 e versionCode crescente;
 bloquear publicação se o certificado diferir do instalado.
+
+Ocarina 0.1.2 — Vulkan GPU barrier dedup. OP_BARRIER terminating a live render pass no longer emits a second identical ALL_COMMANDS memory barrier; retain it with NaN instrumentation or without a live pass. Static regression tests and count in per-300-frame metrics. Same package, keystore SHA256 a1c468af, shader pack unchanged; V10 baseline untouched.
