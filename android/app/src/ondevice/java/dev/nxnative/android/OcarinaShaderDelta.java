@@ -37,9 +37,9 @@ final class OcarinaShaderDelta {
                 || !TITLE.equals(header.game) || !profile.shaderInputs.equals(header.inputs)
                 || !BuildConfig.NX_DMSH_VK_ABI.equals(header.abi)) return List.of();
 
-        File manifest = new File(PackNative.repo(), "dm/games/" + TITLE + "/vk_hot_delta.tsv");
-        if (!manifest.isFile()) return List.of();
         try {
+            File manifest = new File(PackNative.repo(), "dm/games/" + TITLE + "/vk_hot_delta.tsv");
+            if (!manifest.isFile()) return List.of();
             for (String line : Files.readAllLines(manifest.toPath(), StandardCharsets.UTF_8)) {
                 if (line.isBlank() || line.startsWith("#")) continue;
                 String[] columns = line.split("\\t", -1);
