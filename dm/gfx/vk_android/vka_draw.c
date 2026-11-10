@@ -1573,6 +1573,23 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     vka_imgrt rt; img_retype_of(sh[5], g_wk.r[5], g_wk.n[5], &rt);
     VkPipeline p = vka_ndsr_pipeline(d, sh[5], &lay, g_wk.r[5], g_wk.n[5], &rt, g_cb);   // DM_VK_NDSR=fsr: agl's NDSR network replaced by FSR 1 EASU (vka_ndsr.c), else NULL
     const int gp_ndsr_replaced = p != VK_NULL_HANDLE;
+    int oot_cs_retiled = 0;
+    // The hot 9e6b kernel uses an 8x9x12 direct grid and 8x4x4 local size
+    // (110,592 invocations). Try a *different* pipeline with 8x4x2 local
+    // size and 8x9x24 grid, keeping every GlobalInvocationId unchanged.
+    // Only if the SPIR-V safety scan confirms no local/group-dependent ops.
+    // Indirect, image-retyped and any other-size dispatch keeps the original.
+    if (!p && sh[5]->key == UINT64_C(0x9e6b00b050e30801)
+        && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 && VKA_ENV("DM_VK_OOT_CS_RETILE", 1)
+        && !rt.b[0] && !dp->ind && !spill_bytes(sh[5])
+        && dp->x == 8 && dp->y == 9 && dp->z == 12
+        && V.props.limits.maxComputeWorkGroupCount[2] >= 24) {
+        p = vka_cs_pipeline_oot_retile(sh[5], &lay, &oot_cs_retiled);
+        if (oot_cs_retiled) { static _Atomic int logged;
+            if (!atomic_exchange(&logged, 1))
+                VLOG("Ocarina compute 9e6b FPS Boost: 8x4x4*8x9x12 -> 8x4x2*8x9x24, equal global invocations; original pipeline preserved");
+        }
+    }
     if (!p) p = rt.b[0] ? vka_cs_pipeline_img(sh[5], &lay, &rt) : vka_cs_pipeline(sh[5], &lay);
     if (vka_nan_on()) vka_tex_watch_dispatch(sh[5]->key);
     if (!p) SKIPQ();
@@ -1622,12 +1639,14 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         else if (r->what == VKA_R_GMEM_MAP || r->what == VKA_R_GMEM_LOG) VLOG("dispatch %llu:   binding %u raw global memory %s", di, r->binding, r->what == VKA_R_GMEM_MAP ? "table" : "write log");
     }
     if (skip) { vka_barrier(g_cb); g_dispatches++; texstat_at(); return; }
-    if (vka_gp_active) vka_gp_compute(sh[5]->key, (uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z, gp_ndsr_replaced);
+    if (vka_gp_active) vka_gp_compute(sh[5]->key, (uint32_t)dp->x, (uint32_t)dp->y,
+        (uint32_t)dp->z * (oot_cs_retiled ? 2u : 1u), gp_ndsr_replaced);
     vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, p);
     if (dp->ind) vk.vkCmdDispatchIndirect(g_cb, ib, io);
     else if (dp->x > 0 && dp->y > 0 && dp->z > 0) {
         if (sb && (uint64_t)dp->x * dp->y * dp->z > ns) spill_dispatch((uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z, ns);
-        else vk.vkCmdDispatch(g_cb, (uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z);
+        else vk.vkCmdDispatch(g_cb, (uint32_t)dp->x, (uint32_t)dp->y,
+                               (uint32_t)dp->z * (oot_cs_retiled ? 2u : 1u));
     }
     // Ocarina's 9e6b compute appears twice per frame in heavy scenes.
     // Keep every workgroup and shader output. Narrow only the barrier's
