@@ -25,7 +25,8 @@ class BarrierScopeTests(unittest.TestCase):
         body = source_body(DRAW, 'void vka_rp_end(void) {',
                            '// OP_BARRIER used to end a render pass')
         self.assertIn('g_rp_force_full || R.bar_pending || had_clears || vka_nan_on()', body)
-        self.assertIn('if (full) { g_rp_full++; vka_barrier(g_cb); }', body)
+        self.assertIn('if (full || (R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0)) {', body)
+        self.assertIn('g_rp_full++; vka_barrier(g_cb);', body)
         self.assertIn('else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }', body)
         self.assertIn('else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }', body)
 
@@ -49,14 +50,14 @@ class BarrierScopeTests(unittest.TestCase):
         self.assertIn('case OP_COPY_B2B:', EXEC)
         for line in EXEC.splitlines():
             if 'case OP_CLEAR_BUF:' in line or 'case OP_COPY_B2B:' in line:
-                self.assertIn('vka_transfer_write_barrier(g_cb)', line)
+                self.assertIn('boost_transfer_barrier(g_cb)', line)
                 self.assertNotIn('vka_barrier(g_cb)', line)
 
     def test_bounce_copy_never_loses_dependency(self):
-        self.assertIn('if (to_tex) vka_transfer_write_barrier(g_cb);', EXEC)
-        self.assertIn('if (bounce) {\n            vka_transfer_write_barrier(g_cb);', EXEC)
-        self.assertIn('vka_transfer_write_barrier(g_cb); // buffer/image transfer completed', EXEC)
-        self.assertIn('vka_transfer_write_barrier(g_cb); // vkCmdCopyImage /', EXEC)
+        self.assertIn('if (to_tex) boost_transfer_barrier(g_cb);', EXEC)
+        self.assertIn('if (bounce) {\n            boost_transfer_barrier(g_cb);', EXEC)
+        self.assertIn('boost_transfer_barrier(g_cb); // buffer/image transfer completed', EXEC)
+        self.assertIn('boost_transfer_barrier(g_cb); // vkCmdCopyImage /', EXEC)
         self.assertIn('case OP_BARRIER:', EXEC)
         self.assertIn('vka_barrier(g_cb)', EXEC)
 
@@ -66,6 +67,8 @@ class BarrierScopeTests(unittest.TestCase):
         self.assertIn('graphics-shader-scoped', DRAW)
         self.assertIn('extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar;', EXEC)
         self.assertIn('void vka_graphics_write_barrier_at(', HEADER)
+        self.assertIn('VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0', EXEC)
+        self.assertIn('else vka_barrier(cb);', EXEC)
 
 
 if __name__ == '__main__':
