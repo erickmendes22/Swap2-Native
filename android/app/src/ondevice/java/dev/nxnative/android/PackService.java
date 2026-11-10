@@ -395,6 +395,20 @@ public final class PackService extends Service {
     private boolean preflight(Job j, String s) {
         File logs = new File(j.dir(), "logs");
         long need = DumpCheck.stepNeed(s, j.codeOnly());
+        // A completed on-device shader library may now be installed by a
+        // hard link or atomic rename, without the old second 1.2+ GB copy.
+        // If the destination is on another filesystem, the packer itself
+        // checks the ACTUAL destination space before its streamed fallback.
+        if ("pack".equals(s)) {
+            File owned = new File(j.dir(), "lib");
+            File cached = new File(j.shaderCache(), "v-" + BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+            File recovered = new File(j.pack(), "shaders/v-" + BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+            try {
+                if (owned.getCanonicalFile().equals(j.shaderCache().getCanonicalFile())
+                        && (cached.isFile() || recovered.isFile()))
+                    need = Math.min(need, 256L << 20);
+            } catch (IOException ignored) { /* use old conservative allowance */ }
+        }
         try {
             if (!logs.isDirectory() && !logs.mkdirs()) throw new IOException("cannot make " + logs);
             applyEnvFile(j, null);
@@ -527,10 +541,20 @@ public final class PackService extends Service {
                 argv = new String[] {"--target", "vulkan", new File(split, "pkg").getPath(), lib.getPath()};
                 break;
             }
-            case "pack":
+            case "pack": {
                 tool = "scripts/pack_android.py";
-                argv = new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(), "--shader-cache", j.shaderCache().getPath(), "--keep-code", "-j", "1", "--in-process"};
+                // Only the job-owned completed library may be moved. An
+                // imported/user-supplied shader cache must remain untouched.
+                boolean ownedCache = j.shaderCache().getCanonicalFile()
+                        .equals(new File(j.dir(), "lib").getCanonicalFile());
+                argv = ownedCache
+                    ? new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(),
+                        "--shader-cache", j.shaderCache().getPath(), "--keep-code",
+                        "--move-shader-cache", "-j", "1", "--in-process"}
+                    : new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(),
+                        "--shader-cache", j.shaderCache().getPath(), "--keep-code", "-j", "1", "--in-process"};
                 break;
+            }
             default:
                 return "unknown step " + s;
         }
