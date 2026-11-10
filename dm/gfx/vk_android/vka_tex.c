@@ -176,7 +176,7 @@ static vka_img **g_live; static int g_nlive, g_livecap;
 // are harmless (the original scan still runs); the counters change only when
 // a live image is inserted/removed, under g_tmu. Unlike caching one image,
 // this preserves all format-compatibility learning and lookup order.
-enum { LIVE_MEM_BITS = 15, LIVE_MEM_N = 1u << LIVE_MEM_BITS };
+enum { LIVE_MEM_BITS = 16, LIVE_MEM_N = 1u << LIVE_MEM_BITS };
 static uint32_t g_live_mem[LIVE_MEM_N];
 static inline void live_mem_slots(const void *p, unsigned *a, unsigned *b) {
     uint64_t x = (uint64_t)(uintptr_t)p;
