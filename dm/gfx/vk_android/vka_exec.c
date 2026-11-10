@@ -1117,6 +1117,27 @@ static void not_yet(uint32_t op) {
     VRED_ONCE("DrawTexture (op %u) is not on Vulkan yet: skipped from now on", op);
 }
 static void seg_write(const void *a) { struct { VkCommandBuffer cb; VkPipelineStageFlagBits st; uint32_t q; } w; memcpy(&w, a, sizeof w); qf.write(w.cb, w.st, g_sqp, w.q); }
+// These state records change only CPU-side replay state. They do not perform GPU
+// work and therefore do not close a series of independent compute dispatches.
+// Never allow a transfer, draw, query, event, call, jump or NVN guest barrier
+// across the deferred compute boundary.
+static int overlap_state_record(uint32_t op) {
+    switch (op) {
+    case OP_SET_TEX_POOL: case OP_SET_SAMP_POOL: case OP_BIND_PROGRAM:
+    case OP_BIND_STATE: case OP_BIND_VATTR: case OP_BIND_VSTREAM:
+    case OP_BIND_VBUF: case OP_BIND_VBUF1: case OP_BIND_UBO:
+    case OP_BIND_UBO_SMALL: case OP_BIND_SSBO: case OP_BIND_TEX:
+    case OP_BIND_TEX1: case OP_BIND_SAMP: case OP_BIND_IMG:
+    case OP_STENCIL: case OP_POLY_OFFSET: case OP_VIEWPORTS:
+    case OP_DEPTH_RANGE: case OP_DEPTH_CLAMP: case OP_VP_SWIZZLE:
+    case OP_BLEND_COLOR: case OP_ALPHA_REF: case OP_PUSH_CONST:
+    case OP_TF_BIND: case OP_TF_STATE: case OP_PRIM_RESTART:
+    case OP_RAST_DISCARD: case OP_SCISSOR: case OP_COPY_STRIDE:
+        return 1;
+    default:
+        return 0;
+    }
+}
 static void exec(const uint8_t *p, int depth) {
     ub_batch ub = {0};
     const int batch_on = VKA_ENV("DM_VK_UB_BATCH", 1) != 0;
@@ -1125,7 +1146,7 @@ static void exec(const uint8_t *p, int depth) {
         // Flush before a draw, dispatch, query, barrier, list control, or any other command.
         // Even a nested OP_CALL is a boundary: no command may overtake these copies.
         if (h.op != OP_UPDATE_UB) ub_flush(&ub);
-        if (h.op != OP_DISPATCH) vka_dispatch_overlap_flush(); // guest barrier, draw, transfer, query, call, jump, end all close the compute batch
+        if (h.op != OP_DISPATCH && !overlap_state_record(h.op)) vka_dispatch_overlap_flush(); // preserve guest GPU ordering but let consecutive state/binding records pass
         const void *a = p + 8;
         int bar_kept = 0, bar_covered = 0;   // bar_covered: this pass ended with the same full GPU memory barrier that OP_BARRIER needs
         if (h.op == OP_DRAW || h.op == OP_DRAW_IDX) chunk_check();   // before a draw that opens a new pass
@@ -1189,13 +1210,7 @@ static void exec(const uint8_t *p, int depth) {
                               vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, NULL, draw_idx_rec(a, h.size, &t));
                               vka_rp_predict_discard(0, 0); oq_sk1(sk); }
                           else if (!S.rc_skip && g_oq_count) { g_oq_lost++; g_oqs_skip++; } break;
-        case OP_DISPATCH: if (g_cb) {
-            op_hdr next = {0};
-            // A valid record can be followed only by another complete command
-            // or OP_END. No look-ahead over CALL/JUMP/state changes/barriers.
-            if (h.size >= 8) memcpy(&next, p + h.size, sizeof next);
-            vka_dispatch(&S.d, a, next.op == OP_DISPATCH && next.size >= 8);
-        } break;
+        case OP_DISPATCH: if (g_cb) vka_dispatch(&S.d, a); break;
         case OP_DRAW_TEX: not_yet(h.op); if (g_oq_count && !S.rc_skip) { g_oq_lost++; g_oqs_skip++; } break;
         default: break;   // state: taken by vka_state_op above
         }
