@@ -814,14 +814,27 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_img
 static int pw_memory_pressure(void) {
     int floor_mb = VKA_ENV("DM_VK_PREWARM_RAM_FLOOR_MB", 512);
     if (floor_mb <= 0) return 0;
+    // Shared 250-ms sample: the prewarm threads must not reopen procfs on
+    // every speculative pipeline. The old answer is safe for a short time;
+    // only a hint controlling prewarm admission, never required gameplay.
+    static _Atomic uint64_t check_after_ns;
+    static _Atomic int low;
+    uint64_t now = now_ns(), after = atomic_load_explicit(&check_after_ns, memory_order_relaxed);
+    if (now < after) return atomic_load_explicit(&low, memory_order_relaxed);
+    uint64_t next = now + 250000000ull;
+    if (!atomic_compare_exchange_strong_explicit(&check_after_ns, &after, next,
+                                                  memory_order_relaxed, memory_order_relaxed))
+        return atomic_load_explicit(&low, memory_order_relaxed);
     FILE *f = fopen("/proc/meminfo", "r");
-    if (!f) return 0;
+    if (!f) { atomic_store_explicit(&low, 0, memory_order_relaxed); return 0; }
     char line[160]; unsigned long long kb = 0; int got = 0;
     while (fgets(line, sizeof line, f)) {
         if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) { got = 1; break; }
     }
     fclose(f);
-    return got && kb < (unsigned long long)floor_mb * 1024u;
+    int pressure = got && kb < (unsigned long long)floor_mb * 1024u;
+    atomic_store_explicit(&low, pressure, memory_order_relaxed);
+    return pressure;
 }
 static void *pw_main(void *a) {
     (void)a; pthread_setname_np(pthread_self(), "vk-prewarm"); vka_host_fp("vk-prewarm");
