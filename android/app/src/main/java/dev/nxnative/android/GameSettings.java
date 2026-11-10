@@ -321,8 +321,14 @@ final class GameSettings {
         pack.view.setClickable(false);
         box.addView(pack.view);
         String lp = Pack.libraryProblem(pd, g.titleId);
+        File playable = Pack.libraryOf(pd) == null ? Pack.playableLibrary(pd, g.titleId) : null;
+        String libraryText = lp != null ? lp : playable != null
+                ? "Biblioteca anterior compatível (ABI " + BuildConfig.NX_DMSH_VK_ABI + "): "
+                        + playable.getParentFile().getName().substring(2)
+                        + ". O Vulkan já a utiliza; shaders faltantes aparecem no log."
+                : a.getString(ShaderZip.imported(pd) ? R.string.s2_shaders_state_imported : R.string.s2_shaders_present, BuildConfig.NX_DMSH_VK_CHAIN);
         Ui.Setting shaders = new Ui.Setting(a, R.drawable.s2_ic_image, a.getString(R.string.s2_shaders_state), null)
-                .value(lp == null ? a.getString(ShaderZip.imported(pd) ? R.string.s2_shaders_state_imported : R.string.s2_shaders_present, BuildConfig.NX_DMSH_VK_CHAIN) : lp);
+                .value(libraryText);
         shaders.view.setClickable(false);
         box.addView(shaders.view);
         // Advanced, the same rows as the game's Options (Ondevice.advancedRows): Prepare again, the pack folder, the shaders' and the full pack's export and import
@@ -725,7 +731,9 @@ final class GameSettings {
                 boolean gone = a.isFinishing() || a.isDestroyed();
                 if (in == null || files == null || have) {
                     if (!gone) { try { wait.dismiss(); } catch (RuntimeException ignored) { /* its window is gone */ } }
-                    if (have) { if (sceneWanted(id, scale)) { Prefs.setSceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); } }
+                    if (have) { if (sceneWanted(id, scale)) { Prefs.setSceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, Prefs.OCARINA_TITLE.equals(id)
+                                    ? "Perfil " + Prefs.sceneLabel(scale) + " preparado; vale no próximo início (tamanho dinâmico)"
+                                    : a.getString(R.string.s2_scene_made)); } }
                     else if (gone) modToast(a, a.getString(R.string.s2_scene_failed, a.getString(R.string.s2_scene_no_pack)));
                     else a.error(a.getString(R.string.s2_scene_failed, a.getString(R.string.s2_scene_no_pack)));
                     if (!gone) a.gameSettingsChanged(g);
@@ -738,7 +746,9 @@ final class GameSettings {
                         if (!end) { try { wait.dismiss(); } catch (RuntimeException ignored) { /* its window is gone */ } }
                         if (code == 0) {
                             // made, but turned on only when the player has not chosen otherwise meanwhile (the overlay stays: a later 720p takes it at once)
-                            if (sceneWanted(id, scale)) { Prefs.setSceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); }
+                            if (sceneWanted(id, scale)) { Prefs.setSceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, Prefs.OCARINA_TITLE.equals(id)
+                                    ? "Perfil " + Prefs.sceneLabel(scale) + " preparado; vale no próximo início (tamanho dinâmico)"
+                                    : a.getString(R.string.s2_scene_made)); }
                         } else if (code == SceneService.RUNNING) {
                             // an earlier run (its wait dialog closed with Back) is still making it; its answer turns 720p on while 720p is still the choice
                             modToast(a, a.getString(R.string.s2_scene_running));
