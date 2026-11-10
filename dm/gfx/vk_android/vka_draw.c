@@ -1580,7 +1580,7 @@ int dm_sdk_ounce(void);
 static int g_nvn2 = -1;
 void vka_set_nvn2(int on) { g_nvn2 = on != 0; }
 int vka_nvn2(void) { if (g_nvn2 < 0) g_nvn2 = dm_sdk_ounce(); return g_nvn2; }   // first called at a dispatch or a capture, after the modules are loaded
-void vka_dispatch(vka_dstate *d, const p_dispatch *dp, int next_is_dispatch) {
+void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
     vka_rp_end();
@@ -1673,13 +1673,13 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp, int next_is_dispatch) {
     // Keep every workgroup and shader output. Narrow only the barrier's
     // producer stages; all later GPU consumers stay synchronized.
     // Backport of the iOS dispatch_overlap mechanism: when the next NVN
-    // command is another direct compute dispatch and the guest requested no
-    // barrier, there is no guest-visible producer/consumer ordering to force.
+    // command is another compute dispatch (possibly with intervening bindings)
+    // and the guest requested no barrier, there is no guest-visible ordering to force.
     // Group them on the GPU; close the group with a single barrier before any
     // non-dispatch operation (or before another dispatch using host spill).
     // Never group indirect dispatches, shared-memory spill, the GPU profiler
     // or NaN instrumentation. The explicit NVN OP_BARRIER is never skipped.
-    if (next_is_dispatch && !sb && !dp->ind && !vka_gp_active && !vka_nan_on()
+    if (!sb && !dp->ind && !vka_gp_active && !vka_nan_on()
         && VKA_ENV("DM_VK_OOT_DISPATCH_OVERLAP", 0)) {
         g_dispatch_overlap_pending = 1;
         g_dispatch_overlap_skipped++;
