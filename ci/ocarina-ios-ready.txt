@@ -19,3 +19,9 @@ Build 12 (real algorithm changes, no new environment toggle):
 Build 13 · Ocarina Android 0.1.2: Vulkan inline-uniform copy synchronization refinement (real code change; no new variable). After OP_UPDATE_UB VkCmdCopyBuffer, use TRANSFER_WRITE -> ALL_COMMANDS memory READ/WRITE instead of ALL_COMMANDS -> ALL_COMMANDS. Pass-end, guest barriers, fill/copy, image and compute synchronization untouched.
 Structural tests protect full destination access and preserve old barriers on other paths. Same 0.1.2 package com.swap2native.ootv11ios, same a1c468af signer and previously imported shader lib; no shader recompile.
 Log new scoped transfer-barrier count and compare GPU p50 on the same 1200-window workload as Build12.
+
+Build 14 — real GPU change, not a configuration toggle:
+- A pure color/depth-stencil render pass now issues a stage-scoped Vulkan memory barrier (COLOR_ATTACHMENT_OUTPUT + EARLY/LATE_FRAGMENT_TESTS writes -> ALL_COMMANDS readers/writers).
+- Preserve the original FULL barrier for explicit NVN barriers, pending NVN barriers, shader memory stores, diagnostic paths, external clears.
+- Hardware FPS benefit not assumed; test per-frame scoped-vs-full pass-end counts and GPU p50.
+- Same Ocarina 0.1.2 Android package and a1c468af signature, no shader library rebuild.
