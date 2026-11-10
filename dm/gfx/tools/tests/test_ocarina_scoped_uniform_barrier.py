@@ -24,7 +24,10 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         self.assertIn("buf_update((const uint8_t *)a + 16, d, n);", update)
         self.assertIn("vka_transfer_write_barrier(g_cb);", update)
         self.assertNotIn("vka_barrier(g_cb)", update)
-        self.assertGreaterEqual(EXEC.count("vka_transfer_write_barrier(g_cb)"), 7)
+        self.assertEqual(EXEC.count("vka_transfer_write_barrier(g_cb)"), 2)
+        self.assertIn('static void boost_transfer_barrier(VkCommandBuffer cb)', EXEC)
+        self.assertIn('VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0', EXEC)
+        self.assertIn('else vka_barrier(cb);', EXEC)
         self.assertIn("vk.vkCmdCopyBuffer(g_cb, s.buf, b, 1, &c)", EXEC)
 
     def test_transfer_write_is_only_source_writer(self):
@@ -38,12 +41,12 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
 
     def test_prior_pass_and_general_barrier_untouched(self):
         self.assertIn("vk.vkCmdEndRendering(g_cb);", DRAW)
-        self.assertIn("if (full) { g_rp_full++; vka_barrier(g_cb); }", DRAW)
+        self.assertIn("g_rp_full++; vka_barrier(g_cb);", DRAW)
         self.assertIn("g_rp_force_full || R.bar_pending || had_clears || vka_nan_on()", DRAW)
         self.assertIn("VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT", TEX)
         self.assertIn("case OP_CLEAR_BUF: if (g_cb)", EXEC)
-        self.assertIn("buf_fill(cb->addr, cb->size, cb->value); vka_transfer_write_barrier(g_cb);", EXEC)
-        self.assertIn("buf_copy(s_, d, n); vka_transfer_write_barrier(g_cb);", EXEC)
+        self.assertIn("buf_fill(cb->addr, cb->size, cb->value); boost_transfer_barrier(g_cb);", EXEC)
+        self.assertIn("buf_copy(s_, d, n); boost_transfer_barrier(g_cb);", EXEC)
         self.assertIn("else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }", DRAW)
         self.assertIn("case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);", EXEC)
         self.assertIn("default: if (g_cb && !vka_state_op(&S.d, h.op, a)) vka_rp_end()", EXEC)
