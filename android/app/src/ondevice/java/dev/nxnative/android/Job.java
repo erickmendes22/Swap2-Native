@@ -194,6 +194,14 @@ final class Job {
         else o.remove("expected_shaders");
     }
 
+    /** An already-playable same-ABI or audited ABI-extension library is kept
+     * unchanged after an APK update. No full shader job must be restarted just
+     * because a tool/chain version string changed. */
+    synchronized void acceptPlayableShaderVersion() throws JSONException {
+        o.put("apk", apk());
+        o.remove("expected_shaders");
+    }
+
     synchronized void resetChainSteps() throws JSONException {
         // the split is the dump's and stays valid, but a finished job deleted it: then it is made again too
         int from = new File(dir(), "split").isDirectory() ? FIRST_CHAIN_STEP : FIRST_CHAIN_STEP - 1;
