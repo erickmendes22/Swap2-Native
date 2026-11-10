@@ -296,6 +296,8 @@ void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int l
 extern int vka_gp_active;
 void vka_gp_mark(VkCommandBuffer cb, const char *file, int line);
 void vka_gp_pass(const char *desc);
+void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh);
+void vka_gp_compute(uint64_t key, uint32_t x, uint32_t y, uint32_t z, int replaced);
 void vka_gp_part(VkCommandBuffer cb);
 void vka_gp_sub_begin(VkCommandBuffer cb, uint64_t frame);
 void vka_gp_commit(VkCommandBuffer cb, uint64_t fence);
