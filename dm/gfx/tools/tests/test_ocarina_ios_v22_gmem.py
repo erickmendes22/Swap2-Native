@@ -1,4 +1,4 @@
-"""CPU model and source contract tests for the opt-in iOS-V22-inspired
+"""CPU model and source contract tests for the compiled-in iOS-V22-inspired
 Android Vulkan GMEM improvements. These tests do not claim GPU FPS gains.
 """
 from bisect import bisect_right
@@ -21,7 +21,10 @@ class OcarinaIosV22GmemTests(unittest.TestCase):
         chain = (ROOT / "dm/gfx/tools/dmsh_chain.py").read_text()
         self.assertIn("#define VKA_GMEM_MAP_ENTRIES 8192", draw)
         self.assertIn('DMSH_GMEM_MAP_8192") == "1"', raw)
-        self.assertIn('DMSH_GMEM_LAST1") == "1"', raw)
+        self.assertIn('bool cacheLast = true;', raw)
+        self.assertIn('MapWord(hintRow, 6)', raw)
+        self.assertIn('MapWord(hintRow, 7)', raw)
+        self.assertIn('DMSH_GMEM_MAP_ENTRY + 24', draw)
         self.assertIn('int mapLog2 = extendedMap ? 13 : GmemMapLog2;', raw)
         self.assertIn("memory.ZeroInit && memoryStorage == StorageClass.Private", spirv)
         self.assertIn("public bool ZeroInit", memory)
