@@ -54,7 +54,7 @@ public final class MainActivity extends Activity {
     private final java.util.Map<String, Tile> tiles = new java.util.HashMap<>();
     private View accessCard;
     private View backdrop;   // the UI kit's background picture behind the screen (Ui.background)
-    private Ui.Setting overlayRow, resRow, capRow, lsfgRow, gpuRow, fsrRow, fsrSharpRow, volumeRow;
+    private Ui.Setting overlayRow, resRow, capRow, lsfgRow, gpuRow, fsrRow, fsrSharpRow, aspectRow, pipelineRow, timingRow, volumeRow;
     private boolean resumed, settingsPage;
     private Game settingsGame;
     private String settingsCat;   // the settings category showing (SettingsFrame; null: the first one, or the list on a narrow window)
@@ -192,7 +192,7 @@ public final class MainActivity extends Activity {
         // Settings, general or a game's (SettingsFrame: a rail and its pane on a wide window, a list then a page on a narrow one)
         accessCard = null;
         gameBox = null;
-        overlayRow = resRow = capRow = lsfgRow = gpuRow = fsrRow = fsrSharpRow = volumeRow = null;
+        overlayRow = resRow = capRow = lsfgRow = gpuRow = fsrRow = fsrSharpRow = aspectRow = pipelineRow = timingRow = volumeRow = null;
         java.util.function.Consumer<String> chosen = id -> {   // two panes: the pane is already swapped, its rows get their values; narrow: the category's page
             settingsCat = id;
             if (!SettingsFrame.twoPane(this)) build();
@@ -783,12 +783,17 @@ public final class MainActivity extends Activity {
         play.addView(lsfgRow.view);
         Ui.add(p, Ui.section(this, getString(R.string.s2_fsr_head)), 24);
         LinearLayout up = Ui.add(p, Ui.panel(this), 8);
-        fsrRow = new Ui.Setting(this, R.drawable.s2_ic_image, getString(R.string.s2_fsr_on), null)
-                .toggle(this, Fsr.on(this), (b, on) -> Prefs.of(this).edit().putBoolean("fsr", on).commit());   // the in-game panel's key (Fsr.on): the next start
+        fsrRow = new Ui.Setting(this, R.drawable.s2_ic_image, "Filtro de imagem", v -> GraphicsOptions.choice(this, null, "present_filter", this::refreshSettings)).chevron(this);
         up.addView(fsrRow.view);
         fsrSharpRow = new Ui.Setting(this, R.drawable.s2_ic_image, getString(R.string.s2_fsr_sharpness), v -> fsrSharp()).chevron(this);
         up.addView(fsrSharpRow.view);
-        Ui.add(p, Ui.small(this, getString(R.string.s2_fsr_launcher_note)), 8);
+        aspectRow = new Ui.Setting(this, R.drawable.s2_ic_display, "Proporção da tela", v -> GraphicsOptions.choice(this, null, "picture_stretch", this::refreshSettings)).chevron(this);
+        up.addView(aspectRow.view);
+        pipelineRow = new Ui.Setting(this, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(this, null, "bg_pipelines", this::refreshSettings)).chevron(this);
+        up.addView(pipelineRow.view);
+        timingRow = new Ui.Setting(this, R.drawable.s2_ic_gauge, "Medição de GPU", v -> GraphicsOptions.choice(this, null, "gpu_timestamps", this::refreshSettings)).chevron(this);
+        up.addView(timingRow.view);
+        Ui.add(p, Ui.small(this, "Filtro e nitidez também podem ser alterados durante o jogo. Proporção, pipelines e timestamps exigem reiniciar o jogo."), 8);
         Ui.add(p, Ui.small(this, getString(R.string.s2_defaults_hint)), 8);
     }
 
@@ -859,11 +864,11 @@ public final class MainActivity extends Activity {
         if (capRow != null) capRow.value(capLabel(Prefs.fpsCap(this)));
         if (lsfgRow != null) lsfgRow.value(!BuildConfig.NX_LSFG ? getString(R.string.s2_lsfg_not_built) : Lsfg.on(this)
                 ? getString(R.string.s2_lsfg_on, Lsfg.multiplier(this)) + (Lsfg.find(this) == null ? " · " + getString(R.string.s2_lsfg_dll_missing) : "") : getString(R.string.s2_off));
-        if (fsrRow != null) {
-            boolean on = Fsr.on(this);
-            if (fsrRow.toggle.isChecked() != on) fsrRow.toggle.setChecked(on);
-        }
-        if (fsrSharpRow != null) fsrSharpRow.value(getString(Fsr.sharpName(Fsr.sharp(this))));
+        if (fsrRow != null) fsrRow.value(GraphicsOptions.modeLabel(this));
+        if (fsrSharpRow != null) fsrSharpRow.value(GraphicsOptions.sharpLabel(Fsr.sharp(this)));
+        if (aspectRow != null) aspectRow.value(GraphicsOptions.ASPECTS[GraphicsOptions.stretch(this)]);
+        if (pipelineRow != null) pipelineRow.value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(this)]);
+        if (timingRow != null) timingRow.value(GraphicsOptions.TIMINGS[GraphicsOptions.timing(this)]);
         if (volumeRow != null) {   // Interface's link to Audio: the level, and why the cues are silent when they are (never an enabled switch that plays nothing unexplained)
             LauncherEffects.State st = LauncherEffects.state(this);
             String level = getString(R.string.s2_volume_value, LauncherEffects.volume(this));
