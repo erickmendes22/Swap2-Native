@@ -188,6 +188,12 @@ final class Job {
     synchronized boolean refusedImport(File lib) { return lib != null && librarySignature(lib).equals(o.optString("import_refused", "")); }
 
     /** Starts the chain's steps over with this APK's versions; the caller deletes their outputs */
+    /** The exact number of shaders a reviewed incremental hot update compiles. */
+    synchronized void expectedShaders(int n) throws JSONException {
+        if (n > 0) o.put("expected_shaders", n);
+        else o.remove("expected_shaders");
+    }
+
     synchronized void resetChainSteps() throws JSONException {
         // the split is the dump's and stays valid, but a finished job deleted it: then it is made again too
         int from = new File(dir(), "split").isDirectory() ? FIRST_CHAIN_STEP : FIRST_CHAIN_STEP - 1;
