@@ -35,6 +35,19 @@ int vka_shlib_check(vka_shlib *L, const void *base, size_t size, const char *cha
         if (!by_abi && chain && !str_is(h->chain, chain)) { vka_shlib_str(h->chain, s); return fail(err, errn, "translator chain %s, this host has %s (library ABI %s, this host's %s)", s, chain, *a ? a : "none", abi ? abi : "not asked"); }
         if (!by_abi) { vka_shlib_str(h->vk_chain, s); return fail(err, errn, "Vulkan chain %s, this host has %s (library ABI %s, this host's %s)", s, vk_chain, *a ? a : "none", abi ? abi : "not asked"); }
     }
+    // A same-version library must still carry the host's ABI. Previously the
+    // ABI was checked only when chain/version differed; a stale or relabelled
+    // library with matching version strings could bypass that validation.
+    // Cross-version libraries below still require the exact ABI (or a separately
+    // source-audited compatibility certificate in vka_shader.c).
+    if (abi && (!chain || str_is(h->chain, chain)) &&
+        (!vk_chain || str_is(h->vk_chain, vk_chain)) &&
+        (strlen(abi) != sizeof h->abi || memcmp(h->abi, abi, sizeof h->abi))) {
+        char old_abi[13];
+        memcpy(old_abi, h->abi, 12); old_abi[12] = 0;
+        if (!old_abi[0]) strcpy(old_abi, "none");
+        return fail(err, errn, "shader library ABI %s, expected %s even though the translator version matches", old_abi, abi);
+    }
     if (game && !str_is(h->game, game)) { vka_shlib_str(h->game, s); return fail(err, errn, "built for game %s, this is %s", s, game); }
     uint64_t sz = size;
     if ((uint64_t)h->entry_off + (uint64_t)h->entry_count * sizeof(dmsh_vk_entry) > sz || (h->entry_off & 7)) return fail(err, errn, "entry table out of the file");

@@ -61,6 +61,17 @@ static void test_made(void) {
     memcpy(H->abi, DMSH_VK_ABI, sizeof H->abi);
     CHECK(vka_shlib_check(&L, I.p, I.n, "000000000000", "000000000000", "0100000000001000", DMSH_VK_ABI, err, sizeof err) && L.by_abi, "same ABI refused: %s", err);
     CHECK(vka_shlib_check(&L, I.p, I.n, DMSH_CHAIN, DMSH_VK_CHAIN, NULL, DMSH_VK_ABI, err, sizeof err) && !L.by_abi, "own version marked by_abi");
+    // A matching version is NOT sufficient when the ABI field is incompatible.
+    // The old reader checked the ABI only when a version string differed.
+    memcpy(H->abi, "ffffffffffff", sizeof H->abi);
+    CHECK(!vka_shlib_check(&L, I.p, I.n, DMSH_CHAIN, DMSH_VK_CHAIN, NULL, DMSH_VK_ABI, err, sizeof err) &&
+          strstr(err, "ABI"), "same-version incompatible ABI was accepted: %s", err);
+    memset(H->abi, 0, sizeof H->abi);
+    CHECK(!vka_shlib_check(&L, I.p, I.n, DMSH_CHAIN, DMSH_VK_CHAIN, NULL, DMSH_VK_ABI, err, sizeof err) &&
+          strstr(err, "ABI"), "same-version legacy unversioned ABI was accepted: %s", err);
+    memcpy(H->abi, DMSH_VK_ABI, sizeof H->abi);
+    CHECK(vka_shlib_check(&L, I.p, I.n, DMSH_CHAIN, DMSH_VK_CHAIN, NULL, DMSH_VK_ABI, err, sizeof err),
+          "same-version exact ABI was rejected: %s", err);
     CHECK(!vka_shlib_check(&L, I.p, I.n, DMSH_CHAIN, "000000000000", NULL, NULL, err, sizeof err), "another version taken without an ABI asked");
     CHECK(!vka_shlib_check(&L, I.p, I.n, DMSH_CHAIN, "000000000000", NULL, "0123456789ab", err, sizeof err) && strstr(err, "Vulkan chain"), "another ABI taken: %s", err);
     CHECK(!vka_shlib_check(&L, I.p, I.n, DMSH_CHAIN, "000000000000", "040074A01BF12000", DMSH_VK_ABI, err, sizeof err) && strstr(err, "game"), "same ABI, other game taken: %s", err);

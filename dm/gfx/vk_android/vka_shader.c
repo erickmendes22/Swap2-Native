@@ -240,9 +240,19 @@ static int lib_load(void) {
         if (snprintf(hp, sizeof hp, "%s/shaders/hot/" DMSH_VK_DIR_PREFIX "%s/" DMSH_VK_LIB_FILE,
                      dir, DMSH_VK_CHAIN) < (int)sizeof hp && !access(hp, R_OK)) {
             if (vka_shlib_open(&g_hot, hp, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, he, sizeof he)) {
-                g_hot_loaded = 1;
-                VLOG("GPU hot-shader overlay: %u new shaders from %s; untouched %u stable shaders from %s remain available",
-                     g_hot.h->entry_count, hp, g_lib.h->entry_count, path);
+                // The overlay's translated descriptor and c1 inputs must
+                // match the complete library being used, not merely its game
+                // and Vulkan ABI. Only a bounded partial library is an overlay.
+                // Reject mismatches without disturbing the stable base.
+                if (!g_hot.h->entry_count || g_hot.h->entry_count > 1024 ||
+                    memcmp(g_hot.h->inputs, g_lib.h->inputs, sizeof g_hot.h->inputs)) {
+                    VRED("GPU hot-shader overlay %s rejected (shader count or profile inputs differ from the complete base); original library preserved", hp);
+                    vka_shlib_close(&g_hot);
+                } else {
+                    g_hot_loaded = 1;
+                    VLOG("GPU hot-shader overlay: %u new shaders from %s; untouched %u stable shaders from %s remain available",
+                         g_hot.h->entry_count, hp, g_lib.h->entry_count, path);
+                }
             } else {
                 VRED("GPU hot-shader overlay %s rejected (%s); using full stable library unchanged", hp, he);
             }
