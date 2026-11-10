@@ -11,6 +11,7 @@
 #include "../nvn/dmsh_chain_vk.h"
 #include "game_profile.h"
 #include "vka_spvpatch.h"
+#include "vka_abi_compat.h"  // audited source-level ABI extension certificates
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,6 +141,27 @@ VkShaderModule vka_shader_oot_cs_retile_module(vka_shader *s) {
 
 const char *vka_shader_lib_path(void) { return g_lib_path; }
 
+// An ABI digest can change for a purely additive extension (new UNUSED
+// descriptor kind/variant/flag). Reusing an old COMPLETE library is safe only
+// for an exact old version/ABI/profile tuple certified from both ABI source
+// snapshots at build time. Any changed old descriptor value, struct or ABI_REV
+// fails the certificate generator; no runtime version-spoofing is permitted.
+static int certified_abi_open(vka_shlib *lib, const char *path, char *err, size_t errn) {
+    for (unsigned i = 0; i < VKA_ABI_COMPAT_COUNT; i++) {
+        const vka_abi_approved *c = &vka_abi_compat[i];
+        if (!vka_shlib_open(lib, path, DMSH_CHAIN, DMSH_VK_CHAIN,
+                            DM_GAME_ID, c->old_abi, err, errn))
+            continue;
+        char version[17], inputs[17];
+        vka_shlib_str(lib->h->vk_chain, version);
+        vka_shlib_str(lib->h->inputs, inputs);
+        if (!strcmp(version, c->old_vk) && !strcmp(inputs, c->inputs)
+            && !memcmp(lib->h->abi, c->old_abi, 12)) return 1;
+        vka_shlib_close(lib);
+    }
+    return 0;
+}
+
 static int lib_load(void) {
     if (g_lib_state) return g_lib_state > 0;
     g_lib_state = -1;
@@ -149,7 +171,8 @@ static int lib_load(void) {
     int have = !access(path, R_OK) && vka_shlib_open(&g_lib, path, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, err, sizeof err);
     if (!have && !(e && *e)) {   // this version's library not in the pack (yet): the newest other v-<V>/ that this host reads the same (its ABI)
         char why[256]; snprintf(why, sizeof why, "%s", access(path, R_OK) ? "missing" : err);
-        char sd[1024], best[1024] = "", old[1024] = ""; time_t bt = 0, ot = 0; snprintf(sd, sizeof sd, "%s/shaders", dir);
+        char sd[1024], best[1024] = "", compatible[1024] = "", old[1024] = "";
+        time_t bt = 0, ct = 0, ot = 0; snprintf(sd, sizeof sd, "%s/shaders", dir);
         DIR *d = opendir(sd); struct dirent *de;
         while (d && (de = readdir(d))) {
             if (strncmp(de->d_name, DMSH_VK_DIR_PREFIX, strlen(DMSH_VK_DIR_PREFIX))) continue;
@@ -158,6 +181,16 @@ static int lib_load(void) {
             if (vka_shlib_open(&t, p, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, e2, sizeof e2)) {
                 vka_shlib_close(&t);
                 if (!*best || st.st_mtime > bt) { snprintf(best, sizeof best, "%s", p); bt = st.st_mtime; }
+                continue;
+            }
+            // A certified additive ABI extension allows the *original*
+            // library to stay mapped without copying or rebuilding 42k SPIR-V
+            // modules. Only source-level-audited transitions appear here.
+            if (certified_abi_open(&t, p, e2, sizeof e2)) {
+                vka_shlib_close(&t);
+                if (!*compatible || st.st_mtime > ct) {
+                    snprintf(compatible, sizeof compatible, "%s", p); ct = st.st_mtime;
+                }
                 continue;
             }
             // A library made before the abi field (all zero): its ABI is not known, so it is the last resort, played with a warning rather than nothing drawn
@@ -172,7 +205,12 @@ static int lib_load(void) {
             char v[17]; vka_shlib_str(g_lib.h->vk_chain, v);
             VLOG("shader library %s: this host's version %s is %s (the app's shader update makes it); playing version %s, the same ABI %s", path, DMSH_VK_CHAIN, why, v, DMSH_VK_ABI);
             snprintf(path, sizeof path, "%s", best); have = 1;
-        } else if (!*best && *old && vka_shlib_open(&g_lib, old, NULL, NULL, DM_GAME_ID, NULL, err, sizeof err)) {
+        } else if (!*best && *compatible && certified_abi_open(&g_lib, compatible, err, sizeof err)) {
+            char v[17]; vka_shlib_str(g_lib.h->vk_chain, v);
+            VLOG("shader ABI migration: using complete prior library %s (version %s, additive-compatible certified ABI); no retranslation or header relabelling",
+                 compatible, v);
+            snprintf(path, sizeof path, "%s", compatible); have = 1;
+        } else if (!*best && !*compatible && *old && vka_shlib_open(&g_lib, old, NULL, NULL, DM_GAME_ID, NULL, err, sizeof err)) {
             char v[17]; vka_shlib_str(g_lib.h->vk_chain, v);
             VRED("shader library %s: this host's version %s is %s; playing version %s, made before versioned shader updates (no ABI in its header, this host's is %s): "
                  "it may draw wrong. Update the shaders once in the app; later updates are then partial", path, DMSH_VK_CHAIN, why, v, DMSH_VK_ABI);
