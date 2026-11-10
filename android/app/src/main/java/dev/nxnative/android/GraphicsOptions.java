@@ -40,7 +40,14 @@ final class GraphicsOptions {
         return p.getBoolean("fsr", false) ? 3 : 0;
     }
     static int mode(Context c, String id) {
-        return Prefs.of(c).getInt(Prefs.gameKey("present_filter", id), mode(c));
+        SharedPreferences p = Prefs.of(c);
+        String key = Prefs.gameKey("present_filter", id);
+        if (p.contains(key)) return clamp(p.getInt(key, 0), 0, 3);
+        int previous = mode(c);
+        // Ocarina's final output is already 2048x1152 before Vulkan presents
+        // it. Prefer the real 720p FSR pipeline rather than the old native-size
+        // blit. Respect explicit per-game choices and non-default global mode.
+        return Prefs.OCARINA_TITLE.equals(id) && previous == 0 ? 3 : previous;
     }
     static int stretch(Context c) { return clamp(Prefs.of(c).getInt("picture_stretch", 0), 0, 1); }
     static int stretch(Context c, String id) {
