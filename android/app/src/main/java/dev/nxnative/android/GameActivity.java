@@ -457,14 +457,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                         + ", scale " + Prefs.sceneScale(this, id, prof.sceneScale()) + "): using the game's own render scale this run; select the internal scene resolution again";
             }
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
-            Fsr.env(this, env);   // existing V11 FSR policy / legacy preferences
-            GraphicsOptions.env(this, id, env); // 0.1.2 presentation, aspect, pipeline and timing options
+            GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
             int cap = Prefs.fpsCap(this, id);   // the game's own frame rate cap (its in-game panel, its Game settings), else the main screen's (unset: the profile's fps_target)
             if (cap >= 0) env.add("DM_FPS_TARGET=" + cap);
             String gpuNote = GpuDriver.env(this, id, env);   // the game's GPU driver, else the main screen's (DM_VK_DRIVER)
             env.addAll(user);
-            Fsr.started(this, env);   // legacy FSR's effective values
-            GraphicsOptions.started(this, id, env); // effective live presentation mode
+            GraphicsOptions.started(this, id, env); // effective live presentation policy (user env lines override)
             for (String kv : env) if (kv.startsWith("DM_OVERLAY=")) overlayEnv = !kv.substring(11).trim().equals("0");
             String[] args = {"nxhost", packDir.getPath()};
             int r = Native.start(args, env.toArray(new String[0]), log.getPath(), files.getPath());
