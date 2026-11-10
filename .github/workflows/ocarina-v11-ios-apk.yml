@@ -24,6 +24,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v101_paths.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v22_gmem.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v11_gpu_discards.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v11_012_graphics.py'
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
