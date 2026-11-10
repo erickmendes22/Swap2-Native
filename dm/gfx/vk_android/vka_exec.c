@@ -322,14 +322,75 @@ static void oq_refill(VkCommandBuffer cb) {   // (no hostQueryReset) at a submis
     for (uint64_t q = r; q < f;) { uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(f - q < OQ_N - s ? f - q : OQ_N - s); OQ.creset(cb, OQ.pool, s, k); q += k; }
     if (f > r) atomic_store_explicit(&g_oq_ready, f, memory_order_release);
 }
-static void oq_done(const pop *o, uint64_t ticks) {   // the completion thread, after the fence of the submission that recorded o
+// A submission can have thousands of one-query reports. Reading each one via
+// vkGetQueryPoolResults and resetting each one separately causes thousands of
+// driver calls. Fetch contiguous completed-query ranges in chunks, then keep
+// the report sums and guest-memory writebacks in their ORIGINAL record order.
+// If a submission's query ranges are not contiguous or allocation fails, use
+// the original per-report path. No occlusion query is removed or approximated.
+typedef struct { uint64_t first, last; uint64_t *pairs; } oq_batch;
+static _Atomic uint64_t g_oq_get_calls, g_oq_reset_calls, g_oq_prefetched;
+static void oq_batch_init(oq_batch *b, const pop *ops, int n) {
+    memset(b, 0, sizeof *b);
+    uint64_t first = 0, last = 0; int found = 0;
+    for (int i = 0; i < n; i++) {
+        const pop *p = &ops[i];
+        if ((p->kind != 4 && p->kind != 5) || p->q1 <= p->q0) continue;
+        if (found && p->q0 != last) return; // don't read or reset a gap that was not reported
+        if (!found) { first = p->q0; found = 1; }
+        last = p->q1;
+    }
+    if (!found || last <= first || last - first > OQ_N || !OQ.pool || !OQ.get) return;
+    size_t count = (size_t)(last - first);
+    uint64_t *pairs = calloc(count * 2, sizeof *pairs);
+    if (!pairs) return;
+    for (uint64_t q = first; q < last;) {
+        uint32_t slot = (uint32_t)(q % OQ_N);
+        uint32_t k = (uint32_t)(last - q < OQ_N - slot ? last - q : OQ_N - slot);
+        if (k > OQ_RB) k = OQ_RB;
+        uint64_t *dst = &pairs[2 * (size_t)(q - first)];
+        VkResult e = OQ.get(V.dev, OQ.pool, slot, k, 16 * (size_t)k, dst, 16,
+                            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+        atomic_fetch_add_explicit(&g_oq_get_calls, 1, memory_order_relaxed);
+        if (e < 0) memset(dst, 0, 16 * (size_t)k);
+        q += k;
+    }
+    b->first = first; b->last = last; b->pairs = pairs;
+    atomic_fetch_add_explicit(&g_oq_prefetched, count, memory_order_relaxed);
+}
+static void oq_batch_release(oq_batch *b) {
+    if (!b->pairs) return;
+    // Publish recycling only AFTER the last guest report used this range.
+    // Reset covers exactly the contiguous queries owned by these pop records.
+    pthread_mutex_lock(&g_oq_mu);
+    if (OQ.host) {
+        for (uint64_t q = b->first; q < b->last;) {
+            uint32_t slot = (uint32_t)(q % OQ_N);
+            uint32_t k = (uint32_t)(b->last - q < OQ_N - slot ? b->last - q : OQ_N - slot);
+            OQ.hreset(V.dev, OQ.pool, slot, k);
+            atomic_fetch_add_explicit(&g_oq_reset_calls, 1, memory_order_relaxed);
+            q += k;
+        }
+        atomic_store_explicit(&g_oq_ready, b->last + OQ_N, memory_order_release);
+    } else atomic_store_explicit(&g_oq_freed, b->last, memory_order_release);
+    pthread_mutex_unlock(&g_oq_mu);
+    free(b->pairs); b->pairs = NULL;
+}
+static void oq_done(const pop *o, uint64_t ticks, const oq_batch *batch) {   // completed submission; every report remains in original order
     pthread_mutex_lock(&g_oq_mu);
     if (o->kind == 4) {
         uint64_t sum = o->v, r[2 * OQ_RB];   // (the draws that count 1)
-        for (uint64_t q = o->q0; q < o->q1;) {
+        if (batch && batch->pairs && o->q0 >= batch->first && o->q1 <= batch->last) {
+            for (uint64_t q = o->q0; q < o->q1; q++) {
+                const uint64_t *pair = &batch->pairs[2 * (size_t)(q - batch->first)];
+                if (!pair[1]) { sum++; atomic_fetch_add_explicit(&g_oqs_unav, 1, memory_order_relaxed); }
+                else sum += pair[0];
+            }
+        } else for (uint64_t q = o->q0; q < o->q1;) {
             uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(o->q1 - q < OQ_N - s ? o->q1 - q : OQ_N - s); if (k > OQ_RB) k = OQ_RB;
             memset(r, 0, 16 * (size_t)k);
-            VkResult e = OQ.get(V.dev, OQ.pool, s, k, 16 * (size_t)k, r, 16, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);   // (no wait: VK_NOT_READY leaves the unavailable ones 0)
+            VkResult e = OQ.get(V.dev, OQ.pool, s, k, 16 * (size_t)k, r, 16, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+            atomic_fetch_add_explicit(&g_oq_get_calls, 1, memory_order_relaxed);
             for (uint32_t i = 0; i < k; i++) if (e < 0 || !r[2 * i + 1]) { sum++; atomic_fetch_add_explicit(&g_oqs_unav, 1, memory_order_relaxed); } else sum += r[2 * i];
             q += k;
         }
@@ -338,9 +399,9 @@ static void oq_done(const pop *o, uint64_t ticks) {   // the completion thread, 
         if (!g_oq_acc) atomic_fetch_add_explicit(&g_oqs_zero, 1, memory_order_relaxed);
         uint64_t rec[2] = {g_oq_acc, ticks}; memcpy((void *)(uintptr_t)o->addr, rec, sizeof rec);
     }
-    if (o->q1 > o->q0) {   // given back, in order
+    if ((!batch || !batch->pairs) && o->q1 > o->q0) {   // fallback gives queries back one report at a time
         if (OQ.host) {
-            for (uint64_t q = o->q0; q < o->q1;) { uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(o->q1 - q < OQ_N - s ? o->q1 - q : OQ_N - s); OQ.hreset(V.dev, OQ.pool, s, k); q += k; }
+            for (uint64_t q = o->q0; q < o->q1;) { uint32_t s = (uint32_t)(q % OQ_N), k = (uint32_t)(o->q1 - q < OQ_N - s ? o->q1 - q : OQ_N - s); OQ.hreset(V.dev, OQ.pool, s, k); atomic_fetch_add_explicit(&g_oq_reset_calls, 1, memory_order_relaxed); q += k; }
             atomic_store_explicit(&g_oq_ready, o->q1 + OQ_N, memory_order_release);
         } else atomic_store_explicit(&g_oq_freed, o->q1, memory_order_release);
     }
@@ -349,6 +410,14 @@ static void oq_done(const pop *o, uint64_t ticks) {   // the completion thread, 
 static void oq_stats(char *b, size_t n, double frames) {   // every 300 frames with the replay statistics (no line while the game resets and reports none)
     static uint64_t r0, p0, nr0, q0, f0, s0, u0, z0;
     uint64_t un = atomic_load(&g_oqs_unav), ze = atomic_load(&g_oqs_zero);
+    static uint64_t old_get, old_reset, old_prefetched;
+    uint64_t get = atomic_load_explicit(&g_oq_get_calls, memory_order_relaxed);
+    uint64_t resets = atomic_load_explicit(&g_oq_reset_calls, memory_order_relaxed);
+    uint64_t prefetched = atomic_load_explicit(&g_oq_prefetched, memory_order_relaxed);
+    if (frames > 0 && prefetched != old_prefetched)
+        VLOG("occlusion report batching per frame: %.1f queries prefetched, %.1f vkGetQueryPoolResults calls, %.1f host query reset calls (results and order unchanged)",
+             (prefetched - old_prefetched) / frames, (get - old_get) / frames, (resets - old_reset) / frames);
+    old_get = get; old_reset = resets; old_prefetched = prefetched;
     b[0] = 0;
     if (frames > 0 && (g_oqs_reset != r0 || g_oqs_rep != p0)) {
         if (g_oq != 1) snprintf(b, n, "occlusion queries per frame (not counted: %s): %.1f samples-passed resets, %.1f reports, each written 1", g_oq < 0 ? "no reset or report reached the GPU path" : "DM_VK_OCCLUSION=0 or no query pool",
@@ -382,6 +451,8 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
         uint64_t t = 0; if (g_sq_get(V.dev, g_sqp, ops[i].v - 1, 1, 8, &t, 8, VK_QUERY_RESULT_64_BIT) || !t) { ops[i].v = 0; continue; }
         if (nq < SEGQ) { gq[nq++] = t; if (t > tmax) tmax = t; } else ops[i].v = 0;
     }
+    oq_batch oqb;
+    oq_batch_init(&oqb, ops, n);   // completed fence: read once before any of these queries are reset
     if (atomic_load_explicit(&g_synclog, memory_order_relaxed) > 0) for (int i = 0; i < n; i++) if (ops[i].kind == 2 && ops[i].type == NVN_COUNTER_TYPE_TIMESTAMP) {
         VLOG("sync done: %d reports written at %.2f ms (the submission's GPU work done)", n, ms_now()); break; }
     for (int i = 0, q = 0; i < n; i++) {
@@ -396,7 +467,7 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
             uint64_t rec[2] = {DM_GAME_RENDER_COND ? 0 : tk, tk}; (void)tt;
             memcpy((void *)(uintptr_t)ops[i].addr, rec, sizeof rec); continue;
         }
-        if (ops[i].kind == 4 || ops[i].kind == 5) { oq_done(&ops[i], ticks); continue; }   // a counted samples-passed report, queries given back (Occlusion queries)
+        if (ops[i].kind == 4 || ops[i].kind == 5) { oq_done(&ops[i], ticks, &oqb); continue; }   // original report order; query results were prefetched
         if (ops[i].kind == 1) { volatile uint32_t *v = (volatile uint32_t *)(uintptr_t)ops[i].addr; if (ops[i].mode == NVN_EVENT_SIGNAL_MODE_ADD) *v += ops[i].v; else *v = ops[i].v; }
         else {
             // A timestamp report's counter: the time, or 0 under render_cond (as on the GPU, nvn_mtl.m rc_value). Samples passed not counted (oq_report: DM_VK_OCCLUSION=0, no
@@ -405,6 +476,7 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
             memcpy((void *)(uintptr_t)ops[i].addr, rec, sizeof rec);
         }
     }
+    oq_batch_release(&oqb);  // batch-reset only after every report consumed its readback
     free(ops);
 }
 
