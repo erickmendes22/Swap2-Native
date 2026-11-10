@@ -189,7 +189,7 @@ static int rt_same(const p_set_rt *a, int ha, const p_set_rt *b, int hb) {
     return 1;
 }
 // Game barriers (OP_BARRIER) that came with a pass open: taken inside it (DM_VK_BAR_KEEP), ended it at once, ended it later at a draw that needed it (bar_hazard)
-static uint64_t g_bar_in, g_bar_kept, g_bar_late;
+static uint64_t g_bar_in, g_bar_kept, g_bar_late, g_bar_duplicate_avoided;
 void vka_oq_pass_end(void), vka_oq_draw(void);   // vka_exec.c "Occlusion queries"
 void vka_rp_end(void) {
     if (PC.n) pc_flush();
@@ -199,6 +199,17 @@ void vka_rp_end(void) {
     vka_barrier(g_cb);   // the pass's writes before whatever reads them next (copies, the present, the next pass's samples)
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
     if (vka_nan_on()) vka_nan_pass(g_cb, R.cim, R.clv, R.cl0, R.nci);
+}
+// OP_BARRIER used to end a render pass (emitting a full ALL_COMMANDS memory
+// barrier) and immediately emit a second identical full memory barrier, without
+// any Vulkan commands between. The second one orders no new writes. Reuse the
+// first, but do not skip the explicit barrier if NaN diagnostics record further
+// GPU work after the pass-end barrier, or if no pass was actually open.
+int vka_rp_end_covers_barrier(void) {
+    int covered = R.on && !vka_nan_on();
+    vka_rp_end();
+    if (covered) g_bar_duplicate_avoided++;
+    return covered;
 }
 static void rt_range(const vka_img *im, const view_t *v, int has_v, uint32_t *lv, uint32_t *l0, uint32_t *nl) {
     *lv = has_v && v->set_levels ? v->base_level : 0;
@@ -329,14 +340,15 @@ int vka_rp_game_barrier(uint32_t bits) {
     return 1;
 }
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
-    static uint64_t i0, k0, l0, d0, a0, s0;
+    static uint64_t i0, k0, l0, d0, a0, s0, dup0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
-    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0)
-        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
+    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0 || g_bar_duplicate_avoided != dup0)
+        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
                  (g_bar_in - i0) / frames, (g_bar_kept - k0) / frames, (g_bar_late - l0) / frames,
+                 (g_bar_duplicate_avoided - dup0) / frames,
                  (g_attachment_discards - d0) / frames, (g_attachment_loads_avoided - a0) / frames, (g_attachment_stores_avoided - s0) / frames);
     else if (n) b[0] = 0;
-    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; d0 = g_attachment_discards; a0 = g_attachment_loads_avoided; s0 = g_attachment_stores_avoided;
+    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; dup0 = g_bar_duplicate_avoided; d0 = g_attachment_discards; a0 = g_attachment_loads_avoided; s0 = g_attachment_stores_avoided;
 }
 // A real NVN discard ends the current pass and invalidates precisely the bound
 // image's view. A next pass may avoid the attachment LOAD; STORE is unchanged.
