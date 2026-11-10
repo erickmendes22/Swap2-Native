@@ -397,6 +397,7 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a);   // 1 = a state re
 void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot);    // the slot's per-draw descriptor sets are free again (its last fence is done)
 void vka_rp_end(void);
 void vka_rp_discard(const p_set_rt *rt, int has_rt, int color_index); // -1 depth/stencil; 0..7 color
+void vka_rp_predict_discard(uint32_t colors, int depth); // new-pass only, reset immediately after draw
 int vka_rp_split_ok(const p_set_rt *rt, int has_rt);
 void vka_draw_cb_switch(VkCommandBuffer cb);
 void vka_dyn_invalidate(void);                       // the draws' dynamic state is set again in full at the next draw (another pipeline was bound)
