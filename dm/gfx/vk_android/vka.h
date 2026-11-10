@@ -222,6 +222,7 @@ typedef struct vka_img {
     // Exact-storage hash index (vka_tex.c): kept in g_live order, including
     // swap-with-last removals; accessed only under the image-table mutex.
     struct vka_img *mem_next, *mem_prev; int live_index;
+    struct vka_img *watch_next, *watch_prev; int watch_listed;
     VkImage img; vka_imem m; vka_fmt f; VkImageUsageFlags usage; VkImageAspectFlags aspect;
     uint32_t w, h, depth, layers, levels, samples; uint64_t bytes;
     int refs, inited, gpu_owned, cpu_dirty;

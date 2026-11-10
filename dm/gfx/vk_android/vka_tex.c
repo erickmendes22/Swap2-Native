@@ -195,6 +195,30 @@ typedef struct view_ent { struct view_ent *next; VkImageView v; VkFormat f; VkIm
 typedef struct { uint64_t serial; vka_img *im; } smap_ent;   // serial 0 = empty, im NULL with a serial = a texture that has no image (format refused)
 static smap_ent *g_map; static size_t g_mapcap, g_mapn;
 static vka_img **g_live; static int g_nlive, g_livecap;
+// Images whose contents require checking guest dirty pages or sparse pool
+// generation. Unlike scanning every resident image for each guest write,
+// this set scales with the number of live tracked inputs. Protected by g_tmu.
+// A GPU-written sparse residency image stays watched until its pool dies.
+static vka_img *g_watch_head;
+static int g_watch_count;
+static void watch_add(vka_img *im) {
+    if (im->watch_listed) return;
+    im->watch_listed = 1;
+    im->watch_prev = NULL; im->watch_next = g_watch_head;
+    if (g_watch_head) g_watch_head->watch_prev = im;
+    g_watch_head = im;
+    g_watch_count++;
+}
+static void watch_del(vka_img *im) {
+    if (!im->watch_listed) return;
+    if (im->watch_prev) im->watch_prev->watch_next = im->watch_next;
+    else g_watch_head = im->watch_next;
+    if (im->watch_next) im->watch_next->watch_prev = im->watch_prev;
+    im->watch_next = im->watch_prev = NULL;
+    im->watch_listed = 0;
+    g_watch_count--;
+}
+
 // Index of live images by their exact guest storage address. Unlike the
 // former two-counter prefilter, this avoids scanning thousands of unrelated
 // VkImages even after a positive address match. Bucket chains are kept in
@@ -306,6 +330,7 @@ static vka_img *g_big[64]; static int g_nbig;   // large images (DM_VK_BIGIMG_MB
 static void unref_locked(vka_img *im) {
     atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
     if (--im->refs) return;
+    watch_del(im);
     // Each live image already knows its g_live index. Releasing a texture in
     // a streamed scene no longer scans every other resident image to find it.
     // Keep the defensive scan for an old or unexpected index.
@@ -896,7 +921,8 @@ static int img_pool_dead(vka_img *im) {
     uint64_t f = nvn_pool_fin(); if (f == im->pfin) return 0;
     im->pfin = f;
     if (nvn_pool_live(im->pool, NULL, NULL) == im->pgen) return 0;
-    im->pdead = 1; im->track = 0;   // (vtrack stays: view_of's level cut follows it; every loop that refreshes checks pdead first)
+    im->pdead = 1; im->track = 0;   // sparse metadata stays for view_of's level cut
+    watch_del(im);               // finalized pool must never be read or refreshed again
     static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VLOG("texture serial %llu (storage %p): its pool %p was finalized: its image keeps its content, its storage is not read again", (unsigned long long)im->serial, (void *)im->mem, im->pool);
     return 1;
 }
@@ -1353,10 +1379,10 @@ static void img_first_use(vka_img *im, const tex_t *t, VkCommandBuffer cb, int m
     im->inited = 1;
     if (mode != ST_ZERO) im->from_mem = 1;
     im->mode = (uint8_t)mode;
-    if (im->rs && mode == ST_ZERO && sparse_gpu(t, &im->f)) { im->vbind = 1; sparse_bind(im, cb, 1); }   // (a GPU-written sparse texture: its tiles bound before the clear below)
+    if (im->rs && mode == ST_ZERO && sparse_gpu(t, &im->f)) { im->vbind = 1; watch_add(im); sparse_bind(im, cb, 1); }   // (a GPU-written sparse texture: its tiles bound before the clear below)
     // (an upload into the upload batch may send it and go on in the next one: vka_up_cur is where it ended; NULL: none could be begun after a GPU hang)
-    if (mode == ST_TRACK) { im->track = 1; im->span = nvn_dirty_span(t->mem, t->L.size); upload_tracked(im, t, cb); g_st_up[mode]++; if ((cb = vka_up_cur(cb))) vka_barrier(cb); return; }
-    if (mode == ST_SPARSE) { im->vtrack = 1; upload_sparse(im, cb, 1); g_st_up[mode]++; if ((cb = vka_up_cur(cb))) vka_barrier(cb); return; }
+    if (mode == ST_TRACK) { im->track = 1; watch_add(im); im->span = nvn_dirty_span(t->mem, t->L.size); upload_tracked(im, t, cb); g_st_up[mode]++; if ((cb = vka_up_cur(cb))) vka_barrier(cb); return; }
+    if (mode == ST_SPARSE) { im->vtrack = 1; watch_add(im); upload_sparse(im, cb, 1); g_st_up[mode]++; if ((cb = vka_up_cur(cb))) vka_barrier(cb); return; }
     if (mode == ST_FILL) { upload_fill(im, t, cb); g_st_up[mode]++; if ((cb = vka_up_cur(cb))) vka_barrier(cb); return; }   // the copy before the draw or copy that reads it
     g_st_up[ST_ZERO]++;
     VkImageSubresourceRange rg = {im->aspect, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS};
@@ -1653,6 +1679,7 @@ void vka_img_written_at(vka_img *im, const char *file, int line) {
                              (unsigned long long)im->serial, im->w, im->h, im->d.format, im->d.flags, (unsigned long long)vka_frame(), file, line, im->track ? "it was tracked" : "it was not tracked");
     }
     im->gpu_owned = 1;
+    if (!im->vbind) watch_del(im);  // GPU owns the content; no CPU texture re-upload
     if ((im->d.flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET)) && im->mem && !im->wb_pending && im->samples == 1 && im->f.kind < 3 && im->f.bw == 1) {
         if (g_nwb == g_wbcap) { g_wbcap = g_wbcap ? 2 * g_wbcap : 32; g_wb = realloc(g_wb, (size_t)g_wbcap * sizeof *g_wb); }
         im->wb_pending = 1; im->refs++; g_wb[g_nwb++] = im;
@@ -2377,7 +2404,10 @@ void vka_tex_prepare(VkCommandBuffer cb) {
         tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
         nvn_tex_layout(&t.d, &t.L);
         if (im->vtrack) { sparse_refresh(im, cb); g_reup++; continue; }
-        if (!im->track && (im->span = nvn_dirty_span(t.mem, t.L.size))) im->track = 1;
+        if (!im->track && (im->span = nvn_dirty_span(t.mem, t.L.size))) {
+            im->track = 1;
+            watch_add(im);
+        }
         if (im->track) upload_tracked(im, &t, cb); else upload_fill(im, &t, cb);
         g_reup++;
     }
@@ -2433,8 +2463,11 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     static uint64_t seen, vseen; uint64_t now = nvn_dirty_now(), vnow = nvn_sparse_gen();
     if (now != seen || vnow != vseen) {
         seen = now; vseen = vnow;
-        for (int i = 0; i < g_nlive; i++) {
-            vka_img *im = g_live[i];
+        // The watch set is live while the guest writes or remaps memory.
+        // Save next before checking the pool: img_pool_dead detaches an image
+        // whose pool was finalized. No skipped entries or dangling iterators.
+        for (vka_img *im = g_watch_head, *next; im; im = next) {
+            next = im->watch_next;
             if (img_pool_dead(im)) continue;
             if (im->vbind && im->mem) { if (nvn_sparse_since(im->vpool, (uint64_t)(uintptr_t)im->mem, im->L.size, im->vgen, im->stamp)) sparse_bind(im, cb, 0); continue; }   // (GPU-written: binds only)
             if (im->vtrack && !im->gpu_owned && im->mem) {
