@@ -205,7 +205,12 @@ void vka_rp_end(void) {
     int full = g_rp_force_full || R.bar_pending || had_clears || vka_nan_on();
     vka_oq_pass_end();   // an occlusion query active in the pass ends inside it
     vk.vkCmdEndRendering(g_cb);
-    if (full) { g_rp_full++; vka_barrier(g_cb); }
+    // Keep OFF as a faithful unoptimized A/B baseline. The FPS Boost mode
+    // may narrow this particular full barrier only after identifying that
+    // the pass itself produced solely graphics writes.
+    if (full || (R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0)) {
+        g_rp_full++; vka_barrier(g_cb);
+    }
     else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }
     else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
