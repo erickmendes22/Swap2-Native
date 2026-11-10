@@ -28,12 +28,6 @@ def batch_plan(reports):
     if last - first > OQ_N:
         return None
     reads = []
-    for q in range(first, last, OQ_RB):
-        e = min(last, q + OQ_RB, q + OQ_N - q % OQ_N)
-        reads.append((q, e))
-        # At a wrap boundary, the next loop must resume at the boundary,
-        # not at q+OQ_RB. Reconstruct below for the exact plan.
-    reads = []
     q = first
     while q < last:
         e = min(last, q + OQ_RB, q + OQ_N - q % OQ_N)
@@ -110,7 +104,14 @@ class TestOcclusionBatch(unittest.TestCase):
             # is postponed until the guest's last report has consumed them.
             self.assertEqual(sum(e - q for q, e in reads), len(pairs))
             self.assertEqual(sum(e - q for q, e in host_resets), len(pairs))
-            self.assertEqual(expected, guest_reports(reports, pairs, lost, resets))
+            # Materialize the prefetched query ranges, then evaluate each
+            # guest report from that same frozen copy (no query reset can
+            # invalidate it). Compare against the original per-report reads.
+            prefetched = {}
+            for q, e in reads:
+                prefetched.update({i: pairs[i] for i in range(q, e)})
+            actual = guest_reports(reports, prefetched, lost, resets)
+            self.assertEqual(expected, actual)
             self.assertLess(len(reads), 20)
             self.assertLessEqual(len(host_resets), 2)
             self.assertGreater(len(reports), len(reads) * 100)
