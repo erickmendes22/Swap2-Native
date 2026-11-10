@@ -1,0 +1,11 @@
+# Reviewed incremental Ocarina Vulkan shader updates.
+# One TAB-separated row per approved translator update:
+# old_vk_chain<TAB>new_vk_chain<TAB>profile_inputs<TAB>gpu_abi<TAB>key1,key2,...
+# Only keys named in the row are rebuilt; the older COMPLETE library remains
+# the fallback. Never list a new chain without reviewing which shaders were
+# affected by that exact change. If not provably scoped, leave this file without
+# an active row: the existing full/verified delta process is used instead.
+#
+# Current translation is intentionally unaffected while the user builds the
+# 42,339-shader baseline for 600c17b98391. Add an approved row with both exact
+# versions and the actual changed keys before a later update is released.
