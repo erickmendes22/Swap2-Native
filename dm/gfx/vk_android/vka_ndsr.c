@@ -173,7 +173,22 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
         refused(cs->key, why); goto out;
     }
     if (pack && !rt) { refused(cs->key, "its output needs the packed store and the dispatch passed no vka_imgrt"); goto out; }
-    int kernel = g_sw.mode == 2 ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
+    // Ocarina's 7c511 NDSR originally runs the expensive EASU work on a
+    // 2048x1152 output after its scene has already rendered at 854x480.
+    // The final on-screen FSR chain now processes only <=1280x720. Preserve
+    // encoded-colour conversion and the exact full-size output image, but use
+    // the SPIR-V's existing one-sample bilinear kernel for the redundant
+    // large NDSR stage. EASU still runs once in the 720p final pipeline.
+    // This changes actual per-pixel GPU instructions, not a driver variable.
+    int large_oot = g_sw.mode == 1 && cs->key == UINT64_C(0x7c511cc23ff85d14)
+                    && ((uint64_t)oi->w * oi->h > 1280ull * 720);
+    int kernel = (g_sw.mode == 2 || large_oot) ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
+    if (large_oot) {
+        static _Atomic int logged;
+        if (!atomic_exchange(&logged, 1))
+            VLOG("Ocarina NDSR large-output optimization: replace full %ux%u EASU taps with converted bilinear; EASU+RCAS final capped at 1280x720",
+                 oi->w, oi->h);
+    }
     p = make(cs, lay, tb, ib, bb, g_sw.enc, g_sw.map, kernel, pack);
     if (p && pack) { memset(rt, 0, sizeof *rt); rt->b[0] = (uint32_t)ib << 16 | 33u << 8 | 1u; }   // (the output an unsigned R32ui image: vka_draw.c rt_dim, then id_view)
     if (p) log_sizes(d, cs->key, t, o, oi, g_sw.enc, g_sw.map, kernel, pack, cb);
