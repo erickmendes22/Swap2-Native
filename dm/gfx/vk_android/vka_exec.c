@@ -980,7 +980,7 @@ static void copy_bt(const p_copy_b2t *c, int to_tex) {
         size_t wb = (size_t)((c->r.width + f->bw - 1) / f->bw) * f->bpb;
         if (!vka_scratch(wb * rows * (size_t)nz, al * 16, &s)) return;
         if (to_tex) for (int z = 0; z < nz; z++) for (size_t y = 0; y < rows; y++) { VkBufferCopy bc = {o + z * img + y * row, s.off + (z * rows + y) * wb, wb}; vk.vkCmdCopyBuffer(g_cb, b, s.buf, 1, &bc); }
-        if (to_tex) vka_barrier(g_cb);
+        if (to_tex) vka_transfer_write_barrier(g_cb); // bounce VkCmdCopyBuffer -> VkCmdCopyBufferToImage
         row = wb; img = wb * rows;
     }
     VkBufferImageCopy rg[64]; int n = 0;
@@ -992,13 +992,13 @@ static void copy_bt(const p_copy_b2t *c, int to_tex) {
         vka_tex_gw_opaque(c->src, span);
         vk.vkCmdCopyImageToBuffer(g_cb, im->img, VK_IMAGE_LAYOUT_GENERAL, bounce ? s.buf : b, (uint32_t)n, rg);
         if (bounce) {
-            vka_barrier(g_cb);
+            vka_transfer_write_barrier(g_cb); // image-to-buffer -> CPU guest-buffer bounce copy
             size_t wb = row, srow = S.copy_stride ? (size_t)S.copy_stride : wb, simg = S.copy_img_stride ? (size_t)S.copy_img_stride : srow * rows;
             for (int z = 0; z < nz; z++) for (size_t y = 0; y < rows; y++) { VkBufferCopy bc = {s.off + (z * rows + y) * wb, o + z * simg + y * srow, wb}; vk.vkCmdCopyBuffer(g_cb, s.buf, b, 1, &bc); }
         }
     }
     g_stat_ops++;
-    vka_barrier(g_cb);
+    vka_transfer_write_barrier(g_cb); // buffer/image transfer completed: all following consumers visible
 }
 static void copy_t2t(const p_copy_t2t *c) {
     if (!c->src || !c->dst) return;
@@ -1034,7 +1034,7 @@ static void copy_t2t(const p_copy_t2t *c) {
         vk.vkCmdBlitImage(g_cb, s->img, VK_IMAGE_LAYOUT_GENERAL, d->img, VK_IMAGE_LAYOUT_GENERAL, 1, &r, fl);
     }
     vka_img_written(d); g_stat_ops++;
-    vka_barrier(g_cb);
+    vka_transfer_write_barrier(g_cb); // vkCmdCopyImage / vkCmdResolveImage / vkCmdBlitImage write in TRANSFER
 }
 
 // Peek at an immediately following explicit discard sequence. NVN records are
@@ -1103,8 +1103,8 @@ static void exec(const uint8_t *p, int depth) {
         case OP_FENCE_SYNC: { sync_t *s; memcpy(&s, a, 8); s->fence = g_cur_fence ? g_cur_fence : vka_fence_last() + 1; s->fenced = 1; break; }   // the fence this submission commits with
         case OP_RENDER_COND: S.rc_skip = rc_eval(a); break;
         case OP_RESET_COUNTER: { uint64_t t; memcpy(&t, a, 8); if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED) oq_reset(); break; }
-        case OP_CLEAR_BUF: if (g_cb) { const p_clear_buf *cb = a; buf_fill(cb->addr, cb->size, cb->value); vka_barrier(g_cb); } break;
-        case OP_COPY_B2B: if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); buf_copy(s_, d, n); vka_barrier(g_cb); } break;
+        case OP_CLEAR_BUF: if (g_cb) { const p_clear_buf *cb = a; buf_fill(cb->addr, cb->size, cb->value); vka_transfer_write_barrier(g_cb); } break;
+        case OP_COPY_B2B: if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); buf_copy(s_, d, n); vka_transfer_write_barrier(g_cb); } break;
         case OP_UPDATE_UB: g_n_ub++; if (g_cb) { uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8); buf_update((const uint8_t *)a + 16, d, n); vka_transfer_write_barrier(g_cb); } break;
         case OP_SET_RT: S.rt = *(const p_set_rt *)a; S.has_rt = 1; break;
         case OP_DISCARD_COLOR: if (g_cb) { int32_t index; memcpy(&index, a, sizeof index); vka_rp_discard(&S.rt, S.has_rt, index); } break;
