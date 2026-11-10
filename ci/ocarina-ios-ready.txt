@@ -95,3 +95,12 @@ Build 24 (same install-over signer, 0.1.2 original release branch): Ocarina incr
 - Current ABI unchanged (674db0a4ff79), as is current full shader chain 600c17b98391: no need to repeat ongoing translation.
 - CI validates source-level ABI guards, old 42k-lib fallback, selective overlay, Android source, and existing signer before publishing.
 - Retain all graphics optimizations introduced through Builds 21-23 (720p FSR, SGSR1, mesh prewarm, NDSR and GMEM optimizations), no artificial FPS claim.
+
+Build 25 — Ocarina Android 0.1.2 runtime GPU/texture CPU structural optimizations:
+- Exact-indexed guest-storage address alias candidate lookup replaces full resident-image search for first-use, GPU owner check, and capture; retain format/serial ordering.
+- Texture image deletion uses tracked index instead of another scan of all live images.
+- Avoid repeated update-after-bind texture descriptor writes for unchanged view + generation; separate storage and sampled slots, conservative fallback DM_VK_POOL_SLOT_DEDUP=0.
+- Maintain list of only CPU-tracked / sparse images to process dirty-page and residency changes, rather than looping over all resident images whenever dirty generation advances.
+- Reuse sorted live guest-storage spans across completed GPU memory write batches; rebuild only after image set changes; OOM fallback uses original exhaustive scan.
+- Test Python equivalence/stress, complete Ocarina regression suite, and Android ARM64 NDK compile (previous validation success), before signing release APK.
+- Preserve full shader library and ABI 674db0a4ff79, no forced shader recompile. Same original branch, package com.swap2native.ootv11ios, 0.1.2 version, signer SHA256 a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad. Increment versionCode using existing workflow. Build for device performance A/B testing.
