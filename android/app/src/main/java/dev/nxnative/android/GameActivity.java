@@ -449,9 +449,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // Scene resolution 720p (Game settings): the RomFS overlay made on the phone from the player's files, while it matches this pack (SceneOverlay)
             String sceneNote = null;
             if (prof != null && prof.hasScene() && Prefs.scene720(this, id)) {
-                if (SceneOverlay.current(files, id, prof.sceneScale(), prof.sceneExpect(), pack.version)) env.add("DM_ROMFS_OVERLAY=" + SceneOverlay.dir(files, id));
+                if (SceneOverlay.current(files, id, Prefs.sceneScale(this, id, prof.sceneScale()), prof.sceneExpect(), pack.version)) {
+                    env.add("DM_ROMFS_OVERLAY=" + SceneOverlay.dir(files, id));
+                    Native.note("[nxlaunch] internal render scene scale " + Prefs.sceneScale(this, id, prof.sceneScale()) + " from RomFS overlay (before NDSR / final output filter)");
+                }
                 else sceneNote = "[RED] [nxlaunch] Scene resolution 720p: the overlay " + SceneOverlay.dir(files, id) + " was not made for this pack (version " + pack.version
-                        + ", scale " + prof.sceneScale() + "): the game's own scene size this run; choosing 720p in its Game settings makes it again";
+                        + ", scale " + Prefs.sceneScale(this, id, prof.sceneScale()) + "): using the game's own render scale this run; select the internal scene resolution again";
             }
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             Fsr.env(this, env);   // existing V11 FSR policy / legacy preferences
