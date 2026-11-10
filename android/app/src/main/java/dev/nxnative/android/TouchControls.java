@@ -71,6 +71,7 @@ final class TouchControls extends View {
     private float gx, gy, gr, gearGrab, toggleGrab;   // the settings gear (the launcher's, never the guest's) and the show / hide button's touch radius
     private int gearId = -1;
     private final int[] icons = new int[MAX];
+    private final String gameTitleId;
     private String setting(String name) { return name + "@" + gameId; }
     private SharedPreferences prefs() { return Prefs.open(getContext(), "touch_controls"); }   // read again when the other process wrote it (Prefs.open)
     private boolean available;     // the host takes a layout (nxhost_touch_controls_set): the controls can be drawn
@@ -121,6 +122,7 @@ final class TouchControls extends View {
     TouchControls(Context c, boolean input, String titleId) {
         super(c);
         this.input = input;
+        gameTitleId = titleId;
         gameId = TouchProfile.gameKey(titleId);
         profile = TouchProfile.resolve(gameId, prefs().getString(setting("profile"), TouchProfile.AUTO));
         autoAccelerate = prefs().getBoolean(setting("race_auto"), false);
@@ -209,7 +211,10 @@ final class TouchControls extends View {
             prof = v2 != null && w > h && (prefs().contains("group0@" + v2) || !legacyCustom(key, screen)) ? v2 : key;
             load();
         }
-        float[] p = picture(w, h, placeX, placeY);
+        // Match the Vulkan present's aspect policy, so normalized touch positions
+        // refer to the same pixels when the user chooses Stretch in game settings.
+        float[] p = GraphicsOptions.stretch(getContext(), gameTitleId) != 0
+                ? new float[] {0f, 0f, 1f, 1f} : picture(w, h, placeX, placeY);
         picX = p[0]; picY = p[1]; picW = p[2]; picH = p[3];
         if (input) { Native.picturePlace(placeX, placeY); Native.touchLayout(w, h, picX, picY, picW, picH); }
         // On a short screen (under 340 units high) everything shrinks with it
