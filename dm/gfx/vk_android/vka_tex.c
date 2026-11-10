@@ -195,6 +195,10 @@ typedef struct view_ent { struct view_ent *next; VkImageView v; VkFormat f; VkIm
 typedef struct { uint64_t serial; vka_img *im; } smap_ent;   // serial 0 = empty, im NULL with a serial = a texture that has no image (format refused)
 static smap_ent *g_map; static size_t g_mapcap, g_mapn;
 static vka_img **g_live; static int g_nlive, g_livecap;
+// Increment on live image insertion/removal. The sorted guest storage
+// overlap index below rebuilds only when this generation changes, rather
+// than sorting thousands of textures on every completed GPU memory write.
+static uint64_t g_live_generation = 1;
 // Images whose contents require checking guest dirty pages or sparse pool
 // generation. Unlike scanning every resident image for each guest write,
 // this set scales with the number of live tracked inputs. Protected by g_tmu.
@@ -339,6 +343,7 @@ static void unref_locked(vka_img *im) {
         for (i = 0; i < g_nlive && g_live[i] != im; i++) {}
     }
     if (i < g_nlive) {
+        g_live_generation++;
         live_mem_del(im);
         int last = --g_nlive;
         if (i != last) {
@@ -1421,6 +1426,7 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
             if (g_nlive == g_livecap) { g_livecap = g_livecap ? g_livecap * 2 : 256; g_live = realloc(g_live, (size_t)g_livecap * sizeof *g_live); }
             im->live_index = g_nlive;
             g_live[g_nlive++] = im;
+            g_live_generation++;
             live_mem_add(im);
             big_note(im, t);
             // Its first content through the upload batch when cb is the replay's (vka_dev.c "Upload batches"): staging that retires on the batch's own completion
@@ -2433,21 +2439,60 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     (void)ntake;
     if (g_ngw) {
         // The images whose content comes from their storage, by start address, searched for each done write (hundreds a frame, thousands of images)
-        static vka_img **by; static int bycap; int nby = 0; uint64_t maxsz = 0, done = vka_done(); int k = 0, any = 0;
+        static vka_img **by;
+        static int bycap, nby;
+        static uint64_t maxsz, sorted_generation;
+        uint64_t done = vka_done(); int k = 0, any = 0;
         for (int i = 0; i < g_ngw && !any; i++) any = g_gw[i].fence && g_gw[i].fence <= done;
-        if (any) {
-            if (bycap < g_nlive) { bycap = g_nlive + 256; by = realloc(by, (size_t)bycap * sizeof *by); }
-            for (int j = 0; j < g_nlive; j++) { vka_img *im = g_live[j]; if (im->from_mem && !im->gpu_owned && im->mem && !im->vpool && !img_pool_dead(im)) { by[nby++] = im; if (im->L.size > maxsz) maxsz = im->L.size; } }
-            qsort(by, (size_t)nby, sizeof *by, img_by_mem);
+        if (any && sorted_generation != g_live_generation) {
+            // Every live image's source address and memory range are immutable
+            // after first-use. Image lifetime changes increment the generation.
+            // Keep GPU-owned or finalized images in the cache and skip those
+            // later: removing them eagerly would cause a full resort whenever
+            // a new render target is written. The cache owns no references.
+            if (bycap < g_nlive) {
+                int cap = g_nlive + 256;
+                vka_img **tmp = realloc(by, (size_t)cap * sizeof *by);
+                if (tmp) { by = tmp; bycap = cap; }
+            }
+            nby = 0; maxsz = 0;
+            if (bycap >= g_nlive) {
+                for (int j = 0; j < g_nlive; j++) {
+                    vka_img *im = g_live[j];
+                    if (im->from_mem && im->mem && !im->vpool) {
+                        by[nby++] = im;
+                        if (im->L.size > maxsz) maxsz = im->L.size;
+                    }
+                }
+                qsort(by, (size_t)nby, sizeof *by, img_by_mem);
+                sorted_generation = g_live_generation;
+            }
+            // Allocation failure: disable cached lookups, never use stale
+            // pointers from a previous live-image generation.
         }
         for (int i = 0; i < g_ngw; i++) {
             gw_t *w = &g_gw[i];
             if (!w->fence || w->fence > done) { g_gw[k++] = *w; continue; }
-            int lo = 0, hi = nby;   // the first image starting at or after the write's end
+            int lo = 0, hi = sorted_generation == g_live_generation ? nby : 0;   // fresh sorted cache only
+            // On an allocation failure, use the original unsorted full scan
+            // so GPU writes still refresh every overlapping texture.
+            if (sorted_generation != g_live_generation) {
+                for (int j = 0; j < g_nlive; j++) {
+                    vka_img *im = g_live[j];
+                    uint64_t a = (uint64_t)(uintptr_t)im->mem;
+                    if (!im->from_mem || im->gpu_owned || !im->mem || im->vpool || img_pool_dead(im) ||
+                        a >= w->hi || w->lo >= a + im->L.size || im->gw_seen >= w->seq) continue;
+                    tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
+                    if (im->track) upload_tracked(im, &t, cb); else upload_fill(im, &t, cb);
+                    g_gw_late++;
+                }
+                free(w->data);
+                continue;
+            }
             while (lo < hi) { int m = (lo + hi) / 2; if ((uint64_t)(uintptr_t)by[m]->mem < w->hi) lo = m + 1; else hi = m; }
             for (int j = lo - 1; j >= 0 && (uint64_t)(uintptr_t)by[j]->mem + maxsz > w->lo; j--) {
                 vka_img *im = by[j]; uint64_t a = (uint64_t)(uintptr_t)im->mem;
-                if (w->lo >= a + im->L.size || im->gw_seen >= w->seq || im->gpu_owned) continue;
+                if (w->lo >= a + im->L.size || im->gw_seen >= w->seq || im->gpu_owned || img_pool_dead(im)) continue;
                 tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
                 if (im->track) upload_tracked(im, &t, cb); else upload_fill(im, &t, cb);
                 g_gw_late++; if (g_gw_late <= 8 || !(g_gw_late & (g_gw_late - 1))) VLOG("textures re-uploaded after a GPU write into their storage: %llu (uploads that applied pending GPU writes: %llu; pages raw global memory stores wrote: %llu)", (unsigned long long)g_gw_late, (unsigned long long)g_gw_over, (unsigned long long)g_gml_pages);

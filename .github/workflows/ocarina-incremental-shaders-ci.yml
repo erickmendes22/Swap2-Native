@@ -14,6 +14,7 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_live_memory_filter.py'
       - 'dm/gfx/tools/tests/test_ocarina_pool_descriptor_dedup.py'
       - 'dm/gfx/tools/tests/test_ocarina_watched_images.py'
+      - 'dm/gfx/tools/tests/test_ocarina_gpu_write_index.py'
       - 'scripts/pack_android.py'
       - 'android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/PackService.java'
@@ -38,6 +39,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_live_memory_filter.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_pool_descriptor_dedup.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_watched_images.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gpu_write_index.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c
       - name: Syntax-check real Android Vulkan texture replay with NDK
         shell: bash
