@@ -9,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[4]
 NVN = (ROOT / "dm/gfx/nvn/hle_nvn.c").read_text()
 OPS = (ROOT / "dm/gfx/nvn/nvn_obj.h").read_text()
+CAP = (ROOT / "dm/gfx/nvn/nvn_capture.c").read_text()
 TEX = (ROOT / "dm/gfx/vk_android/vka_tex.c").read_text()
 DRAW = (ROOT / "dm/gfx/vk_android/vka_draw.c").read_text()
 EXEC = (ROOT / "dm/gfx/vk_android/vka_exec.c").read_text()
@@ -17,6 +18,11 @@ EXEC = (ROOT / "dm/gfx/vk_android/vka_exec.c").read_text()
 class TestExplicitVulkanDiscard(unittest.TestCase):
     def test_backward_compatible_opcodes(self):
         self.assertIn("OP_PUSH_CONST, OP_DISCARD_COLOR, OP_DISCARD_DS, OP_COUNT_", OPS)
+
+    def test_capture_walker_tracks_new_records(self):
+        self.assertIn("OP_COUNT_ == 56", CAP)
+        self.assertIn("ops 56", CAP)
+        self.assertIn("case OP_DISCARD_COLOR: case OP_DISCARD_DS:", CAP)
 
     def test_android_only_guest_recording(self):
         self.assertIn("*REC(c, OP_DISCARD_COLOR, int32_t) = i;", NVN)
