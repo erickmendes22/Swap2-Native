@@ -31,7 +31,7 @@ final class GraphicsOptions {
     static final String[] TIMINGS = {"Perfil do jogo", "Por segmento", "Por submissão"};
     static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
     static final String[] ENCODER_IDLE = {"Normal (padrão)", "Dormir quando vazio (experimental)"};
-    static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: VRS 2×1", "Agressivo: VRS 2×2"};
+    static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: sincronização GPU + VRS 2×1 se suportado", "Agressivo: sincronização GPU + VRS 2×2 se suportado"};
 
     static int mode(Context c) {
         SharedPreferences p = Prefs.of(c);
