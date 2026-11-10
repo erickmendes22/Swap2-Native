@@ -35,7 +35,8 @@ final class OcarinaShaderDelta {
         Profile profile = Profile.of(TITLE);
         if (header == null || profile == null || !header.fits(old.length())
                 || !TITLE.equals(header.game) || !profile.shaderInputs.equals(header.inputs)
-                || !BuildConfig.NX_DMSH_VK_ABI.equals(header.abi)) return List.of();
+                || !(BuildConfig.NX_DMSH_VK_ABI.equals(header.abi)
+                        || ShaderAbiCert.approved(TITLE, header.vkChain, header.abi, header.inputs))) return List.of();
 
         try {
             File manifest = new File(PackNative.repo(), "dm/games/" + TITLE + "/vk_hot_delta.tsv");
