@@ -284,8 +284,15 @@ public final class PackService extends Service {
             if (j.apkChanged()) {
                 Log.i(TAG, "the job's shaders are from another app version: translating them again");
                 j.resetChainSteps();
-                Job.deleteTree(new File(j.dir(), "xlate"));
-                Job.deleteTree(new File(j.dir(), "lib"));
+                List<String> hot = OcarinaShaderDelta.keys(j);
+                if (!hot.isEmpty()) {
+                    j.expectedShaders(hot.size());
+                    Log.i(TAG, "Ocarina incremental update: only " + hot.size()
+                            + " reviewed shaders will be compiled into a separate overlay; base library preserved");
+                } else {
+                    Job.deleteTree(new File(j.dir(), "xlate"));
+                    Job.deleteTree(new File(j.dir(), "lib"));
+                }
             }
             j.state("running", null, null);
             save(j, true);
@@ -395,6 +402,10 @@ public final class PackService extends Service {
     private boolean preflight(Job j, String s) {
         File logs = new File(j.dir(), "logs");
         long need = DumpCheck.stepNeed(s, j.codeOnly());
+        // A reviewed incremental hot shader update only creates a tiny overlay,
+        // not another 1+ GiB full library. The split step keeps its own limit.
+        if (("shaders".equals(s) || "pack".equals(s)) && !OcarinaShaderDelta.keys(j).isEmpty())
+            need = Math.min(need, 256L << 20);
         // A completed on-device shader library may now be installed by a
         // hard link or atomic rename, without the old second 1.2+ GB copy.
         // If the destination is on another filesystem, the packer itself
@@ -511,6 +522,10 @@ public final class PackService extends Service {
         File split = new File(od, "split"), splitTmp = new File(od, "split.tmp"), splitScan = j.splitScan(this), xlate = new File(od, "xlate"), lib = new File(od, "lib");
         String tool;
         String[] argv;
+        // Scoped incremental mode requires an explicit reviewed key manifest
+        // AND the older same-ABI complete library in the game's pack.
+        // With neither, the old full/manifest-delta update remains unchanged.
+        List<String> hotKeys = OcarinaShaderDelta.keys(j);
         // The tools' arguments: the in-process forms (pack_android.py --in-process: the rewriter in the same Python; shader_split.py with J=1 below: no process pool;
         // vk_android_build.py with the translator and the validator as libraries, XLATE / SPIRV_VAL below; the app's process must not fork, ONDEVICE.md "No subprocesses").
         // The split is resumable by RomFS file: its scan results are kept in the app's own storage (Job.splitScan, DM_SPLIT_RESUME, shader_split.py ScanCache) and a rerun scans only the files
@@ -538,7 +553,16 @@ public final class PackService extends Service {
                 String bad = splitMatchesProfile(j, split);
                 if (bad != null) return bad;
                 tool = "dm/gfx/tools/vk_android_build.py";
-                argv = new String[] {"--target", "vulkan", new File(split, "pkg").getPath(), lib.getPath()};
+                if (!hotKeys.isEmpty()) {
+                    argv = new String[4 + hotKeys.size()];
+                    argv[0] = "--target";
+                    argv[1] = "vulkan";
+                    argv[2] = new File(split, "pkg").getPath();
+                    argv[3] = new File(pack, "shaders/hot").getPath();
+                    for (int k = 0; k < hotKeys.size(); k++) argv[k + 4] = hotKeys.get(k);
+                } else {
+                    argv = new String[] {"--target", "vulkan", new File(split, "pkg").getPath(), lib.getPath()};
+                }
                 break;
             }
             case "pack": {
@@ -547,7 +571,11 @@ public final class PackService extends Service {
                 // imported/user-supplied shader cache must remain untouched.
                 boolean ownedCache = j.shaderCache().getCanonicalFile()
                         .equals(new File(j.dir(), "lib").getCanonicalFile());
-                argv = ownedCache
+                argv = !hotKeys.isEmpty()
+                    ? new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(),
+                        "--keep-code", "--hot-keys", String.join(",", hotKeys),
+                        "-j", "1", "--in-process"}
+                    : ownedCache
                     ? new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(),
                         "--shader-cache", j.shaderCache().getPath(), "--keep-code",
                         "--move-shader-cache", "-j", "1", "--in-process"}
