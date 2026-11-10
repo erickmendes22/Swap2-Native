@@ -560,9 +560,12 @@ static int present_one(const pq_item *it) {
         else VRED_ONCE("FSR: swapchain image %u has no attachment view: blitted", idx);
         fsr = 0;
     }
+    int fsr_applied = 0, rotated_copy = 0;
     if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)dw, (uint32_t)dh) && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh)) {
         blit = -1;
+        fsr_applied = 1;
     } else if (rot_rotates(g_pre)) {
+        rotated_copy = 1;
         int ok = im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && im->f.kind == 0 && im->samples == 1 && (im->usage & VK_IMAGE_USAGE_SAMPLED_BIT) && g_sview[idx];
         if (ok) vka_barrier(cb);   // the replay's writes to the window texture (earlier submissions, in submission order)
         else if (im) VRED_ONCE("window texture serial %llu (format %#x) cannot be sampled for the rotated copy: presented black", (unsigned long long)im->serial, im->d.format);
@@ -582,6 +585,20 @@ static int present_one(const pq_item *it) {
         vk.vkCmdBlitImage(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, g_simg[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b,
                           !nearest && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
     } else if (im && !blit) VRED_ONCE("window texture serial %llu (format %#x) cannot be blitted to the swapchain: presented black", (unsigned long long)im->serial, im->d.format);
+    // Verify the option actually reached the GPU, and distinguish requested
+    // FSR from a driver fallback to linear/nearest blit. Log only on a change.
+    static int last_mode = -1, last_stretch = -1, last_w = -1, last_h = -1, last_dstw = -1, last_dsth = -1, last_method = -1;
+    int method = fsr_applied ? 3 : rotated_copy ? 2 : blit > 0 ? 1 : 0;
+    if (present_filter != last_mode || stretch != last_stretch || cw != last_w || ch != last_h ||
+        dw != last_dstw || dh != last_dsth || method != last_method) {
+        VLOG("present output filter=%d (0 auto,1 nearest,2 bilinear,3 FSR), stretch=%d; image %dx%d -> %dx%d, method=%s%s",
+             present_filter, stretch, cw, ch, dw, dh,
+             fsr_applied ? "FSR1" : rotated_copy ? (nearest ? "rot-nearest" : "rot-linear") :
+             blit > 0 ? (nearest ? "blit-nearest" : "blit-linear-if-supported") : "unavailable",
+             present_filter == 3 && !fsr_applied ? " (FSR requested but fell back)" : "");
+        last_mode = present_filter; last_stretch = stretch; last_w = cw; last_h = ch;
+        last_dstw = dw; last_dsth = dh; last_method = method;
+    }
     if (blit >= 0) vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     if (!it->src) vka_ctl_shot_record(cb, im, cx, cy, cw, ch);   // the game's own frames only
     vk.vkEndCommandBuffer(cb);
