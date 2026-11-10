@@ -282,16 +282,38 @@ public final class PackService extends Service {
         try {
             dropOtherSplitScans(j);
             if (j.apkChanged()) {
-                Log.i(TAG, "the job's shaders are from another app version: translating them again");
-                j.resetChainSteps();
                 List<String> hot = OcarinaShaderDelta.keys(j);
+                // A complete same-ABI library (or an audited additive ABI
+                // extension) already runs on this APK. Preserve it and all
+                // progress when the completed job's only change is the APK:
+                // otherwise a version-string change incorrectly starts
+                // 42,339 translations again.
+                File previous = Pack.playableLibrary(j.pack(), j.titleId());
+                Profile profile = Profile.of(j.titleId());
+                ShaderLibs.Header header = previous != null ? ShaderLibs.header(previous) : null;
+                if ("done".equals(j.state()) && hot.isEmpty()
+                        && header != null && profile != null
+                        && header.fits(previous.length())
+                        && profile.shaderInputs.equals(header.inputs)) {
+                    Log.i(TAG, "shader update: previous complete " + header.entries
+                            + "-shader library is ABI-compatible; keeping it unchanged after APK update"
+                            + " (no unnecessary split or translation)");
+                    j.acceptPlayableShaderVersion();
+                    save(j, true);
+                    return;
+                }
+                j.resetChainSteps();
                 if (!hot.isEmpty()) {
                     j.expectedShaders(hot.size());
-                    Log.i(TAG, "Ocarina incremental update: only " + hot.size()
-                            + " reviewed shaders will be compiled into a separate overlay; base library preserved");
+                    Log.i(TAG, "Ocarina incremental update: compiling exactly " + hot.size()
+                            + " reviewed shader keys into a small overlay; full base preserved");
                 } else {
-                    Job.deleteTree(new File(j.dir(), "xlate"));
-                    Job.deleteTree(new File(j.dir(), "lib"));
+                    Log.i(TAG, "shader update: retaining already translated per-key results; "
+                            + "vk_android_build.py verifies every cached result's toolchain, "
+                            + "ABI/profile and SPIR-V identity before reusing it");
+                    // Never wipe xlate/ or lib/ merely because APK metadata
+                    // changed. They are checkpoints, and the translator's
+                    // result_head() independently rejects stale entries.
                 }
             }
             j.state("running", null, null);
