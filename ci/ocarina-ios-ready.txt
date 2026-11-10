@@ -69,3 +69,5 @@ Build 20 · iOS dispatch_overlap port to Vulkan, not a shader change:
 - This is a code-level GPU change based on iOS 5.7->3.7ms compute sequence on M4 Pro, not a guaranteed Adreno result; no shader library regeneration, same package/signature/ABI.
 
 Build 20 retry: adjust test_ocarina_fps_boost_vrs to accept the existing Ocarina-only settings block; no new native changes. Require validation and Android native build before publishing artifact.
+
+Build 20 final correction: NVN compute sequences include OP_BIND_PROGRAM, OP_BIND_TEX and OP_BIND_UBO state records between dispatches. These are CPU-only; do not flush GPU pending writes on state/binding records. Flush on all GPU work, events, queries, explicit barriers, list and command-buffer boundaries. New tests cover the interleaved sequence; supersedes previous run. No shader rebuild.
