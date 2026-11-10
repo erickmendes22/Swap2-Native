@@ -118,7 +118,12 @@ final class GraphicsOptions {
         // Zelda-specific GPU FPS Boost: opt-in coarse Vulkan shading for two
         // hot fragment shaders, not NX2navi's incompatible mirror write-back.
         // The native host checks driver feature support and logs fallback.
-        if (Prefs.OCARINA_TITLE.equals(id)) out.add("DM_VK_OOT_FPS_BOOST=" + fpsBoost(c, id));
+        if (Prefs.OCARINA_TITLE.equals(id)) {
+            out.add("DM_VK_OOT_FPS_BOOST=" + fpsBoost(c, id));
+            // Backported from iOS: independent consecutive NVN compute dispatches
+            // no longer force individual GPU barriers. Does not rebuild shaders.
+            out.add("DM_VK_OOT_DISPATCH_OVERLAP=1");
+        }
         int ts = timing(c, id);
         if (ts != 0) out.add("DM_NVN_GPU_TS=" + (ts == 1 ? "segment" : "submission"));
     }
