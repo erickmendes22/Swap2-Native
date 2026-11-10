@@ -1111,8 +1111,10 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             Operand hintFits = context.BitwiseAnd(
                 context.ICompareEqual(hintTag, hintChunk),
                 context.BitwiseAnd(
-                    context.ICompareNotEqual(hintIndex, Const(0)),
-                    context.ICompareLessUnsigned(hintIndex, Const(8192))));
+                    context.ICompareLessUnsigned(addrHigh, Const(1 << 21)),
+                    context.BitwiseAnd(
+                        context.ICompareNotEqual(hintIndex, Const(0)),
+                        context.ICompareLessUnsigned(hintIndex, Const(8192)))));
             Operand hintMiss = Label();
             context.BranchIfFalse(hintMiss, hintFits);
             context.Copy(selected, hintIndex);
