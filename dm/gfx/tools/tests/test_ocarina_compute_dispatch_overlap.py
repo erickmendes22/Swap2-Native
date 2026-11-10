@@ -20,13 +20,12 @@ def model(ops):
     pending = False
     barriers = 0
     for n, op in enumerate(ops):
-        if op != "compute" or (op == "compute_spill") or (op == "compute_indirect"):
+        if op not in ("compute", "bind", "state"):
             if pending:
                 barriers += 1
                 pending = False
         if op.startswith("compute"):
-            can_defer = op == "compute" and n + 1 < len(ops) and ops[n + 1] == "compute"
-            if can_defer:
+            if op == "compute":
                 pending = True
             else:
                 barriers += 1
@@ -38,10 +37,12 @@ def model(ops):
 
 class ComputeOverlap(unittest.TestCase):
     def test_source_defers_only_direct_consecutive_compute(self):
-        self.assertIn('if (h.op != OP_DISPATCH) vka_dispatch_overlap_flush();', EXEC)
-        self.assertIn('next.op == OP_DISPATCH && next.size >= 8', EXEC)
+        self.assertIn('if (h.op != OP_DISPATCH && !overlap_state_record(h.op)) vka_dispatch_overlap_flush();', EXEC)
+        self.assertIn('static int overlap_state_record(uint32_t op)', EXEC)
+        self.assertIn('case OP_BIND_UBO:', EXEC)
+        self.assertIn('case OP_PUSH_CONST:', EXEC)
         self.assertIn('if (sb || dp->ind) vka_dispatch_overlap_flush();', DRAW)
-        self.assertIn('next_is_dispatch && !sb && !dp->ind', DRAW)
+        self.assertIn('if (!sb && !dp->ind', DRAW)
         self.assertIn('!vka_gp_active && !vka_nan_on()', DRAW)
         self.assertIn('g_dispatch_overlap_pending = 1;', DRAW)
         self.assertIn('g_dispatch_overlap_skipped++;', DRAW)
@@ -58,6 +59,7 @@ class ComputeOverlap(unittest.TestCase):
         # All non-compute NVN operations (including explicit barriers, calls,
         # jumps, reports, and draws) flush the previous compute group.
         self.assertEqual(model(["compute", "compute", "compute", "draw"]), 1)
+        self.assertEqual(model(["compute", "bind", "compute", "state", "compute", "draw"]), 1)
         self.assertEqual(model(["compute", "compute", "barrier", "compute", "end"]), 2)
         self.assertEqual(model(["compute", "draw", "compute"]), 2)
         self.assertEqual(model(["compute", "compute_spill", "draw"]), 2)
