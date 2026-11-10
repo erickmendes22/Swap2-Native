@@ -191,6 +191,7 @@ void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 // Replay statistics every 300 frames (DM_VK_STATS=0: none): what a frame costs the GPU in passes and barriers (each pass loads and stores its attachments on a tiler), and the
 // CPU per draw (recording: mtl_sub_begin to vkEndCommandBuffer)
 extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
+static uint64_t g_ub_copy_cmds, g_ub_copy_regions;  // actual Vulkan copy commands versus independently staged inline regions
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
 static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the submission the worker replays (vka_exec_sub_frame)
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
@@ -206,6 +207,9 @@ void mtl_set_frame(uint64_t f) {
                      (unsigned long long)f, (g_stat_draws - d0) / n, (vka_n_rp - rp0) / n, (g_stat_ops - o0) / n, (g_n_pclear - pc0) / n, (vka_n_bar - b0) / n, (g_n_ub - ub0) / n, (g_n_sub - s0) / n, (g_n_sub - s0 + g_n_chunks - ch0) / n, (g_rec_ns - r0) / n / 1e6,
                      g_stat_draws > d0 ? (g_rec_ns - r0) / 1e3 / (double)(g_stat_draws - d0) : 0.0);
         { static uint64_t tb0; VLOG("Vulkan scoped upload dependencies: %.1f transfer-write -> ALL_COMMANDS barriers/frame (replacing full barriers only after inline uniform copies)", (vka_n_transfer_bar - tb0) / n); tb0 = vka_n_transfer_bar; }
+        { static uint64_t c0, r0; VLOG("inline uniform GPU batching: %.1f staged copy regions -> %.1f vkCmdCopyBuffer calls/frame (%.1f commands removed; disjoint destination ranges only; DM_VK_UB_BATCH=0 disables)",
+              (g_ub_copy_regions-r0)/n, (g_ub_copy_cmds-c0)/n, (g_ub_copy_regions-r0-g_ub_copy_cmds+c0)/n);
+          c0=g_ub_copy_cmds; r0=g_ub_copy_regions; }
         { static uint64_t cb0; VLOG("Ocarina compute 9e6b: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (DM_VK_OOT_CS_SYNC=0 restores full)",
               (vka_n_compute_bar - cb0) / n); cb0 = vka_n_compute_bar; }
         { char pb[400]; void vka_draw_prof(char *b, size_t n, double draws); vka_draw_prof(pb, sizeof pb, (double)(g_stat_draws - d0)); if (pb[0]) VLOG("draw path per draw (us): %s", pb);
@@ -755,14 +759,52 @@ static void boost_transfer_barrier(VkCommandBuffer cb) {
     if (VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0) vka_transfer_write_barrier(cb);
     else vka_barrier(cb);
 }
-static void buf_update(const void *data, uint64_t dst, uint64_t n) {   // inline data, in GPU order: through scratch memory
+// Inline uniform updates often arrive together (Ocarina: 80 per frame).
+// Stage their contents in the same original order, but use ONE transfer command
+// for consecutive disjoint regions with the same Vulkan buffer pair. One memory
+// dependency at the end makes all these writes visible to every later stage.
+// Overlapping destinations, a changed buffer pair, a full batch, or any other
+// NVN command flush before proceeding; no guest-visible ordering is relaxed.
+enum { UB_BATCH_MAX = 64 };
+typedef struct {
+    VkBuffer src, dst;
+    VkBufferCopy region[UB_BATCH_MAX];
+    unsigned n;
+} ub_batch;
+static void ub_flush(ub_batch *b) {
+    if (!b->n) return;
+    vk.vkCmdCopyBuffer(g_cb, b->src, b->dst, b->n, b->region);
+    vka_transfer_write_barrier(g_cb);
+    g_ub_copy_cmds++;
+    b->n = 0;
+}
+static int ub_overlap(VkDeviceSize a, VkDeviceSize na, VkDeviceSize b, VkDeviceSize nb) {
+    // Subtraction avoids overflowing the end address of a 64-bit VkDeviceSize.
+    return a < b ? b-a < na : a-b < nb;
+}
+static void ub_add(ub_batch *batch, VkBuffer src, VkBuffer dst, VkBufferCopy c) {
+    if (batch->n) {
+        int hazard = batch->src != src || batch->dst != dst || batch->n == UB_BATCH_MAX;
+        if (!hazard)
+            for (unsigned i = 0; i < batch->n; i++)
+                if (ub_overlap(batch->region[i].dstOffset, batch->region[i].size, c.dstOffset, c.size)) {
+                    hazard = 1; break;
+                }
+        if (hazard) ub_flush(batch);
+    }
+    if (!batch->n) { batch->src = src; batch->dst = dst; }
+    batch->region[batch->n++] = c;
+    g_ub_copy_regions++;
+}
+static void buf_update(ub_batch *batch, const void *data, uint64_t dst, uint64_t n) { // inline GPU-order data, via the existing fenced scratch allocator
     vka_tex_gw_update(dst, n, data);
     vka_span s; if (!n || !vka_scratch(n, 16, &s)) return;
     memcpy(s.ptr, data, n);
     for (uint64_t done = 0; done < n;) {
         VkBuffer b; VkDeviceSize o; uint64_t k = vka_addr_run(dst + done, n - done, &b, &o);
         if (!k) { VRED_ONCE("inline buffer update at %#llx is not in placed guest RAM", (unsigned long long)(dst + done)); return; }
-        VkBufferCopy c = {s.off + done, o, k}; vk.vkCmdCopyBuffer(g_cb, s.buf, b, 1, &c); done += k;
+        ub_add(batch, s.buf, b, (VkBufferCopy){s.off + done, o, k});
+        done += k;
     }
 }
 
@@ -1073,8 +1115,13 @@ static void not_yet(uint32_t op) {
 }
 static void seg_write(const void *a) { struct { VkCommandBuffer cb; VkPipelineStageFlagBits st; uint32_t q; } w; memcpy(&w, a, sizeof w); qf.write(w.cb, w.st, g_sqp, w.q); }
 static void exec(const uint8_t *p, int depth) {
+    ub_batch ub = {0};
+    const int batch_on = VKA_ENV("DM_VK_UB_BATCH", 1) != 0;
     for (;;) {
         op_hdr h; memcpy(&h, p, sizeof h);
+        // Flush before a draw, dispatch, query, barrier, list control, or any other command.
+        // Even a nested OP_CALL is a boundary: no command may overtake these copies.
+        if (h.op != OP_UPDATE_UB) ub_flush(&ub);
         const void *a = p + 8;
         int bar_kept = 0, bar_covered = 0;   // bar_covered: this pass ended with the same full GPU memory barrier that OP_BARRIER needs
         if (h.op == OP_DRAW || h.op == OP_DRAW_IDX) chunk_check();   // before a draw that opens a new pass
@@ -1113,7 +1160,7 @@ static void exec(const uint8_t *p, int depth) {
         case OP_RESET_COUNTER: { uint64_t t; memcpy(&t, a, 8); if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED) oq_reset(); break; }
         case OP_CLEAR_BUF: if (g_cb) { const p_clear_buf *cb = a; buf_fill(cb->addr, cb->size, cb->value); boost_transfer_barrier(g_cb); } break;
         case OP_COPY_B2B: if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); buf_copy(s_, d, n); boost_transfer_barrier(g_cb); } break;
-        case OP_UPDATE_UB: g_n_ub++; if (g_cb) { uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8); buf_update((const uint8_t *)a + 16, d, n); vka_transfer_write_barrier(g_cb); } break;
+        case OP_UPDATE_UB: g_n_ub++; if (g_cb) { uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8); buf_update(&ub, (const uint8_t *)a + 16, d, n); if (!batch_on) ub_flush(&ub); } break;
         case OP_SET_RT: S.rt = *(const p_set_rt *)a; S.has_rt = 1; break;
         case OP_DISCARD_COLOR: if (g_cb) { int32_t index; memcpy(&index, a, sizeof index); vka_rp_discard(&S.rt, S.has_rt, index); } break;
         case OP_DISCARD_DS: if (g_cb) vka_rp_discard(&S.rt, S.has_rt, -1); break;
@@ -1142,7 +1189,7 @@ static void exec(const uint8_t *p, int depth) {
         case OP_DRAW_TEX: not_yet(h.op); if (g_oq_count && !S.rc_skip) { g_oq_lost++; g_oqs_skip++; } break;
         default: break;   // state: taken by vka_state_op above
         }
-        if (h.size < 8) { VRED("command record of size %u at %p (op %u): the list is cut here", h.size, (const void *)p, h.op); return; }
+        if (h.size < 8) { ub_flush(&ub); VRED("command record of size %u at %p (op %u): the list is cut here", h.size, (const void *)p, h.op); return; }
         p += h.size;
     }
 }
