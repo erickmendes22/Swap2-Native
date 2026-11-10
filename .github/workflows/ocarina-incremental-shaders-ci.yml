@@ -9,6 +9,9 @@ on:
       - 'dm/gfx/vk_android/vka_shlib.c'
       - 'dm/gfx/vk_android/vka_shader.c'
       - 'dm/host/tests/t_android_shlib.c'
+      - 'dm/gfx/vk_android/vka_tex.c'
+      - 'dm/gfx/vk_android/vka.h'
+      - 'dm/gfx/tools/tests/test_ocarina_live_memory_filter.py'
       - 'scripts/pack_android.py'
       - 'android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/PackService.java'
@@ -30,6 +33,7 @@ jobs:
         run: |
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_hot_shader_overlay.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_abi_migration.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_live_memory_filter.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c
       - name: On-device finalization retry regressions
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_pack_finalize_atomic.py -v

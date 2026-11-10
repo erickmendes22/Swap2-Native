@@ -219,6 +219,9 @@ void vka_imem_stats(char *b, size_t n);
 uint64_t vka_imem_allocations(void);   // VkDeviceMemory objects the images hold (blocks + dedicated)
 typedef struct vka_img {
     uint64_t serial; const uint8_t *mem; nvn_texdesc d; nvn_texlayout L;
+    // Exact-storage hash index (vka_tex.c): kept in g_live order, including
+    // swap-with-last removals; accessed only under the image-table mutex.
+    struct vka_img *mem_next, *mem_prev; int live_index;
     VkImage img; vka_imem m; vka_fmt f; VkImageUsageFlags usage; VkImageAspectFlags aspect;
     uint32_t w, h, depth, layers, levels, samples; uint64_t bytes;
     int refs, inited, gpu_owned, cpu_dirty;
