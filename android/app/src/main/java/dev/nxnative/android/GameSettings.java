@@ -161,8 +161,9 @@ final class GameSettings {
             Prefs.gameEnv(a, id, null);
             Prefs.ndsr(a, id, null);
             GraphicsOptions.reset(a, id);  // restore only per-game graphics overrides
-            sceneWant(id, false);
-            Prefs.scene720(a, id, false);   // (the overlay's files stay in the app's folder: made again at once if 720p is chosen again)
+            sceneWant(id, null);
+            Prefs.scene720(a, id, false);
+            Prefs.sceneScale(a, id, null); // restore only this game's resolution choice
             Prefs.of(a).edit().remove(Prefs.gameKey("pause_return", id)).commit();
             again.run();
         });
@@ -202,7 +203,7 @@ final class GameSettings {
                 .value(GraphicsOptions.TIMINGS[GraphicsOptions.timing(a, id)]).chevron(a).view);
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
-            String cur = a.getString(on ? R.string.s2_scene_720p : R.string.s2_scene_game);
+            String cur = on ? Prefs.sceneLabel(Prefs.sceneScale(a, id, prof.sceneScale())) : a.getString(R.string.s2_scene_game);
             Ui.Setting row = new Ui.Setting(a, R.drawable.s2_ic_display, a.getString(R.string.s2_scene_res), v -> scene(a, g, again))
                     .value(cur + " · " + a.getString(R.string.s2_scene_note));
             box.addView(row.chevron(a).view);
@@ -646,16 +647,32 @@ final class GameSettings {
         }).setNegativeButton(android.R.string.cancel, null).show();
     }
 
-    /** Scene resolution: the game's own palette (the default) or 720p, whose overlay is made from the player's files first (makeScene) when it is not there yet */
+    /** Patches the engine's original dynamic-resolution palette in a RomFS overlay.
+     * Output FSR / bilinear remain separate post-render filters, not scene resolution. */
     private static void scene(MainActivity a, Game g, Runnable done) {
         Profile prof = Profile.of(g.titleId);
         if (prof == null || !prof.hasScene()) return;
-        String[] labels = {a.getString(R.string.s2_scene_game), a.getString(R.string.s2_scene_720p)};
-        int checked = Prefs.scene720(a, g.titleId) ? 1 : 0;
-        new AlertDialog.Builder(a).setTitle(a.getString(R.string.s2_scene_res) + " · " + g.name).setSingleChoiceItems(labels, checked, (x, w) -> {
+        String current = Prefs.sceneScale(a, g.titleId, prof.sceneScale());
+        boolean oot = Prefs.OCARINA_TITLE.equals(g.titleId);
+        String[] labels;
+        int checked = 0;
+        if (oot) {
+            labels = new String[Prefs.OCARINA_SCENE_SCALES.length + 1];
+            labels[0] = a.getString(R.string.s2_scene_game);
+            System.arraycopy(Prefs.OCARINA_SCENE_NAMES, 0, labels, 1, Prefs.OCARINA_SCENE_NAMES.length);
+            if (Prefs.scene720(a, g.titleId)) for (int i = 0; i < Prefs.OCARINA_SCENE_SCALES.length; i++)
+                if (Prefs.OCARINA_SCENE_SCALES[i].equals(current)) checked = i + 1;
+        } else {
+            labels = new String[] {a.getString(R.string.s2_scene_game), a.getString(R.string.s2_scene_720p)};
+            checked = Prefs.scene720(a, g.titleId) ? 1 : 0;
+        }
+        new AlertDialog.Builder(a).setTitle("Resolução interna da cena · " + g.name).setSingleChoiceItems(labels, checked, (x, w) -> {
             x.dismiss();
-            if (w == 0) { sceneWant(g.titleId, false); Prefs.scene720(a, g.titleId, false); done.run(); }
-            else makeScene(a, g, prof);
+            if (w == 0) {
+                sceneWant(g.titleId, null);
+                Prefs.scene720(a, g.titleId, false);
+                done.run();
+            } else makeScene(a, g, prof, oot ? Prefs.OCARINA_SCENE_SCALES[w - 1] : prof.sceneScale());
         }).setNegativeButton(android.R.string.cancel, null).show();
     }
 
@@ -673,7 +690,7 @@ final class GameSettings {
         File files = a.getExternalFilesDir(null);
         new Thread(() -> {
             String[] in = sceneInputs(g);
-            boolean ok = files != null && in != null && SceneOverlay.current(files, g.titleId, prof.sceneScale(), prof.sceneExpect(), in[0]);
+            boolean ok = files != null && in != null && SceneOverlay.current(files, g.titleId, Prefs.sceneScale(a, g.titleId, prof.sceneScale()), prof.sceneExpect(), in[0]);
             if (!ok) UI.post(() -> row.value(a.getString(R.string.s2_scene_stale)));
         }, "nx-scene-check").start();
     }
@@ -686,23 +703,21 @@ final class GameSettings {
      * The player's last Scene resolution choice per game in this process (true: 720p): an overlay's answer turns 720p on only while that is still the choice, so
      * "Game default" or Restore defaults while it is being made win, and a second 720p (answered RUNNING) is turned on by the first run's answer
      */
-    private static final java.util.Map<String, Boolean> SCENE_WANT = new java.util.HashMap<>();
-
-    private static void sceneWant(String id, boolean on) {
-        synchronized (SCENE_WANT) { SCENE_WANT.put(id, on); }
+    private static final java.util.Map<String, String> SCENE_WANT = new java.util.HashMap<>();
+    private static void sceneWant(String id, String scale) {
+        synchronized (SCENE_WANT) { if (scale == null) SCENE_WANT.remove(id); else SCENE_WANT.put(id, scale); }
+    }
+    private static boolean sceneWanted(String id, String scale) {
+        synchronized (SCENE_WANT) { return scale.equals(SCENE_WANT.get(id)); }
     }
 
-    private static boolean sceneWanted(String id) {
-        synchronized (SCENE_WANT) { return Boolean.TRUE.equals(SCENE_WANT.get(id)); }
-    }
-
-    private static void makeScene(MainActivity a, Game g, Profile prof) {
+    private static void makeScene(MainActivity a, Game g, Profile prof, String selectedScale) {
         File files = a.getExternalFilesDir(null);
-        sceneWant(g.titleId, true);
+        sceneWant(g.titleId, selectedScale);
         // Back closes it (the :pack process could end without an answer: the first run there also unpacks the packer); the answer still turns 720p on and says so
         AlertDialog wait = new AlertDialog.Builder(a).setMessage(R.string.s2_scene_making).setCancelable(true).create();
         wait.show();
-        String id = g.titleId, scale = prof.sceneScale(), expect = prof.sceneExpect();
+        String id = g.titleId, scale = selectedScale, expect = prof.sceneExpect();
         new Thread(() -> {
             String[] in = sceneInputs(g);
             boolean have = files != null && in != null && SceneOverlay.current(files, id, scale, expect, in[0]);
@@ -710,7 +725,7 @@ final class GameSettings {
                 boolean gone = a.isFinishing() || a.isDestroyed();
                 if (in == null || files == null || have) {
                     if (!gone) { try { wait.dismiss(); } catch (RuntimeException ignored) { /* its window is gone */ } }
-                    if (have) { if (sceneWanted(id)) { Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); } }
+                    if (have) { if (sceneWanted(id, scale)) { Prefs.sceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); } }
                     else if (gone) modToast(a, a.getString(R.string.s2_scene_failed, a.getString(R.string.s2_scene_no_pack)));
                     else a.error(a.getString(R.string.s2_scene_failed, a.getString(R.string.s2_scene_no_pack)));
                     if (!gone) a.gameSettingsChanged(g);
@@ -723,7 +738,7 @@ final class GameSettings {
                         if (!end) { try { wait.dismiss(); } catch (RuntimeException ignored) { /* its window is gone */ } }
                         if (code == 0) {
                             // made, but turned on only when the player has not chosen otherwise meanwhile (the overlay stays: a later 720p takes it at once)
-                            if (sceneWanted(id)) { Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); }
+                            if (sceneWanted(id, scale)) { Prefs.sceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, a.getString(R.string.s2_scene_made)); }
                         } else if (code == SceneService.RUNNING) {
                             // an earlier run (its wait dialog closed with Back) is still making it; its answer turns 720p on while 720p is still the choice
                             modToast(a, a.getString(R.string.s2_scene_running));
