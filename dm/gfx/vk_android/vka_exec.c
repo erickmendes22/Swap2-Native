@@ -190,7 +190,7 @@ void vka_rp_set_queue_origin(int on) { g_queue_origin_ll = on != 0; }
 void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 // Replay statistics every 300 frames (DM_VK_STATS=0: none): what a frame costs the GPU in passes and barriers (each pass loads and stores its attachments on a tiler), and the
 // CPU per draw (recording: mtl_sub_begin to vkEndCommandBuffer)
-extern uint64_t vka_n_rp, vka_n_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
+extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
 static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the submission the worker replays (vka_exec_sub_frame)
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
@@ -205,6 +205,7 @@ void mtl_set_frame(uint64_t f) {
         if (f0) VLOG("replay up to frame %llu: per frame %.0f draws, %.0f render passes, %.0f clears / copies (%.0f in a pass), %.0f full barriers, %.0f inline uniform updates, %.1f submissions (%.1f parts); recording %.2f ms a frame (%.2f us a draw)",
                      (unsigned long long)f, (g_stat_draws - d0) / n, (vka_n_rp - rp0) / n, (g_stat_ops - o0) / n, (g_n_pclear - pc0) / n, (vka_n_bar - b0) / n, (g_n_ub - ub0) / n, (g_n_sub - s0) / n, (g_n_sub - s0 + g_n_chunks - ch0) / n, (g_rec_ns - r0) / n / 1e6,
                      g_stat_draws > d0 ? (g_rec_ns - r0) / 1e3 / (double)(g_stat_draws - d0) : 0.0);
+        { static uint64_t tb0; VLOG("Vulkan scoped upload dependencies: %.1f transfer-write -> ALL_COMMANDS barriers/frame (replacing full barriers only after inline uniform copies)", (vka_n_transfer_bar - tb0) / n); tb0 = vka_n_transfer_bar; }
         { char pb[400]; void vka_draw_prof(char *b, size_t n, double draws); vka_draw_prof(pb, sizeof pb, (double)(g_stat_draws - d0)); if (pb[0]) VLOG("draw path per draw (us): %s", pb);
           vka_enc_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb);
           vka_floor_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
@@ -1102,7 +1103,7 @@ static void exec(const uint8_t *p, int depth) {
         case OP_RESET_COUNTER: { uint64_t t; memcpy(&t, a, 8); if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED) oq_reset(); break; }
         case OP_CLEAR_BUF: if (g_cb) { const p_clear_buf *cb = a; buf_fill(cb->addr, cb->size, cb->value); vka_barrier(g_cb); } break;
         case OP_COPY_B2B: if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); buf_copy(s_, d, n); vka_barrier(g_cb); } break;
-        case OP_UPDATE_UB: g_n_ub++; if (g_cb) { uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8); buf_update((const uint8_t *)a + 16, d, n); vka_barrier(g_cb); } break;
+        case OP_UPDATE_UB: g_n_ub++; if (g_cb) { uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8); buf_update((const uint8_t *)a + 16, d, n); vka_transfer_write_barrier(g_cb); } break;
         case OP_SET_RT: S.rt = *(const p_set_rt *)a; S.has_rt = 1; break;
         case OP_DISCARD_COLOR: if (g_cb) { int32_t index; memcpy(&index, a, sizeof index); vka_rp_discard(&S.rt, S.has_rt, index); } break;
         case OP_DISCARD_DS: if (g_cb) vka_rp_discard(&S.rt, S.has_rt, -1); break;
