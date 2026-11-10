@@ -47,6 +47,8 @@ def nxLabel = providers.gradleProperty('nxLabel').getOrElse(nxApp ? "Swap2-Nativ
 def gitOut = { List<String> a -> try { providers.exec { commandLine(['git'] + a); ignoreExitValue = true }.standardOutput.asText.get().trim() } catch (Exception e) { '' } }
 def commit = gitOut(['rev-parse', '--short=12', 'HEAD'])
 def branch = gitOut(['rev-parse', '--abbrev-ref', 'HEAD'])
+// Display-only release label; keep the actual source commit in NX_COMMIT.
+def branchLabel = providers.gradleProperty('nxBranchLabel').getOrElse(branch)
 def dirty = gitOut(['status', '--porcelain', '--untracked-files=no']) ? '+dirty' : ''
 def buildTime = new Date().format('yyyy-MM-dd HH:mm')
 // Lossless Scaling frame generation (GPL-3.0-or-later, dm/gfx/vk_android/lsfg): in by default, which makes the APK GPL-3.0-or-later; -PnxLsfg=false builds without it (the packer's libdmsh_xlate.so is GPL-3.0-or-later too: android/NOTICE.md)
@@ -121,7 +123,7 @@ android {
         // The games this APK runs, with what the launcher needs of their profiles (Profile.java)
         buildConfigField 'String', 'NX_PROFILES', "\"$nxProfiles\""
         buildConfigField 'String', 'NX_COMMIT', "\"${commit ?: 'unknown'}\""
-        buildConfigField 'String', 'NX_BRANCH', "\"${branch ?: 'unknown'}\""
+        buildConfigField 'String', 'NX_BRANCH', "\"${branchLabel ?: 'unknown'}\""
         buildConfigField 'String', 'NX_DIRTY', "\"${commit ? dirty : ''}\""
         buildConfigField 'String', 'NX_BUILD_TIME', "\"$buildTime\""
         buildConfigField 'boolean', 'NX_LSFG', "$nxLsfg"
