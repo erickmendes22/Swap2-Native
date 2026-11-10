@@ -3,8 +3,9 @@
 The original ALL_COMMANDS memory barrier remains required for:
   - explicit guest OP_BARRIER, even if the pass had no storage writes
   - an NVN barrier taken inside a render pass (pending until a hazard)
-  - shader global/storage writes, geometry side effects
   - diagnostic paths that add reads/copies and standalone pending clears.
+Graphics-only shader stores (including mesh/task) now use ALL_GRAPHICS
+producer stages and ALL_COMMANDS consumers instead of a full producer scope.
 A pure color/depth/stencil pass may narrow only the PRODUCER stages while
 preserving the all-consumers destination and memory visibility.
 """
@@ -39,15 +40,16 @@ class AttachmentDependencyTest(unittest.TestCase):
         self.assertIn("vka_barrier(g_cb);", DRAW)
         self.assertIn("vka_barrier(g_cb);", EXEC)
 
-    def test_shader_stores_pending_barriers_and_diagnostics_force_full(self):
-        self.assertIn("g_rp_force_full || R.bar_pending || R.swrite || had_clears || vka_nan_on()", DRAW)
+    def test_shader_stores_preserve_graphics_source_with_full_guest_barrier_fallback(self):
+        self.assertIn("g_rp_force_full || R.bar_pending || had_clears || vka_nan_on()", DRAW)
+        self.assertIn("else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }", DRAW)
         self.assertIn("if (!R.swrite && draw_writes(sh, d)) R.swrite = 1;", DRAW)
         self.assertIn("R.bar_pending = 1;", DRAW)
         self.assertIn("vka_oq_pass_end();", DRAW)
         self.assertIn("vk.vkCmdEndRendering(g_cb);", DRAW)
         self.assertLess(DRAW.index("vk.vkCmdEndRendering(g_cb);"), DRAW.index("if (full) { g_rp_full++; vka_barrier(g_cb); }"))
         self.assertIn("else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }", DRAW)
-        self.assertIn("pass-end barriers: %.1f attachment-scoped and %.1f full/frame", DRAW)
+        self.assertIn("pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame", DRAW)
 
     def test_conservative_case_matrix(self):
         for guest in (False, True):
@@ -55,10 +57,17 @@ class AttachmentDependencyTest(unittest.TestCase):
                 for storage in (False, True):
                     for clears in (False, True):
                         for diagnostic in (False, True):
-                            full = guest or pending or storage or clears or diagnostic
-                            # Source code must not take its scoped fast path
-                            # whenever any of these real GPU-memory hazards exists.
-                            self.assertEqual(full, any((guest, pending, storage, clears, diagnostic)))
+                            full = guest or pending or clears or diagnostic
+                            # Shader stores alone need a complete GRAPHICS
+                            # producer dependency, not ALL_COMMANDS producer.
+                            graphics = storage and not full
+                            attachments = not full and not graphics
+                            self.assertEqual(int(full) + int(graphics) + int(attachments), 1)
+                            if full:
+                                self.assertTrue(guest or pending or clears or diagnostic)
+                            if graphics:
+                                self.assertTrue(storage)
+                                self.assertFalse(guest or pending or clears or diagnostic)
 
     def test_no_shader_library_or_new_toggle(self):
         self.assertIn("vka_attachment_write_barrier_at", HEADER)
