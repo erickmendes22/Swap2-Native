@@ -307,7 +307,10 @@ static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, i
     default:                                      v = (VkViewport){(float)dx, (float)dy, (float)dw, (float)dh, 0, 1}; memcpy(m, (int[6]){1, 0, 0, 1, -dx, -dy}, sizeof m); break;
     }
     memset(pc, 0, sizeof pc);
-    pc[0] = fsr_bits(exp2f(-(float)VKA_ENVF("DM_VK_FSR_SHARP", 0.25)));
+    // Negative means FSR sharpening Off: zero RCAS lobe yields the exact EASU
+    // centre sample (no added sharpening), using the already bundled SPIR-V.
+    float sharp = (float)VKA_ENVF("DM_VK_FSR_SHARP", 0.25);
+    pc[0] = fsr_bits(sharp < 0 ? 0.0f : exp2f(-sharp));
     memcpy(&pc[4], m, sizeof m);
     sc = (VkRect2D){{0, 0}, g_ext};
     vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -541,8 +544,12 @@ static int present_one(const pq_item *it) {
     if (it->has_crop && it->crop[2] > 0 && it->crop[3] > 0) { cx = it->crop[0]; cy = it->crop[1]; cw = it->crop[2]; ch = it->crop[3]; }
     int ew = (int)(rot_quarter(g_pre) ? g_ext.height : g_ext.width), eh = (int)(rot_quarter(g_pre) ? g_ext.width : g_ext.height);   // the display, as the user sees it
     double s = (double)ew / cw < (double)eh / ch ? (double)ew / cw : (double)eh / ch;
-    int dw = (int)(cw * s + 0.5), dh = (int)(ch * s + 0.5), dx = (int)((long)(ew - dw) * g_place_x / 10000), dy = (int)((long)(eh - dh) * g_place_y / 10000);   // nxhost_picture_place
+    int stretch = VKA_ENV("DM_VK_PICTURE_STRETCH", 0) != 0;
+    int dw = stretch ? ew : (int)(cw * s + 0.5), dh = stretch ? eh : (int)(ch * s + 0.5);
+    int dx = stretch ? 0 : (int)((long)(ew - dw) * g_place_x / 10000), dy = stretch ? 0 : (int)((long)(eh - dh) * g_place_y / 10000);  // nxhost_picture_place
     VkFormatProperties fp = {0}; if (im) vk.vkGetPhysicalDeviceFormatProperties(V.pd, im->f.vk, &fp);
+    int present_filter = VKA_ENV("DM_VK_PRESENT_FILTER", 0);  // 0 native, 1 nearest, 2 bilinear, 3 FSR
+    int nearest = present_filter == 1;
     int blit = im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && im->f.kind == 0 && im->samples == 1 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT);
     // FSR in place of the blit or the rotated copy for a picture scaled up; switched on live, the swapchain has no attachment views yet: blitted once, and the next swapchain has them.
     // A view that failed on a swapchain made for FSR is not asked for again: each present would make a new swapchain (a queue idle) and fail the same way
@@ -559,7 +566,7 @@ static int present_one(const pq_item *it) {
         int ok = im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && im->f.kind == 0 && im->samples == 1 && (im->usage & VK_IMAGE_USAGE_SAMPLED_BIT) && g_sview[idx];
         if (ok) vka_barrier(cb);   // the replay's writes to the window texture (earlier submissions, in submission order)
         else if (im) VRED_ONCE("window texture serial %llu (format %#x) cannot be sampled for the rotated copy: presented black", (unsigned long long)im->serial, im->d.format);
-        rot_copy(cb, k, idx, im, ok, cx, cy, cw, ch, dx, dy, dw, dh, !!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT));
+        rot_copy(cb, k, idx, im, ok, cx, cy, cw, ch, dx, dy, dw, dh, !nearest && !!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT));
         blit = -1;
     } else vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     if (blit < 0) {}
@@ -573,7 +580,7 @@ static int present_one(const pq_item *it) {
         int y0 = cy, y1 = cy + ch; if (vka_origin_ll()) { y0 = cy + ch; y1 = cy; }   // lower-left origin: the window texture is stored bottom-up
         VkImageBlit b = {{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{cx, y0, 0}, {cx + cw, y1, 1}}, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{dx, dy, 0}, {dx + dw, dy + dh, 1}}};
         vk.vkCmdBlitImage(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, g_simg[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b,
-                          fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+                          !nearest && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
     } else if (im && !blit) VRED_ONCE("window texture serial %llu (format %#x) cannot be blitted to the swapchain: presented black", (unsigned long long)im->serial, im->d.format);
     if (blit >= 0) vka_img_barrier(cb, g_simg[idx], VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     if (!it->src) vka_ctl_shot_record(cb, im, cx, cy, cw, ch);   // the game's own frames only
