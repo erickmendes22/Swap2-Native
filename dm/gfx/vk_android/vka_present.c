@@ -14,6 +14,7 @@
 #include "../nvn/nvn_mtl.h"
 #include "vka_present_rot.h"
 #include "vka_present_fsr.h"
+#include "vka_present_sgsr.h"   // generated from Qualcomm SGSR 1 shader, single-pass 720p reconstruction
 #include <android/native_window.h>
 #include <dlfcn.h>
 #include <math.h>
@@ -182,7 +183,7 @@ static void rot_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, 
 // ---------- FSR 1 upscale: EASU into an intermediate image, then RCAS into the swapchain image (vka_present_fsr.h) ----------
 // DM_VK_FSR=1 replaces the bilinear blit, or the rotated copy, when the picture is scaled up; DM_VK_FSR_SHARP is RCAS's sharpness in stops (0 = the most,
 // each stop halves it; AMD's default 0.25). Both are live. The intermediate image has the picture's size on the window, one per frame in flight
-static struct { int state; VkFormat fmt; VkPipeline easu, rcas; VkPipelineLayout lay; VkDescriptorSetLayout dsl; VkDescriptorPool pool; VkDescriptorSet set[NFRAME][2]; VkSampler samp;
+static struct { int state, sgsr_failed; VkFormat fmt; VkPipeline easu, rcas, sgsr; VkPipelineLayout lay; VkDescriptorSetLayout dsl; VkDescriptorPool pool; VkDescriptorSet set[NFRAME][2]; VkSampler samp;
                 VkImage mid[NFRAME], finish[NFRAME]; VkDeviceMemory mem[NFRAME], fmem[NFRAME]; VkImageView view[NFRAME], fview[NFRAME]; uint32_t mw[NFRAME], mh[NFRAME]; } g_fsr;
 static int fsr_wanted(void) { return VKA_ENV("DM_VK_FSR", 0) != 0; }
 static VkPipeline fsr_pipe(const uint32_t *frag, size_t fsize, VkFormat fmt) {
@@ -236,6 +237,16 @@ static int fsr_ready(VkFormat fmt) {
     }
     if (g_fsr.rcas) { vka_queue_idle(); rk.vkDestroyPipeline(V.dev, g_fsr.rcas, NULL); g_fsr.rcas = VK_NULL_HANDLE; }   // a new swapchain format: no pass in flight
     if (!(g_fsr.rcas = fsr_pipe(vka_fsr_rcas_frag, sizeof vka_fsr_rcas_frag, VK_FORMAT_R8G8B8A8_UNORM))) { g_fsr.state = -1; return 0; }
+    // Qualcomm's spatial SGSR1 is a single 720p shader pass, not EASU+RCAS.
+    // Compile its distinct pipeline once. Failure must preserve the proven
+    // Build 21 FSR path; shader module is SPIR-V validated by CI.
+    if (!g_fsr.sgsr && !g_fsr.sgsr_failed) {
+        g_fsr.sgsr = fsr_pipe(vka_sgsr1_frag, sizeof vka_sgsr1_frag, VK_FORMAT_R8G8B8A8_UNORM);
+        if (!g_fsr.sgsr) {
+            g_fsr.sgsr_failed = 1;
+            VRED_ONCE("SGSR1 pipeline failed on this driver: falling back to original EASU+RCAS at 720p");
+        }
+    }
     g_fsr.state = 1; g_fsr.fmt = fmt;
     VLOG("FSR 1 upscale on (EASU+RCAS limited to 1280x720; final display scaling is a single bilinear sample; sharpness %.2f stops)", VKA_ENVF("DM_VK_FSR_SHARP", 0.25));
     return rot_ready(fmt);
@@ -293,7 +304,7 @@ static uint32_t fsr_bits(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
 // EASU/RCAS work, not merely a viewport or presentation label.
 static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im,
                     int cx, int cy, int cw, int ch, int dx, int dy, int dw, int dh,
-                    int fw, int fh) {
+                    int fw, int fh, int sgsr) {
     VkImageView src = vka_view(im, im->f.vk, VK_IMAGE_VIEW_TYPE_2D,
                                VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1, NULL);
     if (!src) { VRED_ONCE("FSR: window texture serial %llu has no sampled view; native copy retained",
@@ -323,12 +334,37 @@ static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im,
 
     VkViewport v = {0, 0, (float)fw, (float)fh, 0, 1};
     VkRect2D sc = {{0, 0}, {(uint32_t)fw, (uint32_t)fh}};
+    VkRenderingAttachmentInfo ca;
+    VkRenderingInfo ri;
+    if (sgsr && g_fsr.sgsr) {
+        // SGSR 1 uses the same EASU push map and original source sampler.
+        // A single 720p pass writes directly into the final intermediate:
+        // no EASU-to-mid write, mid-to-RCAS read, RCAS draw or barrier.
+        vka_img_barrier(cb, g_fsr.finish[k], VK_IMAGE_ASPECT_COLOR_BIT,
+                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        ca = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = g_fsr.fview[k], .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
+        ri = (VkRenderingInfo){VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = sc,
+            .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &ca};
+        vk.vkCmdBeginRendering(cb, &ri);
+        rk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.sgsr);
+        rk.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.lay,
+                                   0, 1, &g_fsr.set[k][0], 0, NULL);
+        rk.vkCmdPushConstants(cb, g_fsr.lay, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof pc, pc);
+        rk.vkCmdSetViewport(cb, 0, 1, &v);
+        rk.vkCmdSetScissor(cb, 0, 1, &sc);
+        rk.vkCmdDraw(cb, 3, 1, 0, 0);
+        vk.vkCmdEndRendering(cb);
+        vka_img_barrier(cb, g_fsr.finish[k], VK_IMAGE_ASPECT_COLOR_BIT,
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    } else {
     vka_img_barrier(cb, g_fsr.mid[k], VK_IMAGE_ASPECT_COLOR_BIT,
                     VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    VkRenderingAttachmentInfo ca = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+    ca = (VkRenderingAttachmentInfo){VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .imageView = g_fsr.view[k], .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE, .storeOp = VK_ATTACHMENT_STORE_OP_STORE};
-    VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = sc,
+    ri = (VkRenderingInfo){VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = sc,
         .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &ca};
     vk.vkCmdBeginRendering(cb, &ri);
     rk.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, g_fsr.easu);
@@ -366,6 +402,7 @@ static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im,
     vk.vkCmdEndRendering(cb);
     vka_img_barrier(cb, g_fsr.finish[k], VK_IMAGE_ASPECT_COLOR_BIT,
                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    } // end FSR1 two-pass fallback
 
     // Final native-size pass is a single ordinary texture sample per pixel,
     // not EASU or RCAS. Reuse the proven pre-rotation pipeline for landscape
@@ -654,10 +691,11 @@ static int present_one(const pq_item *it) {
     if (fw < 1) fw = 1;
     if (fh < 1) fh = 1;
     if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)fw, (uint32_t)fh)
-        && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh, fw, fh)) {
+        && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh, fw, fh, present_filter == 4)) {
         static int log_fw, log_fh, log_dw, log_dh;
         if (log_fw != fw || log_fh != fh || log_dw != dw || log_dh != dh) {
-            VLOG("FSR actual GPU work: EASU+RCAS %dx%d (%.1f%% of native %dx%d pixels), final single-sample display only",
+            VLOG("%s actual GPU work: %dx%d (%.1f%% of native %dx%d pixels), final single-sample display only",
+                 present_filter == 4 && g_fsr.sgsr ? "SGSR 1 one pass" : "FSR EASU+RCAS two passes",
                  fw, fh, 100.0 * (double)fw * fh / (double)dw / dh, dw, dh);
             log_fw = fw; log_fh = fh; log_dw = dw; log_dh = dh;
         }
@@ -687,7 +725,7 @@ static int present_one(const pq_item *it) {
     // Verify the option actually reached the GPU, and distinguish requested
     // FSR from a driver fallback to linear/nearest blit. Log only on a change.
     static int last_mode = -1, last_stretch = -1, last_w = -1, last_h = -1, last_dstw = -1, last_dsth = -1, last_method = -1;
-    int method = fsr_applied ? 3 : rotated_copy ? 2 : blit > 0 ? 1 : 0;
+    int method = fsr_applied ? (present_filter == 4 && g_fsr.sgsr ? 4 : 3) : rotated_copy ? 2 : blit > 0 ? 1 : 0;
     if (present_filter != last_mode || stretch != last_stretch || cw != last_w || ch != last_h ||
         dw != last_dstw || dh != last_dsth || method != last_method) {
         VLOG("present output filter=%d (0 auto,1 nearest,2 bilinear,3 FSR), stretch=%d; image %dx%d -> %dx%d, method=%s%s",
