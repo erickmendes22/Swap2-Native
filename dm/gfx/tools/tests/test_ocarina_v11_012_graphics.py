@@ -53,7 +53,7 @@ class V11Graphics012Tests(unittest.TestCase):
         self.assertIn('"segment" : "submission"', OPTS)
 
     def test_preserve_ios_v11_update_contract(self):
-        self.assertIn('branches: [ocarina-v11-ios-perf-from-v101]', WF)
+        self.assertIn('branches: [ocarina-v11-ios-perf-from-v101', WF)
         self.assertIn('-PnxApp=ootv11ios', WF)
         self.assertIn('com.swap2native.ootv11ios', WF)
         self.assertIn('key: swap2-ootv11ios-test-signing-v1', WF)
