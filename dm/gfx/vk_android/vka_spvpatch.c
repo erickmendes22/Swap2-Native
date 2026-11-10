@@ -785,3 +785,51 @@ fail:
     return NULL;
 #undef FAIL
 }
+
+// Ocarina 9e6b... compute occupancy experiment. The observed 8x9x12 grid
+// and 8x4x4 local size launch 110,592 total invocations (two 64-lane waves
+// per group on Adreno). A 8x4x2 local size with 8x9x24 groups launches the
+// EXACT SAME global invocations with one wave per group, sometimes allowing
+// higher occupancy for register-heavy kernels.
+//
+// Never attempt this if the shader uses local/group indices, workgroup
+// storage, barriers or subgroup/atomic operations: their meaning depends on
+// workgroup shape. It must explicitly use GlobalInvocationId. The caller also
+// verifies the game's metadata reports zero shared memory and no subgroup
+// features. The original shader is kept as a fallback for other dispatches.
+int vka_spv_oot_cs_retile(uint32_t *w, size_t nw, char *why, size_t whylen) {
+#define RETILE_NO(msg) do { if (why && whylen) snprintf(why, whylen, "%s", msg); return 0; } while (0)
+    if (!w || nw < 6 || w[0] != 0x07230203u) RETILE_NO("not SPIR-V");
+    int compute = 0, global_id = 0;
+    size_t local_at = 0;
+    for (size_t i = 5; i < nw;) {
+        unsigned op = w[i] & 0xffffu, len = w[i] >> 16;
+        if (!len || i + len > nw) RETILE_NO("invalid instruction length");
+        if (op == 15 && len >= 3 && w[i + 1] == 5) compute = 1; // OpEntryPoint GLCompute
+        if (op == 16 && len >= 3 && w[i + 2] == 17) { // OpExecutionMode LocalSize
+            if (len != 6 || local_at || w[i + 3] != 8 || w[i + 4] != 4 || w[i + 5] != 4)
+                RETILE_NO("non-8x4x4 or multiple LocalSize modes");
+            local_at = i;
+        }
+        if (op == 331) RETILE_NO("spec-constant ExecutionModeId");
+        if (op == 71 && len >= 4 && w[i + 2] == 11) { // OpDecorate BuiltIn
+            // WorkgroupId/LocalInvocationId/NumWorkgroups and other builtins
+            // can depend on the original workgroup shape. All are refused.
+            if (w[i + 3] != 28) RETILE_NO("local/group-dependent builtin");
+            global_id = 1;
+        }
+        if (op == 72 && len >= 5 && w[i + 3] == 11)
+            RETILE_NO("struct/member builtin");
+        if (op == 59 && len >= 4 && w[i + 3] == 4)
+            RETILE_NO("workgroup storage variable");
+        if (op == 224 || op == 225 || (op >= 227 && op <= 243) ||
+            (op >= 259 && op <= 269) || (op >= 333 && op <= 370))
+            RETILE_NO("barrier, atomic or group operation");
+        i += len;
+    }
+    if (!compute || !global_id || !local_at) RETILE_NO("no GLCompute GlobalInvocationId or literal LocalSize");
+    w[local_at + 5] = 2; // z local = 2; caller doubles the dispatch z grid
+    if (why && whylen) snprintf(why, whylen, "retiled 8x4x4 -> 8x4x2");
+    return 1;
+#undef RETILE_NO
+}
