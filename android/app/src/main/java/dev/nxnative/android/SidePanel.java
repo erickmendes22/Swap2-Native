@@ -145,7 +145,7 @@ final class SidePanel extends FrameLayout {
 
         lsfgNow = Lsfg.rows(act, box, "", () -> { Lsfg.push(act); refresh(); });
 
-        Fsr.rows(act, box);   // FSR 1 upscaling at the present (DM_VK_FSR), sent to the game through DM_CTL
+        GraphicsOptions.rows(act, box, game());   // 0.1.2 output filter/FSR sharpness, live via DM_CTL
 
         head("Overlay");
         Overlay.rows(act, box, null);
