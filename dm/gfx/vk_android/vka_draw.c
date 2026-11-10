@@ -1545,6 +1545,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
                    if (mdi) vk.vkCmdDrawIndexedIndirectCount(g_cb, b, o, mdi_buffer, mdi_offset, mdi_max, mdi_stride); else vk.vkCmdDrawIndexedIndirect(g_cb, b, o, 1, 20); }
         else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
     }
+    if (vka_gp_active) vka_gp_draw(sh[0] ? sh[0]->key : 0, sh[1] ? sh[1]->key : 0, sh[7] ? sh[7]->key : 0);
     draw_log(d, sh, dw, di);
     g_draws++;
     texstat_at();   // (diagnostic: DM_VK_TEXSTAT_AT)
@@ -1568,6 +1569,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     walk_all(d, sh);   // (before the pipeline: the storage and sampled images it binds integer textures to are retyped in its module, img_retype_of)
     vka_imgrt rt; img_retype_of(sh[5], g_wk.r[5], g_wk.n[5], &rt);
     VkPipeline p = vka_ndsr_pipeline(d, sh[5], &lay, g_wk.r[5], g_wk.n[5], &rt, g_cb);   // DM_VK_NDSR=fsr: agl's NDSR network replaced by FSR 1 EASU (vka_ndsr.c), else NULL
+    const int gp_ndsr_replaced = p != VK_NULL_HANDLE;
     if (!p) p = rt.b[0] ? vka_cs_pipeline_img(sh[5], &lay, &rt) : vka_cs_pipeline(sh[5], &lay);
     if (vka_nan_on()) vka_tex_watch_dispatch(sh[5]->key);
     if (!p) SKIPQ();
@@ -1617,6 +1619,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         else if (r->what == VKA_R_GMEM_MAP || r->what == VKA_R_GMEM_LOG) VLOG("dispatch %llu:   binding %u raw global memory %s", di, r->binding, r->what == VKA_R_GMEM_MAP ? "table" : "write log");
     }
     if (skip) { vka_barrier(g_cb); g_dispatches++; texstat_at(); return; }
+    if (vka_gp_active) vka_gp_compute(sh[5]->key, (uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z, gp_ndsr_replaced);
     vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, p);
     if (dp->ind) vk.vkCmdDispatchIndirect(g_cb, ib, io);
     else if (dp->x > 0 && dp->y > 0 && dp->z > 0) {
