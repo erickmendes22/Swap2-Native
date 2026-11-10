@@ -44,7 +44,7 @@ class SgsrMesh(unittest.TestCase):
         self.assertIn('"SGSR 1 (1 passagem até 720p)"', JAVA)
         self.assertIn('value = clamp(value, 0, 4);', JAVA)
         self.assertIn('runningFsr = value == 3 || value == 4;', JAVA)
-        self.assertIn('return Prefs.OCARINA_TITLE.equals(id) && previous == 0 ? 3 : previous;', JAVA)
+        self.assertIn('return Prefs.OCARINA_TITLE.equals(id) && previous == 0 ? 4 : previous;', JAVA)
         self.assertIn('out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));', JAVA)
         self.assertIn('present_filter == 4', PRESENT)
 
