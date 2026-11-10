@@ -190,22 +190,23 @@ static int rt_same(const p_set_rt *a, int ha, const p_set_rt *b, int hb) {
 }
 // Game barriers (OP_BARRIER) that came with a pass open: taken inside it (DM_VK_BAR_KEEP), ended it at once, ended it later at a draw that needed it (bar_hazard)
 static uint64_t g_bar_in, g_bar_kept, g_bar_late, g_bar_duplicate_avoided;
-static uint64_t g_rp_scoped, g_rp_full;
+static uint64_t g_rp_scoped, g_rp_graphics, g_rp_full;
 static int g_rp_force_full; // OP_BARRIER has stricter guest-visible ordering than an ordinary pass transition
 void vka_oq_pass_end(void), vka_oq_draw(void);   // vka_exec.c "Occlusion queries"
 void vka_rp_end(void) {
     int had_clears = PC.n != 0;
     if (PC.n) pc_flush();
     if (!R.on) return;
-    // An explicit guest barrier, pending guest barrier, diagnostic readback,
-    // earlier clears outside the pass, or a shader-store draw needs the full
-    // memory dependency. For attachment-only passes, the actual producer
-    // stages are color and early/late depth/stencil tests; synchronize those
-    // writes with all later Vulkan consumers without an ALL_COMMANDS source.
-    int full = g_rp_force_full || R.bar_pending || R.swrite || had_clears || vka_nan_on();
+    // A pass with storage writes (R.swrite) can include task/mesh/fragment
+    // memory stores. These were issued by graphics stages, not compute or
+    // transfer. Limit the producer to ALL_GRAPHICS while keeping ALL_COMMANDS
+    // as the destination. Explicit guest barriers, pending barriers, previous
+    // clears outside the pass, and NaN diagnostics retain the full dependency.
+    int full = g_rp_force_full || R.bar_pending || had_clears || vka_nan_on();
     vka_oq_pass_end();   // an occlusion query active in the pass ends inside it
     vk.vkCmdEndRendering(g_cb);
     if (full) { g_rp_full++; vka_barrier(g_cb); }
+    else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }
     else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
     if (vka_nan_on()) vka_nan_pass(g_cb, R.cim, R.clv, R.cl0, R.nci);
