@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[4]
 SOURCE = (ROOT / "dm/gfx/tools/vk_android_build.py").read_text()
 TREE = ast.parse(SOURCE)
 FN = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "captured_oot_records")
+PW_FN = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "cached_oot_mesh_pipeline_pairs")
 SPLIT = ROOT / "dm/gfx/tools/shader_split.py"
 SPLIT_TREE = ast.parse(SPLIT.read_text())
 MESH_FN = next(n for n in SPLIT_TREE.body if isinstance(n, ast.FunctionDef) and n.name == "mesh_facts")
@@ -29,6 +30,9 @@ class CapturedTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.capture = Path(self.tmp.name) / "nvn_shdump"
         self.pkg = Path(self.tmp.name) / "pkg"
+        self.cache_root = Path(self.tmp.name) / "files" / "packs" / "0400486024DEC000" / "shaders" / "hot"
+        self.prewarm = Path(self.tmp.name) / "files" / "temp" / "0400486024DEC000" / "vk_pipelines.keys"
+        self.prewarm.parent.mkdir(parents=True)
         self.capture.mkdir()
         self.original = os.environ.get("DMSH_VK_CAPTURE_DIR")
         os.environ["DMSH_VK_CAPTURE_DIR"] = str(self.capture)
@@ -39,9 +43,12 @@ class CapturedTests(unittest.TestCase):
         ns = dict(os=os, re=re, struct=struct, hashlib=hashlib, sys=sys,
                   FACTS=self.facts, CAPTURED_MESH_FACTS=decoder['mesh_facts'],
                   borrow_mesh_layout=lambda: decoder['mesh_facts'],
+                  cache_root=str(self.cache_root),
                   GAME=types.SimpleNamespace(id="0400486024DEC000"))
-        exec(compile(ast.Module(body=[FN], type_ignores=[]), "<production capture function>", "exec"), ns)
+        exec(compile(ast.Module(body=[PW_FN, FN], type_ignores=[]),
+                     "<production capture functions>", "exec"), ns)
         self.repair = ns["captured_oot_records"]
+        self.history = ns["cached_oot_mesh_pipeline_pairs"]
 
     def restore(self):
         if self.original is None: os.environ.pop("DMSH_VK_CAPTURE_DIR", None)
@@ -135,6 +142,44 @@ class CapturedTests(unittest.TestCase):
         (self.capture / (key + ".ctl")).write_bytes(ctl)
         (self.capture / (key + ".code")).write_bytes(code)
         return key
+
+    def cached_pipeline(self, mesh, pixel, task=None):
+        # NXVKPW2 private cache: 24-byte header + 48-byte record +
+        # 48-byte gkey (a validly bounded test record).
+        header=struct.pack("<8sIIII",b"NXVKPW2\0",1024,1,0x1234,0)
+        rec=struct.pack("<BB2sI5Q",2,0,b"\0\0",48,
+            int(task,16) if task else 0, int(mesh,16),
+            int(pixel,16),0,0)
+        self.prewarm.write_bytes(header+rec+bytes(48))
+
+    def test_57_source_repair_can_recover_pair_from_old_prewarms_offline(self):
+        mesh=self.write_mesh_task(7,13)
+        task=self.write_mesh_task(6,17)
+        pixel=self.pixel_partner()
+        self.cached_pipeline(mesh,pixel,task)
+        self.assertFalse((self.capture/"mesh_pairs.tsv").exists())
+        self.assertEqual(self.history(str(self.cache_root),"0400486024DEC000"),
+                         {(mesh,pixel,"mesh"),(task,mesh,"task")})
+        loc={}
+        self.assertEqual(self.repair({mesh,task},loc,{},str(self.pkg)),2)
+        self.assertEqual(self.facts[mesh]["pair"],[pixel])
+        self.assertEqual(self.facts[task]["pair"],[mesh])
+        self.assertFalse((self.capture/"mesh_pairs.tsv").exists())
+
+    def test_prewarms_are_rejected_if_incomplete_or_source_unverified(self):
+        mesh=self.write_mesh_task(7,13)
+        pixel=self.pixel_partner()
+        self.cached_pipeline(mesh,pixel)
+        good=self.prewarm.read_bytes()
+        for invalid in (good[:-1],b"BADHDR!!"+good[8:]):
+            self.prewarm.write_bytes(invalid)
+            self.assertEqual(self.history(str(self.cache_root),"0400486024DEC000"),set())
+        self.prewarm.write_bytes(good)
+        for suffix in (".ctl",".code"):
+            (self.capture/(pixel+suffix)).unlink()
+        with self.assertRaises(SystemExit) as cm:
+            self.repair({mesh},{},{},str(self.pkg))
+        self.assertIn("no verified runtime",str(cm.exception))
 
     def pixel_partner(self, flat=False):
         code = bytearray(0x100)

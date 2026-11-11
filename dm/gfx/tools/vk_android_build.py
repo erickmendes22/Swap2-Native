@@ -233,6 +233,50 @@ def borrow_mesh_layout():
     return ns['mesh_facts']
 
 
+def cached_oot_mesh_pipeline_pairs(cache_root, game_id):
+    """Get genuine mesh/task/fragment triples from the EXISTING prewarm file.
+
+    vka_pso.c persists NXVKPW1/2: 8-byte magic, gkey size, count, optional
+    layout/pad, then 48-byte pwrec plus padded gkey. Kind 2 records hold
+    key[0]=task, key[1]=mesh, key[2]=pixel. This is a recorded REAL pipeline,
+    so it avoids asking the user to play with currently missing geometry.
+    Each partner must still pass the normal original-source hash/stage check.
+    """
+    files = os.path.abspath(cache_root)
+    for _ in range(4): files = os.path.dirname(files)
+    path = os.path.join(files, 'temp', game_id, 'vk_pipelines.keys')
+    try:
+        nbytes = os.path.getsize(path)
+        if not 24 <= nbytes <= 64 << 20: return set()
+        with open(path, 'rb') as f: data = f.read()
+    except OSError:
+        return set()
+    if len(data) != nbytes: return set()
+    magic = data[:8]
+    if magic == b'NXVKPW2\0':
+        _magic, size, count, layout, _pad = struct.unpack_from('<8sIIII', data)
+        if not layout: return set()
+        pos = 24
+    elif magic == b'NXVKPW1\0':
+        _magic, size, count = struct.unpack_from('<8sII', data)
+        pos = 16
+    else: return set()
+    if size < 32 or size > 4096 or count > 65536: return set()
+    pairs = set()
+    for _ in range(count):
+        if pos + 48 > len(data): return set()
+        kind, bad, _pad, length, task, mesh, pixel, k3, k4 = struct.unpack_from(
+            '<BB2sI5Q', data, pos)
+        advance = 48 + ((length + 7) & ~7)
+        if length > size or pos + advance > len(data): return set()
+        pos += advance
+        if kind != 2 or bad or not mesh or k3 or k4: continue
+        ms = f'{mesh:016x}'
+        if pixel: pairs.add((ms, f'{pixel:016x}', 'mesh'))
+        if task: pairs.add((f'{task:016x}', ms, 'task'))
+    return pairs if pos == len(data) else set()
+
+
 def record_key(rec, skey):
     """The key of one package record ('BTCDBTCD', +0x28 control length, +0x2c code length, from +0x38 the code area then the control section: shader_split.py), or None
     when the record is not one"""
@@ -407,6 +451,9 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
     # compiled 53 mesh/task shaders with an empty mesh_pairs list and
     # produced full-screen white triangles. Fail safely when those partners
     # have not yet been captured by the updated runtime.
+    # Prefer recorded mesh pipelines already saved BEFORE this build.
+    # These records are on disk even when the scene cannot be played.
+    historical = cached_oot_mesh_pipeline_pairs(cache_root, GAME.id)
     pairs = []
     pixel_sources = {}
     pairs_path = os.path.join(source, 'mesh_pairs.tsv')
@@ -441,7 +488,33 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
                 pairs.append((key, partner, 'mesh'))
             elif ctl[0x56] == 7:  # task -> genuine mesh stage
                 pairs.append((key, partner, 'task'))
+    # Same strict hash+stage verification for historical pairs and live
+    # captures. The saved driver prewarm list is evidence of a REAL draw,
+    # never enough on its own to invent the fragment's control/code bytes.
+    for key, partner, kind in historical:
+        if key not in captured: continue
+        try:
+            with open(os.path.join(source, partner + '.ctl'), 'rb') as f: ctl = f.read()
+            with open(os.path.join(source, partner + '.code'), 'rb') as f: code = f.read()
+        except OSError: continue
+        if not (0xd8 <= len(ctl) <= 65536 and 4 <= len(code) <= 1 << 24
+                and ctl[:8] == bytes.fromhex('34127698c9000000')
+                and struct.unpack_from('<I', ctl, 0x44)[0] == len(code)
+                and hashlib.sha256(ctl[:0x30] + bytes(4) + ctl[0x34:0x48]
+                                   + code).hexdigest()[:16] == partner):
+            continue
+        if kind == 'mesh':
+            if ((struct.unpack_from('<I', code)[0] >> 10) & 15) != 5: continue
+            pixel_sources[partner] = (None, None, None, code)
+        elif ctl[0x56] != 7: continue
+        pairs.append((key, partner, kind))
     pairs = sorted(set(pairs))
+    if historical:
+        print('Ocarina cached pipeline pair recovery: '
+              f'{len(historical)} saved actual pairings, '
+              f'{len(set(pairs).intersection(historical))} with verified source '
+              'bytes, without requiring gameplay or resplitting 42k shaders.',
+              flush=True)
     records = {}
     stage_map = {0: 'vs', 1: 'ps', 5: 'cs', 6: 'ts', 7: 'ms'}
     graphics = {1: 'vs', 2: 'hs', 3: 'ds', 4: 'gs', 5: 'ps'}
@@ -483,8 +556,10 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
                         p[2] == ('mesh' if stage == 'ms' else 'task')]
             if not observed:
                 sys.exit(f'[RED] {key}: captured {stage} has no verified runtime '
-                         'mesh/pixel or task/mesh pairing. Play its scene with '
-                         'the updated APK first; no full 42k translation.')
+                         'mesh/pixel or task/mesh pairing in saved '
+                         'vk_pipelines.keys or verified source captures; '
+                         'original 42k library preserved; no gameplay or '
+                         'full translation required.')
             derived = CAPTURED_MESH_FACTS(key, stage, ctl, code,
                                           pixel_sources, observed)
             layout = derived.get('mesh')
