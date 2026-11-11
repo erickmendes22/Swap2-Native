@@ -242,9 +242,14 @@ def cached_oot_mesh_pipeline_pairs(cache_root, game_id):
     so it avoids asking the user to play with currently missing geometry.
     Each partner must still pass the normal original-source hash/stage check.
     """
-    files = os.path.abspath(cache_root)
-    for _ in range(4): files = os.path.dirname(files)
-    path = os.path.join(files, 'temp', game_id, 'vk_pipelines.keys')
+    # GameActivity writes the real prewarm history in app external-files/temp,
+    # not in the Switch2/Work tree containing the shader compiler cache.
+    # PackService supplies its exact path; fallback remains for desktop tests.
+    path = os.environ.get('DMSH_VK_PREWARM_FILE', '')
+    if not path:
+        files = os.path.abspath(cache_root)
+        for _ in range(4): files = os.path.dirname(files)
+        path = os.path.join(files, 'temp', game_id, 'vk_pipelines.keys')
     try:
         nbytes = os.path.getsize(path)
         if not 24 <= nbytes <= 64 << 20: return set()
@@ -460,7 +465,11 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
     if os.path.isfile(pairs_path):
         if os.path.getsize(pairs_path) > 524288:
             sys.exit('[RED] Ocarina captured mesh pairing file exceeds safe limit')
-        for row in open(pairs_path, encoding='ascii'):
+        # Legacy APKs wrote literal \t and \n rather than real TSV separators.
+        # Recover both formats in-memory; the installed files stay unchanged.
+        with open(pairs_path, encoding='ascii') as f:
+            rows = f.read().replace('\\t', '\t').replace('\\n', '\n').splitlines()
+        for row in rows:
             fields = row.strip().split('\t')
             if len(fields) != 3 or fields[0] not in ('M', 'T') or not all(
                     re.fullmatch('[0-9a-f]{16}', key) for key in fields[1:]):
