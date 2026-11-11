@@ -408,35 +408,43 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                              extended_hot && !mesh && k->ncolor == 1 &&
                              k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
                              k->dfmt == VK_FORMAT_D32_SFLOAT;
-    // Expanded shading-rate table for the opt-in 4x2/4x4 profiles:
-    // in addition to 17 captured fragment keys, allow other scene fragments
-    // only when pipeline metadata proves the SAME single-target B10G11R11
-    // scene HDR + D32 depth pass, with full color write and without blending,
-    // geometry/tessellation, stencil, alpha-to-coverage, or MSAA.
-    // This deliberately excludes UI, videos, transparencies, depth-only,
-    // post-process outputs and unverified Mesh/Task combinations.
-    // No shader binary, GMEM ABI, draw, render target or image size changes.
-    int broad_hdr_scene = game_oot && hotpass_profile >= 4 && sh[1] &&
-                          !mesh && !sh[2] && !sh[3] && !sh[4] &&
-                          k->ncolor == 1 &&
-                          k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
-                          k->dfmt == VK_FORMAT_D32_SFLOAT &&
-                          k->sfmt == VK_FORMAT_UNDEFINED &&
-                          (k->samples ? k->samples : 1) == 1 &&
-                          k->poly_mode == VK_POLYGON_MODE_FILL &&
-                          !k->att[0].en && k->att[0].mask == 0xF &&
-                          !k->a2c && !k->logic_en;
+    // The Nov 11 Redmagic 4x4 A/B produced >=128 VRS pipelines, severe
+    // scene pixelation and no useful GPU-time reduction. The broad HDR
+    // classification was unsafe: sharing one framebuffer format does NOT
+    // make hundreds of fragment programs equivalent. Revert entirely.
+    // Preserve only the 12 measured scene FS keys plus five captured FS keys
+    // on matching HDR targets (and the exact validated Mesh/Task triple).
     // No SDR UI/video, unrelated R16 render targets, depth-only or MSAA.
     int profiled_hdr = (k->ncolor > 0 &&
                         k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32) ||
                        profiled_mesh_hdr;
-    if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr || broad_hdr_scene)
+    if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0 &&
         profiled_hdr) {
-        if (V.fps_boost_width) {
+        // Keep 4x2/4x4 only on the exact captured two-color Mesh/Task
+        // offscreen pass. Those giant tiles destroyed fine scene details
+        // when used on the game's primary B10G11R11 HDR color target.
+        // This limits quality loss while retaining stronger VRS on the
+        // profiled mesh work. Rate fallback is based on EXACT advertised
+        // Vulkan sample-count-1 modes; never manufacture a pipeline rate.
+        uint32_t rate_w = V.fps_boost_width, rate_h = V.fps_boost_height;
+        if (hotpass_profile >= 4 && !profiled_mesh_hdr) {
+            if (extended_scene_hdr && V.fps_boost_has_2x1) {
+                // Five late-captured main-scene FS: preserve detail.
+                rate_w = 2u; rate_h = 1u;
+            } else if (V.fps_boost_has_2x2) {
+                // Original twelve measured scene FS: at most 2x2.
+                rate_w = 2u; rate_h = 2u;
+            } else if (V.fps_boost_has_2x1) {
+                rate_w = 2u; rate_h = 1u;
+            } else {
+                rate_w = 0u; rate_h = 0u;
+            }
+        }
+        if (rate_w) {
             P->fsrate = (VkPipelineFragmentShadingRateStateCreateInfoKHR){
                 VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
-                .pNext = NULL, .fragmentSize = {V.fps_boost_width, V.fps_boost_height},
+                .pNext = NULL, .fragmentSize = {rate_w, rate_h},
                 .combinerOps = {VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
                                 VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR}};
             // VK_KHR_fragment_shading_rate extends VkGraphicsPipelineCreateInfo,
