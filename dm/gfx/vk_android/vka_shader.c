@@ -571,6 +571,29 @@ vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
 // correctness-first fallback until the missing pairing metadata is verified.
 // Fragment/compute hot shaders remain available. The disk overlay remains
 // intact for future repair, and users can opt into mesh experiments explicitly.
+// The source-recaptured 9e6b compute is the ONLY existing-heavy shader
+// that can switch to the new toolchain without any geometry/pixel interface.
+// Its old NVIDIA-style 8x4x4 dispatch must still see identical workgroup,
+// shared memory and descriptor semantics. A hot overlay that differs in even
+// one resource/ABI field falls back to the 42k known-good library.
+// This is NOT a blanket shader hot override: old Mesh/Task patches remain
+// quarantined to prevent the white-triangle regression.
+static int oot_hot_compute_compatible(const dmsh_vk_entry *old,
+                                       const dmsh_vk_entry *newer) {
+    if (!old || !newer || old->key != UINT64_C(0x9e6b00b050e30801) ||
+        old->stage != DMSH_VK_STAGE_CS || newer->stage != DMSH_VK_STAGE_CS ||
+        old->flags != newer->flags || old->shared != newer->shared ||
+        old->local[0] != newer->local[0] ||
+        old->local[1] != newer->local[1] ||
+        old->local[2] != newer->local[2] ||
+        old->bind_count != newer->bind_count ||
+        old->c1_len != newer->c1_len)
+        return 0;
+    const dmsh_vk_bind *a = vka_shlib_binds(&g_lib, old);
+    const dmsh_vk_bind *b = vka_shlib_binds(&g_hot, newer);
+    return (a && b && memcmp(a, b, (size_t)old->bind_count * sizeof *a) == 0);
+}
+
 static const vka_shlib *library_for_key(uint64_t key) {
     if (!g_hot_loaded) return &g_lib;
     const dmsh_vk_entry *overlay = vka_shlib_find(&g_hot, key);
@@ -579,8 +602,26 @@ static const vka_shlib *library_for_key(uint64_t key) {
     // not that it has the right pixel/mesh linkage. Prefer a known-good
     // original SPIR-V module whenever there is one; experimentation is an
     // opt-in and does not mutate either library on disk.
-    if (vka_shlib_find(&g_lib, key) &&
-        !VKA_ENV("DM_VK_OOT_HOT_OVERRIDE", 0))
+    const dmsh_vk_entry *base = vka_shlib_find(&g_lib, key);
+    // Do not leave the V21/V22 translated compute on disk forever without
+    // ever executing it: the old library's 9e6b module has the known
+    // 0.5-1.4ms GPU cost and the generic SPIR-V group-size patch REFUSES
+    // that module due to local/group dependent builtins. A newly translated
+    // HOT compute with matching ABI is a safer improvement than forcing an
+    // invalid workgroup retiling. Disable for A/B or any visual regression.
+    if (base && key == UINT64_C(0x9e6b00b050e30801) &&
+        VKA_ENV("DM_VK_OOT_HOT_COMPUTE", 1)) {
+        static int compatible = -1;
+        if (compatible < 0) {
+            compatible = oot_hot_compute_compatible(base, overlay);
+            VLOG("Ocarina profile-hot compute 9e6b: verified-resource ABI=%d; "
+                 "%s (DM_VK_OOT_HOT_COMPUTE=0 restores original shader)",
+                 compatible, compatible ? "new selective translator active" :
+                 "original full-library shader retained");
+        }
+        if (compatible) return &g_hot;
+    }
+    if (base && !VKA_ENV("DM_VK_OOT_HOT_OVERRIDE", 0))
         return &g_lib;
     if ((overlay->stage == DMSH_VK_STAGE_MS ||
          overlay->stage == DMSH_VK_STAGE_TS) &&
