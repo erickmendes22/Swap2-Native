@@ -32,7 +32,16 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         self.assertIn('VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0', EXEC)
         self.assertIn('else vka_barrier(cb);', EXEC)
         self.assertIn("vk.vkCmdCopyBuffer(g_cb, b->src, b->dst, b->n, b->region);", EXEC)
-        self.assertIn('if (h.op != OP_UPDATE_UB && !g_ub_np) ub_flush(ub);', EXEC)
+        # GPU commands must see the writes, but a pure state/binding record
+        # is safe to cross: the copy batch contains owned scratch bytes and
+        # is flushed at the next GPU command in original record order.
+        self.assertIn('if (h.op != OP_UPDATE_UB && !overlap_state_record(h.op) && !g_ub_np)', EXEC)
+        self.assertIn('ub_flush(ub);', EXEC)
+        self.assertNotIn('if (h.op != OP_UPDATE_UB && !g_ub_np) ub_flush(ub);', EXEC)
+        self.assertIn('case OP_BARRIER:', EXEC)
+        self.assertIn('case OP_DRAW_IDX:', EXEC)
+        self.assertIn('case OP_DISPATCH:', EXEC)
+        self.assertIn('case OP_COPY_B2B:', EXEC)
         self.assertIn('const int batch_on = VKA_ENV("DM_VK_UB_BATCH", 1) != 0;', EXEC)
         self.assertIn("if (hazard) ub_flush(batch);", EXEC)
         self.assertIn("ub_overlap(batch->region[i].dstOffset, batch->region[i].size, c.dstOffset, c.size)", EXEC)
