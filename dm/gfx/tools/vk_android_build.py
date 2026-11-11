@@ -525,6 +525,15 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
               'bytes, without requiring gameplay or resplitting 42k shaders.',
               flush=True)
     records = {}
+    deferred = []
+    def defer_unpaired(key, reason):
+        # A missing or conflicting real NVN pairing may affect one shader,
+        # not every independent shader selected for the same repair.
+        # Never translate uncertain mesh/task geometry, or use guessed pairs.
+        keys.discard(key)
+        deferred.append((key, reason))
+        print(f'[YELLOW] Ocarina deferred {key}: {reason}; original base preserved',
+              flush=True)
     stage_map = {0: 'vs', 1: 'ps', 5: 'cs', 6: 'ts', 7: 'ms'}
     graphics = {1: 'vs', 2: 'hs', 3: 'ds', 4: 'gs', 5: 'ps'}
     for key in captured:
@@ -551,7 +560,7 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
             st = (w >> 10) & 0xf
             stage = 'vs' if st == 0 and w & 0x1f == 1 else graphics.get(st)
         if not stage: sys.exit(f'[RED] {key}: captured shader stage is unknown')
-        if stage in ('ms', 'ts') and not FACTS.get(key, {}).get('mesh'):
+        if stage in ('ms', 'ts'):
             # The normal shader splitter computes mesh_facts from these
             # control/code bytes, but captured-only jobs never run splitter.
             # Without this, the translator rejects every new mesh/task key
@@ -564,18 +573,18 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
             observed = [p for p in pairs if p[0] == key and
                         p[2] == ('mesh' if stage == 'ms' else 'task')]
             if not observed:
-                sys.exit(f'[RED] {key}: captured {stage} has no verified runtime '
-                         'mesh/pixel or task/mesh pairing in saved '
-                         'vk_pipelines.keys or verified source captures; '
-                         'original 42k library preserved; no gameplay or '
-                         'full translation required.')
+                defer_unpaired(key, f'captured {stage} has no verified runtime '
+                               'mesh/pixel or task/mesh pairing in saved '
+                               'vk_pipelines.keys or verified source captures')
+                continue
             derived = CAPTURED_MESH_FACTS(key, stage, ctl, code,
                                           pixel_sources, observed)
             layout = derived.get('mesh')
             if not layout or (stage == 'ms' and
                     (len(layout) < 4 or layout[0] <= 0 or layout[1] <= 0)):
-                sys.exit(f'[RED] {key}: NVN2 {stage} mesh layout cannot be recovered '
-                         'from its real captured control/code; preserved 42k base and prior overlay')
+                defer_unpaired(key, f'NVN2 {stage} mesh layout cannot be recovered '
+                               'from its real captured control/code')
+                continue
             if stage == 'ms':
                 # A mesh may be used with several pixel variants. Exact
                 # per-primitive flat inputs must match the mesh second SPH
@@ -585,6 +594,7 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
                 prim = (layout[layout.index(-1) + 1:
                         layout.index(-2) if -2 in layout else len(layout)]
                         if -1 in layout else [])
+                mismatch = None
                 for _, ps, _ in observed:
                     pcode = pixel_sources[ps][3]
                     inputs = [(pcode[0x18 + i // 4] >> ((i % 4) * 2)) & 3
@@ -592,9 +602,13 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
                     flat = [4 + i for i in range(128)
                             if inputs[i] == 1 and 4 + i not in vertex]
                     if sorted(flat) != sorted(prim):
-                        sys.exit(f'[RED] {key}: captured mesh/fragment mismatch '
-                                 f'with pixel {ps}: flat inputs {flat}, '
-                                 f'primitive outputs {prim}; old library kept')
+                        mismatch = (f'captured mesh/fragment mismatch '
+                                    f'with pixel {ps}: flat inputs {flat}, '
+                                    f'primitive outputs {prim}')
+                        break
+                if mismatch:
+                    defer_unpaired(key, mismatch)
+                    continue
             # A real profile fact takes precedence, including known pairs.
             # Only missing facts are inferred. Never mutate the game's
             # profile, original 42k library or installed driver cache.
@@ -607,6 +621,16 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
         if rec.find(bytes.fromhex('34127698')) != 0x38 + len(code) or rec.count(b'BTCDBTCD') != 1:
             sys.exit(f'[RED] {key}: captured shader record has ambiguous separators')
         records.setdefault(stage, []).append((key, bytes(rec)))
+    if not keys:
+        first = deferred[0] if deferred else ('?', 'no verified shaders')
+        sys.exit(f'[RED] no independently verified Ocarina shaders to build; '
+                 f'{len(deferred)} deferred, first {first[0]}: {first[1]}; '
+                 'old 42k library and prior overlay preserved')
+    if deferred:
+        print(f'[YELLOW] Ocarina selected repair: {len(keys)} source-verified '
+              f'shaders remain, {len(deferred)} mesh/task shaders deferred; '
+              'no additional gameplay required for the independent work.',
+              flush=True)
     os.makedirs(package_dir, exist_ok=True)
     for stage, items in records.items():
         name = stage + '_captured_repair.bin'
@@ -620,7 +644,7 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
     nm = sum(bool(FACTS.get(k, {}).get('mesh')) for k in captured)
     print(f'captured Ocarina shader repair: {len(captured)} verified selected shaders ({nm} with real mesh/task layouts) from {source}; '
           'compiling only these into a hot overlay, static 42k library and profile unchanged', flush=True)
-    return len(captured)
+    return len(keys)
 
 if want:
     captured_oot_records(want, loc, pc_of, dm_dir)
