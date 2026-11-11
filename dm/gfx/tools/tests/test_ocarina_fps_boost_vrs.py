@@ -58,6 +58,37 @@ class FpsBoostTests(unittest.TestCase):
         after = CTL.index('static const char *const g_live[]')
         self.assertIn('"DM_VK_OOT_FPS_BOOST"', CTL[before:after])
 
+    def test_seven_profiled_graphics_hot_shaders_use_balanced_2x1_if_supported(self):
+        # Build54 profiler 100403: 14.11ms of 20.97ms GPU in 111 graphics
+        # passes, including 2.44ms/416 draws, 2.28ms mesh+fragment, and
+        # 1.81ms/351 draws. Before this patch FPS Boost was OFF and only
+        # two shader keys could ever have VRS.
+        for key in (
+            "0x185d371b6c9475b2", "0x09bdc3e13d9f2461",
+            "0x00ce4088af2c8e12", "0xa566b7687b712ff3",
+            "0x8ea627c8ef169ee1", "0x1e4d2630d24846d0",
+            "0x5ad65c0eefd09c7f",
+        ):
+            self.assertIn(key, PSO)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', DEV)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', PSO)
+        self.assertIn('int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0)', DEV)
+        self.assertIn('hotpass_vrs ? 1 : 0', DEV)
+        self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)', PSO)
+        self.assertIn('(k->samples ? k->samples : 1) == 1', PSO)
+        self.assertIn('k->ncolor > 0', PSO)
+        self.assertIn('VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME', DEV)
+        self.assertIn('frate.pipelineFragmentShadingRate', DEV)
+        self.assertIn('has_2x1', DEV)
+        self.assertIn('V.fps_boost_vrs =', DEV)
+        self.assertIn('DM_VK_OOT_HOTPASS_VRS=0 restores full fragment detail', DEV)
+        self.assertIn('HOTPASS_VRS = {', OPTIONS)
+        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1)', OPTIONS)
+        self.assertIn('out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));', OPTIONS)
+        self.assertIn('"oot_hotpass_vrs"', SETTINGS)
+        self.assertIn('"DM_VK_OOT_HOTPASS_VRS"', CTL)
+        self.assertNotIn('shader_abi', OPTIONS)
+
     def test_fallback_no_invalid_pipeline_or_shader_abi_change(self):
         self.assertIn('V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;', DEV)
         self.assertIn('if (V.fps_boost_width) {', PSO)
