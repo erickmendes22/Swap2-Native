@@ -1772,6 +1772,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     // Indirect dispatches are excluded because GPU-written counts are not
     // inspectable without a readback.
     if (!dp->ind && (dp->x <= 0 || dp->y <= 0 || dp->z <= 0) &&
+        !strcmp(DM_GAME_ID, "0400486024DEC000") &&
         !vka_gp_active && VKA_ENV("DM_VK_OOT_ZERO_DISPATCH", 1)) {
         d->b.dispatch[0] = (uint32_t)dp->x;
         d->b.dispatch[1] = (uint32_t)dp->y;
