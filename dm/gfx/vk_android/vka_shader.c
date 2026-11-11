@@ -818,12 +818,21 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
     // Missing hot mesh shaders are intentionally not executed yet. Their
     // real per-program pairing must nevertheless be captured while the
     // scene is played, even when the original stable base skips a draw.
-    if (pair_slots[7] && pair_slots[1] && vka_shlib_find(&g_hot, pair_keys[7]))
-        capture_ocarina_stage_pair(p, pair_slots[7] - 1, pair_keys[7],
-                                   pair_slots[1] - 1, pair_keys[1], 'M');
-    if (pair_slots[6] && pair_slots[7] && vka_shlib_find(&g_hot, pair_keys[6]))
-        capture_ocarina_stage_pair(p, pair_slots[6] - 1, pair_keys[6],
-                                   pair_slots[7] - 1, pair_keys[7], 'T');
+    // vka_nvn_stage maps DMSH_VK_STAGE_FS to index 4, NOT index 1.
+    // Build 46 looked for a tessellation-control shader at index 1 and
+    // never persisted the real mesh->fragment pair. With no mesh_pairs.tsv
+    // entry, all retries failed before translating the first of 57 keys.
+    // Use named stage constants instead of magic indices in this path.
+    if (pair_slots[DMSH_VK_STAGE_MS] && pair_slots[DMSH_VK_STAGE_FS] &&
+        vka_shlib_find(&g_hot, pair_keys[DMSH_VK_STAGE_MS]))
+        capture_ocarina_stage_pair(p,
+            pair_slots[DMSH_VK_STAGE_MS] - 1, pair_keys[DMSH_VK_STAGE_MS],
+            pair_slots[DMSH_VK_STAGE_FS] - 1, pair_keys[DMSH_VK_STAGE_FS], 'M');
+    if (pair_slots[DMSH_VK_STAGE_TS] && pair_slots[DMSH_VK_STAGE_MS] &&
+        vka_shlib_find(&g_hot, pair_keys[DMSH_VK_STAGE_TS]))
+        capture_ocarina_stage_pair(p,
+            pair_slots[DMSH_VK_STAGE_TS] - 1, pair_keys[DMSH_VK_STAGE_TS],
+            pair_slots[DMSH_VK_STAGE_MS] - 1, pair_keys[DMSH_VK_STAGE_MS], 'T');
     vka_prog_put(p->serial, out);
     return 1;
 }
