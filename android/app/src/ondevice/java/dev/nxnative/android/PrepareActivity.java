@@ -25,6 +25,7 @@ import java.io.IOException;
  */
 public final class PrepareActivity extends Activity implements ServiceConnection, PrepareScreen.Actions {
     static final String EXTRA_PLAY = "play";
+    static final String EXTRA_PREPARE_AGAIN = "prepare_again";
     /** The screen's Import shaders… (a job stopped at its shader steps): MainActivity opens the game's import (Ondevice.activityResult, ShaderUi) */
     static final String EXTRA_IMPORT_SHADERS = "import_shaders";
     /** Play's short job (Ondevice.fixCodeThenPlay): the screen plays the game by itself once the job is done (EXTRA_PLAY), and stays on a failure */
@@ -138,6 +139,16 @@ public final class PrepareActivity extends Activity implements ServiceConnection
         startForegroundService(new Intent(this, PackService.class).setAction(PackService.ACTION_START).putExtra(PackService.EXTRA_JOB, job.file.getPath()));
         if (!bound) bound = bindService(new Intent(this, PackService.class), this, 0);
         resumedAt = SystemClock.elapsedRealtime();
+    }
+
+    @Override public void prepareAgain() {
+        if (job == null || !"0400486024DEC000".equals(job.titleId())
+                || !Ondevice.ready(job) || alive()
+                || Ondevice.importBusy(this, job.titleId(), true)) return;
+        // Return to MainActivity before showing the new selective repair
+        // confirmation; do not simply resume the stale failed job.json.
+        setResult(RESULT_OK, new Intent().putExtra(EXTRA_PREPARE_AGAIN, true));
+        finish();
     }
 
     @Override public void play() {
