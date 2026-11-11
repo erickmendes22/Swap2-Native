@@ -767,7 +767,7 @@ static int capture_ocarina_stage_pair(const prog_t *a_prog, unsigned a_slot, uin
     int saved = 0;
     FILE *out = fopen(file, "a");
     if (out) {
-        saved = fprintf(out, "%c\\t%016llx\\t%016llx\\n",
+        saved = fprintf(out, "%c\t%016llx\t%016llx\n",
             kind, (unsigned long long)a_key, (unsigned long long)b_key) > 0;
         saved = saved && fflush(out) == 0 && fsync(fileno(out)) == 0;
         if (fclose(out)) saved = 0;
