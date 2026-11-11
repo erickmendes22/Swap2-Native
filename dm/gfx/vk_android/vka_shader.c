@@ -598,6 +598,82 @@ void mtl_prog_release(prog_t *p) {
 }
 void mtl_prog_prefetch(const prog_t *p) { (void)p; }   // modules are made at the program's first draw (vka_prog_shaders)
 
+// In-game, capture the four measured heavy shader control+code pairs once,
+// even when the 42k-key imported SPIR-V base already contains them. The next
+// translator revision can rebuild only these real sources as an overlay.
+// No shader capture is attempted for other titles.
+static int ocarina_hot_shader_slot(uint64_t key) {
+    if (strcmp(DM_GAME_ID, "0400486024DEC000")) return -1;
+    static const uint64_t keys[] = {
+        UINT64_C(0x066f5daf12e43c71), UINT64_C(0xefaa4fa6a80ba719),
+        UINT64_C(0x5ad65c0eefd09c7f), UINT64_C(0x9e6b00b050e30801)
+    };
+    for (int i = 0; i < 4; ++i) if (key == keys[i]) return i;
+    return -1;
+}
+
+// Already-captured sources are checked byte for byte, not just by size.
+// A previous crash may leave only one file, a short file or corrupted data.
+static int capture_matches(const char *path, const void *src, size_t n) {
+    struct stat st;
+    if (stat(path, &st) || st.st_size != (off_t)n) return 0;
+    FILE *f = fopen(path, "rb"); if (!f) return 0;
+    const unsigned char *p = src;
+    unsigned char buf[4096];
+    size_t left = n; int ok = 1;
+    while (left) {
+        size_t m = left < sizeof buf ? left : sizeof buf;
+        if (fread(buf, 1, m, f) != m || memcmp(buf, p, m)) { ok = 0; break; }
+        p += m; left -= m;
+    }
+    fclose(f);
+    return ok;
+}
+
+static int capture_write_file(const char *path, const void *src, size_t n) {
+    char tmp[1100];
+    if (snprintf(tmp, sizeof tmp, "%s.partial", path) >= (int)sizeof tmp) return 0;
+    FILE *f = fopen(tmp, "wb"); if (!f) return 0;
+    int ok = fwrite(src, 1, n, f) == n && fflush(f) == 0 && fsync(fileno(f)) == 0;
+    if (fclose(f)) ok = 0;
+    if (ok && !rename(tmp, path)) return 1;
+    unlink(tmp);
+    return 0;
+}
+
+static int capture_shader_source(const prog_t *p, unsigned i, uint64_t key) {
+    const char *folder = getenv("DM_NVN_SHDUMP");
+    if (!folder || !*folder || !p->sd[i].control || !p->sd[i].data) return 0;
+    uint32_t nctl, ncode;
+    nvn_ctl_lens(p->sd[i].control, &nctl, &ncode);
+    if (nctl == 0x48) nctl = 0xd8; // NVN2 full control payload
+    if (nctl < 0xd8 || nctl > 65536 || ncode < 4 || ncode > (1u << 24)) return 0;
+    if (mkdir(folder, 0777) && access(folder, W_OK)) return 0;
+    char ctl[1024], code[1024];
+    if (snprintf(ctl, sizeof ctl, "%s/%016llx.ctl", folder, (unsigned long long)key) >= (int)sizeof ctl ||
+        snprintf(code, sizeof code, "%s/%016llx.code", folder, (unsigned long long)key) >= (int)sizeof code) return 0;
+    const void *bytes = (const void *)(uintptr_t)p->sd[i].data;
+    if (capture_matches(ctl, p->sd[i].control, nctl) && capture_matches(code, bytes, ncode)) return 1;
+    // Control is the completion marker. Never publish it before the code:
+    // an interrupted capture cannot pretend to be a complete matched pair.
+    unlink(ctl);
+    if (!capture_write_file(code, bytes, ncode)) return 0;
+    return capture_write_file(ctl, p->sd[i].control, nctl);
+}
+
+static void capture_hot_shader_source(const prog_t *p, unsigned i, uint64_t key) {
+    int slot = ocarina_hot_shader_slot(key);
+    if (slot < 0) return;
+    static _Atomic unsigned done;
+    unsigned mask = 1u << slot;
+    if (atomic_load(&done) & mask) return;
+    if (capture_shader_source(p, i, key)) {
+        atomic_fetch_or(&done, mask);
+        VLOG("Ocarina shader %016llx captured for independent mesh/compute hot recompilation; complete base library retained",
+             (unsigned long long)key);
+    }
+}
+
 int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
     memset(out, 0, sizeof *out);
     if (!p || !p->serial) return 0;
@@ -613,20 +689,13 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
         const dmsh_vk_entry *en = vka_shlib_find(source, key);
         if (!en) {
             out->bad |= VKA_BAD_MISSING; static _Atomic int n; if (atomic_fetch_add(&n, 1) < 32) VRED("shader %016llx (program stage %u) is not in the shader library", (unsigned long long)key, i);
-            // DM_NVN_SHDUMP=directory, as nvn_mtl.m: <key>.ctl (the whole NVN2 control section) and <key>.code (the code area), which shader_split.py nvn_dumps takes into the map
-            static const char *shd; static int shd_init; if (!shd_init) { shd = getenv("DM_NVN_SHDUMP"); shd_init = 1; if (shd && *shd) mkdir(shd, 0777); }
-            if (shd && *shd && p->sd[i].control) {
-                char path[1024]; FILE *f; uint32_t ncode, nctl; nvn_ctl_lens(p->sd[i].control, &nctl, &ncode);
-                if (nctl == 0x48) nctl = 0xd8;   // NVN2: the whole section (its stage byte +0x56, thread group +0x58); hle_nvn.c keeps a copy of it with SHDUMP set
-                snprintf(path, sizeof path, "%s/%016llx.ctl", shd, (unsigned long long)key);
-                if (access(path, F_OK) && (f = fopen(path, "wb"))) {
-                    fwrite(p->sd[i].control, 1, nctl, f); fclose(f);
-                    snprintf(path, sizeof path, "%s/%016llx.code", shd, (unsigned long long)key);
-                    if (p->sd[i].data && ncode && ncode < (1u << 24) && (f = fopen(path, "wb"))) { fwrite((const void *)(uintptr_t)p->sd[i].data, 1, ncode, f); fclose(f); }
-                }
-            }
+            capture_shader_source(p, i, key);
             continue;
         }
+        // Capture the four proven heavy shaders for future selective translator
+        // experiments. This is not shader compilation and does not modify
+        // any installed shader library or Vulkan pipeline cache.
+        capture_hot_shader_source(p, i, key);
         int st = vka_nvn_stage(en->stage);
         if (st < 0) { out->bad |= VKA_BAD_MISSING; continue; }   // (vka_shlib_open refuses a stage past DMSH_VK_STAGE_MS)
         if (out->sh[st]) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("program serial %llu has two %s shaders (%016llx, %016llx): the second is used", (unsigned long long)p->serial, stage_name(en->stage), (unsigned long long)out->sh[st]->key, (unsigned long long)key); }

@@ -33,6 +33,19 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('out->sh[st] = vka_shader_make(source, key);', HOST)
         self.assertIn('An absent, invalid or incomplete overlay never blocks the full library', HOST)
 
+    def test_heavy_shader_capture_enables_later_targeted_recompilation(self):
+        self.assertIn('capture_hot_shader_source(p, i, key)', HOST)
+        self.assertIn('capture_shader_source(p, i, key)', HOST)
+        self.assertIn('0x9e6b00b050e30801', HOST)
+        self.assertIn('0x066f5daf12e43c71', HOST)
+        self.assertIn('capture_matches(ctl, p->sd[i].control, nctl)', HOST)
+        self.assertIn('unlink(ctl);', HOST)
+        self.assertIn('capture_write_file(code, bytes, ncode)', HOST)
+        self.assertIn('capture_write_file(ctl, p->sd[i].control, nctl)', HOST)
+        self.assertIn('sources.add_argument("--capture-dir", type=Path', BUILDER)
+        self.assertIn('env["DMSH_VK_CAPTURE_DIR"] = str(capture)', BUILDER)
+        self.assertIn('tempfile.TemporaryDirectory', BUILDER)
+
     def test_builder_only_compiles_explicit_hot_keys(self):
         self.assertIn('DEFAULT_KEYS = (', BUILDER)
         for key in ("066f5daf12e43c71", "efaa4fa6a80ba719",

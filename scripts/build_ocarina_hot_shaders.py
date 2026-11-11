@@ -13,8 +13,9 @@ prefers its keys; every other key is read from the existing full library.
 This does NOT regenerate all shaders. No changes to the Android package/signing
 and no new environment variable are necessary.
 
-The tool requires shader source split/pkg to still exist (or to be regenerated).
-A new shader cannot be translated from an old SPIR-V .lib alone.
+The tool accepts either a previously split package or verified runtime
+control/code captures from the Ocarina phone session (--capture-dir). A new
+shader cannot be translated from an old SPIR-V .lib alone.
 """
 from pathlib import Path
 import argparse
@@ -22,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 GAME = "0400486024DEC000"
@@ -70,8 +72,11 @@ def publish_verified_hot_manifest(manifest, old_vk, new_vk, inputs, abi, keys):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--pkg", required=True, type=Path,
+    sources = ap.add_mutually_exclusive_group(required=True)
+    sources.add_argument("--pkg", type=Path,
                     help="previously split game shader package directory (NOT the full game dump)")
+    sources.add_argument("--capture-dir", type=Path,
+                    help="nvn_shdump captured shader pairs from gameplay; compile ONLY selected keys without re-splitting 42k source records")
     ap.add_argument("--pack", required=True, type=Path,
                     help="game pack directory containing the original full shaders/ library")
     ap.add_argument("--key", action="append", default=[], help="additional 16-digit shader key")
@@ -93,15 +98,31 @@ def main():
         ap.error("provide one or more valid 16-hex-digit shader keys")
     keys = sorted(k.lower() for k in keys)
 
-    pkg, pack = args.pkg.expanduser().resolve(), args.pack.expanduser().resolve()
-    if not pkg.is_dir():
-        ap.error(f"no shader source folder: {pkg}; old SPIR-V .lib alone cannot compile changed GPU code")
+    pack = args.pack.expanduser().resolve()
+    capture = args.capture_dir.expanduser().resolve() if args.capture_dir else None
+    temp = None
+    if capture:
+        if not capture.is_dir():
+            ap.error(f"missing capture folder: {capture}")
+        for key in keys:
+            if not (capture / (key + ".code")).is_file() or not (capture / (key + ".ctl")).is_file():
+                ap.error(f"capture of selected key {key} is incomplete; play its scene once before a selective build")
+        temp = tempfile.TemporaryDirectory(prefix="ocarina-selected-shader-captures-")
+        pkg = Path(temp.name) / "pkg"
+        pkg.mkdir()
+    else:
+        pkg = args.pkg.expanduser().resolve()
+        if not pkg.is_dir():
+            ap.error(f"no shader source folder: {pkg}; old SPIR-V .lib alone cannot compile changed GPU code")
     shaders = pack / "shaders"
     if not shaders.is_dir() or not any(shaders.glob("v-*/dmsh_vk.lib")):
         ap.error(f"{shaders} has no original complete shader library; refusing to build an unsafe overlay")
 
     env = os.environ.copy()
     env["DM_GAME"] = GAME
+    if capture:
+        env["DMSH_VK_CAPTURE_DIR"] = str(capture)
+        print(f"Selected {len(keys)} runtime-captured shaders; no full game shader split or translated base rebuild required")
     env.update(DMSH_GMEM_FAST1="1", DMSH_GMEM_MAP_8192="1",
                DMSH_GMEM_LAST1="1", DMSH_VK_REQUIRE_ALL="1")
     tool = ROOT / "dm/gfx/tools/vk_android_build.py"
@@ -152,6 +173,8 @@ def main():
         finally:
             target.close()
     print("The original stable shader library was not replaced or rebuilt.")
+    if temp:
+        temp.cleanup()
 
 
 if __name__ == "__main__":
