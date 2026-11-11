@@ -986,7 +986,7 @@ def stored_bytes(s): return s.read() if isinstance(s, Stored) else s
 BLOB_MAX = 1 << 48   # module offsets have 48 bits (off, off_hi), c1 offsets 64 (dmsh_abi_vk.h)
 
 
-def write_library(results):
+def write_library(results, publish=True):
     """dmsh_vk.lib: header, entries sorted by key, binding records, module records, blob (dmsh_abi_vk.h). The tables are made first, with each blob piece's place; then
     the pieces are written one at a time, so the blob is never in memory as a whole. Offsets past 4 GiB keep their high bits in c1_off_hi / off_hi, which are 0 in a
     smaller library: that one is written as before"""
@@ -1022,8 +1022,9 @@ def write_library(results):
             b = stored_bytes(b)
             f.write(b'\0' * (off - pos)); f.write(b); pos = off + len(b)
         assert pos == blen and f.tell() == blob_off + blen
-    os.replace(tmp, path)
-    return path, blob_off + blen
+    if publish:
+        os.replace(tmp, path)
+    return (path if publish else tmp), blob_off + blen
 
 
 # ---- the build
@@ -1258,6 +1259,20 @@ _missing = [k for k in ORDER if not os.path.exists(result_path(k))]
 if _missing: sys.exit(f'[RED] {len(_missing)} shaders have no result (the translator wrote neither a module nor a reason for them, from {_missing[0]}): run again')
 results = [read_result(k) for k in ORDER]
 _bad = [r for r in results if r[1] != 'ok']
+# Only the expressly requested Ocarina hot overlay may publish a verified
+# subset. Never weaken full-library or other-game REQUIRE_ALL semantics.
+if (want and GAME.id == '0400486024DEC000' and
+        os.environ.get('DMSH_VK_OOT_PARTIAL') == '1' and _bad):
+    for key, status, error, _ in _bad:
+        print(f'[YELLOW] Ocarina deferred failed shader {key}: {status}: '
+              f'{error[:150]}; unchanged original shader library remains', flush=True)
+        want.discard(key)
+    results = [r for r in results if r[1] == 'ok']
+    keys = [key for key in keys if key in want]
+    _bad = []
+    if not want:
+        sys.exit('[RED] no successfully translated selected Ocarina shader; '
+                 'original full library and previous overlay preserved')
 if _bad and os.environ.get('DMSH_VK_REQUIRE_ALL') == '1':
     # Hot shader updates are ALL-OR-NOTHING too. The earlier not-want
     # condition let 4/57 modules publish and fail only at pack 96%.
@@ -1270,7 +1285,9 @@ if _bad and os.environ.get('DMSH_VK_REQUIRE_ALL') == '1':
 if not want:
     for n in os.listdir(out):
         if n == 'spv': shutil.rmtree(os.path.join(out, n))
-lib, size = write_library(results)
+# The previous installed overlay is NOT replaced until the newly selected
+# subset has passed the final binary readback and key-index validation.
+lib, size = write_library(results, publish=not bool(want))
 if os.environ.get('DMSH_VK_LOOSE') == '1':
     os.makedirs(os.path.join(out, 'spv'), exist_ok=True)
     for key, st, _, r in results:
@@ -1286,6 +1303,9 @@ json.dump([{'key': k, 'st': st, 'err': e} for k, st, e, _ in results], open(os.p
 # machine's tools made). A full build with a manifest checks the same, so a phone's full build is compared with the Mac's too
 progress('check')
 _lib, _hashes = delta.library_hashes(lib, zstd, NJ); _lib.close()
+if want and set(_hashes) != set(want):
+    sys.exit('[RED] partial shader overlay index differs from its validated '
+             'selected keys; previous on-disk overlay preserved')
 _status = {k: st for k, st, _, _ in results}
 open(os.path.join(out, delta.MANIFEST + '.tmp'), 'w').write(delta.format_manifest(VKV, GAME.id, INPUTS, {k: _hashes.get(k, '-') for k in keys}))
 os.replace(os.path.join(out, delta.MANIFEST + '.tmp'), os.path.join(out, delta.MANIFEST))
@@ -1300,7 +1320,25 @@ if MANIFEST:
         elif want_h in (None, '-'): print(f'[RED] delta check: {k}: in the library ({how}), the manifest has it as ' + ('not built' if want_h else 'not a shader of this version'), flush=True)
         else: print(f'[RED] delta check: {k}: library entry {got_h} ({how}), the manifest has {want_h}', flush=True)
     print(f'delta check: {len(keys) - _bad} of {len(keys)} shaders as the manifest has them ({len(REUSED)} kept, {len(keys) - len(REUSED)} translated)' + (f', {_bad} differ' if _bad else ''), flush=True)
-if not want:
+if want:
+    # Keep the selected list next to the validated library for the Android
+    # package step. The old UI's requested 57 keys MUST NOT be confused with
+    # this smaller verified subset (nor may the packer label 4/57 as 57/57).
+    chosen = os.path.join(out, 'selected_keys.tsv')
+    with open(chosen + '.tmp', 'w', encoding='ascii') as f:
+        for key in sorted(want): f.write(key + '\n')
+    installed = os.path.join(out, VK['LIB_FILE'])
+    previous = installed + '.before-selective'
+    if os.path.isfile(installed) and not os.path.isfile(previous):
+        shutil.copyfile(installed, previous + '.tmp')
+        os.replace(previous + '.tmp', previous)
+    os.replace(lib, installed)
+    os.replace(chosen + '.tmp', chosen)
+    lib = installed
+    print(f'Ocarina partial overlay: committed {len(want)} verified shader '
+          'keys; previous overlay backed up if present; full 42339 unchanged',
+          flush=True)
+else:
     dmsh_chain.write_stamp(out, GAME.id, INPUTS)
 if os.environ.get('DMSH_VK_KEEP') == '0': shutil.rmtree(RES, ignore_errors=True)
 progress('done')
