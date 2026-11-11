@@ -616,10 +616,24 @@ final class Ondevice {
 
         /** Play needs the pack (Pack.read: pack.tsv and its modules) and its shader library of this APK's version */
         static boolean ready(Job j) {
-            if (!"done".equals(j.state()) || j.apkChanged()) return false;
+            // A failed/paused incremental Ocarina shader experiment must not
+            // revoke Play for an already prepared, independent full pack.
+            // Never treat an unfinished code rewrite as playable.
+            boolean selective = "0400486024DEC000".equals(j.titleId())
+                    && !j.hotKeys().isEmpty()
+                    && "done".equals(j.stepState("identify"))
+                    && "done".equals(j.stepState("rewrite"));
+            if (!selective && (!"done".equals(j.state()) || j.apkChanged())) return false;
             try {
                 Pack p = Pack.read(j.pack());
-                return Pack.libraryProblem(j.pack(), j.titleId()) == null && p.unfinishedModule() == null && p.titleId.equals(j.titleId());
+                if (Pack.libraryProblem(j.pack(), j.titleId()) != null
+                        || p.unfinishedModule() != null || !p.titleId.equals(j.titleId()))
+                    return false;
+                // The repair modifies only the optional shader overlay.
+                // Verify the original pack's executable and current mods as
+                // well, before allowing Play independently of that repair.
+                return !selective || (PackCheck.build(p, j.dump()) == null
+                        && PackCheck.mods(p, j.dump()) == null);
             } catch (IOException e) {
                 return false;
             }
