@@ -61,28 +61,31 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertLess(src.index('!VKA_ENV("DM_VK_OOT_HOT_MESH", 0)'),
                         src.index('return &g_hot;', src.index('static const vka_shlib *library_for_key')))
 
-    def test_nv_mesh_fragment_pairs_use_fragment_stage_not_tess_control(self):
-        # Build 46 compiled the capture code but looked at pair_slots[1],
-        # which is TCS, not FS. With the real mesh and pixel present the
-        # condition was always false, so all five retries lacked pairs.
+    def test_mesh_fragment_pair_captured_from_actual_draw_stage_bindings(self):
+        # The Vulkan ABI labels FS as stage 4, but NVN labels it stage 1.
+        # More importantly, a mesh draw combines independently bound
+        # d->bst[7] (mesh) and d->bst[1] (fragment), not necessarily the
+        # shader list of a single NVN program. Old Build 46 missed these.
         import re
-        abi=(ROOT / "dm/gfx/nvn/dmsh_abi_vk.h").read_text()
-        stages={name:int(index) for name,index in re.findall(
-            r"^#define DMSH_VK_STAGE_(VS|TCS|TES|GS|FS|CS|TS|MS)\s+(\d+)",
-            abi, re.M)}
-        self.assertEqual(stages["TCS"],1)
-        self.assertEqual(stages["FS"],4)
-        self.assertEqual(stages["TS"],6)
-        self.assertEqual(stages["MS"],7)
-        self.assertIn('pair_slots[DMSH_VK_STAGE_MS] && pair_slots[DMSH_VK_STAGE_FS]',HOST)
-        self.assertIn('pair_slots[DMSH_VK_STAGE_FS] - 1, pair_keys[DMSH_VK_STAGE_FS]',HOST)
-        self.assertIn('pair_slots[DMSH_VK_STAGE_TS] && pair_slots[DMSH_VK_STAGE_MS]',HOST)
-        self.assertNotIn('pair_slots[7] && pair_slots[1]',HOST)
-        self.assertNotIn("pair_keys[1], 'M'",HOST)
-        # The captured first 57-key retry fails on key 04452448ac915259;
-        # this fixes recording, not that key's flat/primitive equivalence.
-        self.assertIn('capture_ocarina_stage_pair(p,',HOST)
-
+        abi=(ROOT/"dm/gfx/nvn/dmsh_abi_vk.h").read_text()
+        bind=(ROOT/"dm/gfx/vk_android/vka_bind.h").read_text()
+        draw=(ROOT/"dm/gfx/vk_android/vka_draw.c").read_text()
+        stages={n:int(v) for n,v in re.findall(
+            r"^#define DMSH_VK_STAGE_(FS|TS|MS)\\s+(\\d+)", abi, re.M)}
+        self.assertEqual(stages, {"FS":4,"TS":6,"MS":7})
+        self.assertIn("static const int8_t m[8] = {0, 3, 4, 2, 1, 5, 6, 7}",bind)
+        self.assertIn("stage_in_program(pixel_program, vka_nvn_stage(DMSH_VK_STAGE_FS)",HOST)
+        self.assertIn("stage_in_program(mesh_program, vka_nvn_stage(DMSH_VK_STAGE_MS)",HOST)
+        self.assertIn("capture_ocarina_stage_pair(mesh_program, mesh_slot, mesh_key,",HOST)
+        self.assertIn("pixel_program, frag_slot, frag_key, 'M'",HOST)
+        self.assertIn("capture_ocarina_stage_pair(mesh_program, task_slot, task_key,",HOST)
+        self.assertIn('const prog_t *mp = d->bst[7];',draw)
+        self.assertIn('vka_ocarina_capture_mesh_draw_pair(mp, d->bst[1])',draw)
+        self.assertLess(draw.index('vka_ocarina_capture_mesh_draw_pair(mp, d->bst[1])'),
+                        draw.index('if (bad) SKIPQ();',draw.index('const prog_t *mp = d->bst[7];')))
+        self.assertIn("captured[256]", draw)
+        self.assertNotIn("pair_slots[7] && pair_slots[1]",HOST)
+        self.assertIn("mesh_pairs.tsv",HOST)
     def test_heavy_shader_capture_enables_later_targeted_recompilation(self):
         self.assertIn('capture_hot_shader_source(p, i, key)', HOST)
         self.assertIn('capture_shader_source(p, i, key)', HOST)

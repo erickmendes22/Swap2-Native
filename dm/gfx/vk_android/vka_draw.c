@@ -1408,6 +1408,21 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         const prog_t *mp = d->bst[7];
         { vka_shader *m = NULL; unsigned b2 = 0; if (d->bst[1] && d->bst[1] != mp && resolve(d->bst[1], 7, &m, &b2) && (m || (b2 & 1u << 7))) mp = d->bst[1]; }
         if (!resolve(mp, 6, &sh[6], &bad) || !resolve(mp, 7, &sh[7], &bad) || !resolve(d->bst[1], 1, &sh[1], &bad)) SKIP("mesh draw skipped: no shader library");
+        // The actual mesh and fragment programs can be DIFFERENT objects.
+        // Capture their true shader pairing before skipping an unpaired hot
+        // mesh; ProgramSetShaders did not know this draw-time combination.
+        // Cache successful captures by program serials so this is O(1) on
+        // the next ~1,800+ mesh draws, with no repeat source I/O.
+        if (mp && d->bst[1] && mp->serial && d->bst[1]->serial) {
+            static struct { uint64_t mesh, pixel; } captured[256];
+            uint64_t mserial = mp->serial, pserial = d->bst[1]->serial;
+            unsigned h = (unsigned)((mserial ^ (mserial >> 29) ^
+                         pserial * UINT64_C(0x9e3779b97f4a7c15)) & 255u);
+            if (captured[h].mesh != mserial || captured[h].pixel != pserial) {
+                if (vka_ocarina_capture_mesh_draw_pair(mp, d->bst[1]))
+                    captured[h] = (typeof(captured[h])){mserial, pserial};
+            }
+        }
         if (bad) SKIPQ();   // a refused or missing shader (logged when it was made)
         if (!sh[7]) SKIP("mesh draw with no mesh shader bound: skipped");
         if (d->bst[6] && d->bst[6] != mp) VRED_ONCE("mesh draw: a program bound at the task stage bit apart from the mesh program; drawn with the mesh program's own task shader, if any");
