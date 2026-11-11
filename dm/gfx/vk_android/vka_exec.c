@@ -46,7 +46,17 @@ static double ms_now(void) { return (now_ns() % 1000000000000ull) / 1e6; }
 //   used to be invisible, and the condition read memory one or more submissions old. Before 2026-11-06 only the timestamp reports of the submission being recorded were
 //   kept, at most 64, and tracking stopped silently past that.
 // Over RC_PEND_MAX reports in flight, every condition whose reports the list does not hold reads unknown (draws) until the submission that overflowed is done, and says so once
-typedef struct { uint64_t addr, fence; int kind; } rc_rep;   // kind 1 timestamp (counter 0), 2 another counter (unknown), 3 a counted samples-passed report (unknown in flight); fence 0 = the submission being recorded
+typedef struct {
+    uint64_t addr, fence, oq_end, oq_lost, oq_epoch;
+    int kind;    // 1 timestamp, 2 unsupported counter, 3 counted occlusion
+} rc_rep;        // fence 0 = current recording; query sequence is monotonically increasing
+// For SAME-reset-epoch report pairs a,b: counter equality is equivalent to
+// no samples in the queries between their oq_end positions and no lost draws.
+// This permits no-WAIT early query availability without waiting for a fence.
+static uint64_t g_oq_epoch = 1, g_oq_lost_epoch_total, g_oq_last_report_head;
+static uint64_t g_oq_head_placeholder(void) { return g_oq_last_report_head; }
+static uint64_t g_oq_early_tries, g_oq_early_done, g_oq_early_equal, g_oq_early_unavailable;
+static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal);
 enum { RC_PEND_MAX = 32768 };   // (counted samples-passed reports take entries: Ocarina of Time makes hundreds a frame)
 static rc_rep *g_rcp; static int g_nrcp, g_rcpcap, g_rc_over_cur; static uint64_t g_rc_over;   // g_rc_over: the fence of a submission that overflowed the list
 // Exact latest-by-address index for pending reports. rc_known used to scan all
@@ -113,13 +123,24 @@ static void rc_occ_add(uint64_t a) {
 enum { RC_MERGE = 64 };
 static void rc_note(uint64_t a, int kind) {
     if (kind == 2) { rc_occ_add(a); if (rc_occ_has(a)) return; }
-    for (int i = g_nrcp - 1, k = 0; i >= 0 && !g_rcp[i].fence && k < RC_MERGE; i--, k++) if (g_rcp[i].addr == a) { g_rcp[i].kind = kind; return; }
+    for (int i = g_nrcp - 1, k = 0; i >= 0 && !g_rcp[i].fence && k < RC_MERGE; i--, k++) if (g_rcp[i].addr == a) {
+        g_rcp[i].kind = kind;
+        if (kind == 3) {
+            g_rcp[i].oq_end = g_oq_head_placeholder();
+            g_rcp[i].oq_lost = g_oq_lost_epoch_total;
+            g_rcp[i].oq_epoch = g_oq_epoch;
+        }
+        return;
+    }
     if (g_nrcp >= RC_PEND_MAX) {
         if (!g_rc_over_cur) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VRED("render conditions: more than %d reports in flight: conditions on reports the list does not hold draw until this submission is done", RC_PEND_MAX); }
         g_rc_over_cur = 1; return;
     }
     if (g_nrcp == g_rcpcap) { int nc = g_rcpcap ? 2 * g_rcpcap : 256; rc_rep *n = realloc(g_rcp, (size_t)nc * sizeof *n); if (!n) { g_rc_over_cur = 1; return; } g_rcp = n; g_rcpcap = nc; }
-    g_rcp[g_nrcp++] = (rc_rep){a, 0, kind};
+    g_rcp[g_nrcp++] = (rc_rep){.addr = a, .kind = kind,
+        .oq_end = kind == 3 ? g_oq_last_report_head : 0,
+        .oq_lost = kind == 3 ? g_oq_lost_epoch_total : 0,
+        .oq_epoch = kind == 3 ? g_oq_epoch : 0};
     rc_ix_put(a, (uint32_t)(g_nrcp - 1));
     if (g_nrcp > g_rcp_max) g_rcp_max = g_nrcp;
 }
@@ -150,6 +171,16 @@ static int rc_known(uint64_t a, uint64_t *v, int *why) {
 uint64_t vka_frame(void);
 static int rc_eval(const p_render_cond *rc) {   // 1 = the block that begins here is not drawn
     if (rc->mode >= 2) { g_rc_stat[rc->mode == 2 ? RCS_ON : RCS_OFF]++; return rc->mode == 3; }
+    // A completed query can be available before its submission fence.
+    // When both reports were counted in one reset epoch, their cumulative
+    // equality is the zero-or-positive sum of intervening samples: no need
+    // for the entire submission to finish or any speculative culling.
+    int early_equal;
+    if (oq_early_pair_equal(rc->addr, rc->addr + 16, &early_equal)) {
+        int skip = rc->mode ? early_equal : !early_equal;
+        g_rc_stat[skip ? RCS_SKIP : RCS_DRAW]++;
+        return skip;
+    }
     uint64_t x = 0, y = 0; int wx = RCS_DRAW, wy = RCS_DRAW;
     int kx = rc_known(rc->addr, &x, &wx), ky = rc_known(rc->addr + 16, &y, &wy);
     int skip = kx && ky && (rc->mode ? x == y : x != y);
@@ -178,6 +209,11 @@ static void rc_stats(char *b, size_t n, double frames) {
     if (frames > 0 && g_rc_ix_lookups) VLOG("render pending index: %.1f lookups/frame, %.2f probes/lookup, %.1f newest reports found/frame (capacity %d)",
                   g_rc_ix_lookups / frames, (double)g_rc_ix_probes / (double)g_rc_ix_lookups, g_rc_ix_found / frames, RC_IDX_CAP);
     g_rc_ix_lookups = g_rc_ix_probes = g_rc_ix_found = 0;
+    if (frames > 0 && g_oq_early_tries)
+        VLOG("Ocarina early occlusion: %.1f pending report pairs tried/frame, %.1f decided from available GPU queries, %.1f known equal (culled by condition where applicable), %.1f still awaiting queries",
+            g_oq_early_tries / frames, g_oq_early_done / frames,
+            g_oq_early_equal / frames, g_oq_early_unavailable / frames);
+    g_oq_early_tries = g_oq_early_done = g_oq_early_equal = g_oq_early_unavailable = 0;
     g_rcp_max = g_nrcp;
 }
 static void oq_stats(char *b, size_t n, double frames);   // (Occlusion queries)
@@ -326,6 +362,7 @@ static void oq_reset(void) {   // OP_RESET_COUNTER(SAMPLES_PASSED)
     oq_close();
     if (g_oq_head > g_oq_seg0) post((pop){5, 0, 0, 0, 0, g_oq_seg0, g_oq_head});   // the queries since the last report: no report reads them
     g_oq_seg0 = g_oq_head; g_oq_count = 1; g_oq_fresh = 1; g_oq_lost = 0;
+    g_oq_epoch++; g_oq_lost_epoch_total = 0;
 }
 static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_PASSED): 1 = counted (its segment goes to the completion thread), 0 = the constant 1
     g_oqs_rep++;
@@ -336,7 +373,69 @@ static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_P
     if (!g_cb) return 0;
     oq_close();   // (draws after it begin a new query)
     post((pop){4, (uint32_t)g_oq_fresh, g_oq_lost, t, ad, g_oq_seg0, g_oq_head});
+    g_oq_lost_epoch_total += g_oq_lost;
+    g_oq_last_report_head = g_oq_head;
     g_oq_seg0 = g_oq_head; g_oq_fresh = 0; g_oq_lost = 0;
+    return 1;
+}
+// Query availability may precede the submission's fence. For the game's
+// two consecutive samples-passed reports, compare the SUM of samples between
+// their query sequence numbers instead of waiting for the cumulative values.
+// No GPU/CPU wait bit is ever used; an unavailable query falls back to the
+// original unknown=>draw policy. Under g_oq_mu, completion cannot reset
+// any queried slots. Queries recycled already are not probed.
+static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal) {
+    if (!VKA_ENV("DM_VK_OOT_EARLY_OCCLUSION", 1) ||
+        strcmp(DM_GAME_ID, "0400486024DEC000") || g_oq != 1 ||
+        !OQ.pool || !OQ.get) return 0;
+    int ia = rc_ix_find(first), ib = rc_ix_find(second);
+    if (ia < 0 || ib < 0) return 0;
+    const rc_rep a = g_rcp[ia], b = g_rcp[ib];
+    uint64_t done = vka_done();
+    if (a.kind != 3 || b.kind != 3 || !a.oq_epoch ||
+        a.oq_epoch != b.oq_epoch ||
+        (a.fence && a.fence <= done) ||
+        (b.fence && b.fence <= done)) return 0;
+    // The logical cumulative total cannot decrease without a reset. If a
+    // report was overwritten, the latest-by-address index already resolved it.
+    uint64_t q0 = a.oq_end < b.oq_end ? a.oq_end : b.oq_end;
+    uint64_t q1 = a.oq_end > b.oq_end ? a.oq_end : b.oq_end;
+    uint64_t lost = a.oq_lost < b.oq_lost ?
+                    b.oq_lost - a.oq_lost : a.oq_lost - b.oq_lost;
+    g_oq_early_tries++;
+    if (lost) { *equal = 0; g_oq_early_done++; return 1; }
+    if (q0 == q1) { *equal = 1; g_oq_early_done++; g_oq_early_equal++; return 1; }
+    // Avoid thousands of no-WAIT driver calls when a report covers an entire
+    // scene. The original fence path remains available and exact.
+    if (q1 - q0 > 256) return 0;
+    pthread_mutex_lock(&g_oq_mu);
+    uint64_t returned = OQ.host ?
+        atomic_load_explicit(&g_oq_ready, memory_order_acquire) - OQ_N :
+        atomic_load_explicit(&g_oq_freed, memory_order_acquire);
+    if (q0 < returned) { pthread_mutex_unlock(&g_oq_mu); return 0; }
+    uint64_t pairs[2 * OQ_RB] = {0};
+    int all_available = 1, visible = 0;
+    for (uint64_t q = q0; q < q1;) {
+        uint32_t slot = (uint32_t)(q % OQ_N);
+        uint32_t n = (uint32_t)(q1 - q);
+        if (n > OQ_RB) n = OQ_RB;
+        if (n > OQ_N - slot) n = OQ_N - slot;
+        memset(pairs, 0, 16u * n);
+        VkResult rc = OQ.get(V.dev, OQ.pool, slot, n, 16u * (size_t)n,
+                            pairs, 16, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+        if (rc < 0) { all_available = 0; break; }
+        for (uint32_t i = 0; i < n; i++) {
+            if (!pairs[2 * i + 1]) { all_available = 0; break; }
+            if (pairs[2 * i]) visible = 1;
+        }
+        if (!all_available) break;
+        q += n;
+    }
+    pthread_mutex_unlock(&g_oq_mu);
+    if (!all_available) { g_oq_early_unavailable++; return 0; }
+    *equal = !visible;
+    g_oq_early_done++;
+    if (*equal) g_oq_early_equal++;
     return 1;
 }
 static void oq_refill(VkCommandBuffer cb) {   // (no hostQueryReset) at a submission's start, before its first query: the queries the completion thread has read, reset
