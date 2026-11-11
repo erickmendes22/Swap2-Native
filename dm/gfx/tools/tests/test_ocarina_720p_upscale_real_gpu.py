@@ -62,7 +62,12 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('oi->w * oi->h > 1280ull * 720', NDSR)
         self.assertIn('VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;', NDSR)
         self.assertIn('g_sw.mode == 1', NDSR)
-        self.assertIn('g_sw.enc, g_sw.map, kernel, pack', NDSR)
+        # Normal frames retain the chosen colour and mapping; ONLY the
+        # explicitly validated Ocarina 0.25 direct HDR input overrides them.
+        self.assertIn('int effective_enc = source_is_scene_linear ? VKA_NDSR_ENC_LINEAR : g_sw.enc;', NDSR)
+        self.assertIn('int effective_map = source_is_scene_linear ? VKA_NDSR_MAP_FULL : g_sw.map;', NDSR)
+        self.assertIn('make(cs, lay, tb, ib, bb, effective_enc, effective_map, kernel, pack)', NDSR)
+        self.assertIn('source_is_scene_linear && cs->key != UINT64_C(0xd99fbeeb53d38847)', NDSR)
 
     def test_sgsr_selection_cannot_silently_disable_requested_upscaler(self):
         # The 2026-11-11 Build 49 log reported DM_VK_PRESENT_FILTER=4 but
