@@ -112,15 +112,16 @@ static int init_once(void) {
     // Enable only for selected measured-heavy fragment programs; users can
     // opt out of the adaptive (moderate) mode separately from FPS Boost.
     // No guess about driver support: all rates/features are queried below.
-    // Per-game profile: 0=full, 1=2x1 (default), 2=2x2 (experimental).
-    // Keep it independent of the old optional FPS Boost.
+    // Per-game modes: 0=full, 1=2x1 (default), 2=2x2, 3=2x2
+    // expanded HDR coverage, 4=4x2 expanded, 5=4x4 expanded.
+    // The two larger rates are opt-in and never assumed to be supported.
+    // Profile 3/4/5 target the same verified HDR shader keys.
     int hotpass_vrs = !strcmp(DM_GAME_ID, "0400486024DEC000")
                       ? VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) : 0;
     if (hotpass_vrs < 0) hotpass_vrs = 0;
-    // Profile 3 adds five captured HDR fragment programs, not a larger
-    // hardware shading tile: 2 and 3 both request the queried 2x2 rate.
-    if (hotpass_vrs > 3) hotpass_vrs = 3;
-    int requested_rate = hotpass_vrs >= 2 ? 2 : hotpass_vrs;
+    if (hotpass_vrs > 5) hotpass_vrs = 5;
+    int requested_rate = hotpass_vrs >= 5 ? 4 : hotpass_vrs >= 4 ? 3
+                         : hotpass_vrs >= 2 ? 2 : hotpass_vrs;
     int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0);
     int want_boost = requested_rate > explicit_boost ? requested_rate : explicit_boost;
     int x_fsr_rate = want_boost > 0 && has_ext(de, nde, VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
@@ -164,7 +165,7 @@ static int init_once(void) {
     // Query legal pipeline rates for single-sample rendering instead of
     // assuming 2x1/2x2 are available. A rate the device did not advertise
     // must not be sent to vkCreateGraphicsPipelines (would drop hot draws).
-    int has_2x1 = 0, has_2x2 = 0;
+    int has_2x1 = 0, has_2x2 = 0, has_4x2 = 0, has_4x4 = 0;
     if (x_fsr_rate && frate.pipelineFragmentShadingRate) {
         PFN_vkGetPhysicalDeviceFragmentShadingRatesKHR get_rates =
             (PFN_vkGetPhysicalDeviceFragmentShadingRatesKHR)vk.vkGetInstanceProcAddr(V.inst, "vkGetPhysicalDeviceFragmentShadingRatesKHR");
@@ -177,25 +178,33 @@ static int init_once(void) {
                     if (!(rates[i].sampleCounts & VK_SAMPLE_COUNT_1_BIT)) continue;
                     if (rates[i].fragmentSize.width == 2 && rates[i].fragmentSize.height == 1) has_2x1 = 1;
                     if (rates[i].fragmentSize.width == 2 && rates[i].fragmentSize.height == 2) has_2x2 = 1;
+                    if (rates[i].fragmentSize.width == 4 && rates[i].fragmentSize.height == 2) has_4x2 = 1;
+                    if (rates[i].fragmentSize.width == 4 && rates[i].fragmentSize.height == 4) has_4x4 = 1;
                 }
                 free(rates);
             }
         }
     }
-    // If the driver exposes 2x1 but not 2x2, keep the requested boost as
-    // the supported lighter rate rather than silently disabling it entirely.
-    // Do not invent rates the driver did not advertise.
-    unsigned selected_h = want_boost >= 2 && has_2x2 ? 2u :
-                          want_boost > 0 && has_2x1 ? 1u : 0u;
-    V.fps_boost_vrs = x_fsr_rate && frate.pipelineFragmentShadingRate && selected_h != 0;
-    V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;
+    // Check single-sample support for EXACT sizes. Vulkan requires 2x1
+    // and 2x2, but not 4x2 or 4x4; even on Adreno these larger modes
+    // must be confirmed by vkGetPhysicalDeviceFragmentShadingRatesKHR.
+    // Fall back to the next lower supported rate. Never invent 4xN.
+    unsigned selected_w = 0u, selected_h = 0u;
+    if (want_boost >= 4 && has_4x4) { selected_w = 4u; selected_h = 4u; }
+    else if (want_boost >= 3 && has_4x2) { selected_w = 4u; selected_h = 2u; }
+    else if (want_boost >= 2 && has_2x2) { selected_w = 2u; selected_h = 2u; }
+    else if (want_boost > 0 && has_2x1) { selected_w = 2u; selected_h = 1u; }
+    V.fps_boost_vrs = x_fsr_rate && frate.pipelineFragmentShadingRate && selected_w != 0u;
+    V.fps_boost_width = V.fps_boost_vrs ? selected_w : 0u;
     V.fps_boost_height = V.fps_boost_vrs ? selected_h : 0u;
     if (want_boost > 0)
         VLOG("Ocarina scene-pass VRS: profile=%d explicit_boost=%d, extension=%d, "
-             "pipeline_feature=%d, 2x1=%d, 2x2=%d, active=%d, chosen=%ux%u "
-             "(DM_VK_OOT_HOTPASS_VRS=0 restores full fragment detail)",
+             "pipeline_feature=%d, 2x1=%d, 2x2=%d, 4x2=%d, 4x4=%d, "
+             "active=%d, chosen=%ux%u (fallback to supported device rate; "
+             "DM_VK_OOT_HOTPASS_VRS=0 restores full fragment detail)",
              hotpass_vrs, explicit_boost, x_fsr_rate, frate.pipelineFragmentShadingRate,
-             has_2x1, has_2x2, V.fps_boost_vrs, V.fps_boost_width, V.fps_boost_height);
+             has_2x1, has_2x2, has_4x2, has_4x4,
+             V.fps_boost_vrs, V.fps_boost_width, V.fps_boost_height);
     if (x_mesh && !fmesh.meshShader) fmesh.taskShader = VK_FALSE;   // (task shading is of no use without mesh shading)
     V.indirect_count = f12.drawIndirectCount && f2.features.multiDrawIndirect;
     V.push_desc = x_push; V.vin_dyn = x_vin && fvin.vertexInputDynamicState; V.null_desc = x_rob && frob.nullDescriptor; V.ext_storage = f2.features.shaderStorageImageExtendedFormats; V.idx8 = x_i8 && fi8.indexTypeUint8;
