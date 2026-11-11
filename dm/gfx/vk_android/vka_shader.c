@@ -619,6 +619,38 @@ static int oot_hot_compute_compatible(const dmsh_vk_entry *old,
     return (a && b && memcmp(a, b, (size_t)old->bind_count * sizeof *a) == 0);
 }
 
+
+/* 0.1.6: ONLY the previously profiled 1e4d scene fragment may take the
+ * newly source-verified selective ALU-CSE result. Unlike captured mesh/task
+ * shaders, this has no geometry interface, but it must still match the
+ * complete old shader's descriptor layout, output formats, variants, flags
+ * and uniform data byte-for-byte. Never trust SPIR-V validity alone.
+ * If a phone has no new overlay, it keeps using its original 42k library.
+ * DM_VK_OOT_HOT_SCENE_PS=0 forces the old module for an A/B test. */
+static int oot_hot_scene_fragment_compatible(const dmsh_vk_entry *old,
+                                             const dmsh_vk_entry *newer) {
+    if (!old || !newer ||
+        old->key != UINT64_C(0x1e4d2630d24846d0) ||
+        old->stage != DMSH_VK_STAGE_PS || newer->stage != DMSH_VK_STAGE_PS ||
+        old->flags != newer->flags || old->mod_count != newer->mod_count ||
+        old->bind_count != newer->bind_count || old->c1_len != newer->c1_len ||
+        old->fout_types != newer->fout_types ||
+        old->fout_mask != newer->fout_mask ||
+        old->uint_mask != newer->uint_mask ||
+        old->vin_mask != newer->vin_mask ||
+        old->vin_types != newer->vin_types)
+        return 0;
+    const dmsh_vk_bind *a = vka_shlib_binds(&g_lib, old);
+    const dmsh_vk_bind *b = vka_shlib_binds(&g_hot, newer);
+    if (old->bind_count && (!a || !b ||
+        memcmp(a, b, (size_t)old->bind_count * sizeof *a))) return 0;
+    if (old->c1_len) {
+        const void *x = vka_shlib_c1(&g_lib, old);
+        const void *y = vka_shlib_c1(&g_hot, newer);
+        if (!x || !y || memcmp(x, y, old->c1_len)) return 0;
+    }
+    return 1;
+}
 static const vka_shlib *library_for_key(uint64_t key) {
     if (!g_hot_loaded) return &g_lib;
     const dmsh_vk_entry *overlay = vka_shlib_find(&g_hot, key);
@@ -628,6 +660,16 @@ static const vka_shlib *library_for_key(uint64_t key) {
     // original SPIR-V module whenever there is one; experimentation is an
     // opt-in and does not mutate either library on disk.
     const dmsh_vk_entry *base = vka_shlib_find(&g_lib, key);
+    if (base && key == UINT64_C(0x1e4d2630d24846d0) &&
+        VKA_ENV("DM_VK_OOT_HOT_SCENE_PS", 1)) {
+        static int compatible = -1;
+        if (compatible < 0) {
+            compatible = oot_hot_scene_fragment_compatible(base, overlay);
+            VLOG("Ocarina 0.1.6 captured scene fragment 1e4d: exact resources/IO compatibility=%d, %s; DM_VK_OOT_HOT_SCENE_PS=0 restores old library",
+                 compatible, compatible ? "selected ALU-CSE shader active" : "original shader retained");
+        }
+        if (compatible) return &g_hot;
+    }
     // Do not leave the V21/V22 translated compute on disk forever without
     // ever executing it: the old library's 9e6b module has the known
     // 0.5-1.4ms GPU cost and the generic SPIR-V group-size patch REFUSES

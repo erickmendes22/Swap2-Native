@@ -40,6 +40,13 @@ final class OcarinaShaderDelta {
             "5ad65c0eefd09c7f", // foliage fragment
             "9e6b00b050e30801"  // heavy compute
     );
+    // Release 0.1.6 has actual captured NVN2 source for both profiled
+    // 720p scene fragments. These must be eligible for a selective CSE
+    // overlay EVEN when the 42k base and APK share the same Vulkan chain.
+    // Their source pairing and hash are verified by vk_android_build.py.
+    private static final java.util.Set<String> SCENE_FRAGMENTS = java.util.Set.of(
+            "1e4d2630d24846d0", "00ce4088af2c8e12"
+    );
 
     static List<String> keys(Job job) {
         if (job == null || !TITLE.equals(job.titleId())) return List.of();
@@ -88,6 +95,12 @@ final class OcarinaShaderDelta {
         // and the old Vulkan pipeline cache undisturbed. Python validates
         // every content hash, stage and source size before any compilation.
         File captures = new File(job.dir().getParentFile(), "nvn_shdump");
+        File hot = new File(job.pack(), "shaders/hot/v-" + BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+        ShaderLibs.Header hotHeader = ShaderLibs.header(hot);
+        boolean hotVerified = hotHeader != null && hotHeader.fits(hot.length())
+                && TITLE.equals(hotHeader.game)
+                && profile.shaderInputs.equals(hotHeader.inputs)
+                && BuildConfig.NX_DMSH_VK_ABI.equals(hotHeader.abi);
         File[] captureFiles = captures.listFiles((d, name) ->
                 name.matches("[0-9a-f]{16}\\.code"));
         if (captureFiles != null && captureFiles.length > 0 && captureFiles.length <= 128) {
@@ -107,9 +120,12 @@ final class OcarinaShaderDelta {
                     // translator. Both kinds become the SAME atomic overlay.
                     // A heavy key that was already compiled by this exact
                     // Vulkan chain is not selected again.
+                    boolean newSceneCse = SCENE_FRAGMENTS.contains(key) &&
+                            (!hotVerified || !ShaderLibs.hasKey(hot, hotHeader, key));
                     if (!ShaderLibs.hasKey(old, header, key) ||
                             (!BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)
-                                    && HEAVY.contains(key))) missing.add(key);
+                                    && HEAVY.contains(key)) || newSceneCse)
+                        missing.add(key);
                 }
             } catch (IOException e) {
                 android.util.Log.w("OcarinaShaderDelta", "Cannot inspect base shader index; preserving complete library", e);

@@ -26,6 +26,25 @@ MESH_FN = next(n for n in SPLIT_TREE.body if isinstance(n, ast.FunctionDef) and 
 
 class CapturedTests(unittest.TestCase):
 
+
+    def test_016_captured_heavy_scene_preparation_is_really_selectable(self):
+        delta=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
+        native=(ROOT/"dm/gfx/vk_android/vka_shader.c").read_text()
+        self.assertIn("SCENE_FRAGMENTS",delta)
+        self.assertIn('"1e4d2630d24846d0"',delta)
+        self.assertIn('"00ce4088af2c8e12"',delta)
+        self.assertIn('boolean newSceneCse = SCENE_FRAGMENTS.contains(key)',delta)
+        self.assertIn('!hotVerified || !ShaderLibs.hasKey(hot, hotHeader, key)',delta)
+        self.assertIn('oot_hot_scene_fragment_compatible',native)
+        self.assertIn('DM_VK_OOT_HOT_SCENE_PS',native)
+        self.assertIn('old->fout_mask != newer->fout_mask',native)
+        self.assertIn('old->bind_count != newer->bind_count',native)
+        self.assertIn('memcmp(x, y, old->c1_len)',native)
+        self.assertIn('if (compatible) return &g_hot;',native)
+        # Captured mesh/task geometry keeps its quarantine.
+        self.assertIn('!VKA_ENV("DM_VK_OOT_HOT_MESH", 0)',native)
+
+
     def test_heavy_scene_fragment_source_is_captured_without_overriding_full_library(self):
         native=(ROOT/"dm/gfx/vk_android/vka_shader.c").read_text()
         helper=(ROOT/"scripts/build_ocarina_hot_shaders.py").read_text()
