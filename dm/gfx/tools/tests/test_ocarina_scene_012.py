@@ -79,8 +79,9 @@ class InternalSceneResolution(unittest.TestCase):
     def test_scene_status_reports_selected_dynamic_scale(self):
         self.assertIn("Prefs.sceneLabel(scale)", UI)
         self.assertIn("tamanho dinâmico", UI)
-        self.assertIn("480p nominal", PREFS)
-        self.assertIn("360p nominal", PREFS)
+        # Settings now show readable quality names instead of raw/nominial scales.
+        self.assertIn("480p · Desempenho", PREFS)
+        self.assertIn("360p · Máximo desempenho", PREFS)
 
     def test_larger_scene_is_cheaper_only_if_bound_by_pixels(self):
         # Relative pixel workloads; measured GPU savings need a phone benchmark.
