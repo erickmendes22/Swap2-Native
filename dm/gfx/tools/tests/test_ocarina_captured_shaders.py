@@ -62,8 +62,13 @@ class CapturedTests(unittest.TestCase):
         self.assertIn('ap.add_argument("--key"',helper)
         # Captures alone are NOT approval to change active rendering,
         # and the compare/control shader must not be auto-overridden.
-        self.assertNotIn('"1e4d2630d24846d0"',java)
-        self.assertNotIn('"00ce4088af2c8e12"',java)
+        # 0.1.6 intentionally SELECTS these two captured fragment
+        # sources even when base SPIR-V exists; selection is not a
+        # pipeline override. Only 1e4d may activate after strict ABI/IO
+        # validation by library_for_key in vka_shader.c.
+        self.assertIn('"1e4d2630d24846d0"',java)
+        self.assertIn('"00ce4088af2c8e12"',java)
+        self.assertIn('SCENE_FRAGMENTS', java)
         self.assertIn('DM_VK_OOT_HOT_OVERRIDE',native)
         self.assertIn('complete base library retained',native)
 
