@@ -29,6 +29,10 @@ on:
       - 'android/app/src/ondevice/java/dev/nxnative/android/Job.java'
       - 'dm/games/0400486024DEC000/vk_hot_delta.tsv'
       - 'dm/tools/tests/test_ocarina_shader_delta.py'
+      - 'dm/gfx/tools/tests/test_ocarina_scoped_uniform_barrier.py'
+      - 'dm/gfx/tools/tests/test_ocarina_vk_barrier_dedup.py'
+      - 'dm/gfx/tools/tests/test_ocarina_fps_boost_vrs.py'
+      - 'dm/gfx/tools/tests/test_ocarina_bar_keep.py'
       - '.github/workflows/ocarina-incremental-shaders-ci.yml'
   workflow_dispatch:
 jobs:
@@ -67,6 +71,40 @@ jobs:
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_tex.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_draw.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_exec.c
+      - name: Production APK full source-level regression preflight
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_abi_migration.py'
+          python3 -m unittest discover -s dm/tools/tests -p 'test_ocarina_shader_delta.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_raw_gmem_fast1.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v101_paths.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v22_gmem.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ios_v11_gpu_discards.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v11_012_graphics.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_scene_012.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_vk_barrier_dedup.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_bar_keep.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_query_batched.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_scoped_uniform_barrier.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_attachment_stage_dependencies.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_live_memory_filter.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pool_descriptor_dedup.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_watched_images.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_gpu_write_index.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_upstream_013_015_memory.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_fps_boost_vrs.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_retile.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_graphics_barrier_scopes.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pool_feedback.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ub_deferred.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_early_occlusion.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_occlusion_fast.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_dispatch_overlap.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_720p_upscale_real_gpu.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_mesh_prewarm.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_hot_shader_overlay.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v22_gpu_raw_vector_hints.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pack_finalize_atomic.py'
       - name: On-device finalization retry regressions
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_pack_finalize_atomic.py -v
       - name: Test static engine integration against source versions
