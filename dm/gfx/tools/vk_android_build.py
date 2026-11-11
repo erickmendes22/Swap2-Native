@@ -212,6 +212,23 @@ def borrow_key(key_skip):
     return ns['skey']
 
 
+def borrow_mesh_layout():
+    """Use shader_split.py's exact NVN2 mesh/task layout decoder on captures.
+
+    A capture records genuine control+code, not shader_facts.tsv. This parser
+    derives workgroup size, mesh output planes, per-primitive outputs and task
+    payload from those bytes. Never run the 186k-file shader split again.
+    """
+    source = ast.parse(open(SPLIT).read(), SPLIT)
+    fn = next((n for n in source.body if isinstance(n, ast.FunctionDef)
+               and n.name == 'mesh_facts'), None)
+    if fn is None:
+        sys.exit('[RED] shader_split.py no longer defines mesh_facts')
+    ns = {'struct': struct}
+    exec(compile(ast.Module(body=[fn], type_ignores=[]), SPLIT, 'exec'), ns)
+    return ns['mesh_facts']
+
+
 def record_key(rec, skey):
     """The key of one package record ('BTCDBTCD', +0x28 control length, +0x2c code length, from +0x38 the code area then the control section: shader_split.py), or None
     when the record is not one"""
@@ -364,6 +381,9 @@ for ln in open(MAP):
 # library, or a per-shader result for any original map key. The host already
 # saved the actual missing NVN2 control+code pair in DM_NVN_SHDUMP.
 # Each SHA256 is verified against the file name before it enters the translator.
+# Keep this as a lazy one-time borrow: a full 42k build never needs it.
+CAPTURED_MESH_FACTS = None
+
 def captured_oot_records(keys, loc, pc_of, package_dir):
     source = os.environ.get('DMSH_VK_CAPTURE_DIR') or ''
     # A recorded key may already be in shader_map.tsv but still absent from
@@ -406,6 +426,26 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
             st = (w >> 10) & 0xf
             stage = 'vs' if st == 0 and w & 0x1f == 1 else graphics.get(st)
         if not stage: sys.exit(f'[RED] {key}: captured shader stage is unknown')
+        if stage in ('ms', 'ts') and not FACTS.get(key, {}).get('mesh'):
+            # The normal shader splitter computes mesh_facts from these
+            # control/code bytes, but captured-only jobs never run splitter.
+            # Without this, the translator rejects every new mesh/task key
+            # (49 mesh + 4 task failures in 2026-11-11 Redmagic logs).
+            if len(code) < 0x50:
+                sys.exit(f'[RED] {key}: captured {stage} code is shorter than NVN2 shader header')
+            global CAPTURED_MESH_FACTS
+            if CAPTURED_MESH_FACTS is None:
+                CAPTURED_MESH_FACTS = borrow_mesh_layout()
+            derived = CAPTURED_MESH_FACTS(key, stage, ctl, code, {}, [])
+            layout = derived.get('mesh')
+            if not layout or (stage == 'ms' and
+                    (len(layout) < 4 or layout[0] <= 0 or layout[1] <= 0)):
+                sys.exit(f'[RED] {key}: NVN2 {stage} mesh layout cannot be recovered '
+                         'from its real captured control/code; preserved 42k base and prior overlay')
+            # A real profile fact takes precedence, including known pairs.
+            # Only the missing mesh facts are inferred. Do not write the
+            # game profile or modify shader-library ABI and cached full base.
+            FACTS[key] = {**derived, **FACTS.get(key, {})}
         rec = bytearray(b'BTCDBTCD' + bytes(0x30))
         struct.pack_into('<2I', rec, 0x28, len(ctl), len(code))
         rec.extend(code); rec.extend(ctl)
@@ -422,7 +462,9 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
         for i, (key, _) in enumerate(items):
             loc[key] = (name, i)
             pc_of.setdefault(key, 'captured-runtime')
-    print(f'captured Ocarina shader repair: {len(captured)} verified missing shaders from {source}; compiling only these into a hot overlay, static 42k library and profile unchanged', flush=True)
+    nm = sum(bool(FACTS.get(k, {}).get('mesh')) for k in captured)
+    print(f'captured Ocarina shader repair: {len(captured)} verified selected shaders ({nm} with real mesh/task layouts) from {source}; '
+          'compiling only these into a hot overlay, static 42k library and profile unchanged', flush=True)
     return len(captured)
 
 if want:

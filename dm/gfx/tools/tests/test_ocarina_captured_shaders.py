@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[4]
 SOURCE = (ROOT / "dm/gfx/tools/vk_android_build.py").read_text()
 TREE = ast.parse(SOURCE)
 FN = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "captured_oot_records")
+SPLIT = ROOT / "dm/gfx/tools/shader_split.py"
+SPLIT_TREE = ast.parse(SPLIT.read_text())
+MESH_FN = next(n for n in SPLIT_TREE.body if isinstance(n, ast.FunctionDef) and n.name == "mesh_facts")
 
 class CapturedTests(unittest.TestCase):
     def setUp(self):
@@ -30,7 +33,12 @@ class CapturedTests(unittest.TestCase):
         self.original = os.environ.get("DMSH_VK_CAPTURE_DIR")
         os.environ["DMSH_VK_CAPTURE_DIR"] = str(self.capture)
         self.addCleanup(self.restore)
+        decoder = {'struct': struct}
+        exec(compile(ast.Module(body=[MESH_FN], type_ignores=[]), str(SPLIT), 'exec'), decoder)
+        self.facts = {}
         ns = dict(os=os, re=re, struct=struct, hashlib=hashlib, sys=sys,
+                  FACTS=self.facts, CAPTURED_MESH_FACTS=decoder['mesh_facts'],
+                  borrow_mesh_layout=lambda: decoder['mesh_facts'],
                   GAME=types.SimpleNamespace(id="0400486024DEC000"))
         exec(compile(ast.Module(body=[FN], type_ignores=[]), "<production capture function>", "exec"), ns)
         self.repair = ns["captured_oot_records"]
@@ -107,6 +115,72 @@ class CapturedTests(unittest.TestCase):
         self.assertTrue((self.pkg / "vs_captured_repair.bin").is_file())
         self.assertEqual({v[0] for v in loc.values()}, {"vs_captured_repair.bin"})
         self.assertFalse((self.pkg / "shader_map.tsv").exists())
+
+    def write_mesh_task(self, stage, seed):
+        assert stage in (6, 7)
+        code = bytearray(0x100)
+        code[0x35] = 0xf0  # four position-plane components
+        code[0x36] = seed & 0xf   # one or more generic vector components
+        code[0x70] = seed
+        ctl = bytearray(0xd8)
+        ctl[:8] = bytes.fromhex("34127698c9000000")
+        ctl[0x56] = stage
+        struct.pack_into("<I", ctl, 0x44, len(code))
+        struct.pack_into("<HH", ctl, 0x58, 64, 128)
+        ctl[0x5f] = 3
+        struct.pack_into("<HH", ctl, 0x60, 64, 126)
+        key = hashlib.sha256(
+            bytes(ctl[:0x30]) + bytes(4) + bytes(ctl[0x34:0x48]) + code
+        ).hexdigest()[:16]
+        (self.capture / (key + ".ctl")).write_bytes(ctl)
+        (self.capture / (key + ".code")).write_bytes(code)
+        return key
+
+    def test_captured_mesh_has_real_layout_without_full_split(self):
+        key = self.write_mesh_task(7, 13)
+        loc = {}
+        self.assertEqual(self.repair({key}, loc, {}, str(self.pkg)), 1)
+        facts = self.facts[key]
+        self.assertEqual(facts["local"], [64, 1, 1])
+        self.assertEqual(facts["mesh"][:7], [64, 126, 128, 0, 1, 2, 3])
+        self.assertEqual(facts["mesh_topology"], 3)
+        self.assertEqual(loc[key][0], "ms_captured_repair.bin")
+
+    def test_captured_task_has_real_payload_layout(self):
+        key = self.write_mesh_task(6, 17)
+        self.assertEqual(self.repair({key}, {}, {}, str(self.pkg)), 1)
+        self.assertEqual(self.facts[key]["mesh"], [0, 0, 128])
+        self.assertEqual(self.facts[key]["local"], [64, 1, 1])
+
+    def test_53_missing_mesh_task_layouts_have_no_profile_dependency(self):
+        # Reproduce the observed 49 mesh + 4 task failures, using the real
+        # shader_split mesh_facts parser on verified synthetic captures.
+        keys = set()
+        for i in range(49):
+            keys.add(self.write_mesh_task(7, i + 1))
+        for i in range(4):
+            keys.add(self.write_mesh_task(6, i + 65))
+        self.assertEqual(len(keys), 53)
+        loc = {}
+        self.assertEqual(self.repair(keys, loc, {}, str(self.pkg)), 53)
+        self.assertEqual(len(loc), 53)
+        self.assertEqual(len(self.facts), 53)
+        self.assertEqual(sum(bool(v.get("mesh")) for v in self.facts.values()), 53)
+        self.assertEqual(len(list(self.pkg.glob("*_captured_repair.bin"))), 2)
+        self.assertFalse((self.pkg / "shader_map.tsv").exists())
+
+    def test_malformed_mesh_layout_is_rejected_before_compiling(self):
+        key = self.write_mesh_task(7, 13)
+        ctlp = self.capture / (key + ".ctl")
+        # Invalidating the thread count changes no key (hash uses only
+        # control[:0x48]), but must not produce unverified mesh facts.
+        ctl = bytearray(ctlp.read_bytes())
+        struct.pack_into("<H", ctl, 0x58, 0)
+        ctlp.write_bytes(ctl)
+        with self.assertRaises(SystemExit) as cm:
+            self.repair({key}, {}, {}, str(self.pkg))
+        self.assertIn("mesh layout cannot be recovered", str(cm.exception))
+        self.assertFalse((self.pkg / "ms_captured_repair.bin").exists())
 
     def test_corrupted_capture_is_rejected_without_packaging(self):
         key,_,_=self.write_capture()

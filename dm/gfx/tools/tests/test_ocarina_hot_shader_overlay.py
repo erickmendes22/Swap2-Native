@@ -50,6 +50,11 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('sources.add_argument("--capture-dir", type=Path', BUILDER)
         self.assertIn('env["DMSH_VK_CAPTURE_DIR"] = str(capture)', BUILDER)
         self.assertIn('tempfile.TemporaryDirectory', BUILDER)
+        src = (ROOT / "dm/gfx/tools/vk_android_build.py").read_text()
+        self.assertIn("CAPTURED_MESH_FACTS = borrow_mesh_layout()", src)
+        self.assertIn("FACTS[key] = {**derived, **FACTS.get(key, {})}", src)
+        self.assertIn("n.name == 'mesh_facts'", src)
+        self.assertIn("stage in ('ms', 'ts')", src)
 
     def test_builder_only_compiles_explicit_hot_keys(self):
         self.assertIn('DEFAULT_KEYS = (', BUILDER)
