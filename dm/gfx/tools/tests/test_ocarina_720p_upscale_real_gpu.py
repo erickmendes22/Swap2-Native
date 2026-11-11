@@ -208,6 +208,27 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('Ocarina SGSR internal network:', NDSR)
         self.assertIn('Desativado (seguro)', OPTIONS)
 
+    def test_360p_d99f_uses_safe_bilinear_only_after_verified_sgsr(self):
+        # Build 57 112542 captured 683x384 -> 2048x1152 via d99f
+        # EASU while present SGSR1 was already running. Only the internal
+        # EASU kernel can be simplified; the earlier three chain stages and
+        # the source bypass's <=640x360 guard stay unchanged.
+        draw = (ROOT / 'dm/gfx/vk_android/vka_draw.c').read_text()
+        self.assertIn('int oot_360_network = 0;', NDSR)
+        self.assertIn('cs->key == UINT64_C(0xd99fbeeb53d38847)', NDSR)
+        self.assertIn('g_sw.enc == VKA_NDSR_ENC_SQRT', NDSR)
+        self.assertIn('oi->w == 2048 && oi->h == 1152', NDSR)
+        self.assertIn('input->w == 683 && input->h == 384', NDSR)
+        self.assertIn('!source_is_scene_linear', NDSR)
+        self.assertIn('(tested_oot_network || oot_360_network)', NDSR)
+        self.assertIn('VKA_ENV("DM_VK_OOT_SGSR_CHAIN", 0)', NDSR)
+        self.assertIn('vka_present_sgsr_active()', NDSR)
+        self.assertIn('g_sw.mode == 1', NDSR)
+        self.assertIn('sgsr_network_light)', NDSR)
+        self.assertIn('Ocarina 360p NDSR d99fbeeb', NDSR)
+        self.assertIn('src->w <= 640 && src->h <= 360', draw)
+        self.assertNotIn('src->w <= 800 && src->h <= 450', draw)
+
     def test_025_network_really_replaces_heavy_taps_not_just_output_filter(self):
         # SGSR is applied only after this inexpensive GPU conversion; no
         # full-resolution EASU taps for source_is_scene_linear.

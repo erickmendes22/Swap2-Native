@@ -240,7 +240,28 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
     int tested_oot_network =
         cs->key == UINT64_C(0xb106afba1a18faa9) ||
         cs->key == UINT64_C(0xfa3033d05c0a41d6);
-    int sgsr_network_light = g_sw.mode == 1 && tested_oot_network &&
+    // The nominal 360p profile (palette scale 0.3125) runs d99fbeeb
+    // with a 683x384 sqrt-encoded input and 2048x1152 full-size output,
+    // while b106/fa303 are used at the higher scales. In Build 57 the
+    // d99f stage still ran redundant full-resolution EASU even after a
+    // verified SGSR1 final present (~0.58 ms in the 11:25:42 capture).
+    // Keep the three upstream shaders, their resources and the full-size
+    // destination intact. Simplify only the LAST stage's sampling kernel,
+    // with exact input/output sizes and the same sqrt-to-linear conversion.
+    // Do NOT broaden the independent direct scene-source bypass's 640x360
+    // gate: that source has a different colour encoding and requires
+    // separate equivalence testing.
+    int oot_360_network = 0;
+    if (!source_is_scene_linear &&
+        cs->key == UINT64_C(0xd99fbeeb53d38847) &&
+        g_sw.enc == VKA_NDSR_ENC_SQRT &&
+        oi->w == 2048 && oi->h == 1152) {
+        vka_img *input = vka_tex_id_img(t->tid, cb);
+        oot_360_network = input && input->w == 683 && input->h == 384 &&
+                          input->samples == 1;
+    }
+    int sgsr_network_light = g_sw.mode == 1 &&
+        (tested_oot_network || oot_360_network) &&
         VKA_ENV("DM_VK_OOT_SGSR_CHAIN", 0) &&
         vka_present_sgsr_active() &&
         (uint64_t)oi->w * oi->h > 1280ull * 720;
@@ -250,8 +271,14 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
                   sgsr_network_light)
                ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
     if (sgsr_network_light) {
-        static _Atomic int noted_regular;
-        if (!atomic_exchange(&noted_regular, 1))
+        static _Atomic int noted_regular, noted_360;
+        if (oot_360_network) {
+            if (!atomic_exchange(&noted_360, 1))
+                VLOG("Ocarina 360p NDSR d99fbeeb: full-size EASU replaced "
+                     "with sqrt-to-linear bilinear colour conversion, "
+                     "683x384 -> %ux%u; verified SGSR1 final, "
+                     "all upstream shaders preserved", oi->w, oi->h);
+        } else if (!atomic_exchange(&noted_regular, 1))
             VLOG("Ocarina SGSR internal network: first b106/fa303 in-game "
                  "EASU replaced by bilinear colour conversion at %ux%u; "
                  "Qualcomm SGSR1 is verified active on the final output",
