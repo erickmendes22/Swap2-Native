@@ -189,16 +189,26 @@ static _Atomic int g_sgsr_last_present;
 int vka_present_sgsr_active(void) { return atomic_load_explicit(&g_sgsr_last_present, memory_order_acquire); }
 static struct { int state, sgsr_failed; VkFormat fmt; VkPipeline easu, rcas, sgsr; VkPipelineLayout lay; VkDescriptorSetLayout dsl; VkDescriptorPool pool; VkDescriptorSet set[NFRAME][2]; VkSampler samp;
                 VkImage mid[NFRAME], finish[NFRAME]; VkDeviceMemory mem[NFRAME], fmem[NFRAME]; VkImageView view[NFRAME], fview[NFRAME]; uint32_t mw[NFRAME], mh[NFRAME]; } g_fsr;
+// The presenter runs on its own thread. Build 49 AND 51 logs had the
+// per-frame DM_VK_PRESENT_FILTER cache reading 4, but fsr_wanted()'s earlier
+// call-site cache still read 0 and never initialized the GPU SGSR pipeline.
+// Use the live environment/override table as ONE authority in both the
+// swapchain creation and the actual frame. This is only a handful of string
+// reads per frame, not part of the Vulkan draw/dispatch hot path.
+static int present_filter_setting(void) {
+    char value[48];
+    if (!vka_env_str("DM_VK_PRESENT_FILTER", value, sizeof value)) return 0;
+    char *end = NULL;
+    long n = strtol(value, &end, 10);
+    return end != value && !*end && n >= 0 && n <= 4 ? (int)n : 0;
+}
 static int fsr_wanted(void) {
-    // The user's actual presentation selection (3=FSR, 4=SGSR) is the
-    // authority. Build 49's on-device log had filter=4 but DM_VK_FSR read
-    // as 0 despite its launcher environment line being 1, so the chosen
-    // 720p upscale silently fell back to a full-size rot-linear copy.
-    // Explicit nearest/bilinear modes override a leftover legacy FSR flag;
-    // auto mode retains the legacy flag for existing non-Ocarina callers.
-    int selected = VKA_ENV("DM_VK_PRESENT_FILTER", 0);
+    int selected = present_filter_setting();
     if (selected == 3 || selected == 4) return 1;
-    return selected == 0 && VKA_ENV("DM_VK_FSR", 0) != 0;
+    if (selected != 0) return 0; // explicit nearest/bilinear overrides legacy
+    char value[48];
+    return vka_env_str("DM_VK_FSR", value, sizeof value) &&
+           strtod(value, NULL) != 0.0; // legacy auto mode only
 }
 static VkPipeline fsr_pipe(const uint32_t *frag, size_t fsize, VkFormat fmt) {
     VkShaderModule sm[2] = {0}; VkPipeline p = VK_NULL_HANDLE;
@@ -688,7 +698,7 @@ static int present_one(const pq_item *it) {
     int dw = stretch ? ew : (int)(cw * s + 0.5), dh = stretch ? eh : (int)(ch * s + 0.5);
     int dx = stretch ? 0 : (int)((long)(ew - dw) * g_place_x / 10000), dy = stretch ? 0 : (int)((long)(eh - dh) * g_place_y / 10000);  // nxhost_picture_place
     VkFormatProperties fp = {0}; if (im) vk.vkGetPhysicalDeviceFormatProperties(V.pd, im->f.vk, &fp);
-    int present_filter = VKA_ENV("DM_VK_PRESENT_FILTER", 0);  // 0 native, 1 nearest, 2 bilinear, 3 FSR
+    int present_filter = present_filter_setting(); // same live mode as swapchain and fsr_wanted()
     int nearest = present_filter == 1;
     int blit = im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && im->f.kind == 0 && im->samples == 1 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT);
     // FSR in place of the blit or the rotated copy for a picture scaled up; switched on live, the swapchain has no attachment views yet: blitted once, and the next swapchain has them.
