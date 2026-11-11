@@ -228,6 +228,7 @@ void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 // CPU per draw (recording: mtl_sub_begin to vkEndCommandBuffer)
 extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
 static uint64_t g_ub_copy_cmds, g_ub_copy_regions;  // actual Vulkan copy commands versus independently staged inline regions
+static uint64_t g_ub_deferred, g_ub_shadows, g_ub_flushed; // in-pass deferred updates, shadows for draws and eventual flushes
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
 static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the submission the worker replays (vka_exec_sub_frame)
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
@@ -246,6 +247,10 @@ void mtl_set_frame(uint64_t f) {
         { static uint64_t c0, r0; VLOG("inline uniform GPU batching: %.1f staged copy regions -> %.1f vkCmdCopyBuffer calls/frame (%.1f commands removed; disjoint destination ranges only; DM_VK_UB_BATCH=0 disables)",
               (g_ub_copy_regions-r0)/n, (g_ub_copy_cmds-c0)/n, (g_ub_copy_regions-r0-g_ub_copy_cmds+c0)/n);
           c0=g_ub_copy_cmds; r0=g_ub_copy_regions; }
+        { static uint64_t deferred0, shadow0, flushed0;
+          VLOG("Ocarina in-pass uniforms: %.1f updates deferred/frame, %.1f uniform shadows built/frame, %.1f updates flushed at pass boundaries/frame; DM_VK_UB_DEFER=0 restores immediate writes",
+              (g_ub_deferred-deferred0)/n, (g_ub_shadows-shadow0)/n, (g_ub_flushed-flushed0)/n);
+          deferred0=g_ub_deferred; shadow0=g_ub_shadows; flushed0=g_ub_flushed; }
         { static uint64_t cb0; VLOG("Ocarina compute 9e6b: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (DM_VK_OOT_CS_SYNC=0 restores full)",
               (vka_n_compute_bar - cb0) / n); cb0 = vka_n_compute_bar; }
         { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
@@ -892,7 +897,7 @@ enum { UB_DEFER_MAX = 128 };
 typedef struct { uint64_t addr, size; uint8_t *bytes; } ub_pass_write;
 static ub_pass_write g_ub_pending[UB_DEFER_MAX];
 static int g_ub_np;
-static uint64_t g_ub_seq = 1, g_ub_deferred, g_ub_shadows, g_ub_flushed;
+static uint64_t g_ub_seq = 1;
 static ub_batch g_inline_ub;
 static int ub_intersect(uint64_t a, uint64_t an, uint64_t b, uint64_t bn) {
     if (!an || !bn) return 0;
@@ -906,6 +911,7 @@ int vka_ub_pending_overlap(uint64_t addr, uint64_t size) {
     return 0;
 }
 void vka_ub_overlay(uint64_t addr, void *out, uint64_t size) {
+    g_ub_shadows++;
     // The last write wins; guest OP_UPDATE_UB commands are replayed in order.
     for (int i = 0; i < g_ub_np; i++) {
         const ub_pass_write *w = &g_ub_pending[i];

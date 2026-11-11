@@ -1903,7 +1903,7 @@ static void treg(int id, const tex_t *t, const view_t *v, int img) {
                 (unsigned long long)identical, (unsigned long long)attempts);
     }
     e->t = *t; e->has_v = v != NULL; if (v) e->v = *v; e->img = (uint8_t)img; e->pgen = pgen;
-    if (t->serial) pool_register_active(id);
+    if (t->serial && id > 0) pool_register_active(id);
     atomic_fetch_add_explicit(&g_tpool_stamp, 1, memory_order_release);
     dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
     if (!g_tver) g_tver = calloc(1 << 20, sizeof *g_tver);
