@@ -716,13 +716,13 @@
     <string name="s2_about_revision">Revision: %1$s</string>
     <string name="s2_about_build_date">Build date: %1$s</string>
     <string name="s2_vrs_heavy_title">VRS in heavy graphics passes</string>
-    <string name="s2_vrs_heavy_note">4×2 and 4×4 are experimental and require driver support. Unsupported rates fall back to 4×2, 2×2 or 2×1. Fine details may look softer.</string>
+    <string name="s2_vrs_heavy_note">4×2 and 4×4 require driver support. If unavailable, VRS uses the highest supported rate. Restart the game to apply.</string>
+    <string name="s2_vrs_inherit">Global default</string>
     <string-array name="s2_oot_hotpass_vrs">
-        <item>Off — full detail</item>
-        <item>Balanced — VRS 2×1 (default)</item>
-        <item>Aggressive — VRS 2×2</item>
-        <item>Expanded HDR — VRS 2×2</item>
-        <item>Expanded HDR — VRS 4×2 (experimental)</item>
-        <item>Expanded HDR — VRS 4×4 (experimental)</item>
+        <item>Off</item>
+        <item>VRS 2×1</item>
+        <item>VRS 2×2</item>
+        <item>VRS 4×2</item>
+        <item>VRS 4×4</item>
     </string-array>
 </resources>
