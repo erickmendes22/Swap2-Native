@@ -199,6 +199,7 @@ public final class ShaderZipJvmTest {
         }
         File t = new File(a[0]);
         roundTrip(new File(t, "rt"));
+        ocarinaBaseline(new File(t, "oot"));
         choice(new File(t, "choice"));
         refusals(new File(t, "ref"));
         cancel(new File(t, "cancel"));
@@ -262,6 +263,57 @@ public final class ShaderZipJvmTest {
         ShaderZip.Exported e4 = ShaderZip.export(c, ID, new File(t, "out4"), "test/1", "x", ShaderZip.QUIET);
         check(e4.zip.getName().equals("swap2-shaders-" + ID + "-458752-v-" + CUR + ".zip"), "re-export of an import: " + e4.zip.getName());
         check(ShaderZip.exportName(ID, "", "v1").equals("swap2-shaders-" + ID + "-any-v-v1.zip") && ShaderZip.exportName(ID, "1/2", "v").contains("-1_2-"), "names");
+    }
+
+    /** The exact fully compiled 0.1.2 Ocarina shaders stay importable
+     * by 0.1.6. Other versions/ABIs and incomplete hot zips stay rejected.
+     * This also guards against accidentally exporting an 6-shader overlay. */
+    static void ocarinaBaseline(File t) throws Exception {
+        final String oot = "0400486024DEC000";
+        final String baseline = "b6b21fb5753a";
+        byte[] full = lib(oot, baseline, INPUTS, ABI, 42339, 4096, 149);
+        byte[] inputs = stamp(oot, INPUTS).getBytes(StandardCharsets.UTF_8);
+        File zip = craft(new File(t, "original.zip"), full, inputs);
+        File pack = new File(t, "restored");
+        ShaderZip.Target target = new ShaderZip.Target(pack, oot);
+        target.inputs = INPUTS;
+        ShaderZip.Result result = importFile(zip, target);
+        File original = new File(pack, "shaders/v-" + baseline + "/dmsh_vk.lib");
+        check(result.version.equals(baseline) && result.from.equals(baseline)
+                && Arrays.equals(bytes(original), full), "trusted original stays byte identical and retains version");
+        check(!new File(pack, "shaders/v-" + CUR + "/dmsh_vk.lib").exists(), "original import never forges current shader version");
+        check(ShaderLibs.trustedOcarinaBase(pack, oot, ABI, INPUTS) != null, "validated original library available");
+
+        // A later accidental hot library under v-current must not be exported
+        // in place of the full, known-good original.
+        addLib(pack, CUR, lib(oot, CUR, INPUTS, ABI, 6, 4096, 150), stamp(oot, INPUTS));
+        check(ShaderZip.chooseExport(pack, oot).equals(original), "export selects complete original rather than six shaders");
+
+        File export = new File(t, "export");
+        ShaderZip.Exported e = ShaderZip.export(pack, oot, export, "0.1.6", "src", ShaderZip.QUIET);
+        check(e.version.equals(baseline) && e.shaders == 42339, "re-export keeps original version and entries");
+        ShaderZip.Target again = new ShaderZip.Target(new File(t, "roundtrip"), oot);
+        again.inputs = INPUTS;
+        check(importStream(e.zip, again).shaders == 42339, "original can be re-imported via a document stream");
+
+        File incomplete = craft(new File(t, "hot.zip"),
+                lib(oot, baseline, INPUTS, ABI, 6, 1000, 151), inputs);
+        ShaderZip.Target unsafe = new ShaderZip.Target(new File(t, "incomplete"), oot);
+        unsafe.inputs = INPUTS;
+        refused("incomplete baseline", ShaderZip.Why.OTHER_VERSION, incomplete, unsafe, false);
+
+        File wrongAbi = craft(new File(t, "wrong_abi.zip"),
+                lib(oot, baseline, INPUTS, "ffffffffffff", 42339, 1000, 152), inputs);
+        unsafe = new ShaderZip.Target(new File(t, "wrong_abi"), oot);
+        unsafe.inputs = INPUTS;
+        refused("wrong baseline ABI", ShaderZip.Why.OTHER_VERSION, wrongAbi, unsafe, true);
+
+        File wrongInputs = craft(new File(t, "wrong_inputs.zip"),
+                lib(oot, baseline, "ffffffffffff", ABI, 42339, 1000, 153),
+                stamp(oot, "ffffffffffff").getBytes(StandardCharsets.UTF_8));
+        unsafe = new ShaderZip.Target(new File(t, "wrong_inputs"), oot);
+        unsafe.inputs = INPUTS;
+        refused("wrong baseline inputs", ShaderZip.Why.OTHER_VERSION, wrongInputs, unsafe, false);
     }
 
     static void choice(File t) throws Exception {
