@@ -194,6 +194,63 @@ static int lib_load(void) {
     if (e && *e) snprintf(path, sizeof path, "%s", e);
     else snprintf(path, sizeof path, "%s/shaders/" DMSH_VK_DIR_PREFIX "%s/" DMSH_VK_LIB_FILE, dir, DMSH_VK_CHAIN);
     int have = !access(path, R_OK) && vka_shlib_open(&g_lib, path, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, err, sizeof err);
+
+    // Ocarina: keep the oldest complete source-compatible full library as
+    // baseline; a small six-shader library must only be an optional overlay.
+    // Neither library nor the shader cache is renamed or rewritten.
+    char oot_partial_current[1024] = "";
+    if (have && !(e && *e) && !strcmp(DM_GAME_ID, "0400486024DEC000")) {
+        char sd[1024], oldest_full[1024] = "";
+        struct stat curstat;
+        time_t best_time = stat(path, &curstat) ? 0 : curstat.st_mtime;
+        uint32_t best_count = g_lib.h->entry_count;
+        if (snprintf(sd, sizeof sd, "%s/shaders", dir) < (int)sizeof sd) {
+            DIR *scan = opendir(sd);
+            struct dirent *item;
+            while (scan && (item = readdir(scan))) {
+                if (strncmp(item->d_name, DMSH_VK_DIR_PREFIX, strlen(DMSH_VK_DIR_PREFIX))) continue;
+                char candidate[1024], candidate_error[256];
+                struct stat st;
+                if (snprintf(candidate, sizeof candidate, "%s/%s/" DMSH_VK_LIB_FILE,
+                             sd, item->d_name) >= (int)sizeof candidate ||
+                    !strcmp(candidate, path) || stat(candidate, &st)) continue;
+                vka_shlib other;
+                if (!vka_shlib_open(&other, candidate, DMSH_CHAIN, DMSH_VK_CHAIN,
+                                    DM_GAME_ID, DMSH_VK_ABI, candidate_error,
+                                    sizeof candidate_error)) continue;
+                uint32_t n = other.h->entry_count;
+                int valid = n > 1024 &&
+                    !memcmp(other.h->inputs, g_lib.h->inputs, sizeof other.h->inputs);
+                vka_shlib_close(&other);
+                if (valid && (n > best_count ||
+                    (n == best_count && st.st_mtime < best_time))) {
+                    best_count = n;
+                    best_time = st.st_mtime;
+                    snprintf(oldest_full, sizeof oldest_full, "%s", candidate);
+                }
+            }
+            if (scan) closedir(scan);
+        }
+        if (*oldest_full) {
+            char old_current[1024];
+            snprintf(old_current, sizeof old_current, "%s", path);
+            if (g_lib.h->entry_count <= 1024)
+                snprintf(oot_partial_current, sizeof oot_partial_current, "%s", path);
+            vka_shlib_close(&g_lib);
+            if (vka_shlib_open(&g_lib, oldest_full, DMSH_CHAIN, DMSH_VK_CHAIN,
+                               DM_GAME_ID, DMSH_VK_ABI, err, sizeof err)) {
+                snprintf(path, sizeof path, "%s", oldest_full);
+                VLOG("Ocarina shaders: original complete library selected (%u entries); "
+                     "newer selective shaders preserved, no full rebuild",
+                     g_lib.h->entry_count);
+            } else {
+                have = vka_shlib_open(&g_lib, old_current, DMSH_CHAIN,
+                                     DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI,
+                                     err, sizeof err);
+                oot_partial_current[0] = 0;
+            }
+        }
+    }
     if (!have && !(e && *e)) {   // this version's library not in the pack (yet): the newest other v-<V>/ that this host reads the same (its ABI)
         char why[256]; snprintf(why, sizeof why, "%s", access(path, R_OK) ? "missing" : err);
         char sd[1024], best[1024] = "", compatible[1024] = "", old[1024] = "";
@@ -265,8 +322,12 @@ static int lib_load(void) {
     // fragment/compute patches; DM_VK_OOT_HOT=0 is a full A/B rollback.
     if (!(e && *e) && VKA_ENV("DM_VK_OOT_HOT", 1)) {
         char hp[1024], he[256];
-        if (snprintf(hp, sizeof hp, "%s/shaders/hot/" DMSH_VK_DIR_PREFIX "%s/" DMSH_VK_LIB_FILE,
-                     dir, DMSH_VK_CHAIN) < (int)sizeof hp && !access(hp, R_OK)) {
+        // The current-version six-shader partial lib, when present, is only
+        // an optional override over the original 42k-entry full base.
+        if (*oot_partial_current) snprintf(hp, sizeof hp, "%s", oot_partial_current);
+        else snprintf(hp, sizeof hp, "%s/shaders/hot/" DMSH_VK_DIR_PREFIX "%s/" DMSH_VK_LIB_FILE,
+                      dir, DMSH_VK_CHAIN);
+        if (!access(hp, R_OK)) {
             if (vka_shlib_open(&g_hot, hp, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, he, sizeof he)) {
                 // The overlay's translated descriptor and c1 inputs must
                 // match the complete library being used, not merely its game
