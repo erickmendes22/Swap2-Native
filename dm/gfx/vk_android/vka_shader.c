@@ -709,17 +709,26 @@ void mtl_prog_release(prog_t *p) {
 }
 void mtl_prog_prefetch(const prog_t *p) { (void)p; }   // modules are made at the program's first draw (vka_prog_shaders)
 
-// In-game, capture the four measured heavy shader control+code pairs once,
-// even when the 42k-key imported SPIR-V base already contains them. The next
-// translator revision can rebuild only these real sources as an overlay.
-// No shader capture is attempted for other titles.
+// Capture the four proven Mesh/Task/fragment/compute shaders, plus the
+// two independently profiled scene fragment shaders (heavy and light
+// control).  At 1275x717, 513 draws including 1e4d cost 3.78ms whereas
+// 589 draws dominated by 00ce cost only 0.98ms: instruction / texture
+// work, geometry and overdraw must be investigated, not draw count alone.
+// Capture source ONLY once when actually resolved, even if the original
+// full 42k SPIR-V library already contains this shader.  No retranslation,
+// pipeline swap, ABI invalidation or automatic new shader selection occurs.
+// The existing source verifier must approve an exact pair before the
+// separately selected overlay builder may use it. Ocarina only.
 static int ocarina_hot_shader_slot(uint64_t key) {
     if (strcmp(DM_GAME_ID, "0400486024DEC000")) return -1;
     static const uint64_t keys[] = {
         UINT64_C(0x066f5daf12e43c71), UINT64_C(0xefaa4fa6a80ba719),
-        UINT64_C(0x5ad65c0eefd09c7f), UINT64_C(0x9e6b00b050e30801)
+        UINT64_C(0x5ad65c0eefd09c7f), UINT64_C(0x9e6b00b050e30801),
+        UINT64_C(0x1e4d2630d24846d0), // 720p heavy scene fragment
+        UINT64_C(0x00ce4088af2c8e12)  // lighter scene control fragment
     };
-    for (int i = 0; i < 4; ++i) if (key == keys[i]) return i;
+    for (size_t i = 0; i < sizeof keys / sizeof keys[0]; ++i)
+        if (key == keys[i]) return (int)i;
     return -1;
 }
 
@@ -780,7 +789,7 @@ static void capture_hot_shader_source(const prog_t *p, unsigned i, uint64_t key)
     if (atomic_load(&done) & mask) return;
     if (capture_shader_source(p, i, key)) {
         atomic_fetch_or(&done, mask);
-        VLOG("Ocarina shader %016llx captured for independent mesh/compute hot recompilation; complete base library retained",
+        VLOG("Ocarina shader %016llx captured for future source-verified selective shader analysis; complete base library retained",
              (unsigned long long)key);
     }
 }
@@ -917,8 +926,9 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
             capture_shader_source(p, i, key);
             continue;
         }
-        // Capture the four proven heavy shaders for future selective translator
-        // experiments. This is not shader compilation and does not modify
+        // Capture the profiled heavy shaders and the lighter scene control
+        // once for source-verified optimization experiments. Not compilation;
+        // no new Vulkan pipeline is created and this does not modify
         // any installed shader library or Vulkan pipeline cache.
         capture_hot_shader_source(p, i, key);
         int st = vka_nvn_stage(en->stage);

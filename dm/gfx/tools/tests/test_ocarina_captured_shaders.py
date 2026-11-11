@@ -25,6 +25,30 @@ SPLIT_TREE = ast.parse(SPLIT.read_text())
 MESH_FN = next(n for n in SPLIT_TREE.body if isinstance(n, ast.FunctionDef) and n.name == "mesh_facts")
 
 class CapturedTests(unittest.TestCase):
+
+    def test_heavy_scene_fragment_source_is_captured_without_overriding_full_library(self):
+        native=(ROOT/"dm/gfx/vk_android/vka_shader.c").read_text()
+        helper=(ROOT/"scripts/build_ocarina_hot_shaders.py").read_text()
+        java=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
+        self.assertIn("0x1e4d2630d24846d0",native)
+        self.assertIn("0x00ce4088af2c8e12",native)
+        self.assertIn('DM_GAME_ID, "0400486024DEC000"',native)
+        self.assertIn("static _Atomic unsigned done;",native)
+        self.assertIn("if (capture_shader_source(p, i, key))",native)
+        self.assertIn("capture_matches(ctl",native)
+        self.assertIn("capture_write_file(code, bytes, ncode)",native)
+        self.assertIn("return capture_write_file(ctl, p->sd[i].control, nctl)",native)
+        self.assertIn('sources.add_argument("--capture-dir"',helper)
+        self.assertIn('ap.add_argument("--no-default-keys"',helper)
+        self.assertIn('ap.add_argument("--key"',helper)
+        # Captures alone are NOT approval to change active rendering,
+        # and the compare/control shader must not be auto-overridden.
+        self.assertNotIn('"1e4d2630d24846d0"',java)
+        self.assertNotIn('"00ce4088af2c8e12"',java)
+        self.assertIn('DM_VK_OOT_HOT_OVERRIDE',native)
+        self.assertIn('complete base library retained',native)
+
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
