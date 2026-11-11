@@ -61,6 +61,30 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertLess(src.index('!VKA_ENV("DM_VK_OOT_HOT_MESH", 0)'),
                         src.index('return &g_hot;', src.index('static const vka_shlib *library_for_key')))
 
+    def test_hot_compute_only_uses_modern_translator_when_shader_abi_matches(self):
+        # A full 42k-shader rebuild remains prohibited. The 9e6b shader
+        # was captured during actual gameplay and may be translated alone
+        # with the new V21/V22 raw memory improvements. The prior generic
+        # SPIR-V workgroup-retile patch is correctly refused on this shader
+        # because it reads group-dependent builtins; this source variant
+        # keeps the guest's ORIGINAL dispatch grid and local size.
+        self.assertIn('static int oot_hot_compute_compatible(', HOST)
+        self.assertIn('key != UINT64_C(0x9e6b00b050e30801)', HOST)
+        self.assertIn('old->stage != DMSH_VK_STAGE_CS', HOST)
+        self.assertIn('newer->stage != DMSH_VK_STAGE_CS', HOST)
+        self.assertIn('old->local[0] != newer->local[0]', HOST)
+        self.assertIn('old->local[1] != newer->local[1]', HOST)
+        self.assertIn('old->local[2] != newer->local[2]', HOST)
+        self.assertIn('old->shared != newer->shared', HOST)
+        self.assertIn('old->bind_count != newer->bind_count', HOST)
+        self.assertIn('memcmp(a, b, (size_t)old->bind_count * sizeof *a) == 0', HOST)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOT_COMPUTE", 1)', HOST)
+        self.assertIn('if (compatible) return &g_hot;', HOST)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOT_OVERRIDE", 0)', HOST)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOT_MESH", 0)', HOST)
+        self.assertIn('return &g_lib;', HOST)
+        self.assertIn('DM_VK_OOT_HOT_COMPUTE=0 restores original shader', HOST)
+
     def test_mesh_fragment_pair_captured_from_actual_draw_stage_bindings(self):
         # The Vulkan ABI labels FS as stage 4, but NVN labels it stage 1.
         # More importantly, a mesh draw combines independently bound
