@@ -144,6 +144,12 @@ class CapturedTests(unittest.TestCase):
         self.assertIn('if (old == null) old = Pack.playableLibrary',java)
         self.assertNotIn('if (!manifest.isFile()) return List.of();',java)
         self.assertIn('!ShaderLibs.hasKey(old, header, key)',java)
+        self.assertIn('HEAVY.contains(key)',java)
+        self.assertIn('!BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)',java)
+        self.assertIn('missing.stream().filter(HEAVY::contains).count()',java)
+        for key in ("066f5daf12e43c71","efaa4fa6a80ba719",
+                    "5ad65c0eefd09c7f","9e6b00b050e30801"):
+            self.assertIn('"'+key+'"',java)
         self.assertNotIn('if (!BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)) {\\n            File captures',java)
         self.assertIn('alreadyRepaired(Job job, List<String> keys)',java)
         libs=(ROOT/"android/app/src/main/java/dev/nxnative/android/ShaderLibs.java").read_text()

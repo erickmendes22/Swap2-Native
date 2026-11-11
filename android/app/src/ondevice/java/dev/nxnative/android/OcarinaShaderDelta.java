@@ -27,6 +27,20 @@ final class OcarinaShaderDelta {
 
     private static final String TITLE = "0400486024DEC000";
 
+    /**
+     * GPU bottlenecks confirmed by the 720p Ocarina logs. The full old SPIR-V
+     * library predates the already-integrated V21 raw vector / V22 last-range
+     * translator. Compile these with the NEW translator only if the real
+     * control+code pair was captured in gameplay, and only when its chain
+     * differs from the base. Nothing is guessed or extracted from old SPIR-V.
+     */
+    private static final java.util.Set<String> HEAVY = java.util.Set.of(
+            "066f5daf12e43c71", // foliage mesh
+            "efaa4fa6a80ba719", // foliage task
+            "5ad65c0eefd09c7f", // foliage fragment
+            "9e6b00b050e30801"  // heavy compute
+    );
+
     static List<String> keys(Job job) {
         if (job == null || !TITLE.equals(job.titleId())) return List.of();
         // Missing shaders can occur even with the current, complete 42k-key
@@ -88,7 +102,14 @@ final class OcarinaShaderDelta {
                     // absent from the playable FULL library need translation.
                     // Keep all missing captures in each overlay rebuild, so
                     // new keys do not displace old hot-only keys.
-                    if (!ShaderLibs.hasKey(old, header, key)) missing.add(key);
+                    // Repair actual missing keys AND selectively rebuild
+                    // captured heavy mesh/task/fragment/compute for the new
+                    // translator. Both kinds become the SAME atomic overlay.
+                    // A heavy key that was already compiled by this exact
+                    // Vulkan chain is not selected again.
+                    if (!ShaderLibs.hasKey(old, header, key) ||
+                            (!BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)
+                                    && HEAVY.contains(key))) missing.add(key);
                 }
             } catch (IOException e) {
                 android.util.Log.w("OcarinaShaderDelta", "Cannot inspect base shader index; preserving complete library", e);
@@ -96,8 +117,11 @@ final class OcarinaShaderDelta {
             }
             if (!missing.isEmpty()) {
                 java.util.Collections.sort(missing);
+                long heavy = missing.stream().filter(HEAVY::contains).count();
                 android.util.Log.i("OcarinaShaderDelta",
-                        "Preparing exactly " + missing.size() + " genuinely absent shaders as a partial overlay; 42k-key base unchanged");
+                        "Preparing " + missing.size() + " captured selected shader sources ("
+                                + heavy + " GPU-heavy candidates, remainder absent from base); "
+                                + "original complete 42k-key library and pipeline cache remain unchanged");
                 return List.copyOf(missing);
             }
         }

@@ -30,6 +30,11 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('return &g_lib;', HOST)
         self.assertIn('vka_shader_make(library_for_key(key), key)', HOST)
         self.assertIn('const vka_shlib *source = library_for_key(key);', HOST)
+        delta=(ROOT / "android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
+        self.assertIn('HEAVY.contains(key)', delta)
+        self.assertIn('ShaderLibs.hasKey(old, header, key)', delta)
+        self.assertIn('!BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)', delta)
+        self.assertIn('File captures = new File(job.dir().getParentFile(), "nvn_shdump")',delta)
         self.assertIn('out->sh[st] = vka_shader_make(source, key);', HOST)
         self.assertIn('An absent, invalid or incomplete overlay never blocks the full library', HOST)
 
