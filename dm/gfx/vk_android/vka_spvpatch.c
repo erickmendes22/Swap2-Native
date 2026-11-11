@@ -914,7 +914,13 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
             nload++;
         } else if (op != OpDecorate && op != OpName &&
                    op != OpEntryPoint && op != OpVariable &&
-                   op != OpLoad && op != OpMemberName) {
+                   op != OpLoad && op != OpMemberName &&
+                   // These instructions contain literal operands (e.g.
+                   // LocalSize X=8). Comparing those with an Input result ID
+                   // would produce a false alias/unsafe rejection.
+                   op != 16 && op != 14 && op != 17 &&
+                   op != 19 && op != 21 && op != 23 &&
+                   op != 32 && op != 33 && op != 43 && op != 44) {
             // Any unhandled access to original local/group input could
             // silently change semantics. Refuse rather than guess.
             for (uint32_t j = 1; j < len; j++) {
