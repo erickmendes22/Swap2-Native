@@ -2,7 +2,7 @@
 
 The original ALL_COMMANDS memory barrier remains required for:
   - explicit guest OP_BARRIER, even if the pass had no storage writes
-  - an NVN barrier taken inside a render pass (pending until a hazard)
+  - an NVN barrier taken inside a render pass only when it also involved shader writes
   - diagnostic paths that add reads/copies and standalone pending clears.
 Graphics-only shader stores (including mesh/task) now use ALL_GRAPHICS
 producer stages and ALL_COMMANDS consumers instead of a full producer scope.
@@ -41,7 +41,8 @@ class AttachmentDependencyTest(unittest.TestCase):
         self.assertIn("vka_barrier(g_cb);", EXEC)
 
     def test_shader_stores_preserve_graphics_source_with_full_guest_barrier_fallback(self):
-        self.assertIn("g_rp_force_full || R.bar_pending || had_clears || vka_nan_on()", DRAW)
+        self.assertIn("int full = g_rp_force_full || had_clears || vka_nan_on();", DRAW)
+        self.assertIn("int pending_attachment = R.bar_pending && !full && !R.swrite;", DRAW)
         self.assertIn("else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }", DRAW)
         self.assertIn('R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0', DRAW)
         self.assertIn("if (!R.swrite && draw_writes(sh, d)) R.swrite = 1;", DRAW)
@@ -51,6 +52,7 @@ class AttachmentDependencyTest(unittest.TestCase):
         self.assertLess(DRAW.index("vk.vkCmdEndRendering(g_cb);"), DRAW.index('if (full || (R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0)) {'))
         self.assertIn("else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }", DRAW)
         self.assertIn("pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame", DRAW)
+        self.assertIn("pending-attachment scoped %.1f/frame", DRAW)
 
     def test_conservative_case_matrix(self):
         for guest in (False, True):
@@ -58,17 +60,18 @@ class AttachmentDependencyTest(unittest.TestCase):
                 for storage in (False, True):
                     for clears in (False, True):
                         for diagnostic in (False, True):
-                            full = guest or pending or clears or diagnostic
-                            # Shader stores alone need a complete GRAPHICS
-                            # producer dependency, not ALL_COMMANDS producer.
+                            full = guest or clears or diagnostic or (pending and storage)
+                            # If this pass wrote storage and boost is off,
+                            # the full dependency remains. The lower-level
+                            # code may select ALL_GRAPHICS with FPS Boost.
                             graphics = storage and not full
                             attachments = not full and not graphics
                             self.assertEqual(int(full) + int(graphics) + int(attachments), 1)
                             if full:
-                                self.assertTrue(guest or pending or clears or diagnostic)
+                                self.assertTrue(guest or clears or diagnostic or (pending and storage))
                             if graphics:
                                 self.assertTrue(storage)
-                                self.assertFalse(guest or pending or clears or diagnostic)
+                                self.assertFalse(guest or clears or diagnostic or pending)
 
     def test_no_shader_library_or_new_toggle(self):
         self.assertIn("vka_attachment_write_barrier_at", HEADER)

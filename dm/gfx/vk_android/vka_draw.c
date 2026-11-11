@@ -204,19 +204,24 @@ static int rt_same(const p_set_rt *a, int ha, const p_set_rt *b, int hb) {
 }
 // Game barriers (OP_BARRIER) that came with a pass open: taken inside it (DM_VK_BAR_KEEP), ended it at once, ended it later at a draw that needed it (bar_hazard)
 static uint64_t g_bar_in, g_bar_kept, g_bar_late, g_bar_duplicate_avoided;
-static uint64_t g_rp_scoped, g_rp_graphics, g_rp_full;
+static uint64_t g_rp_scoped, g_rp_graphics, g_rp_full, g_rp_pending_attachment;
 static int g_rp_force_full; // OP_BARRIER has stricter guest-visible ordering than an ordinary pass transition
 void vka_oq_pass_end(void), vka_oq_draw(void);   // vka_exec.c "Occlusion queries"
 void vka_rp_end(void) {
     int had_clears = PC.n != 0;
     if (PC.n) pc_flush();
     if (!R.on) return;
-    // A pass with storage writes (R.swrite) can include task/mesh/fragment
-    // memory stores. These were issued by graphics stages, not compute or
-    // transfer. Limit the producer to ALL_GRAPHICS while keeping ALL_COMMANDS
-    // as the destination. Explicit guest barriers, pending barriers, previous
-    // clears outside the pass, and NaN diagnostics retain the full dependency.
-    int full = g_rp_force_full || R.bar_pending || had_clears || vka_nan_on();
+    // An NVN barrier retained INSIDE a pass does not automatically make its
+    // eventual pass end an all-stages producer. A retained barrier is allowed
+    // only when the prior draws had no shader memory writes (vka_rp_game_barrier).
+    // If later draws add shader writes, R.swrite restores the full barrier.
+    // Without shader writes only color/depth attachments were modified: an
+    // attachment-write -> ALL_COMMANDS read/write barrier orders every next
+    // consumer, even if this pass has a pending guest barrier. This is the
+    // largest avoidable barrier class in Ocarina's heavy scenes.
+    // Forced OP_BARRIER, external clears and diagnostics retain ALL_COMMANDS.
+    int full = g_rp_force_full || had_clears || vka_nan_on();
+    int pending_attachment = R.bar_pending && !full && !R.swrite;
     vka_oq_pass_end();   // an occlusion query active in the pass ends inside it
     vk.vkCmdEndRendering(g_cb);
     // Keep OFF as a faithful unoptimized A/B baseline. The FPS Boost mode
@@ -226,7 +231,7 @@ void vka_rp_end(void) {
         g_rp_full++; vka_barrier(g_cb);
     }
     else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }
-    else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }
+    else { g_rp_scoped++; if (pending_attachment) g_rp_pending_attachment++; vka_attachment_write_barrier(g_cb); }
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
     if (vka_nan_on()) vka_nan_pass(g_cb, R.cim, R.clv, R.cl0, R.nci);
 }
@@ -377,16 +382,16 @@ int vka_rp_game_barrier(uint32_t bits) {
     return 1;
 }
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
-    static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0;
+    static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
     if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0 || g_bar_duplicate_avoided != dup0 || g_rp_scoped != scoped0 || g_rp_graphics != graphics0 || g_rp_full != full0)
-        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
+        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; pending-attachment scoped %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
                  (g_bar_in - i0) / frames, (g_bar_kept - k0) / frames, (g_bar_late - l0) / frames,
                  (g_bar_duplicate_avoided - dup0) / frames,
-                 (g_rp_scoped - scoped0) / frames, (g_rp_graphics - graphics0) / frames, (g_rp_full - full0) / frames,
+                 (g_rp_scoped - scoped0) / frames, (g_rp_graphics - graphics0) / frames, (g_rp_full - full0) / frames, (g_rp_pending_attachment - pending0) / frames,
                  (g_attachment_discards - d0) / frames, (g_attachment_loads_avoided - a0) / frames, (g_attachment_stores_avoided - s0) / frames);
     else if (n) b[0] = 0;
-    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; dup0 = g_bar_duplicate_avoided; scoped0 = g_rp_scoped; graphics0 = g_rp_graphics; full0 = g_rp_full;
+    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; dup0 = g_bar_duplicate_avoided; scoped0 = g_rp_scoped; graphics0 = g_rp_graphics; full0 = g_rp_full; pending0 = g_rp_pending_attachment;
     d0 = g_attachment_discards; a0 = g_attachment_loads_avoided; s0 = g_attachment_stores_avoided;
 }
 // A real NVN discard ends the current pass and invalidates precisely the bound

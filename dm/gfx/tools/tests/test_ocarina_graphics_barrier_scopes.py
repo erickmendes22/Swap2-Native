@@ -24,7 +24,9 @@ class BarrierScopeTests(unittest.TestCase):
     def test_shader_store_pass_full_fallback(self):
         body = source_body(DRAW, 'void vka_rp_end(void) {',
                            '// OP_BARRIER used to end a render pass')
-        self.assertIn('g_rp_force_full || R.bar_pending || had_clears || vka_nan_on()', body)
+        self.assertIn('int full = g_rp_force_full || had_clears || vka_nan_on();', body)
+        self.assertIn('int pending_attachment = R.bar_pending && !full && !R.swrite;', body)
+        self.assertIn('if (pending_attachment) g_rp_pending_attachment++;', body)
         self.assertIn('if (full || (R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0)) {', body)
         self.assertIn('g_rp_full++; vka_barrier(g_cb);', body)
         self.assertIn('else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }', body)
