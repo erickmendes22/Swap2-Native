@@ -127,7 +127,9 @@ class SelectedUpdateTests(unittest.TestCase):
         source = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
         self.assertIn('if (!hotKeys.isEmpty())', source)
         self.assertIn('lib.getPath()', source)
-        self.assertIn('OcarinaShaderDelta.keys(j)', source)
+        self.assertIn('List<String> hotKeys = j.hotKeys();', source)
+        self.assertNotIn('List<String> hotKeys = OcarinaShaderDelta.keys(j);', source)
+        # A full pack must NEVER switch to hot overlay mode while finalizing.
         pack = (ROOT / "scripts/pack_android.py").read_text()
         self.assertIn('if a.hot_keys:', pack)
         self.assertIn('shaders: incremental update:', pack)
