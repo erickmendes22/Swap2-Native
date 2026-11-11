@@ -456,13 +456,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 if (SceneOverlay.current(files, id, Prefs.sceneScale(this, id, prof.sceneScale()), prof.sceneExpect(), pack.version)) {
                     String effectiveSceneScale = Prefs.sceneScale(this, id, prof.sceneScale());
                     env.add("DM_ROMFS_OVERLAY=" + SceneOverlay.dir(files, id));
-                    // VRS is independent of the palette patch. Tell the Vulkan
-                    // pipeline selector the ACTUAL selected scene profile, but
-                    // only when its matching RomFS overlay passed validation.
-                    // The previously broad 4x4 mode is never re-enabled for
-                    // unverified fragment shaders or larger resolutions.
-                    if (Prefs.OCARINA_TITLE.equals(id) && "0.3125".equals(effectiveSceneScale))
-                        env.add("DM_VK_OOT_SCENE_360=1");
+                    // Fragment shading rate is independent of scene scale:
+                    // no special 360p flag and no silent 480p+ downgrade.
                     Native.note("[nxlaunch] internal render scene scale " + effectiveSceneScale
                             + " from RomFS overlay (before NDSR / final output filter)");
                 }
