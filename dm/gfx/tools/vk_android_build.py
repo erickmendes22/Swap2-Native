@@ -1143,6 +1143,18 @@ def older_libraries():
     return sorted(libs, key=lambda L: -os.stat(L.path).st_mtime)
 
 
+# Mesh/task results made before verified pixel partners were available
+# are NOT proof of equivalent interfaces, even with an unchanged ABI. Refresh
+# only those selected per-key checkpoints; keep unrelated existing results
+# and never rebuild the game's 42,339-entry base.
+if want and GAME.id == '0400486024DEC000':
+    for key in keys:
+        if STAGE_OF[key] in ('ms', 'ts'):
+            old_result = result_path(key)
+            if os.path.isfile(old_result):
+                os.unlink(old_result)
+                print(f'Ocarina: refresh verified mesh/task result {key} '
+                      '(new pixel/task pairing metadata)', flush=True)
 for _n in os.listdir(RES):   # what a killed build left: unfinished result files
     if _n.endswith('.tmp'): os.unlink(os.path.join(RES, _n))
 heads = {k: h for k in keys if (h := result_head(result_path(k)))}
