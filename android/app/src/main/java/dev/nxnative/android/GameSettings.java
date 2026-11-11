@@ -201,28 +201,9 @@ final class GameSettings {
                 .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
         // GUI diagnostics & ineffective beta switches removed in 0.1.6.
         // The existing env.txt remains the advanced troubleshooting path.
-        /*box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Medição de GPU", v -> GraphicsOptions.choice(a, id, "gpu_timestamps", again))
-                .value(GraphicsOptions.TIMINGS[GraphicsOptions.timing(a, id)]).chevron(a).view);
-        box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Registro de texturas otimizado (experimental)", v -> GraphicsOptions.choice(a, id, "reg_dedup", again))
-                .value(GraphicsOptions.REGISTRY[GraphicsOptions.regDedup(a, id)] + " · aplica no próximo início").chevron(a).view);
-        box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Espera do encoder (experimental)", v -> GraphicsOptions.choice(a, id, "encoder_idle", again))
-                .value(GraphicsOptions.ENCODER_IDLE[GraphicsOptions.encoderIdle(a, id)] + " · aplica no próximo início").chevron(a).view);
-        if (Prefs.OCARINA_TITLE.equals(id)) {
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "VRS — passes gráficos pesados", v ->
-                    GraphicsOptions.choice(a, id, "oot_hotpass_vrs", again))
-                    .value(GraphicsOptions.HOTPASS_VRS[GraphicsOptions.hotpassVrs(a, id)]
-                            + " · só se suportado pelo driver · reiniciar").chevron(a).view);
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "FPS Boost — VRS (experimental)", v -> GraphicsOptions.choice(a, id, "oot_fps_boost", again))
-                    .value(GraphicsOptions.FPS_BOOST[GraphicsOptions.fpsBoost(a, id)] + " · reiniciar o jogo").chevron(a).view);
-            // 0.25 uses the distinct d99fbeeb upscaler. Enable only on user
-            // request: the Vulkan path substitutes linear HDR source only
-            // after the normal d99fbeeb dispatch and SGSR1 present succeeded.
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "SGSR 1 — redes internas do jogo (experimental)",
-                    v -> GraphicsOptions.choice(a, id, "oot_sgsr_chain", again))
-                    .value(GraphicsOptions.SGSR_CHAIN[GraphicsOptions.sgsrChain(a, id)]
-                            + " · reiniciar o jogo · requer SGSR no filtro da tela").chevron(a).view);
-        }
-        */ 
+        // Release: beta-only GPU timestamps, registration, encoder, VRS,
+        // FPS Boost and internal SGSR controls are no longer in the UI.
+        // Advanced overrides remain in env.txt.
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
             String cur = on ? Prefs.sceneLabel(Prefs.sceneScale(a, id, prof.sceneScale())) : a.getString(R.string.s2_scene_game);

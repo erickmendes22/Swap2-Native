@@ -15,6 +15,7 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_graphics_pass_ub_barrier.py'
       - 'dm/gfx/tools/tests/test_ocarina_early_occlusion.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_shaders.py'
+      - 'dm/gfx/tools/tests/test_ocarina_cold_build_memory.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_alu_cse.py'
       - 'dm/gfx/tools/tests/test_ocarina_graphics_barrier_scopes.py'
       - 'dm/gfx/tools/tests/test_ocarina_postpass_barrier_dedup.py'
@@ -71,6 +72,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_pass_ub_barrier.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_early_occlusion.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_shaders.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_cold_build_memory.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_alu_cse.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_barrier_scopes.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_postpass_barrier_dedup.py -v

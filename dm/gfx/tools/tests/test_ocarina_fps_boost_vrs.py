@@ -20,7 +20,7 @@ class FpsBoostTests(unittest.TestCase):
     def test_default_off_and_game_only(self):
         self.assertIn('getInt("oot_fps_boost", 0)', OPTIONS)
         self.assertIn('if (Prefs.OCARINA_TITLE.equals(id)) {', OPTIONS)
-        self.assertIn('out.add("DM_VK_OOT_FPS_BOOST=" + fpsBoost(c, id));', OPTIONS)
+        self.assertIn('out.add("DM_VK_OOT_FPS_BOOST=0");', OPTIONS)
         self.assertIn('if (Prefs.OCARINA_TITLE.equals(id)) {', SETTINGS)
         self.assertIn('FPS Boost — VRS (experimental)', SETTINGS)
         self.assertIn('"oot_fps_boost"', OPTIONS)
@@ -88,7 +88,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('DM_VK_OOT_HOTPASS_VRS=0 restores full fragment detail', DEV)
         self.assertIn('HOTPASS_VRS = {', OPTIONS)
         self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1)', OPTIONS)
-        self.assertIn('out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));', OPTIONS)
+        self.assertIn('out.add("DM_VK_OOT_HOTPASS_VRS=0");', OPTIONS)
         self.assertIn('"oot_hotpass_vrs"', SETTINGS)
         self.assertIn('"DM_VK_OOT_HOTPASS_VRS"', CTL)
         self.assertNotIn('shader_abi', OPTIONS)

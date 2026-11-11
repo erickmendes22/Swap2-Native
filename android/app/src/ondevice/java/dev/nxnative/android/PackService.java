@@ -854,6 +854,10 @@ public final class PackService extends Service {
         // The full 42,339 library still requires all its normal source entries.
         PackEngine.setenv("DMSH_VK_OOT_PARTIAL",
                 ocarinaShaders && !hotKeys.isEmpty() ? "1" : "0");
+        // Strict first-time full builds: retry only transient failed shader
+        // translations individually, never silently publish partial libraries.
+        PackEngine.setenv("DMSH_VK_OOT_COLD_RETRY",
+                ocarinaShaders && hotKeys.isEmpty() ? "1" : "0");
         PackEngine.setenv("DMSH_GMEM_LAST1", ocarinaShaders ? "1" : "0");
         PackEngine.setenv("DMSH_GMEM_MAP_8192", ocarinaShaders ? "1" : "0");
         // The translator is still explicitly limited to hotKeys. A captured

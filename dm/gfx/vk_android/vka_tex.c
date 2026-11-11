@@ -1551,20 +1551,35 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
         if (!im) { mode = first_mode(t, &f, cpuw_take(t->serial, 0)); g_zwant = mode == ST_ZERO; im = img_create(t, &f, base); g_zwant = 0; }
         if (im && !im->inited) {
             im->vmin = vmin;
-            if (g_nlive == g_livecap) { g_livecap = g_livecap ? g_livecap * 2 : 256; g_live = realloc(g_live, (size_t)g_livecap * sizeof *g_live); }
-            im->live_index = g_nlive;
-            g_live[g_nlive++] = im;
-            g_live_generation++;
-            live_mem_add(im);
-            big_note(im, t);
-            // Its first content through the upload batch when cb is the replay's (vka_dev.c "Upload batches"): staging that retires on the batch's own completion
-            VkCommandBuffer ucb = cb && cb == vka_rp_cb() && vka_up_on() ? vka_up_begin() : VK_NULL_HANDLE;
-            img_first_use(im, t, ucb ? ucb : cb, mode);
-            if (ucb) { vka_up_point(vka_up_cur(ucb)); vka_up_end(); }   // (an upload of many pieces, upload_mt, checks the batch budget only here)
-            throttle = ucb != VK_NULL_HANDLE;
+            if (g_nlive == g_livecap) {
+                // Failed realloc must NOT discard the existing live list
+                // nor change its capacity. Destroy only the new image that
+                // has never been published or submitted to the GPU.
+                int cap = g_livecap && g_livecap <= INT_MAX/2 ? g_livecap*2 : g_livecap ? 0 : 256;
+                vka_img **tmp = cap ? realloc(g_live, (size_t)cap * sizeof *g_live) : NULL;
+                if (!tmp) {
+                    static _Atomic int n;
+                    if (atomic_fetch_add(&n, 1) < 8)
+                        VRED("Vulkan texture registry exhausted: preserving all existing GPU images; newly allocated image discarded");
+                    g_img_bytes -= im->bytes;
+                    img_destroy(im);
+                    im = NULL;
+                } else { g_live = tmp; g_livecap = cap; }
+            }
+            if (im) {
+                im->live_index = g_nlive;
+                g_live[g_nlive++] = im;
+                g_live_generation++;
+                live_mem_add(im);
+                big_note(im, t);
+                VkCommandBuffer ucb = cb && cb == vka_rp_cb() && vka_up_on() ? vka_up_begin() : VK_NULL_HANDLE;
+                img_first_use(im, t, ucb ? ucb : cb, mode);
+                if (ucb) { vka_up_point(vka_up_cur(ucb)); vka_up_end(); }
+                throttle = ucb != VK_NULL_HANDLE;
+            }
         }
     }
-    map_put(t->serial, im);
+    if (im) map_put(t->serial, im); // do not remember a failed allocation as a cached image
     pthread_mutex_unlock(&g_tmu);
     if (throttle) vka_up_throttle();
     return im;

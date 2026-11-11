@@ -1249,6 +1249,24 @@ def run_batch(batch):
     if r.returncode not in (0, 1):   # the translator itself failed (killed, crashed): nothing of this batch is a result
         shutil.rmtree(bd, ignore_errors=True)
         raise RuntimeError(f'translator exit code {r.returncode} on {len(batch)} shaders from {batch[0]}: ' + (r.stderr.strip().splitlines() or [''])[-1][:200])
+    # First full preparation (no existing 42k cache): a failed shader
+    # from a multi-key translator batch gets one single-key retry.
+    # Preserve completed per-shader checkpoints, exact inputs and ABI.
+    # Even after retries REQUIRE_ALL still rejects incomplete libraries.
+    if GAME.id == '0400486024DEC000' and not want and os.environ.get('DMSH_VK_OOT_COLD_RETRY') == '1':
+        for key in batch:
+            sp = os.path.join(bd, key + '.spv')
+            resfile = os.path.join(bd, key + '.res.json')
+            if key not in xerr and os.path.isfile(sp) and os.path.isfile(resfile):
+                continue
+            print(f'Ocarina first shader compile: retrying only {key} individually', flush=True)
+            once = translate([jobs[key]], bd, 'cold_retry_' + key)
+            if once.returncode == 0 and os.path.isfile(sp) and os.path.isfile(resfile):
+                xerr.pop(key, None)
+                print(f'Ocarina first shader compile: recovered {key}', flush=True)
+            else:
+                xerr[key] = ('cold single-key retry failed: ' +
+                    (once.stderr.strip().splitlines() or ['no output module'])[-1])[:160]
     for key in batch:
         res = fin(key, bd, jobs[key], c1s[key], xerr)
         if res[1] == 'translation failed' and key not in xerr: continue   # neither a module nor the translator's reason: not a result (a rerun translates it again)
