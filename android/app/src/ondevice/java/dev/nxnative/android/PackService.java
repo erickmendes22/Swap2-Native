@@ -800,7 +800,11 @@ public final class PackService extends Service {
                         return "Ocarina selective translation selected-key manifest is stale or unsafe; "
                                 + "refusing to replace the original shader library.";
                     publishedHotKeys = selectedKeys;
-                    j.expectedShaders(selectedKeys.size());
+                    try {
+                        j.expectedShaders(selectedKeys.size());
+                    } catch (org.json.JSONException e) {
+                        return "Cannot store selected Ocarina shader count: " + e.getMessage();
+                    }
                     Log.i(TAG, "Ocarina selective preparation: "
                             + selectedKeys.size() + " verified keys, "
                             + (hotKeys.size() - selectedKeys.size())
