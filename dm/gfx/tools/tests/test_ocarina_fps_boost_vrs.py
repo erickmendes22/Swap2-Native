@@ -122,7 +122,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('extended_hot && !mesh && k->ncolor == 1', PSO)
         self.assertIn('k->dfmt == VK_FORMAT_D32_SFLOAT', PSO)
         self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
-        self.assertIn('(balanced_hot || explicit_hot || extended_scene_hdr || broad_hdr_scene)', PSO)
+        self.assertIn('(balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
         self.assertNotIn('DM_VK_OOT_HOTPASS_VRS=3" &&', PSO)
 
     def test_opt_in_four_by_two_and_four_by_four_query_exact_single_sample_rates(self):
@@ -175,7 +175,7 @@ class FpsBoostTests(unittest.TestCase):
 
     def test_fallback_no_invalid_pipeline_or_shader_abi_change(self):
         self.assertIn('V.fps_boost_width = V.fps_boost_vrs ? selected_w : 0u;', DEV)
-        self.assertIn('if (V.fps_boost_width) {', PSO)
+        self.assertIn('if (rate_w) {', PSO)
         self.assertNotIn('shader_abi', OPTIONS)
         self.assertNotIn('shader_library', OPTIONS)
 
