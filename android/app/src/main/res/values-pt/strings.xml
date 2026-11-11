@@ -710,7 +710,7 @@
     <string name="s2_about_revision">Revisão: %1$s</string>
     <string name="s2_about_build_date">Compilado em: %1$s</string>
     <string name="s2_vrs_heavy_title">VRS nos passes gráficos pesados</string>
-    <string name="s2_vrs_heavy_note">Em 360p, VRS 4×2 e 4×4 são aplicados aos shaders de cena identificados. Em 480p ou acima, a cena principal usa no máximo 2×2 para preservar os detalhes. Reinicie o jogo.</string>
+    <string name="s2_vrs_heavy_note">VRS 4×2 e 4×4 funcionam em todas as resoluções nos shaders identificados. Apenas os shaders compatíveis recebem o VRS; outros mantêm qualidade total. Reinicie o jogo para aplicar.</string>
     <string name="s2_vrs_inherit">Padrão global</string>
     <string-array name="s2_oot_hotpass_vrs">
         <item>Desligado</item>
