@@ -298,12 +298,31 @@ static void map_grow(void) {
 }
 static void map_put(uint64_t s, vka_img *im) {
     if ((g_mapn + 1) * 2 > g_mapcap) map_grow();
-    size_t i = hslot(s, g_mapcap);
-    while (g_map[i].serial && g_map[i].serial != ~0ull && g_map[i].serial != s) i = (i + 1) & (g_mapcap - 1);
-    if (g_map[i].serial != s) g_mapn++;
-    g_map[i] = (smap_ent){s, im};
+    size_t i = hslot(s, g_mapcap), first_deleted = SIZE_MAX;
+    // A tombstone does NOT end the probe: a later bucket may still hold
+    // this serial. Reusing it before checking creates duplicate live keys,
+    // stale texture pointers, and the appearance of a leaking texture map.
+    for (;;) {
+        uint64_t key = g_map[i].serial;
+        if (key == s) { g_map[i].im = im; return; }
+        if (key == ~0ull && first_deleted == SIZE_MAX) first_deleted = i;
+        if (!key) {
+            size_t slot = first_deleted != SIZE_MAX ? first_deleted : i;
+            g_map[slot] = (smap_ent){s, im};
+            g_mapn++;
+            return;
+        }
+        i = (i + 1) & (g_mapcap - 1);
+    }
 }
-static void map_del(uint64_t s) { smap_ent *e = map_get(s); if (e) { e->serial = ~0ull; e->im = NULL; atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release); } }   // a tombstone (never a valid serial)
+static void map_del(uint64_t s) {
+    smap_ent *e = map_get(s);
+    if (e) {
+        e->serial = ~0ull; e->im = NULL;
+        if (g_mapn) g_mapn--; // live count, NOT cumulative serial registrations
+        atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
+    }
+}
 static int cpuw_take(uint64_t s, int add) {   // add: insert; else: remove and say whether it was there
     if (add && (g_cpuwn + 1) * 2 > g_cpuwcap) {
         size_t oc = g_cpuwcap; uint64_t *o = g_cpuw; g_cpuwcap = oc ? oc * 2 : 256; g_cpuw = calloc(g_cpuwcap, 8); g_cpuwn = 0;
@@ -311,9 +330,21 @@ static int cpuw_take(uint64_t s, int add) {   // add: insert; else: remove and s
         free(o);
     }
     if (!g_cpuwcap) return 0;
+    size_t first_deleted = SIZE_MAX;
     for (size_t i = hslot(s, g_cpuwcap);; i = (i + 1) & (g_cpuwcap - 1)) {
-        if (g_cpuw[i] == s) { if (!add) g_cpuw[i] = ~0ull; return 1; }
-        if (!g_cpuw[i]) { if (add) { g_cpuw[i] = s; g_cpuwn++; } return 0; }
+        uint64_t key = g_cpuw[i];
+        if (key == s) {
+            if (!add) { g_cpuw[i] = ~0ull; if (g_cpuwn) g_cpuwn--; }
+            return 1;
+        }
+        if (key == ~0ull && first_deleted == SIZE_MAX) first_deleted = i;
+        if (!key) {
+            if (add) {
+                g_cpuw[first_deleted != SIZE_MAX ? first_deleted : i] = s;
+                g_cpuwn++;
+            }
+            return 0;
+        }
     }
 }
 
