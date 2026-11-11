@@ -193,7 +193,7 @@ void vka_img_barrier(VkCommandBuffer cb, VkImage img, VkImageAspectFlags aspect,
 // ---------- Images by serial ----------
 typedef struct view_ent { struct view_ent *next; VkImageView v; VkFormat f; VkImageViewType t; VkImageAspectFlags asp; uint32_t l0, nl, a0, na; VkComponentMapping swz; } view_ent;
 typedef struct { uint64_t serial; vka_img *im; } smap_ent;   // serial 0 = empty, im NULL with a serial = a texture that has no image (format refused)
-static smap_ent *g_map; static size_t g_mapcap, g_mapn;
+static smap_ent *g_map; static size_t g_mapcap, g_mapn, g_mapdead; // live and tombstoned serials counted separately
 static vka_img **g_live; static int g_nlive, g_livecap;
 // Increment on live image insertion/removal. The sorted guest storage
 // overlap index below rebuilds only when this generation changes, rather
@@ -292,12 +292,27 @@ static _Atomic uint32_t g_tgen, *g_tver, *g_sver;   // the recording thread's vi
 static void map_put(uint64_t s, vka_img *im);
 static void map_grow(void) {
     size_t oc = g_mapcap; smap_ent *om = g_map;
-    g_mapcap = oc ? oc * 2 : 1024; g_map = calloc(g_mapcap, sizeof *g_map); g_mapn = 0;
-    for (size_t i = 0; i < oc; i++) if (om[i].serial && om[i].serial != ~0ull) map_put(om[i].serial, om[i].im);
+    // Short-lived images can create thousands of tombstones with only a few
+    // hundred LIVE entries. Rebuild at the SAME size if the tombstones,
+    // rather than live occupancy, caused the threshold. This shortens all
+    // future lookup probe chains without growing device or host memory.
+    size_t nc = !oc ? 1024 : (g_mapn + 1) * 2 > oc ? oc * 2 : oc;
+    smap_ent *fresh = calloc(nc, sizeof *fresh);
+    if (!fresh) {
+        VRED_ONCE("texture serial map rehash allocation failed; keep original map");
+        return;
+    }
+    g_mapcap = nc; g_map = fresh; g_mapn = g_mapdead = 0;
+    for (size_t i = 0; i < oc; i++)
+        if (om[i].serial && om[i].serial != ~0ull) map_put(om[i].serial, om[i].im);
     free(om);
 }
 static void map_put(uint64_t s, vka_img *im) {
-    if ((g_mapn + 1) * 2 > g_mapcap) map_grow();
+    // Treat tombstones as occupied when deciding when to rehash; checking
+    // live count alone could leave an almost entirely deleted table and
+    // force O(capacity) probes (or an all-tombstone loop) per image.
+    if (!g_mapcap || (g_mapn + g_mapdead + 1) * 2 > g_mapcap) map_grow();
+    if (!g_mapcap) return; // OOM: do not dereference the missing table
     size_t i = hslot(s, g_mapcap), first_deleted = SIZE_MAX;
     // A tombstone does NOT end the probe: a later bucket may still hold
     // this serial. Reusing it before checking creates duplicate live keys,
@@ -309,6 +324,7 @@ static void map_put(uint64_t s, vka_img *im) {
         if (!key) {
             size_t slot = first_deleted != SIZE_MAX ? first_deleted : i;
             g_map[slot] = (smap_ent){s, im};
+            if (first_deleted != SIZE_MAX && g_mapdead) g_mapdead--;
             g_mapn++;
             return;
         }
@@ -319,6 +335,7 @@ static void map_del(uint64_t s) {
     smap_ent *e = map_get(s);
     if (e) {
         e->serial = ~0ull; e->im = NULL;
+        g_mapdead++;
         if (g_mapn) g_mapn--; // live count, NOT cumulative serial registrations
         atomic_fetch_add_explicit(&g_tgen, 1, memory_order_release);
     }
