@@ -35,7 +35,7 @@ class Actual720pGpuWork(unittest.TestCase):
 
     def test_easu_and_rcas_are_both_rendered_at_capped_size(self):
         self.assertIn('double fs = fmin(1.0, fmin(1280.0 / dw, 720.0 / dh));', PRESENT)
-        self.assertIn('fsr_mid(k, (uint32_t)fw, (uint32_t)fh)', PRESENT)
+        self.assertIn('fsr_mid(k, (uint32_t)fw, (uint32_t)fh, present_filter == 4 && g_fsr.sgsr)', PRESENT)
         self.assertIn('fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh, fw, fh, present_filter == 4)', PRESENT)
         self.assertIn('float sx = (float)cw / fw, sy = (float)ch / fh;', PRESENT)
         self.assertIn('VkViewport v = {0, 0, (float)fw, (float)fh, 0, 1};', PRESENT)
