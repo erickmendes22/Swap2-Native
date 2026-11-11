@@ -237,6 +237,33 @@ class CapturedTests(unittest.TestCase):
         with (self.capture / "mesh_pairs.tsv").open("a") as f:
             f.write(f"{kind}\t{key}\t{partner}\n")
 
+    def test_unpaired_mesh_does_not_block_other_verified_selected_shaders(self):
+        blocked = self.write_mesh_task(7, 13)
+        good = self.write_mesh_task(7, 17)
+        pixel = self.pixel_partner()
+        self.add_pair("M", good, pixel)
+        selected = {blocked, good}
+        loc = {}
+        self.assertEqual(self.repair(selected, loc, {}, str(self.pkg)), 1)
+        self.assertEqual(selected, {good})
+        self.assertEqual(set(loc), {good})
+        self.assertIn(good, self.facts)
+        self.assertFalse(blocked in self.facts)
+
+    def test_repaired_keys_are_published_only_after_verification(self):
+        source = SOURCE
+        java = (ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
+        self.assertIn("write_library(results, publish=not bool(want))", source)
+        self.assertIn("if want and set(_hashes) != set(want):", source)
+        self.assertLess(source.index("delta.library_hashes(lib, zstd, NJ)"),
+                        source.index("os.replace(lib, installed)"))
+        self.assertIn("selected_keys.tsv", source)
+        self.assertIn("selected_keys.tsv", java)
+        self.assertIn('"--hot-keys", String.join(",", publishedHotKeys)', java)
+        self.assertIn("DMSH_VK_OOT_PARTIAL", java)
+        self.assertIn("if not want:", source)
+        self.assertIn("old_result = result_path(key)", source)
+
     def test_captured_mesh_without_program_pair_is_safely_refused(self):
         key = self.write_mesh_task(7, 13)
         with self.assertRaises(SystemExit) as caught:
