@@ -379,7 +379,9 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                     fs_hot == UINT64_C(0x80d2f2ff9f9882b8);
     // 2026-11-11 111853 GPU profile: five distinct remaining fragment
     // keys on costly 1275x717 HDR scene passes with 160-600 draws.
-    // Opt-in extended 2x2 only. Do not alter the default 2x1/2x2.
+    // The obsolete separate "2x2 expanded" profile 3 was removed from the
+    // launcher. All chosen rates >=2x2 now share the SAME vetted 17 shaders;
+    // 2x1 retains its original conservative 12-shader table.
     int extended_hot = fs_hot == UINT64_C(0x8b13ac32679a0a3e) ||
                        fs_hot == UINT64_C(0x19f99e925937b038) ||
                        fs_hot == UINT64_C(0x35a02875e7820e9a) ||
@@ -404,7 +406,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     // The expanded mode is restricted to the captured single-color HDR
     // scene with D32 depth; it is deliberately not used by UI, video,
     // postprocess, depth-only, multicolor or unverified Mesh/Task passes.
-    int extended_scene_hdr = game_oot && hotpass_profile >= 3 &&
+    int extended_scene_hdr = game_oot && hotpass_profile >= 2 &&
                              extended_hot && !mesh && k->ncolor == 1 &&
                              k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
                              k->dfmt == VK_FORMAT_D32_SFLOAT;
