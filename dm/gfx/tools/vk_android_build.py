@@ -868,6 +868,16 @@ def finish(key, w, job, c1):
     n_precise = spv.precise_minmax(m)
     hmma = stage == 'cs' and spv.hmma_lds(m)   # the HMMA helper's calls lowered at their sites, gathers shared (vk_android_spv.py hmma_lds)
     scse = spv.shuffle_cse(m)   # shuffles with their constant addends taken out, repeats in a block shared: the base module and, below, shuffle_lds's (vk_android_spv.py shuffle_cse)
+    # Ocarina 0.1.6: exact ALU CSE on only the selected, source-verified
+    # heavy scene and HDR fragment shaders. No change to the complete
+    # 42,339-entry library unless the owner explicitly prepares those keys.
+    # Source snapshot, descriptors, location declarations and every output
+    # remain identical; Vulkan 1.3 validation still runs on every variant.
+    oot_alu = (spv.local_alu_cse(m) if GAME.id == '0400486024DEC000'
+               and stage == 'ps' and key in (
+                   '1e4d2630d24846d0',
+                   '00ce4088af2c8e12',
+                   '5ad65c0eefd09c7f') else 0)
     binds = [classify(stage, r, res, m) for r in m.resources()]
     storage_slots(stage, binds, res)
     try: place(stage, binds, m)
@@ -910,7 +920,7 @@ def finish(key, w, job, c1):
             if not sp: e['kind'] = abi.KIND_UNKNOWN; continue   # (the replay then refuses the shader)
             e['bytes'] = sp['bytes']; shared = sp['workgroup']
     refl = {'key': key, 'stage': stage, 'source': f'{name}#{k}', 'pc_paired': pc_of[key], 'c1': c1.hex(), 'local': job.get('local') or [1, 1, 1], 'shared': shared,
-            'notes': res['notes'], 'vs_pad': pad, 'mesh': res.get('mesh'), 'ps_prim': prim, 'caps_dropped': dropped, 'caps_added': added, 'precise': n_precise, 'hmma_lds': hmma, 'shuffle_cse': list(scse), 'base_instance': base_inst[0], 'base_instance_left': base_inst[1], 'drv_reads': drv_reads(binds, m), 'tf': job.get('tf'), **fa,
+            'notes': res['notes'], 'vs_pad': pad, 'mesh': res.get('mesh'), 'ps_prim': prim, 'caps_dropped': dropped, 'caps_added': added, 'precise': n_precise, 'hmma_lds': hmma, 'shuffle_cse': list(scse), 'oot_alu_cse': oot_alu, 'base_instance': base_inst[0], 'base_instance_left': base_inst[1], 'drv_reads': drv_reads(binds, m), 'tf': job.get('tf'), **fa,
             'bindings': [{kk: v for kk, v in e.items() if kk not in ('id', 'tbind', 'index')} for e in binds]}
     loose = os.environ.get('DMSH_VK_LOOSE') == '1'
     return 'ok', '', (refl, [(variant, len(data), *pack_module(data), data if loose else None) for variant, data in mods])   # compressed here, in parallel

@@ -1161,3 +1161,60 @@ def hmma_lds(m, keep=HMMA_KEEP):
     m.ins = [y for y in m.ins if not (y[0] & 0xffff in (OP_NAME, OP_DECORATE) and y[1] in gone)]
     m.index()
     return calls
+
+
+# Release 0.1.6: exact, intra-block ALU common-subexpression elimination.
+# The two captured Ocarina scene fragment shaders and captured HDR pixel
+# shader are translated selectively from their verified NVN2 control/code
+# pairs. These programs can contain straight-line arithmetic repeated after
+# independent NVN register loads. Replacing a second pure ALU operation
+# with an OpCopyObject of the first SSA value preserves its exact bits while
+# allowing Vulkan driver compilation to issue the calculation once.
+#
+# IMPORTANT SAFETY RESTRICTIONS:
+# - Same basic block/function only, never across labels or calls;
+# - Same opcode, result type and *all* operands, unchanged order;
+# - Only pure arithmetic / vector extraction / bitwise operations;
+# - Never images, samples, loads/stores, subgroup ops, barriers, atomics,
+#   derivatives, interpolation, denorm/precision-decorated results;
+# - Identical decorated results are NOT folded: RelaxedPrecision and
+#   NoContraction can make their semantics different;
+# - Uses keep their original result SSA ID via OpCopyObject, so IDs, the
+#   descriptor ABI, shader entry points and reflection remain unchanged.
+# Every output variant still passes the existing SPIR-V Vulkan 1.3 validator.
+def local_alu_cse(m):
+    pure = {
+        79, 81,  # OpVectorShuffle, OpCompositeExtract (literal indices equal)
+        126, 127,  # OpSNegate, OpFNegate
+        128, 129, 130, 131, 132, 133,  # IAdd, FAdd, ISub, FSub, IMul, FMul
+        194, 195, 196, 197, 198, 199, 200, 201,  # shifts, bitwise
+        169,  # OpSelect (both outcomes pre-evaluated, no side effects)
+    }
+    cache = {}
+    inside = False
+    changed = 0
+    for ins in m.ins:
+        opcode = ins[0] & 0xffff
+        if opcode in (OP_FUNCTION, OP_FUNCTION_END):
+            inside = opcode == OP_FUNCTION
+            cache.clear()
+            continue
+        if opcode == OP_LABEL:
+            cache.clear()
+            continue
+        if not inside or opcode not in pure or len(ins) < 4:
+            continue
+        if ins[2] in m.decos:
+            continue
+        key = (opcode, ins[1], tuple(ins[3:]))
+        original = cache.get(key)
+        if original is not None and original not in m.decos:
+            # Preserve the second result's ID and all its uses.
+            # A copy of the first result requires no original ALU work.
+            ins[:] = [(4 << 16) | OP_COPY_OBJECT, ins[1], ins[2], original]
+            changed += 1
+        else:
+            cache[key] = ins[2]
+    if changed:
+        m.index()
+    return changed
