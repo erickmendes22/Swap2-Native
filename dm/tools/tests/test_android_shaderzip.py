@@ -47,7 +47,7 @@ class ShaderZipJvm(unittest.TestCase):
         (d / 'stub/BuildConfig.java').write_text(STUB)
         (d / 'stub/Prefs.java').write_text(
             'package dev.nxnative.android; final class Prefs { '
-            'static final String OCARINA_TITLE = "0400486024DEC000"; }\\n'
+            'static final String OCARINA_TITLE = "0400486024DEC000"; }'
         )
         srcs = [SRC / f'{n}.java' for n in ('ShaderZip', 'PackZip', 'Pack', 'Nup', 'Zstd', 'Profile', 'ShaderLibs', 'ShaderAbiCert', 'SaveStore', 'SaveZip')]
         r = subprocess.run(['javac', '-encoding', 'UTF-8', '-Xlint:all,-try', '-Werror', '-d', str(d / 'classes'), *map(str, srcs), str(TEST), str(d / 'stub/BuildConfig.java'), str(d / 'stub/Prefs.java')],
