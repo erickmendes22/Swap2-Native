@@ -53,6 +53,11 @@ final class OcarinaShaderDelta {
         // Missing shaders can occur even with the current, complete 42k-key
         // library. That is exactly when a per-key repair is needed.
         File old = Pack.libraryOf(job.pack());
+        // Do not calculate missing/captured keys against a 6-entry partial
+        // library masquerading as the current main library.
+        ShaderLibs.Header current = old == null ? null : ShaderLibs.header(old);
+        if (current == null || !current.fits(old.length()) || current.entries <= 1024)
+            old = null;
         if (old == null) old = Pack.playableLibrary(job.pack(), TITLE);
         if (old == null) return List.of();
         ShaderLibs.Header header = ShaderLibs.header(old);
