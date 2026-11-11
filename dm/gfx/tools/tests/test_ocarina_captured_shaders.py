@@ -356,6 +356,9 @@ class CapturedTests(unittest.TestCase):
                         ui.index("if (!code && !shaders)"))
         self.assertIn('j.hotKeys(selected);', ui)
         self.assertIn('j.stepState("split", "done")', ui)
+        self.assertIn('|| "0400486024DEC000".equals(job.titleId())', ui)
+        self.assertIn('picked(job.dump(), false, job.pack(), true);', ui)
+        self.assertIn('&& "done".equals(job.state()) && !job.apkChanged()', ui)
 
     def test_completed_library_fails_closed_before_mass_rebuild(self):
         svc=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
