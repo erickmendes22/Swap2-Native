@@ -169,6 +169,15 @@ class CapturedTests(unittest.TestCase):
         self.assertEqual(len(list(self.pkg.glob("*_captured_repair.bin"))), 2)
         self.assertFalse((self.pkg / "shader_map.tsv").exists())
 
+    def test_57_selected_shaders_cannot_publish_a_four_entry_overlay(self):
+        # The old REQUIRE_ALL path ignored selective hot-key lists.
+        src = SOURCE
+        self.assertIn("if _bad and os.environ.get('DMSH_VK_REQUIRE_ALL') == '1':", src)
+        self.assertNotIn("if _bad and not want and os.environ.get('DMSH_VK_REQUIRE_ALL')", src)
+        self.assertIn("if not want else set()", src)
+        self.assertLess(src.index("if _bad and os.environ.get('DMSH_VK_REQUIRE_ALL')"),
+                        src.index("lib, size = write_library(results)"))
+
     def test_malformed_mesh_layout_is_rejected_before_compiling(self):
         key = self.write_mesh_task(7, 13)
         ctlp = self.capture / (key + ".ctl")

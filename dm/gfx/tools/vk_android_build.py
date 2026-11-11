@@ -445,7 +445,9 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
             # A real profile fact takes precedence, including known pairs.
             # Only the missing mesh facts are inferred. Do not write the
             # game profile or modify shader-library ABI and cached full base.
-            FACTS[key] = {**derived, **FACTS.get(key, {})}
+            existing = FACTS.get(key, {})
+            FACTS[key] = {**existing, **{field: value for field, value in derived.items()
+                                        if not existing.get(field)}}
         rec = bytearray(b'BTCDBTCD' + bytes(0x30))
         struct.pack_into('<2I', rec, 0x28, len(ctl), len(code))
         rec.extend(code); rec.extend(ctl)
@@ -1079,9 +1081,12 @@ _missing = [k for k in ORDER if not os.path.exists(result_path(k))]
 if _missing: sys.exit(f'[RED] {len(_missing)} shaders have no result (the translator wrote neither a module nor a reason for them, from {_missing[0]}): run again')
 results = [read_result(k) for k in ORDER]
 _bad = [r for r in results if r[1] != 'ok']
-if _bad and not want and os.environ.get('DMSH_VK_REQUIRE_ALL') == '1':   # the phone's job: a library without every shader the Mac's build of this version holds must not pass as finished
-    _there = delta.not_built_there(MANIFEST, [r[0] for r in _bad])   # "-" in the profile's manifest of this version: they did not build in the Mac's full build either
-    if _there: print(f'{len(_there)} shaders did not build, as in the Mac\'s build of this version (the profile\'s {delta.MANIFEST} has them as "-"): ' + ', '.join(sorted(_there)[:5]), flush=True)
+if _bad and os.environ.get('DMSH_VK_REQUIRE_ALL') == '1':
+    # Hot shader updates are ALL-OR-NOTHING too. The earlier not-want
+    # condition let 4/57 modules publish and fail only at pack 96%.
+    # Do not delete a previously valid overlay on any failure.
+    _there = delta.not_built_there(MANIFEST, [r[0] for r in _bad]) if not want else set()
+    if _there: print(f'{len(_there)} shaders were not built in the reference manifest: ' + ', '.join(sorted(_there)[:5]), flush=True)
     _bad = [r for r in _bad if r[0] not in _there]
     for lvl, n in collections.Counter(r[1] for r in _bad).items(): print(f'[RED] {lvl}: {n} shaders, e.g. {next(r for r in _bad if r[1] == lvl)[0]}: ' + next(r for r in _bad if r[1] == lvl)[2])
     if _bad: sys.exit(f'[RED] {len(_bad)} of {len(results)} shaders did not build: no library written (DMSH_VK_REQUIRE_ALL)')
