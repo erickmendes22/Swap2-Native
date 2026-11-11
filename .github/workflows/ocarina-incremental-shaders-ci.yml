@@ -114,7 +114,11 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           java = Path('android/app/src/ondevice/java/dev/nxnative/android/PackService.java').read_text()
-          assert 'OcarinaShaderDelta.keys(j)' in java
+          assert 'List<String> hotKeys = j.hotKeys();' in java
+          assert 'OcarinaShaderDelta.keys(j)' not in java
+          assert 'finishedOcarinaLibrary(new File(j.pack(), "shaders"), j)' in java
+          packer = Path('scripts/pack_android.py').read_text()
+          assert 'compatible_ocarina_full_library(out, g, v)' in packer
           assert '--hot-keys' in java
           assert 'ShaderResults.dropFailed(xlate)' in java
           assert 'DMSH_VK_DELTA_FROM' in java
