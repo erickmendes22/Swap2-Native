@@ -69,12 +69,13 @@ class FpsBoostTests(unittest.TestCase):
             "0x8ea627c8ef169ee1", "0x1e4d2630d24846d0",
             "0x5ad65c0eefd09c7f", "0x264e6e6de176460a",
             "0xedce918b7374c89b", "0xfb29c58b3fab8e7b",
+            "0xf48e795040c5dc9a", "0x80d2f2ff9f9882b8",
         ):
             self.assertIn(key, PSO)
         self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', DEV)
         self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', PSO)
         self.assertIn('int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0)', DEV)
-        self.assertIn('hotpass_vrs ? 1 : 0', DEV)
+        self.assertIn('hotpass_vrs > explicit_boost ? hotpass_vrs : explicit_boost', DEV)
         self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)', PSO)
         self.assertIn('(k->samples ? k->samples : 1) == 1', PSO)
         self.assertIn('k->ncolor > 0', PSO)
@@ -91,6 +92,20 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('"oot_hotpass_vrs"', SETTINGS)
         self.assertIn('"DM_VK_OOT_HOTPASS_VRS"', CTL)
         self.assertNotIn('shader_abi', OPTIONS)
+
+    def test_optional_2x2_and_accurate_hdr_mesh_coverage(self):
+        self.assertIn('Agressivo — VRS 2×2 nos passes pesados', OPTIONS)
+        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 2)', OPTIONS)
+        self.assertIn('want_boost >= 2 && has_2x2 ? 2u', DEV)
+        self.assertIn('profiled_mesh_hdr = mesh && sh[6] && sh[7]', PSO)
+        self.assertIn('0xefaa4fa6a80ba719', PSO)
+        self.assertIn('0x066f5daf12e43c71', PSO)
+        self.assertIn('k->ncolor == 2', PSO)
+        self.assertIn('k->cfmt[1] == VK_FORMAT_R16G16B16A16_SFLOAT', PSO)
+        self.assertIn('profiled_hdr)', PSO)
+        self.assertIn('if (!r && P->fsrate.sType && sh[1]', PSO)
+        self.assertIn('Ocarina VRS pipeline ready', PSO)
+        self.assertNotIn('if (atomic_fetch_add(&nboost, 1) < 6)', PSO)
 
     def test_fallback_no_invalid_pipeline_or_shader_abi_change(self):
         self.assertIn('V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;', DEV)

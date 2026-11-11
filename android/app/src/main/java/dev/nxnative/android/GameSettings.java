@@ -206,7 +206,7 @@ final class GameSettings {
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Espera do encoder (experimental)", v -> GraphicsOptions.choice(a, id, "encoder_idle", again))
                 .value(GraphicsOptions.ENCODER_IDLE[GraphicsOptions.encoderIdle(a, id)] + " · aplica no próximo início").chevron(a).view);
         if (Prefs.OCARINA_TITLE.equals(id)) {
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "VRS balanceado — passes gráficos pesados", v ->
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "VRS — passes gráficos pesados", v ->
                     GraphicsOptions.choice(a, id, "oot_hotpass_vrs", again))
                     .value(GraphicsOptions.HOTPASS_VRS[GraphicsOptions.hotpassVrs(a, id)]
                             + " · só se suportado pelo driver · reiniciar").chevron(a).view);

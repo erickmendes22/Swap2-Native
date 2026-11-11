@@ -112,10 +112,14 @@ static int init_once(void) {
     // Enable only for selected measured-heavy fragment programs; users can
     // opt out of the adaptive (moderate) mode separately from FPS Boost.
     // No guess about driver support: all rates/features are queried below.
-    int hotpass_vrs = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
-                      VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) != 0;
+    // Per-game profile: 0=full, 1=2x1 (default), 2=2x2 (experimental).
+    // Keep it independent of the old optional FPS Boost.
+    int hotpass_vrs = !strcmp(DM_GAME_ID, "0400486024DEC000")
+                      ? VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) : 0;
+    if (hotpass_vrs < 0) hotpass_vrs = 0;
+    if (hotpass_vrs > 2) hotpass_vrs = 2;
     int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0);
-    int want_boost = explicit_boost > 0 ? explicit_boost : (hotpass_vrs ? 1 : 0);
+    int want_boost = hotpass_vrs > explicit_boost ? hotpass_vrs : explicit_boost;
     int x_fsr_rate = want_boost > 0 && has_ext(de, nde, VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
     if (x_fsr_rate) dext[ndext++] = VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME;
     // Ocarina issues shading-rate image/palette commands. They are still
@@ -184,7 +188,7 @@ static int init_once(void) {
     V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;
     V.fps_boost_height = V.fps_boost_vrs ? selected_h : 0u;
     if (want_boost > 0)
-        VLOG("Ocarina scene-pass VRS: balanced=%d explicit_boost=%d, extension=%d, "
+        VLOG("Ocarina scene-pass VRS: profile=%d explicit_boost=%d, extension=%d, "
              "pipeline_feature=%d, 2x1=%d, 2x2=%d, active=%d, chosen=%ux%u "
              "(DM_VK_OOT_HOTPASS_VRS=0 restores full fragment detail)",
              hotpass_vrs, explicit_boost, x_fsr_rate, frate.pipelineFragmentShadingRate,

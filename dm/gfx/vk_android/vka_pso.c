@@ -374,18 +374,31 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                     fs_hot == UINT64_C(0x5ad65c0eefd09c7f) ||
                     fs_hot == UINT64_C(0x264e6e6de176460a) ||
                     fs_hot == UINT64_C(0xedce918b7374c89b) ||
-                    fs_hot == UINT64_C(0xfb29c58b3fab8e7b);
+                    fs_hot == UINT64_C(0xfb29c58b3fab8e7b) ||
+                    fs_hot == UINT64_C(0xf48e795040c5dc9a) ||
+                    fs_hot == UINT64_C(0x80d2f2ff9f9882b8);
     int explicit_hot = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 &&
                        (fs_hot == UINT64_C(0x5ad65c0eefd09c7f) ||
                         fs_hot == UINT64_C(0x1e4d2630d24846d0));
-    int balanced_hot = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) &&
+    int balanced_hot = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) > 0 &&
                        scene_hot && !strcmp(DM_GAME_ID, "0400486024DEC000");
-    // Profiled main-scene targets are B10G11R11 HDR + depth; never
-    // coarse-shade SDR UI, cutscene/video or other unrelated targets even
-    // when they reuse a fragment key elsewhere in the game.
+    // The profiled 637x358 Mesh+Task pass is HDR R16G16B16A16_SFLOAT x2,
+    // NOT main-scene B10G11R11. It was incorrectly excluded from 2x1.
+    // Strict shader-triplet and attachment checks protect other R16 passes.
+    int profiled_mesh_hdr = mesh && sh[6] && sh[7] &&
+                           fs_hot == UINT64_C(0x5ad65c0eefd09c7f) &&
+                           sh[6]->key == UINT64_C(0xefaa4fa6a80ba719) &&
+                           sh[7]->key == UINT64_C(0x066f5daf12e43c71) &&
+                           k->ncolor == 2 &&
+                           k->cfmt[0] == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                           k->cfmt[1] == VK_FORMAT_R16G16B16A16_SFLOAT;
+    // No SDR UI/video, unrelated R16 render targets, depth-only or MSAA.
+    int profiled_hdr = (k->ncolor > 0 &&
+                        k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32) ||
+                       profiled_mesh_hdr;
     if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0 &&
-        k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
+        profiled_hdr) {
         if (V.fps_boost_width) {
             P->fsrate = (VkPipelineFragmentShadingRateStateCreateInfoKHR){
                 VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
@@ -396,11 +409,6 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
             // NOT VkPipelineRenderingCreateInfo. Chain both peer structs at
             // the graphics pipeline root, otherwise the VRS state is invalid.
             P->fsrate.pNext = &P->ri;
-            static _Atomic int nboost;
-            if (atomic_fetch_add(&nboost, 1) < 6)
-                VLOG("Ocarina scene-hot VRS %ux%u shader %016llx, full 720p render targets and all draws preserved",
-                     P->fsrate.fragmentSize.width, P->fsrate.fragmentSize.height,
-                     (unsigned long long)sh[1]->key);
         }
     }
     P->ci = (VkGraphicsPipelineCreateInfo){VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -452,6 +460,23 @@ static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], con
     if (r) { p = VK_NULL_HANDLE; g_nfail++; } else { g_ngfx++; g_made++; if (!how) g_frame_made++; }
     g_create_ms += ms_; if (!how) g_create_ns += dns;   // made in the background or by prewarm: not the frame's time
     pthread_mutex_unlock(&g_mu);
+    // Unlike the old first-six logs, this records every distinct fragment
+    // shader whose VRS pipeline the driver actually created successfully.
+    // Pipeline creation is not proof the shader was drawn in this scene.
+    if (!r && P->fsrate.sType && sh[1] && sh[1]->key) {
+        static _Atomic uint64_t logged_fs[24];
+        uint64_t key = sh[1]->key;
+        for (size_t i = 0; i < sizeof logged_fs / sizeof logged_fs[0]; i++) {
+            uint64_t seen = atomic_load(&logged_fs[i]);
+            if (seen == key) break;
+            if (!seen && atomic_compare_exchange_strong(&logged_fs[i], &seen, key)) {
+                VLOG("Ocarina VRS pipeline ready %ux%u fs=%016llx c0=%u mesh=%d",
+                     P->fsrate.fragmentSize.width, P->fsrate.fragmentSize.height,
+                     (unsigned long long)key, (unsigned)P->cf[0], P->mesh);
+                break;
+            }
+        }
+    }
     const vka_shader *pre = P->mesh ? sh[7] : sh[0];   // the vertex shader, or a mesh pipeline's mesh shader
     if (r) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("graphics pipeline (%s %016llx fragment %016llx, %u colour targets, topology %u): %d; its draws are skipped", P->mesh ? "mesh" : "vertex",
                                                                          pre ? (unsigned long long)pre->key : 0ull, sh[1] ? (unsigned long long)sh[1]->key : 0ull, P->ri.colorAttachmentCount, P->mesh ? 0u : P->ia.topology, r); }
