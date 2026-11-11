@@ -632,8 +632,8 @@ void vka_rp_sub_begin(void) {
     { void vka_pso_pause(int on); vka_pso_pause(0); }   // the game submits: resumed (mtl_drain paused the pipeline threads)
     g_chunk_draws = VKA_ENV("DM_VK_CHUNK", 600);   // live: from the next submission
     g_nx = 0; g_chunk_d0 = g_stat_draws;
-    if (g_ub_np) { VRED_ONCE("deferred uniform writes leaked across submissions; discarding stale pending pointers"); g_ub_np = 0; }
-    g_inline_ub.n = 0;
+    // Deferred UB state is drained by vka_rp_end/OP_END; its declarations
+    // occur below the submission encoder, avoiding early forward state use.
 }
 
 // A long submission goes to the queue in parts, so the GPU starts on its first passes while the rest is recorded: before the first pass after DM_VK_CHUNK draws (default
