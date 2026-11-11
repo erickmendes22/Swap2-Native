@@ -1762,6 +1762,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     walk_all(d, sh);   // bindings are evaluated once before any pipeline
     oot_sgsr_chain_frame();
     int chain_part = oot_sgsr_chain_part(sh[5]->key), scene_linear = 0;
+    int scene_binding = -1, scene_previous_tid = 0;
     if (!dp->ind && g_wk.n[5] > 0 && g_oot_sgsr_chain.primed &&
         oot_sgsr_chain_on()) {
         if (chain_part == 2) {
@@ -1793,6 +1794,8 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
             for (int i = 0; i < g_wk.n[5]; i++) {
                 vka_res *r = &g_wk.r[5][i];
                 if (r->what != VKA_R_TEX || r->tid <= 0) continue;
+                scene_binding = i;
+                scene_previous_tid = r->tid;
                 r->tid = g_oot_sgsr_chain.source_tid;
                 scene_linear = 1;
                 break;
@@ -1806,8 +1809,15 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         // earlier stages were skipped. Restore the old flow on later frames.
         // Never allow another frame to skip anything on this unsafe path.
         g_oot_sgsr_chain.refused = 1;
+        // Restore the guest's original descriptor before trying its original
+        // pipeline for this frame. Never bind an unexpected scene source to
+        // an arbitrary original network just because the replacement failed.
+        if (scene_binding >= 0) {
+            g_wk.r[5][scene_binding].tid = scene_previous_tid;
+            img_retype_of(sh[5], g_wk.r[5], g_wk.n[5], &rt);
+        }
         VRED_ONCE("Ocarina SGSR chain: d99fbeeb refused the direct HDR input; "
-                  "original game upscaler restored on subsequent frames");
+                  "original chain restored for subsequent frames");
     }
     const int gp_ndsr_replaced = p != VK_NULL_HANDLE;
     int oot_cs_retiled = 0;
