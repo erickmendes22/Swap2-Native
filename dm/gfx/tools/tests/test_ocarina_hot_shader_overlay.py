@@ -57,7 +57,8 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('g_lib.h->entry_count <= 1024', HOST)
         self.assertIn('head.entries <= 1024', pack)
         self.assertIn('h.entries <= 1024', shader_libs)
-        self.assertIn('current.entries <= 1024', delta)
+        self.assertIn('ShaderLibs.originalOcarina(job.pack(), TITLE', delta)
+        self.assertIn('h.entries < 40000', shader_libs)
 
     def test_failed_57_shader_overlay_quarantines_unpaired_mesh_stages(self):
         # Regression: previous version compiled 57 valid SPIR-V modules,
