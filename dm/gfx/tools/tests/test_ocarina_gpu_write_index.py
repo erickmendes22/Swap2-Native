@@ -48,6 +48,31 @@ class WriteIndexTests(unittest.TestCase):
         self.assertIn("img_pool_dead(im)) continue;", SRC)
         self.assertGreaterEqual(SRC.count("g_live_generation++;"), 2)
 
+    def test_texture_serial_map_reclaims_tombstones_instead_of_growing(self):
+        # An image can be created and removed repeatedly with only a
+        # handful live; deleted slots must not fill the whole hash table.
+        self.assertIn("g_mapcap, g_mapn, g_mapdead;", SRC)
+        self.assertIn("(g_mapn + g_mapdead + 1) * 2 > g_mapcap", SRC)
+        self.assertIn("size_t nc = !oc ? 1024 :", SRC)
+        self.assertIn("(g_mapn + 1) * 2 > oc ? oc * 2 : oc", SRC)
+        self.assertIn("g_mapn = g_mapdead = 0;", SRC)
+        self.assertIn("if (first_deleted != SIZE_MAX && g_mapdead) g_mapdead--;", SRC)
+        self.assertIn("g_mapdead++;", SRC)
+        self.assertIn("for (size_t n = 0; n < g_mapcap; n++", SRC)
+        self.assertIn("static smap_ent *map_get(uint64_t s)", SRC)
+        self.assertIn("if (!fresh)", SRC)
+
+    def test_rehash_capacity_model_for_image_churn(self):
+        # The old live-only criterion did not notice 512 tombstones among
+        # 1024 slots: lookups grew as keys were recycled. A same-capacity
+        # rehash must compact the table, not allocate 2048 slots.
+        cap, live, dead = 1024, 40, 480
+        self.assertGreater((live + dead + 1) * 2, cap)
+        next_cap = cap * 2 if (live + 1) * 2 > cap else cap
+        self.assertEqual(next_cap, 1024)
+        dead = 0  # after rehash
+        self.assertLess((live + dead + 1) * 2, cap)
+
     def test_repeated_writes_avoid_resorts(self):
         rng = random.Random(2143)
         index = Index()
