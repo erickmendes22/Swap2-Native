@@ -166,6 +166,44 @@ class CapturedTests(unittest.TestCase):
         self.assertEqual(self.facts[task]["pair"],[mesh])
         self.assertFalse((self.capture/"mesh_pairs.tsv").exists())
 
+    def test_android_actual_prewarm_path_is_used_without_gameplay(self):
+        mesh = self.write_mesh_task(7, 13)
+        pixel = self.pixel_partner()
+        self.cached_pipeline(mesh, pixel)
+        previous = os.environ.get("DMSH_VK_PREWARM_FILE")
+        os.environ["DMSH_VK_PREWARM_FILE"] = str(self.prewarm)
+        try:
+            # The shader tool's cache folder is NOT under Android's external
+            # files/temp folder. The explicit GameActivity path must win.
+            self.assertEqual(
+                self.history(str(Path(self.tmp.name) / "unrelated" / "cache"),
+                             "0400486024DEC000"),
+                {(mesh, pixel, "mesh")})
+        finally:
+            if previous is None:
+                os.environ.pop("DMSH_VK_PREWARM_FILE", None)
+            else:
+                os.environ["DMSH_VK_PREWARM_FILE"] = previous
+
+    def test_legacy_escaped_mesh_pair_file_recovers_without_recapture(self):
+        mesh = self.write_mesh_task(7, 13)
+        pixel = self.pixel_partner()
+        # Older APK wrote backslash-t/backslash-n as literal characters;
+        # there are no physical newlines in this saved file.
+        (self.capture / "mesh_pairs.tsv").write_text(
+            "M\\t" + mesh + "\\t" + pixel + "\\n")
+        self.assertEqual(self.repair({mesh}, {}, {}, str(self.pkg)), 1)
+        self.assertEqual(self.facts[mesh]["pair"], [pixel])
+
+    def test_failed_hot_job_does_not_disable_play_for_original_pack(self):
+        ui = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/Ondevice.java").read_text()
+        svc = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
+        self.assertIn('!j.hotKeys().isEmpty()', ui)
+        self.assertIn('PackCheck.build(p, j.dump()) == null', ui)
+        self.assertIn('PackCheck.mods(p, j.dump()) == null', ui)
+        self.assertIn('Pack.libraryProblem(j.pack(), j.titleId())', ui)
+        self.assertIn('DMSH_VK_PREWARM_FILE', svc)
+
     def test_prewarms_are_rejected_if_incomplete_or_source_unverified(self):
         mesh=self.write_mesh_task(7,13)
         pixel=self.pixel_partner()
