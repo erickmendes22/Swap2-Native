@@ -18,9 +18,14 @@ WF = (ROOT / ".github/workflows/ocarina-v11-ios-apk.yml").read_text()
 
 class V11Graphics012Tests(unittest.TestCase):
     def test_global_and_game_overrides(self):
-        for key in ("present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp"):
+        for key in ("present_filter", "picture_stretch", "bg_pipelines", "fsr_sharp"):
             self.assertIn('"' + key + '"', OPTS)
             self.assertIn('"' + key + '"', GAME)
+        # 0.1.6 keeps timestamps as an internal diagnostic setting, not a
+        # redundant game menu choice.
+        self.assertIn('"gpu_timestamps"', OPTS)
+        self.assertNotIn('"gpu_timestamps"', GAME)
+        self.assertIn('DM_VK_OOT_HOTPASS_VRS=0', OPTS)
         self.assertIn("GraphicsOptions.reset(a, id)", GAME)
         self.assertIn('GraphicsOptions.choice(this, null, "present_filter"', UI)
         self.assertIn('GraphicsOptions.choice(a, id, "present_filter"', GAME)
