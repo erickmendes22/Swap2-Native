@@ -204,6 +204,7 @@ static int lib_load(void) {
         struct stat curstat;
         time_t best_time = stat(path, &curstat) ? 0 : curstat.st_mtime;
         uint32_t best_count = g_lib.h->entry_count;
+        int found_pinned = 0;
         if (snprintf(sd, sizeof sd, "%s/shaders", dir) < (int)sizeof sd) {
             DIR *scan = opendir(sd);
             struct dirent *item;
@@ -228,9 +229,16 @@ static int lib_load(void) {
                 int valid = n >= 40000 &&
                     !memcmp(other.h->inputs, g_lib.h->inputs, sizeof other.h->inputs);
                 vka_shlib_close(&other);
-                if (valid && (best_count < 40000 || st.st_mtime < best_time)) {
+                int pinned = !strcmp(item->d_name, "v-b6b21fb5753a");
+                // The first known-good complete Ocarina library was exported
+                // by build 32 with exactly the same binary ABI. Prefer it
+                // over later experimental full translations, even if the
+                // user imported it after newer files (newer mtime).
+                if (valid && (pinned || (!found_pinned &&
+                        (best_count < 40000 || st.st_mtime < best_time)))) {
                     best_count = n;
                     best_time = st.st_mtime;
+                    found_pinned = pinned;
                     snprintf(oldest_full, sizeof oldest_full, "%s", candidate);
                 }
             }
@@ -267,7 +275,9 @@ static int lib_load(void) {
     if (!have && !(e && *e)) {   // this version's library not in the pack (yet): the newest other v-<V>/ that this host reads the same (its ABI)
         char why[256]; snprintf(why, sizeof why, "%s", access(path, R_OK) ? "missing" : err);
         char sd[1024], best[1024] = "", compatible[1024] = "", old[1024] = "";
-        time_t bt = 0, ct = 0, ot = 0; snprintf(sd, sizeof sd, "%s/shaders", dir);
+        time_t bt = 0, ct = 0, ot = 0;
+        int best_is_original = 0;
+        snprintf(sd, sizeof sd, "%s/shaders", dir);
         DIR *d = opendir(sd); struct dirent *de;
         while (d && (de = readdir(d))) {
             if (strncmp(de->d_name, DMSH_VK_DIR_PREFIX, strlen(DMSH_VK_DIR_PREFIX))) continue;
@@ -275,12 +285,18 @@ static int lib_load(void) {
             if (snprintf(p, sizeof p, "%s/%s/" DMSH_VK_LIB_FILE, sd, de->d_name) >= (int)sizeof p || stat(p, &st) || !strcmp(p, path)) continue;
             if (vka_shlib_open(&t, p, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, e2, sizeof e2)) {
                 // Never fall back to another selected-only partial library.
-                if (!strcmp(DM_GAME_ID, "0400486024DEC000") && t.h->entry_count <= 1024) {
+                int oot = !strcmp(DM_GAME_ID, "0400486024DEC000");
+                if (oot && t.h->entry_count < 40000) {
                     vka_shlib_close(&t);
                     continue;
                 }
+                int original = oot && !strcmp(de->d_name, "v-b6b21fb5753a");
                 vka_shlib_close(&t);
-                if (!*best || st.st_mtime > bt) { snprintf(best, sizeof best, "%s", p); bt = st.st_mtime; }
+                if (original || (!best_is_original && (!*best || st.st_mtime > bt))) {
+                    snprintf(best, sizeof best, "%s", p);
+                    bt = st.st_mtime;
+                    best_is_original = original;
+                }
                 continue;
             }
             // A certified additive ABI extension allows the *original*
