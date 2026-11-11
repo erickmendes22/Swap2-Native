@@ -71,7 +71,7 @@ class HotShaderOverlay(unittest.TestCase):
         bind=(ROOT/"dm/gfx/vk_android/vka_bind.h").read_text()
         draw=(ROOT/"dm/gfx/vk_android/vka_draw.c").read_text()
         stages={n:int(v) for n,v in re.findall(
-            r"^#define DMSH_VK_STAGE_(FS|TS|MS)\\s+(\\d+)", abi, re.M)}
+            r"^#define DMSH_VK_STAGE_(FS|TS|MS)\s+(\d+)", abi, re.M)}
         self.assertEqual(stages, {"FS":4,"TS":6,"MS":7})
         self.assertIn("static const int8_t m[8] = {0, 3, 4, 2, 1, 5, 6, 7}",bind)
         self.assertIn("stage_in_program(pixel_program, vka_nvn_stage(DMSH_VK_STAGE_FS)",HOST)
