@@ -216,14 +216,19 @@ static int lib_load(void) {
                     !strcmp(candidate, path) || stat(candidate, &st)) continue;
                 vka_shlib other;
                 if (!vka_shlib_open(&other, candidate, DMSH_CHAIN, DMSH_VK_CHAIN,
-                                    DM_GAME_ID, DMSH_VK_ABI, candidate_error,
-                                    sizeof candidate_error)) continue;
+                                     DM_GAME_ID, DMSH_VK_ABI, candidate_error,
+                                     sizeof candidate_error) &&
+                    !certified_abi_open(&other, candidate, candidate_error,
+                                        sizeof candidate_error)) continue;
                 uint32_t n = other.h->entry_count;
-                int valid = n > 1024 &&
+                // The original Zelda profile has ~42k keys. The first valid
+                // complete library wins even if a newer incomplete build
+                // happens to contain *more* shader keys; count only proves
+                // completeness, never shader correctness.
+                int valid = n >= 40000 &&
                     !memcmp(other.h->inputs, g_lib.h->inputs, sizeof other.h->inputs);
                 vka_shlib_close(&other);
-                if (valid && (n > best_count ||
-                    (n == best_count && st.st_mtime < best_time))) {
+                if (valid && (best_count < 40000 || st.st_mtime < best_time)) {
                     best_count = n;
                     best_time = st.st_mtime;
                     snprintf(oldest_full, sizeof oldest_full, "%s", candidate);
@@ -238,7 +243,8 @@ static int lib_load(void) {
                 snprintf(oot_partial_current, sizeof oot_partial_current, "%s", path);
             vka_shlib_close(&g_lib);
             if (vka_shlib_open(&g_lib, oldest_full, DMSH_CHAIN, DMSH_VK_CHAIN,
-                               DM_GAME_ID, DMSH_VK_ABI, err, sizeof err)) {
+                                DM_GAME_ID, DMSH_VK_ABI, err, sizeof err) ||
+                certified_abi_open(&g_lib, oldest_full, err, sizeof err)) {
                 snprintf(path, sizeof path, "%s", oldest_full);
                 VLOG("Ocarina shaders: original complete library selected (%u entries); "
                      "newer selective shaders preserved, no full rebuild",
