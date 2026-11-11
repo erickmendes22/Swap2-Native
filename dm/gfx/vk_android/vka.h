@@ -487,6 +487,7 @@ int vka_origin_ll(void);
 int vka_queue_origin_ll(void);   // the submitting queue's raster origin (nvnQueueBuilder flags): the winding flips with it
 int vka_depth_zero(void);        // nvnDeviceSetDepthMode NEAR_IS_ZERO (else GL's near = -w)
 void vka_present_init(void);
+int vka_present_sgsr_active(void); // last present REALLY used SGSR1, not merely selected it
 // The overlay's counts (vka_fps.c): each image the present thread handed to the swapchain (shown), the game's own or a generated one; frame generation's state
 void vka_fps_note(int shown, int generated);
 void vka_fps_fg(int state, int mult);
