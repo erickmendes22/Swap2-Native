@@ -10,6 +10,7 @@ on:
       - 'dm/gfx/vk_android/vka_exec.c'
       - 'dm/gfx/vk_android/vka_draw.c'
       - 'dm/gfx/tools/tests/test_ocarina_occlusion_fast.py'
+      - 'dm/gfx/tools/tests/test_ocarina_pool_feedback.py'
       - 'dm/gfx/tools/tests/test_ocarina_graphics_barrier_scopes.py'
       - 'dm/gfx/tools/tests/test_ocarina_attachment_stage_dependencies.py'
       - 'dm/gfx/vk_android/vka_shader.c'
@@ -46,6 +47,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_watched_images.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gpu_write_index.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_occlusion_fast.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_pool_feedback.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_barrier_scopes.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_attachment_stage_dependencies.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c

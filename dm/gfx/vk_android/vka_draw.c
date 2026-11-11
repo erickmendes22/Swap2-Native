@@ -1092,7 +1092,12 @@ static int bar_hazard(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) {
     if (draw_writes(sh, d)) return 1;
     for (int st = 0; st < VKA_NSTAGE; st++) {
         if (!sh[st] || (st == 1 && d->rast_discard)) continue;
-        if (g_wk.pool[st] || g_wk.n[st] < 0) return 1;
+        if (g_wk.n[st] < 0) return 1;
+        // A pool shader alone no longer implies a framebuffer feedback read:
+        // query the exact registered guest ranges. If no texture aliases
+        // this pass's attachments, the draw cannot sample its render targets.
+        // Unknown or overlapping registration still ends the pass.
+        if (g_wk.pool[st] && vka_tex_pool_in_pass()) return 1;
         const vka_res *r = g_wk.r[st];
         for (int i = 0; i < g_wk.n[st]; i++) if ((r[i].what == VKA_R_TEX || r[i].what == VKA_R_TBUF) && r[i].tid && vka_tex_id_in_pass(r[i].tid)) return 1;
     }

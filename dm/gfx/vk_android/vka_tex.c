@@ -1841,6 +1841,7 @@ static void treg(int id, const tex_t *t, const view_t *v, int img) {
                 (unsigned long long)identical, (unsigned long long)attempts);
     }
     e->t = *t; e->has_v = v != NULL; if (v) e->v = *v; e->img = (uint8_t)img; e->pgen = pgen;
+    atomic_fetch_add_explicit(&g_tpool_stamp, 1, memory_order_release);
     dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
     if (!g_tver) g_tver = calloc(1 << 20, sizeof *g_tver);
     if (g_tver) atomic_fetch_add_explicit(&g_tver[id], 1, memory_order_release);
@@ -1921,7 +1922,49 @@ static VkComponentSwizzle swz1(int n) { return n >= 0 && n <= 5 ? (VkComponentSw
 // g_rp_open: a pass is open in the recording command buffer (rp_begin passes its attachments, vka_rp_end NULL; a pass of no attachments is open too), which
 // img_storage_upgrade's copy may not run inside
 static vka_img *g_fb_im[9]; static uint32_t g_fb_lv[9]; static int g_nfb, g_rp_open;
-void vka_tex_feedback(vka_img *const *ims, const uint32_t *levels, int n) { g_rp_open = ims != NULL; g_nfb = n > 9 ? 9 : n; for (int i = 0; i < g_nfb; i++) { g_fb_im[i] = ims[i]; g_fb_lv[i] = levels[i]; } }
+// Exact-register conservative pool feedback: a pool shader may sample any
+// registered ID, so it can only be excluded from a pass feedback hazard if
+// NONE of those registered textures overlap any attachment's guest storage.
+// Only direct ranges are compared; an unknown address retains the hazard.
+// This is safe without shader readback tracking and works on precompiled libs.
+// Increment the registration stamp even for identical descriptors when the
+// opt-in generic register dedupe is disabled.
+static _Atomic uint64_t g_tpool_stamp = 1;
+static uint64_t g_fb_stamp, g_pool_feedback_stamp, g_pool_feedback_fb;
+static int g_pool_feedback_possible = 1;
+void vka_tex_feedback(vka_img *const *ims, const uint32_t *levels, int n) {
+    g_rp_open = ims != NULL; g_nfb = n > 9 ? 9 : n;
+    for (int i = 0; i < g_nfb; i++) { g_fb_im[i] = ims[i]; g_fb_lv[i] = levels[i]; }
+    g_fb_stamp++;
+}
+int vka_tex_pool_in_pass(void) {
+    if (!g_rp_open || !g_nfb) return 0;
+    pthread_mutex_lock(&g_tmu);
+    uint64_t stamp = atomic_load_explicit(&g_tpool_stamp, memory_order_relaxed);
+    if (g_pool_feedback_stamp != stamp || g_pool_feedback_fb != g_fb_stamp) {
+        int possible = 0;
+        for (int k = 0; k < g_nfb && !possible; k++) {
+            const vka_img *f = g_fb_im[k];
+            if (!f || !f->mem || !f->L.size) { possible = 1; break; }
+            uintptr_t lo = (uintptr_t)f->mem;
+            uint64_t sz = f->L.size;
+            for (int id = 1; id < g_ntreg; id++) {
+                const treg_ent *e = &g_treg[id];
+                if (!e->t.serial) continue;
+                if (!e->t.mem || !e->t.L.size) { possible = 1; break; }
+                uintptr_t at = (uintptr_t)e->t.mem;
+                uint64_t len = e->t.L.size;
+                if (at <= lo ? (uint64_t)(lo - at) < len :
+                                   (uint64_t)(at - lo) < sz) { possible = 1; break; }
+            }
+        }
+        g_pool_feedback_possible = possible;
+        g_pool_feedback_stamp = stamp; g_pool_feedback_fb = g_fb_stamp;
+    }
+    int result = g_pool_feedback_possible;
+    pthread_mutex_unlock(&g_tmu);
+    return result;
+}
 static VkImageView view_of(const treg_ent *e, vka_img *im, int vt_want, int storage, VkFormat over) {   // over: a storage view's format in place of the texture's (id_view)
     vka_fmt f; const view_t *v = e->has_v ? &e->v : NULL;
     if (!vka_fmt_of(v && v->set_format ? v->format : e->t.d.format, &f)) f = im->f;
