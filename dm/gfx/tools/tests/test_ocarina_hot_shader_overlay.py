@@ -58,8 +58,13 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('old_keys++;', src)
         self.assertIn('quarantine++;', src)
         self.assertIn('vka_shlib_find(&g_lib, entry->key)', src)
-        self.assertLess(src.index('!VKA_ENV("DM_VK_OOT_HOT_MESH", 0)'),
-                        src.index('return &g_hot;', src.index('static const vka_shlib *library_for_key')))
+        # The reviewed compute-only 9e6b exception returns &g_hot
+        # earlier than the final guarded mesh/task path. Verify the
+        # UNCONDITIONAL fallback is still after mesh quarantine, not the
+        # separate safe compute exception.
+        mesh_guard = src.index('!VKA_ENV("DM_VK_OOT_HOT_MESH", 0)', src.index('static const vka_shlib *library_for_key'))
+        final_hot = src.index('    return &g_hot;\n}', mesh_guard)
+        self.assertLess(mesh_guard, final_hot)
 
     def test_hot_compute_only_uses_modern_translator_when_shader_abi_matches(self):
         # A full 42k-shader rebuild remains prohibited. The 9e6b shader
