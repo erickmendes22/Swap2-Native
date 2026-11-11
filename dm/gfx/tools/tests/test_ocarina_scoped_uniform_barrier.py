@@ -67,7 +67,9 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         self.assertIn("case OP_CLEAR_BUF: if (g_cb)", EXEC)
         self.assertIn("buf_fill(cb->addr, cb->size, cb->value); boost_transfer_barrier(g_cb);", EXEC)
         self.assertIn("buf_copy(s_, d, n); boost_transfer_barrier(g_cb);", EXEC)
-        self.assertIn("else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }", DRAW)
+        self.assertIn("else { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }", DRAW)
+        self.assertIn("const int postub = vka_ub_active();", DRAW)
+        self.assertIn("DM_VK_OOT_POSTUB_BAR_DEDUP", DRAW)
         self.assertIn("case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);", EXEC)
         self.assertIn("default: if (g_cb && !vka_state_op(&S.d, h.op, a)) vka_rp_end()", EXEC)
 
