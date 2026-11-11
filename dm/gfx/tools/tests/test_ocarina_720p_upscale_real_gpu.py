@@ -85,6 +85,34 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('fsr_copy(cb, k, idx, im', PRESENT)
         self.assertIn('if (fsr && !g_sview[idx])', PRESENT)
 
+    def test_ios_v19_025_snapdragon_chain_requires_verified_gpu_success(self):
+        draw = (ROOT / 'dm/gfx/vk_android/vka_draw.c').read_text()
+        ui = (ROOT / 'android/app/src/main/java/dev/nxnative/android/GraphicsOptions.java').read_text()
+        present = PRESENT
+        self.assertIn('0xd99fbeeb53d38847', draw)
+        self.assertIn('0xf8965bffbdf51d78', draw)
+        self.assertIn('0xd17eefaff4f0bc23', draw)
+        self.assertIn('0xa335c1db6270c355', draw)
+        self.assertIn('DM_VK_OOT_SGSR_CHAIN", 0', draw)
+        self.assertIn('vka_present_sgsr_active()', draw)
+        self.assertIn('g_oot_sgsr_chain.primed', draw)
+        self.assertIn('if (scene_linear && !p)', draw)
+        self.assertIn('g_wk.r[5][scene_binding].tid = scene_previous_tid;', draw)
+        self.assertIn('g_oot_sgsr_chain.completed = 1;', draw)
+        self.assertIn('atomic_store_explicit(&g_sgsr_last_present, method == 4', present)
+        self.assertIn('atomic_store_explicit(&g_sgsr_last_present, 0', present)
+        self.assertIn('DM_VK_OOT_SGSR_CHAIN=" + sgsrChain(c, id)', ui)
+        self.assertIn('static int sgsrChain(Context c, String id)', ui)
+
+    def test_025_network_really_replaces_heavy_taps_not_just_output_filter(self):
+        # SGSR is applied only after this inexpensive GPU conversion; no
+        # full-resolution EASU taps for source_is_scene_linear.
+        self.assertIn('g_sw.mode == 2 || large_oot || source_is_scene_linear', NDSR)
+        self.assertIn('VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU', NDSR)
+        self.assertIn('effective_enc = source_is_scene_linear ? VKA_NDSR_ENC_LINEAR', NDSR)
+        self.assertIn('effective_map = source_is_scene_linear ? VKA_NDSR_MAP_FULL', NDSR)
+        self.assertIn('if (source_is_scene_linear && cs->key != UINT64_C(0xd99fbeeb53d38847))', NDSR)
+
     def test_ocarina_default_selects_working_720p_fsr_without_new_toggle(self):
         self.assertIn('Prefs.OCARINA_TITLE.equals(id) && previous == 0 ? 4 : previous', OPTIONS)
         self.assertIn('if (p.contains(key)) return', OPTIONS)
