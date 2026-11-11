@@ -14,6 +14,7 @@ HDR = (ROOT / "dm/gfx/vk_android/vka.h").read_text()
 CTL = (ROOT / "dm/gfx/vk_android/vka_ctl.c").read_text()
 OPTIONS = (ROOT / "android/app/src/main/java/dev/nxnative/android/GraphicsOptions.java").read_text()
 SETTINGS = (ROOT / "android/app/src/main/java/dev/nxnative/android/GameSettings.java").read_text()
+RUN = (ROOT / "android/app/src/main/java/dev/nxnative/android/GameActivity.java").read_text()
 
 
 class FpsBoostTests(unittest.TestCase):
@@ -171,6 +172,23 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
         self.assertIn('k->ncolor == 2', PSO)
         self.assertIn('logged_fs[128]', PSO)
+        self.assertIn('VRS pipeline rejected', PSO)
+
+    def test_360p_explicit_4x2_4x4_does_not_silently_downgrade_to_1x1(self):
+        # Redmagic 11 Pro, 2026-11-11 16:01: profile=5, Vulkan chosen=4x4
+        # but 16/17 actual scene FS pipelines were capped to 2x1/2x2.
+        # The active 360p palette must reach Vulkan independently of NDSR.
+        self.assertIn('SceneOverlay.current(files, id, Prefs.sceneScale', RUN)
+        self.assertIn('"0.3125".equals(effectiveSceneScale)', RUN)
+        self.assertIn('env.add("DM_VK_OOT_SCENE_360=1")', RUN)
+        self.assertIn('int scene360 = game_oot && VKA_ENV("DM_VK_OOT_SCENE_360", 0) == 1;', PSO)
+        self.assertIn('hotpass_profile >= 4 && !profiled_mesh_hdr && !scene360', PSO)
+        self.assertIn('uint32_t rate_w = V.fps_boost_width, rate_h = V.fps_boost_height;', PSO)
+        # Preserve safety and compatibility: only 17 confirmed fragment
+        # keys, not the old blanket >=128 shader HDR auto-enrollment.
+        self.assertNotIn('int broad_hdr_scene =', PSO)
+        self.assertIn('(balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
+        self.assertIn('if (r && P->fsrate.sType)', PSO)
         self.assertIn('VRS pipeline rejected', PSO)
 
     def test_fallback_no_invalid_pipeline_or_shader_abi_change(self):
