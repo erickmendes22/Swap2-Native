@@ -587,7 +587,7 @@ final class Ondevice {
                     : "done".equals(st) ? "Play starts the game with its prepared pack." : "Nothing done so far is lost.");
             go.setText(running ? "Pause" : "done".equals(st) && !job.apkChanged() ? "Prepare again" : "failed".equals(st) ? "Retry" : "pending".equals(st) ? "Start" : "Resume");
             go.setEnabled(!"done".equals(st) || job.apkChanged());
-            play.setEnabled(ready && !running);
+            play.setEnabled(ready && (!running || !job.hotKeys().isEmpty()));
         }
 
         /** Whether the list has this job's game with its pack */
