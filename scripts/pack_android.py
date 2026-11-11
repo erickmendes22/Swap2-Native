@@ -383,6 +383,39 @@ def install_library_file(src, dst, move_private=False):
         raise
 
 
+def compatible_ocarina_full_library(pack, g, current_vk):
+    """Recover ONLY a complete, indexed prior Ocarina SPIR-V library.
+
+    The Vulkan host accepts old translator chains with an identical ABI;
+    verify its own binary header and every entry, without restamping or
+    duplicating the 42,339 shaders.
+    """
+    if g.id != '0400486024DEC000': return None
+    import vk_android_delta as delta
+    abi = delta.abi_digest()
+    inputs = dmsh_chain.inputs(g)
+    root = Path(pack) / 'shaders'
+    candidates = sorted(root.glob('v-*/dmsh_vk.lib'),
+                        key=lambda p: p.stat().st_mtime_ns, reverse=True)
+    for path in candidates:
+        L = None
+        try:
+            L = delta.Library(str(path))
+            if (L.game != g.id or L.inputs != inputs or L.abi != abi
+                    or L.ne < 42339 or L.version == current_vk
+                    or path.parent.name != 'v-' + L.version
+                    or len(L.index) != L.ne):
+                continue
+            for i in range(L.ne):
+                L.entry(i)  # reject truncated bindings/modules/c1
+            return path
+        except (OSError, ValueError) as exc:
+            print(f'shaders: old library not reusable ({path}): {exc}', flush=True)
+        finally:
+            if L is not None: L.close()
+    return None
+
+
 def pack_shaders(a, g, work, out, vdir):
     """shaders/v-<V>/ in the pack: an up-to-date library from the cache (built there first when it is missing or stale, from the shader package, split from the dump
     first when there is none and --shader-pkg names none). → the library path in the pack, or None"""
@@ -403,6 +436,13 @@ def pack_shaders(a, g, work, out, vdir):
         return base
     cache = (a.shader_cache or work / 'android-shaders' / 'lib').resolve(); lib = cache / name
     dst = out / 'shaders' / name
+    if (a.in_process and g.id == '0400486024DEC000'
+            and not library_current(lib, g) and not library_current(dst, g)):
+        old = compatible_ocarina_full_library(out, g, v)
+        if old is not None:
+            print(f'shaders: using verified previous full library {old}, '
+                  'same ABI and game inputs; no translation or renaming', flush=True)
+            return old
     if a.move_shader_cache and not library_current(lib, g) and library_current(dst, g):
         # Previous attempt moved the app-owned library into the final pack,
         # then the process was killed before pack.tsv was written. Recover

@@ -285,7 +285,7 @@ public final class PackService extends Service {
      */
     private boolean ocarinaPackPlayable(Job j) {
         if (engine.simulated() || !"0400486024DEC000".equals(j.titleId())) return false;
-        if (!OcarinaShaderDelta.keys(j).isEmpty()) return false; // exact selective overlay pending
+        if (!j.hotKeys().isEmpty()) return false; // only explicit selective jobs suppress full-pack recovery
         try {
             Pack p = Pack.read(j.pack());
             return !p.simulated && j.titleId().equals(p.titleId)
@@ -305,15 +305,30 @@ public final class PackService extends Service {
      */
     private ShaderLibs.Header finishedOcarinaLibrary(File shaderRoot, Job j) {
         if (engine.simulated() || !"0400486024DEC000".equals(j.titleId())) return null;
-        File lib = new File(shaderRoot, "v-" + BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
-        ShaderLibs.Header h = ShaderLibs.header(lib);
         Profile p = Profile.of(j.titleId());
-        if (h == null || p == null || !h.fits(lib.length())
-                || !j.titleId().equals(h.game) || !p.shaderInputs.equals(h.inputs)
-                || !BuildConfig.NX_DMSH_VK_CHAIN.equals(h.vkChain)
-                || !BuildConfig.NX_DMSH_VK_ABI.equals(h.abi)
-                || h.entries < p.shaderTotal) return null;
-        return h;
+        if (p == null) return null;
+        File[] versions = shaderRoot.listFiles(v -> v.isDirectory() && v.getName().startsWith("v-"));
+        if (versions == null) return null;
+        ShaderLibs.Header best = null;
+        long priority = Long.MIN_VALUE;
+        for (File version : versions) {
+            File lib = new File(version, "dmsh_vk.lib");
+            ShaderLibs.Header header = ShaderLibs.header(lib);
+            if (header == null || !header.fits(lib.length())
+                    || !version.getName().equals("v-" + header.vkChain)
+                    || !j.titleId().equals(header.game)
+                    || !p.shaderInputs.equals(header.inputs)
+                    || header.entries < p.shaderTotal) continue;
+            // Vulkan replay accepts a different shader-translator chain only
+            // when the library ABI is identical or explicitly certified.
+            if (!BuildConfig.NX_DMSH_VK_ABI.equals(header.abi)
+                    && !ShaderAbiCert.approved(j.titleId(), header.vkChain,
+                            header.abi, header.inputs)) continue;
+            long rank = BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)
+                    ? Long.MAX_VALUE : lib.lastModified();
+            if (rank > priority) { priority = rank; best = header; }
+        }
+        return best;
     }
 
     /**
@@ -390,7 +405,9 @@ public final class PackService extends Service {
                 // to silently translate all 42,339 shaders again. Stop safely
                 // and leave the original files untouched for recovery/import.
                 if ("0400486024DEC000".equals(j.titleId()) && hot.isEmpty()
-                        && !Pack.libraryVersions(j.pack()).isEmpty()) {
+                        && !Pack.libraryVersions(j.pack()).isEmpty()
+                        && finishedOcarinaLibrary(new File(j.pack(), "shaders"), j) == null
+                        && finishedOcarinaLibrary(new File(j.dir(), "lib"), j) == null) {
                     j.fail(GameFlow.STEP, -1, -1,
                             "Existing Ocarina shaders were found but this pack's ABI/profile or game code could not be verified. "
                             + "The original library has NOT been deleted. Select the previous prepared pack or import its shaders; "

@@ -5,6 +5,9 @@ pack_android.py, so CI doesn't require a game dump, proprietary shader bytecode,
 or a full 42,339 shader rebuild.
 """
 import ast
+import struct
+import sys
+import types
 import errno
 import os
 from pathlib import Path
@@ -21,6 +24,63 @@ ns = {'Path': Path, 'os': os, 'shutil': shutil, 'Error': type('PackError', (Exce
 exec(compile(ast.Module(body=[FUNCTION], type_ignores=[]), 'pack_android.py', 'exec'), ns)
 publish = ns['install_library_file']
 PackError = ns['Error']
+
+
+class OcarinaOldLibraryRegression(unittest.TestCase):
+    def setUp(self):
+        self.t = tempfile.TemporaryDirectory()
+        self.addCleanup(self.t.cleanup)
+        self.pack = Path(self.t.name)
+        self.old = self.pack/'shaders'/'v-b6b21fb5753a'/'dmsh_vk.lib'
+        self.old.parent.mkdir(parents=True)
+        sys.path.insert(0, str(REPO/'dm/gfx/tools'))
+        import vk_android_delta as delta
+        self.delta = delta
+        g = types.SimpleNamespace(id='0400486024DEC000')
+        self.g = g
+        ns = {'Path': Path, 'dmsh_chain': types.SimpleNamespace(inputs=lambda _: 'aa5e7196d926')}
+        fn = next(n for n in TREE.body if isinstance(n, ast.FunctionDef)
+                  and n.name == 'compatible_ocarina_full_library')
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), 'pack_android.py', 'exec'), ns)
+        self.find = ns['compatible_ocarina_full_library']
+
+    def write(self, inputs='aa5e7196d926', abi=None, count=42339):
+        d=self.delta
+        e=bytearray(count*d.ENTRY.size)
+        for i in range(count):
+            struct.pack_into('<Q', e, i*d.ENTRY.size, i+1)
+            e[i*d.ENTRY.size+17]=1
+        mod=d.MOD.pack(0, 20, 20, 0, 0, 0)
+        blob=b'\x03\x02\x23\x07'+bytes(16)
+        end=d.HEAD.size+len(e)
+        head=d.HEAD.pack(d.VK['LIB_MAGIC'], d.VK['LIB_VERSION'],
+            b'old-chain', b'b6b21fb5753a', self.g.id.encode(), inputs.encode(),
+            count, d.HEAD.size, 0, end, 1, end, end+len(mod), len(blob),
+            64, 64, (abi or d.abi_digest()).encode())
+        self.old.write_bytes(head+e+mod+blob)
+
+    def test_previous_42339_shader_library_reused_without_retranslation(self):
+        self.write()
+        self.assertEqual(self.find(self.pack, self.g, 'da4d5d4b7a18'),self.old)
+
+    def test_wrong_shader_inputs_are_refused(self):
+        self.write(inputs='badbadbadbad')
+        self.assertIsNone(self.find(self.pack, self.g, 'da4d5d4b7a18'))
+
+    def test_wrong_abi_is_refused(self):
+        self.write(abi='000000000000')
+        self.assertIsNone(self.find(self.pack, self.g, 'da4d5d4b7a18'))
+
+    def test_incomplete_previous_library_is_refused(self):
+        self.write(count=42000)
+        self.assertIsNone(self.find(self.pack, self.g, 'da4d5d4b7a18'))
+
+    def test_packer_recovery_precedes_no_current_error(self):
+        self.assertLess(SOURCE.index("old = compatible_ocarina_full_library(out, g, v)"),
+                        SOURCE.index("if a.in_process: raise Error(f'no current shader library"))
+        service=(REPO/'android/app/src/ondevice/java/dev/nxnative/android/PackService.java').read_text()
+        self.assertIn('if (!j.hotKeys().isEmpty()) return false', service)
+        self.assertIn('File[] versions = shaderRoot.listFiles', service)
 
 
 class ShaderPackFinalization(unittest.TestCase):
