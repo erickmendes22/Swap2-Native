@@ -19,6 +19,8 @@ on:
       - 'dm/gfx/tools/vk_android_build.py'
       - 'android/app/src/main/java/dev/nxnative/android/ShaderZip.java'
       - 'android/app/src/main/java/dev/nxnative/android/ShaderLibs.java'
+      - 'android/app/src/main/java/dev/nxnative/android/Pack.java'
+      - 'dm/gfx/tools/tests/test_ocarina_cold_build_memory.py'
       - 'android/app/src/jvmtest/java/dev/nxnative/android/ShaderZipJvmTest.java'
       - 'dm/tools/tests/test_android_shaderzip.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_alu_cse.py'
