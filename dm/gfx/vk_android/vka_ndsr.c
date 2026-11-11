@@ -44,6 +44,22 @@ int vka_ndsr_match(const dmsh_vk_entry *e, const dmsh_vk_bind *b, uint16_t *tex_
     return nt == 1 && ni == 1 && ns == 1 && nb == 1;
 }
 int vka_ndsr_pack_of(int vkformat) { return vkformat == 122 ? VKA_NDSR_PACK_B10G11R11 : vkformat == 37 ? VKA_NDSR_PACK_RGBA8 : VKA_NDSR_PACK_NONE; }   // (VkFormat numbers)
+// The stand-in GLSL indexes each output texel by
+// p = workgroup_linear_id*128 + local_id + k*(128*group_count).
+// Changing ONLY the group count is a bijection of [0, width*height):
+// every pixel is stored exactly once, with no inter-workgroup dependency.
+// Aim for <=2 texels per lane, avoiding the long inner loops of the
+// guest's original HMMA launch geometry. Never reduce parallelism, and
+// never exceed the physical device's x workgroup limit.
+uint32_t vka_ndsr_grid_x(uint32_t width, uint32_t height,
+                          uint64_t native_groups, uint32_t max_groups_x) {
+    if (!width || !height || !native_groups || !max_groups_x) return 0;
+    uint64_t pixels = (uint64_t)width * height;
+    uint64_t target = (pixels + 255u) / 256u;
+    if (target <= native_groups || target > max_groups_x ||
+        target > UINT32_MAX) return 0;
+    return (uint32_t)target;
+}
 uint32_t *vka_ndsr_words(int packed, uint16_t tex_b, uint16_t img_b, uint16_t bank_b, size_t *n) {
     const uint32_t *src = packed ? vka_ndsr_easu_packed : vka_ndsr_easu;
     size_t bytes = packed ? sizeof vka_ndsr_easu_packed : sizeof vka_ndsr_easu, nw = bytes / 4;
@@ -147,7 +163,9 @@ static void log_sizes(const vka_dstate *d, uint64_t key, const vka_res *t, const
     }
 }
 
-VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear) {
+VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear, uint32_t *output_width, uint32_t *output_height) {
+    if (output_width) *output_width = 0;
+    if (output_height) *output_height = 0;
     if (!cs || !cs->e || !(cs->e->flags & DMSH_VK_F_HMMA)) return VK_NULL_HANDLE;   // (every other dispatch: one test)
     pthread_mutex_lock(&g_mu);
     switches();
@@ -257,7 +275,11 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
     }
     p = make(cs, lay, tb, ib, bb, effective_enc, effective_map, kernel, pack);
     if (p && pack) { memset(rt, 0, sizeof *rt); rt->b[0] = (uint32_t)ib << 16 | 33u << 8 | 1u; }   // (the output an unsigned R32ui image: vka_draw.c rt_dim, then id_view)
-    if (p) log_sizes(d, cs->key, t, o, oi, effective_enc, effective_map, kernel, pack, cb);
+    if (p) {
+        if (output_width) *output_width = oi->w;
+        if (output_height) *output_height = oi->h;
+        log_sizes(d, cs->key, t, o, oi, effective_enc, effective_map, kernel, pack, cb);
+    }
 out:
     pthread_mutex_unlock(&g_mu);
     return p;
