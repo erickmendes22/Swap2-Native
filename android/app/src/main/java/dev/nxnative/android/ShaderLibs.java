@@ -31,6 +31,33 @@ final class ShaderLibs {
     static final int MAGIC = 0x4B56534D;   // dmsh_abi_vk.h DMSH_VK_LIB_MAGIC, DMSH_VK_LIB_VERSION
     static final int VERSION = 1;
 
+    // The first complete Ocarina library (APK run 42917509914, 2026-11-10)
+    // used this VK chain and the same audited binary ABI as v0.1.6. Never
+    // rename its header to today's tool digest or accept a small hot overlay
+    // as the full base merely because its version string is familiar.
+    static final String OCARINA_BASE_VK = "b6b21fb5753a";
+    static final long OCARINA_BASE_MIN_ENTRIES = 40000;
+
+    static boolean trustedOcarinaBase(String titleId, String vkChain,
+                                     String abi, String inputs, long entries,
+                                     String expectedAbi, String expectedInputs) {
+        return "0400486024DEC000".equals(titleId)
+                && OCARINA_BASE_VK.equals(vkChain)
+                && expectedAbi != null && expectedAbi.equals(abi)
+                && expectedInputs != null && !"unknown".equals(expectedInputs)
+                && expectedInputs.equals(inputs)
+                && entries >= OCARINA_BASE_MIN_ENTRIES;
+    }
+
+    static File trustedOcarinaBase(File pack, String titleId, String abi,
+                                  String inputs) {
+        File file = new File(pack, "shaders/v-" + OCARINA_BASE_VK + "/dmsh_vk.lib");
+        Header h = header(file);
+        return h != null && h.fits(file.length())
+                && trustedOcarinaBase(titleId, h.vkChain, h.abi, h.inputs,
+                                      h.entries, abi, inputs) ? file : null;
+    }
+
     static final int HEADER_SIZE = 128, ENTRY_SIZE = 64, BIND_SIZE = 24, MOD_SIZE = 16;   // dmsh_abi_vk.h DMSH_VK_HEADER_SIZE, _ENTRY_SIZE, _BIND_SIZE, _MOD_SIZE
 
     /**
