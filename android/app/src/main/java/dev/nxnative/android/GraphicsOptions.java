@@ -32,7 +32,7 @@ final class GraphicsOptions {
     static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
     static final String[] ENCODER_IDLE = {"Normal (padrão)", "Dormir quando vazio (experimental)"};
     static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: sincronização GPU + VRS 2×1 se suportado", "Agressivo: sincronização GPU + VRS 2×2 se suportado"};
-    static final String[] SGSR_CHAIN = {"Desativado (seguro)", "Ativar bypass da rede 0,25 (experimental)"};
+    static final String[] SGSR_CHAIN = {"Desativado (seguro)", "Ativar otimização das redes 0,25 / 0,6 / 0,75 (experimental)"};
 
     static int mode(Context c) {
         SharedPreferences p = Prefs.of(c);
@@ -210,7 +210,7 @@ final class GraphicsOptions {
             values = FPS_BOOST; current = fpsBoost(c, id); title = "FPS Boost — VRS (pode reduzir detalhes)"; break;
         case "oot_sgsr_chain":
             values = SGSR_CHAIN; current = sgsrChain(c, id);
-            title = "Ocarina: bypass da rede em escala 0,25 + SGSR 1"; break;
+            title = "Ocarina: redes internas (0,25 / 0,6 / 0,75) + SGSR 1"; break;
         case "fsr_sharp":
             values = SHARP_NAMES; current = sharpIndex(sharp(c, id)); title = "Nitidez FSR (saída)"; break;
         default: return;
