@@ -113,3 +113,5 @@ Build 26 (continue 4-way structural GPU optimization after Build25 no-FPS A/B):
 - Native NDK source compilation and regression suite on GitHub completed successfully at 6e479057; further active-index optimization to be checked again before publishing. Keep signed update on original branch com.swap2native.ootv11ios, version 0.1.2, signer SHA256 a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad, versionCode increasing.
 
 Build 26 validation retry: update two stale source-contract assertions following the guest-barrier attachment-scoped dependency and the reserved texture ID 0 guard; no production algorithm or shader ABI change. Keep same signer/package/branch.
+
+Build 26 final preflight passed: GitHub Actions run 42940155662 verified all 31 production APK regression commands plus Android ARM64 NDK compile, including updated uniform-pass and barrier tests. Trigger the original same-branch signed APK with shader ABI 674db0a4ff79 and existing package/signature; do not retranslate or discard the 42,339-shader library. This is a build retry after tests-only corrections.
