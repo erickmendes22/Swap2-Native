@@ -108,10 +108,11 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('Ocarina VRS pipeline ready', PSO)
         self.assertNotIn('if (atomic_fetch_add(&nboost, 1) < 6)', PSO)
 
-    def test_optional_extended_two_by_two_hdr_coverage(self):
-        # New 2026-11-11 111853 run: all 12 old shader pipelines are
-        # compiled at 2x2 already. Keep profile 2 unchanged.
-        # Only five further profiled HDR main-scene FS use profile 3.
+    def test_all_seventeen_vetted_hdr_shaders_use_two_by_two(self):
+        # The old profile 3 ("expanded") was removed from the UI but its
+        # five captured HDR fragment shaders were accidentally gated there.
+        # Mode 2 (2x2) now gets all 12+5; mode 1 (2x1) stays conservative.
+        # Larger 4x2/4x4 modes use the SAME allowlist, never broad HDR.
         self.assertIn('"VRS 2×2"', OPTIONS)
         self.assertIn("hotpass_vrs >= 5 ? 4 : hotpass_vrs >= 4 ? 3", DEV)
         self.assertIn('if (hotpass_vrs > 5) hotpass_vrs = 5', DEV)
@@ -119,8 +120,12 @@ class FpsBoostTests(unittest.TestCase):
                     "0x35a02875e7820e9a", "0x5a29269e72ac52aa",
                     "0xe55bcc53f003046a"):
             self.assertIn(key, PSO)
-        self.assertIn('hotpass_profile >= 3', PSO)
+        self.assertIn('hotpass_profile >= 2 &&', PSO)
+        self.assertNotIn('hotpass_profile >= 3 &&', PSO)
         self.assertIn('extended_hot && !mesh && k->ncolor == 1', PSO)
+        self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
+        self.assertIn('k->dfmt == VK_FORMAT_D32_SFLOAT', PSO)
+        self.assertNotIn('int broad_hdr_scene =', PSO)
         self.assertIn('k->dfmt == VK_FORMAT_D32_SFLOAT', PSO)
         self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
         self.assertIn('(balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
