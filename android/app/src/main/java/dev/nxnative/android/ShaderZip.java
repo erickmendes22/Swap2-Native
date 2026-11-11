@@ -570,7 +570,7 @@ final class ShaderZip {
                 throw new Failure(Why.OTHER_VERSION, "the shaders are of version " + v + ", this app needs " + t.current, v, t.current);
             if (!"unknown".equals(t.inputs) && !t.inputs.equals(s.inputs))
                 throw new Failure(Why.OTHER_INPUTS, "the shaders were built from other shader tables (" + s.inputs + ") than the profile's (" + t.inputs + ")", s.inputs, t.inputs);
-            long need = (v.equals(t.current) ? s.libSize : 2 * s.libSize) + SPARE;   // an older version is copied once more by its restamp
+            long need = (v.equals(t.current) || compatibleOcarinaBase() ? s.libSize : 2 * s.libSize) + SPARE;   // a trusted original keeps its version, no restamp copy
             long free = t.space.free(new File(t.pack, "shaders"));
             if (free < need) throw new Failure(Why.NO_SPACE, "the shaders need " + need + " bytes, " + free + " free", SaveStore.size(need), t.pack.getPath(), SaveStore.size(free));
         }
