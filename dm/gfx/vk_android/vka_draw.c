@@ -32,6 +32,47 @@ void vka_dispatch_overlap_flush(void) {
     g_dispatch_overlap_pending = 0;
 }
 uint64_t vka_dispatch_overlap_skips(void) { return g_dispatch_overlap_skipped; }
+// iOS V19 (cheemu21/kid-with-sword-remake, commit 5da2b49) identified
+// the fourth/last 0.25-scale chain shader d99fbeeb53d38847. The first
+// three programs do feature extraction/network/blend, before the last
+// compute stage writes the game's scene image (UI is added afterwards).
+// Only skip them once a PREVIOUS full frame successfully ran the last
+// stage through the existing Vulkan FSR stand-in and the PRESENT path
+// actually used SGSR1. The first frame is always left untouched.
+// Fail closed if the source format/shape changes or the last stage fails.
+// DM_VK_OOT_SGSR_CHAIN=0 restores the original chain, without a new APK.
+static struct {
+    uint64_t frame;
+    int source_tid, primed, refused, skipped, completed;
+    uint64_t bypassed;
+} g_oot_sgsr_chain = {.frame = UINT64_MAX};
+static void oot_sgsr_chain_frame(void) {
+    uint64_t f = vka_frame();
+    if (g_oot_sgsr_chain.frame == f) return;
+    if (g_oot_sgsr_chain.skipped && !g_oot_sgsr_chain.completed) {
+        g_oot_sgsr_chain.refused = 1;
+        VRED_ONCE("Ocarina SGSR chain: previous frame had no d99fbeeb final network; "
+                  "disable bypass and keep the game's original chain");
+    }
+    g_oot_sgsr_chain.frame = f;
+    g_oot_sgsr_chain.source_tid = 0;
+    g_oot_sgsr_chain.skipped = 0;
+    g_oot_sgsr_chain.completed = 0;
+}
+static int oot_sgsr_chain_on(void) {
+    return !strcmp(DM_GAME_ID, "0400486024DEC000")
+        && VKA_ENV("DM_VK_OOT_SGSR_CHAIN", 1)
+        && VKA_ENV("DM_VK_PRESENT_FILTER", 0) == 4
+        && vka_present_sgsr_active() && !g_oot_sgsr_chain.refused
+        && !vka_nan_on() && !vka_gp_active;
+}
+static int oot_sgsr_chain_part(uint64_t key) {
+    if (key == UINT64_C(0xf8965bffbdf51d78)) return 2; // original HDR scene input
+    if (key == UINT64_C(0xd17eefaff4f0bc23) ||
+        key == UINT64_C(0xa335c1db6270c355)) return 1; // old feature/blend
+    if (key == UINT64_C(0xd99fbeeb53d38847)) return 3; // 0.25 last network
+    return 0;
+}
 static uint32_t g_claim_words;   // the draw's claim words (an upper bound of its primitives): 0 = its geometry shader takes no claim
 uint64_t vka_frame(void);
 #define SKIPQ() do { g_skipped++; if (VKA_ENV("DM_VK_SKIP_LOG", 0)) VLOG("skip log: draw or dispatch skipped at vka_draw.c:%d (frame %llu)", __LINE__, (unsigned long long)vka_frame()); return; } while (0)   // diagnostic: DM_VK_SKIP_LOG=1
@@ -1718,9 +1759,56 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     if (bad) SKIPQ();
     if (!sh[5]) SKIP("dispatch with no compute shader bound: skipped");
     vka_layout lay; if (!vka_layout_of(sh, 1, &lay)) SKIP("dispatch skipped: no pipeline layout");
-    walk_all(d, sh);   // (before the pipeline: the storage and sampled images it binds integer textures to are retyped in its module, img_retype_of)
+    walk_all(d, sh);   // bindings are evaluated once before any pipeline
+    oot_sgsr_chain_frame();
+    int chain_part = oot_sgsr_chain_part(sh[5]->key), scene_linear = 0;
+    if (!dp->ind && g_wk.n[5] > 0 && g_oot_sgsr_chain.primed &&
+        oot_sgsr_chain_on()) {
+        if (chain_part == 2) {
+            // Capture the SAME first texture ID that iOS V19 takes from the
+            // first shader's bound input. Reject sampler-only entries and
+            // larger scenes: 0.6 / 0.667 must continue their own networks.
+            for (int i = 0; i < g_wk.n[5]; i++) {
+                vka_res *r = &g_wk.r[5][i];
+                if (r->what != VKA_R_TEX || r->tid <= 0) continue;
+                vka_img *src = vka_tex_id_img(r->tid, g_cb);
+                if (src && src->f.kind == 0 &&
+                    src->f.vk == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
+                    src->w > 0 && src->h > 0 &&
+                    src->w <= 1024 && src->h <= 576 &&
+                    src->samples == 1 &&
+                    (src->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+                    g_oot_sgsr_chain.source_tid = r->tid;
+                }
+                break;
+            }
+        }
+        if (g_oot_sgsr_chain.source_tid &&
+            (chain_part == 1 || chain_part == 2)) {
+            g_oot_sgsr_chain.skipped++;
+            g_oot_sgsr_chain.bypassed++;
+            return; // the d99fbeeb stage will write the original game image
+        }
+        if (chain_part == 3 && g_oot_sgsr_chain.source_tid) {
+            for (int i = 0; i < g_wk.n[5]; i++) {
+                vka_res *r = &g_wk.r[5][i];
+                if (r->what != VKA_R_TEX || r->tid <= 0) continue;
+                r->tid = g_oot_sgsr_chain.source_tid;
+                scene_linear = 1;
+                break;
+            }
+        }
+    }
     vka_imgrt rt; img_retype_of(sh[5], g_wk.r[5], g_wk.n[5], &rt);
-    VkPipeline p = vka_ndsr_pipeline(d, sh[5], &lay, g_wk.r[5], g_wk.n[5], &rt, g_cb);   // DM_VK_NDSR=fsr: agl's NDSR network replaced by FSR 1 EASU (vka_ndsr.c), else NULL
+    VkPipeline p = vka_ndsr_pipeline(d, sh[5], &lay, g_wk.r[5], g_wk.n[5], &rt, g_cb, scene_linear);
+    if (scene_linear && !p) {
+        // The last stage's output/pipeline failed its runtime checks after
+        // earlier stages were skipped. Restore the old flow on later frames.
+        // Never allow another frame to skip anything on this unsafe path.
+        g_oot_sgsr_chain.refused = 1;
+        VRED_ONCE("Ocarina SGSR chain: d99fbeeb refused the direct HDR input; "
+                  "original game upscaler restored on subsequent frames");
+    }
     const int gp_ndsr_replaced = p != VK_NULL_HANDLE;
     int oot_cs_retiled = 0;
     // The hot 9e6b kernel uses an 8x9x12 direct grid and 8x4x4 local size
@@ -1758,7 +1846,10 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     g_rt5 = rt.b[0] ? &rt : NULL;
     int bound_ = bind_sets(d, sh, &lay, VK_PIPELINE_BIND_POINT_COMPUTE, &c0);
     g_rt5 = NULL;
-    if (!bound_) SKIPQ();
+    if (!bound_) {
+        if (scene_linear) g_oot_sgsr_chain.refused = 1;
+        SKIPQ();
+    }
     if (dp->ind && c0.buf) {   // the group counts the GPU wrote, into c0's dispatch words before the dispatch reads them (nvn_mtl.m g_c0_dim_buf); NVN2 reads them at c0 + 4 too
         VkBufferCopy c[2] = {{io, c0.off + DMSH_C0_DISPATCH, 12}, {io, c0.off + DMSH_C0_DISPATCH_NVN2, 12}};
         vk.vkCmdCopyBuffer(g_cb, ib, c0.buf, d->b.nvn2 ? 2 : 1, c);
@@ -1819,6 +1910,19 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
             vka_compute_write_barrier(g_cb);
         else
             vka_barrier(g_cb); // the final dispatch publishes all grouped writes
+    }
+    if (chain_part == 3 && p && !dp->ind && oot_sgsr_chain_on()) {
+        // Mark as proven only AFTER descriptor binding and Vulkan dispatch.
+        // Future frames may then omit the 3 upstream network dispatches.
+        g_oot_sgsr_chain.primed = 1;
+        if (scene_linear) {
+            g_oot_sgsr_chain.completed = 1;
+            static int note;
+            if (!note++) VLOG("Ocarina SGSR1 0.25 chain: took scene HDR directly "
+                             "at d99fbeeb; skipped %d original GPU dispatches "
+                             "in this frame, EASU conversion in-chain, SGSR1 "
+                             "single-pass final present", g_oot_sgsr_chain.skipped);
+        }
     }
     g_dispatches++;
     texstat_at();   // (diagnostic: DM_VK_TEXSTAT_AT, a compute key's textures and buffers)
