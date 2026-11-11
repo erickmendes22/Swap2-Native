@@ -320,6 +320,7 @@ void vka_ctl_shot_done(VkFence fence);
 VkImageView vka_tex_id_view(int id, VkCommandBuffer cb, uint8_t dim, int storage, VkImageLayout *layout);   // texture ID id as a view of shape dim (DMSH_VK_DIM_*); VK_NULL_HANDLE = none fits
 void vka_tex_id_desc(int id, char *b, size_t n);   // texture ID id described for a [RED] line
 void vka_tex_feedback(vka_img *const *ims, const uint32_t *levels, int n);   // the open pass's attachments and their levels (n 0: none; ims NULL: no pass open), for vka_tex_id_view
+int vka_tex_id_overlaps_pending_ub(int id);
 int vka_tex_id_in_pass(int id);   // texture ID id's image is an attachment of the open pass (vka_tex_feedback's set)
 int vka_tex_pool_in_pass(void);   // conservative exact registered-storage overlap with the open pass, no shader ABI change
 int vka_tex_gw_shadow_safe(uint64_t addr, uint64_t n); // no pending opaque GPU writer / copy overlaps this uniform range

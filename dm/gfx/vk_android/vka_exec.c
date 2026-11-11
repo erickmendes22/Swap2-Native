@@ -889,7 +889,7 @@ typedef struct {
     unsigned n;
 } ub_batch;
 enum { UB_DEFER_MAX = 128 };
-typedef struct { uint64_t addr, size; const uint8_t *bytes; } ub_pass_write;
+typedef struct { uint64_t addr, size; uint8_t *bytes; } ub_pass_write;
 static ub_pass_write g_ub_pending[UB_DEFER_MAX];
 static int g_ub_np;
 static uint64_t g_ub_seq = 1, g_ub_deferred, g_ub_shadows, g_ub_flushed;
@@ -962,6 +962,8 @@ void vka_ub_flush_pass(void) {
     for (int i = 0; i < g_ub_np; i++) {
         const ub_pass_write *w = &g_ub_pending[i];
         buf_update(&g_inline_ub, w->bytes, w->addr, w->size);
+        free(w->bytes);
+        g_ub_pending[i].bytes = NULL;
     }
     ub_flush(&g_inline_ub);
     g_ub_flushed += (uint64_t)g_ub_np;
@@ -1355,10 +1357,21 @@ static void exec(const uint8_t *p, int depth) {
         case OP_COPY_B2B: if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); buf_copy(s_, d, n); boost_transfer_barrier(g_cb); } break;
         case OP_UPDATE_UB: g_n_ub++; if (g_cb) {
             uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8);
-            if (vka_rp_can_defer_ub(d, n) && g_ub_np < UB_DEFER_MAX) {
-                g_ub_pending[g_ub_np++] = (ub_pass_write){d, n, (const uint8_t *)a + 16};
+            // Command-record memory can be reused by the guest before the
+            // pass closes. An in-pass update must snapshot its bytes NOW, at
+            // the original replay point, not borrow a mutable list pointer.
+            uint8_t *own = NULL;
+            int allow = vka_rp_can_defer_ub(d, n) && g_ub_np < UB_DEFER_MAX &&
+                        n <= 65536 && n <= SIZE_MAX;
+            if (allow) own = malloc((size_t)n);
+            if (own) {
+                memcpy(own, (const uint8_t *)a + 16, (size_t)n);
+                g_ub_pending[g_ub_np++] = (ub_pass_write){d, n, own};
                 g_ub_deferred++; g_ub_seq++;
             } else {
+                // OOM or oversized writes take the original safe GPU-order
+                // copy outside rendering, never a silently dropped update.
+                if (g_ub_np || vka_rp_is_open()) vka_rp_end();
                 buf_update(ub, (const uint8_t *)a + 16, d, n);
                 if (!batch_on) ub_flush(ub);
             }

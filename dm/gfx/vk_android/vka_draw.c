@@ -1464,11 +1464,16 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         // and texture buffers overlap only when their guest ranges do.
         for (int st = 0; st < VKA_NSTAGE && !hazard; st++) {
             if (!sh[st] || (st == 1 && d->rast_discard)) continue;
-            if (g_wk.n[st] < 0) { hazard = 1; break; }
+            if (g_wk.n[st] < 0 || g_wk.pool[st]) { hazard = 1; break; }
             for (int i = 0; i < g_wk.n[st]; i++) {
                 const vka_res *r = &g_wk.r[st][i];
                 if (r->what == VKA_R_GMEM_MAP || r->what == VKA_R_GMEM_LOG) { hazard = 1; break; }
                 if (r->what == VKA_R_TBUF) { hazard = 1; break; }
+                // A texture read after the guest's inline update must see
+                // the new memory content. Render target vs uniform aliases
+                // were checked at recording, but sampled images are dynamic.
+                if ((r->what == VKA_R_TEX || r->what == VKA_R_IMG) &&
+                    vka_tex_id_overlaps_pending_ub(r->tid)) { hazard = 1; break; }
                 if (r->what == VKA_R_BUF && vka_ub_pending_overlap(r->addr, r->size)) {
                     if (r->desc == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ||
                         !vka_tex_gw_shadow_safe(r->addr, r->size)) { hazard = 1; break; }

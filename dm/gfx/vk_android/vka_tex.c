@@ -2209,6 +2209,22 @@ static int in_fb_or_alias(const vka_img *im) {
 }
 // Texture ID id stands for an image the open pass draws into (any level): a draw sampling it after a game barrier inside the pass needs the pass ended first (vka_draw.c
 // bar_hazard). An ID whose image is not made yet is not one (the pass's attachments were made when it opened; make_images ends the pass for a new one anyway)
+// The guest may modify a sampled image's CPU/GPU storage through an inline
+// uniform update. Don't let in-pass shadows bypass the image upload system:
+// flush the update before the draw, then make_images can see its GPU write.
+// Unknown or virtual mappings stay conservative.
+int vka_tex_id_overlaps_pending_ub(int id) {
+    if (id <= 0) return 1;
+    pthread_mutex_lock(&g_tmu);
+    int overlap = 1;
+    if (id < g_ntreg && g_treg[id].t.serial) {
+        const tex_t *t = &g_treg[id].t;
+        if (t->mem && t->L.size && !(t->d.flags & NVN_TEXTURE_FLAGS_SPARSE))
+            overlap = vka_ub_pending_overlap((uint64_t)(uintptr_t)t->mem, t->L.size);
+    }
+    pthread_mutex_unlock(&g_tmu);
+    return overlap;
+}
 int vka_tex_id_in_pass(int id) {
     if (!g_nfb || id <= 0) return 0;
     pthread_mutex_lock(&g_tmu);

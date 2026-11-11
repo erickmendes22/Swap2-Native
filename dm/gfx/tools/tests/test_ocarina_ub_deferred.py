@@ -25,6 +25,12 @@ class DeferredUniformTests(unittest.TestCase):
     def test_shadow_and_hazards(self):
         self.assertIn('vka_tex_gw_shadow_read(addr, s.ptr, size)',DRAW)
         self.assertIn('vka_ub_overlay(addr, s.ptr, size)',DRAW)
+        self.assertIn('vka_tex_id_overlaps_pending_ub(r->tid)',DRAW)
+        self.assertIn('g_wk.n[st] < 0 || g_wk.pool[st]',DRAW)
+        self.assertIn('vka_tex_id_overlaps_pending_ub(int id)',TEX)
+        self.assertIn('memcpy(own, (const uint8_t *)a + 16, (size_t)n)',EXEC)
+        self.assertIn('free(w->bytes);',EXEC)
+        self.assertIn('if (g_ub_np || vka_rp_is_open()) vka_rp_end();',EXEC)
         self.assertIn('memo[i].seq == seq',DRAW)
         self.assertIn('r->what == VKA_R_GMEM_MAP || r->what == VKA_R_GMEM_LOG',DRAW)
         self.assertIn('r->desc == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER',DRAW)
