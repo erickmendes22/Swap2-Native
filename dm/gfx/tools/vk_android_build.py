@@ -358,6 +358,70 @@ MAP = str(GAME.table('shader_map.tsv')); pc_of, loc = {}, {}
 for ln in open(MAP):
     c = ln.rstrip('\n').split('\t')
     if len(c) > 4 and c[0].endswith('.bin'): pc_of.setdefault(c[3], c[4]); loc.setdefault(c[3], (c[0], int(c[1])))
+# In-session Ocarina missing-shader repair: ONLY explicitly requested captured
+# shaders that are ABSENT from the official profile may be introduced here.
+# Do not modify shader_map.tsv, DMSH_CHAIN / game INPUTS, the 42k base
+# library, or a per-shader result for any original map key. The host already
+# saved the actual missing NVN2 control+code pair in DM_NVN_SHDUMP.
+# Each SHA256 is verified against the file name before it enters the translator.
+def captured_oot_records(keys, loc, pc_of, package_dir):
+    source = os.environ.get('DMSH_VK_CAPTURE_DIR') or ''
+    unknown = sorted(set(keys) - set(loc))
+    if not unknown: return 0
+    if GAME.id != '0400486024DEC000' or not source or len(unknown) > 128:
+        sys.exit('[RED] selected shader keys are absent from the approved profile (capture repair unavailable or exceeds 128)')
+    if not os.path.isdir(source):
+        sys.exit('[RED] Ocarina captured shader folder is absent: ' + source)
+    # Keep the capture build exactly bounded by the user-selected keys.
+    # Do not allow an arbitrary .ctl/.code to be interpreted as another game.
+    records = {}
+    stage_map = {0: 'vs', 1: 'ps', 5: 'cs', 6: 'ts', 7: 'ms'}
+    graphics = {1: 'vs', 2: 'hs', 3: 'ds', 4: 'gs', 5: 'ps'}
+    for key in unknown:
+        if not re.fullmatch('[0-9a-f]{16}', key):
+            sys.exit('[RED] bad captured shader key: ' + key)
+        ctlpath, codepath = (os.path.join(source, key + suffix) for suffix in ('.ctl', '.code'))
+        try:
+            with open(ctlpath, 'rb') as f: ctl = f.read()
+            with open(codepath, 'rb') as f: code = f.read()
+        except OSError as e:
+            sys.exit(f'[RED] {key}: captured control/code pair is missing: {e}')
+        if not (0xd8 <= len(ctl) <= 0x10000 and 4 <= len(code) <= (1 << 24) and
+                ctl[:8] == bytes.fromhex('34127698c9000000') and
+                struct.unpack_from('<I', ctl, 0x44)[0] == len(code)):
+            sys.exit(f'[RED] {key}: invalid NVN2 control header or code length')
+        digest = hashlib.sha256(ctl[:0x30] + bytes(4) + ctl[0x34:0x48] + code).hexdigest()[:16]
+        if digest != key:
+            sys.exit(f'[RED] {key}: captured bytes hash to {digest}, refusing unverified shader')
+        # Task/mesh stage overrides the code SPH; all other stages are
+        # sourced from its real code header, as shader_split.nvn2_stage.
+        stage = stage_map.get(ctl[0x56]) if ctl[0x56] in (5,6,7) else None
+        if not stage:
+            w = struct.unpack_from('<I', code, 0)[0]
+            st = (w >> 10) & 0xf
+            stage = 'vs' if st == 0 and w & 0x1f == 1 else graphics.get(st)
+        if not stage: sys.exit(f'[RED] {key}: captured shader stage is unknown')
+        rec = bytearray(b'BTCDBTCD' + bytes(0x30))
+        struct.pack_into('<2I', rec, 0x28, len(ctl), len(code))
+        rec.extend(code); rec.extend(ctl)
+        if rec.find(bytes.fromhex('34127698')) != 0x38 + len(code) or rec.count(b'BTCDBTCD') != 1:
+            sys.exit(f'[RED] {key}: captured shader record has ambiguous separators')
+        records.setdefault(stage, []).append((key, bytes(rec)))
+    os.makedirs(package_dir, exist_ok=True)
+    for stage, items in records.items():
+        name = stage + '_captured_repair.bin'
+        with open(os.path.join(package_dir, name) + '.tmp', 'wb') as f:
+            for key, record in items: f.write(record)
+        os.replace(os.path.join(package_dir, name) + '.tmp',
+                   os.path.join(package_dir, name))
+        for i, (key, _) in enumerate(items):
+            loc[key] = (name, i)
+            pc_of[key] = 'captured-runtime'
+    print(f'captured Ocarina shader repair: {len(unknown)} verified missing shaders from {source}; compiling only these into a hot overlay, static 42k library and profile unchanged', flush=True)
+    return len(unknown)
+
+if want:
+    captured_oot_records(want, loc, pc_of, dm_dir)
 PAIRS = NS['load_pairs'](GAME, dm_dir)
 _dw = GAME.table('dual_want.tsv')   # pixel shaders a pipeline blends with output 1 as the second source (dmsh_build.py DUAL_WANT, from the Mac host's DM_NVN_DUAL_WANT)
 DUAL_WANT = {l.split()[0] for l in open(_dw) if l.strip() and not l.lstrip().startswith('#')} if _dw.exists() else set()

@@ -63,6 +63,33 @@ final class OcarinaShaderDelta {
         } catch (IOException | RuntimeException e) {
             android.util.Log.w("OcarinaShaderDelta", "Cannot use hot shader delta; full update remains available", e);
         }
+        // The runtime records only shaders that were NOT found in the old
+        // complete library. They are real guest control/code pairs, not
+        // guessed SPIR-V. A new APK may translate just those captures
+        // against its current translator while leaving 42k base entries
+        // and the old Vulkan pipeline cache undisturbed. Python validates
+        // every content hash, stage and source size before any compilation.
+        if (!BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)) {
+            File captures = new File(job.dir().getParentFile(), "nvn_shdump");
+            File[] files = captures.listFiles((d, name) ->
+                    name.matches("[0-9a-f]{16}\\.code"));
+            if (files != null && files.length > 0 && files.length <= 128) {
+                ArrayList<String> found = new ArrayList<>();
+                for (File f : files) {
+                    String key = f.getName().substring(0, 16);
+                    File ctl = new File(captures, key + ".ctl");
+                    if (!ctl.isFile() || ctl.length() < 0xd8 || ctl.length() > 65536
+                            || f.length() < 4 || f.length() > (1 << 24)) continue;
+                    found.add(key);
+                }
+                if (!found.isEmpty()) {
+                    java.util.Collections.sort(found);
+                    android.util.Log.i("OcarinaShaderDelta",
+                            "Preparing exactly " + found.size() + " captured missing shaders as a partial overlay; original library stays installed");
+                    return List.copyOf(found);
+                }
+            }
+        }
         return List.of();
     }
 }

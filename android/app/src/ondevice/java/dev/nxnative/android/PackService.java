@@ -569,18 +569,30 @@ public final class PackService extends Service {
                         new File(splitTmp, "pso_pairs.tsv").getPath()};
                 break;
             case "shaders": {
-                if (!new File(split, "pkg").isDirectory()) {   // the split went (a finished job deletes it; an APK update then translates again): split first
+                boolean capturedOnly = !hotKeys.isEmpty() &&
+                        new File(od.getParentFile(), "nvn_shdump/" + hotKeys.get(0) + ".code").isFile() &&
+                        !new File(split, "pkg").isDirectory();
+                if (!new File(split, "pkg").isDirectory() && !capturedOnly) {
+                    // Normal shader preparation must still split the game's
+                    // approved static shader map before translation.
                     j.stepState("split", "pending");
                     return "interrupted";
                 }
-                String bad = splitMatchesProfile(j, split);
-                if (bad != null) return bad;
+                if (!capturedOnly) {
+                    String bad = splitMatchesProfile(j, split);
+                    if (bad != null) return bad;
+                }
+                // For captured-only repair, vk_android_build.py generates the
+                // tiny verified .bin package itself. Never re-scan or
+                // invalidate the already playable static 42k-shader library.
+                File sourcePkg = capturedOnly ? new File(od, "capture-pkg") : new File(split, "pkg");
+                if (capturedOnly) Files.createDirectories(sourcePkg.toPath());
                 tool = "dm/gfx/tools/vk_android_build.py";
                 if (!hotKeys.isEmpty()) {
                     argv = new String[4 + hotKeys.size()];
                     argv[0] = "--target";
                     argv[1] = "vulkan";
-                    argv[2] = new File(split, "pkg").getPath();
+                    argv[2] = sourcePkg.getPath();
                     argv[3] = new File(pack, "shaders/hot").getPath();
                     for (int k = 0; k < hotKeys.size(); k++) argv[k + 4] = hotKeys.get(k);
                 } else {
@@ -632,6 +644,10 @@ public final class PackService extends Service {
         boolean ocarinaShaders = "shaders".equals(s) && "0400486024DEC000".equals(j.titleId());
         PackEngine.setenv("DMSH_GMEM_LAST1", ocarinaShaders ? "1" : "0");
         PackEngine.setenv("DMSH_GMEM_MAP_8192", ocarinaShaders ? "1" : "0");
+        // The translator is still explicitly limited to hotKeys. A captured
+        // source must be verified before it is ever given a shader key.
+        PackEngine.setenv("DMSH_VK_CAPTURE_DIR",
+                ocarinaShaders ? new File(od.getParentFile(), "nvn_shdump").getPath() : "");
         File userProfiles = Profile.userDir();   // a game whose profile is not built into the APK: the tools find it there (dm/games/game.py DM_GAMES_DIR)
         if (userProfiles.isDirectory()) PackEngine.setenv("DM_GAMES_DIR", userProfiles.getPath());
         // The mods folder (<Switch2>/Mods/<title ID>/<mod>/exefs/<build ID>.ips|.pchtxt; an older mods/ while it is there: ExefsMods.root): the rewrite applies a module's exefs patches before rewriting it, and its key names
