@@ -50,7 +50,7 @@ class AttachmentDependencyTest(unittest.TestCase):
         self.assertIn("vka_oq_pass_end();", DRAW)
         self.assertIn("vk.vkCmdEndRendering(g_cb);", DRAW)
         self.assertLess(DRAW.index("vk.vkCmdEndRendering(g_cb);"), DRAW.index('if (full || (R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0)) {'))
-        self.assertIn("else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }", DRAW)
+        self.assertIn("else { g_rp_scoped++; if (pending_attachment) g_rp_pending_attachment++; vka_attachment_write_barrier(g_cb); }", DRAW)
         self.assertIn("pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame", DRAW)
         self.assertIn("pending-attachment scoped %.1f/frame", DRAW)
 
