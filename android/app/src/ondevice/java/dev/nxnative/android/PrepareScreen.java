@@ -18,7 +18,7 @@ import java.util.Locale;
 
 /** Presentation only. PrepareActivity owns the job, lifecycle and all actions. */
 final class PrepareScreen {
-    interface Actions { void pause(); void resume(); void play(); void back(); void importShaders(); void freeSpace(); void battery(); }
+    interface Actions { void pause(); void resume(); void prepareAgain(); void play(); void back(); void importShaders(); void freeSpace(); void battery(); }
     private final Activity a;
     private final FrameLayout root;
     private final TextView name, version, headline, phase, percent, status, count, step, hint;
@@ -156,7 +156,9 @@ final class PrepareScreen {
         page.addView(stageRow, stagesParams);
         go = Ui.button(a, "", Ui.Kind.PREPARE, v -> {
             if (last == null) return;
-            if (last.canPause) actions.pause(); else if (last.canResume) actions.resume();
+            if (canReprepare(last)) actions.prepareAgain();
+            else if (last.canPause) actions.pause();
+            else if (last.canResume) actions.resume();
         });
         play = Ui.button(a, a.getString(R.string.s2_play), Ui.Kind.PRIMARY, null);
         play.setOnClickListener(v -> {   // no Confirm: Play's one cue is the library's Launch as the game starts (or its Error when it refuses)
@@ -164,9 +166,14 @@ final class PrepareScreen {
         });
         go.setEnabled(false);
         play.setEnabled(false);
-        FrameLayout primary = new FrameLayout(a);
-        primary.addView(go, new FrameLayout.LayoutParams(-1, -1));
-        primary.addView(play, new FrameLayout.LayoutParams(-1, -1));
+        // Playable old packs must show BOTH controls: the optional shader
+        // update can fail independently. A FrameLayout previously overlaid
+        // the buttons and permanently hid "Tentar novamente" on canPlay.
+        LinearLayout primary = Ui.row(a);
+        LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(0, -1, 1);
+        gp.rightMargin = Ui.dp(a, 6);
+        primary.addView(go, gp);
+        primary.addView(play, new LinearLayout.LayoutParams(0, -1, 1));
         play.setVisibility(View.GONE);
         LinearLayout footer = Ui.pair(a,
                 Ui.button(a, a.getString(R.string.s2_prep_back), Ui.Kind.SOFT, v -> actions.back()), primary);
@@ -257,6 +264,13 @@ final class PrepareScreen {
     void render(PrepareState s) { render(s, false, false); }
 
     /** quickPlay: Play's short job (the game starts when it is done); notifyOff: the progress notification is off */
+    private static boolean canReprepare(PrepareState s) {
+        return "0400486024DEC000".equals(s.titleId) && s.canPlay
+                && !s.canPause && (s.phase == PrepareState.Phase.FAILED
+                || s.phase == PrepareState.Phase.PAUSED
+                || s.phase == PrepareState.Phase.DONE);
+    }
+
     void render(PrepareState s, boolean quickPlay, boolean notifyOff) {
         last = s;
         Actions act = actions;
@@ -270,11 +284,11 @@ final class PrepareScreen {
             });
             if (art != null) cover.setImageBitmap(art);
         }
-        int label = s.canPlay ? R.string.s2_prep_ready : s.phase == PrepareState.Phase.FAILED ? R.string.s2_prep_failed
+        int label = s.phase == PrepareState.Phase.FAILED ? R.string.s2_prep_failed : s.canPlay ? R.string.s2_prep_ready
                 : s.phase == PrepareState.Phase.PAUSED ? R.string.s2_prep_paused
                 : s.phase == PrepareState.Phase.PENDING ? R.string.s2_prep_pending
                 : s.phase == PrepareState.Phase.DONE ? R.string.s2_prep_review : R.string.s2_prep_title;
-        int color = s.canPlay ? R.color.bn_leaf : s.phase == PrepareState.Phase.FAILED ? R.color.s2_coral
+        int color = s.phase == PrepareState.Phase.FAILED ? R.color.s2_coral : s.canPlay ? R.color.bn_leaf
                 : s.phase == PrepareState.Phase.PAUSED ? R.color.s2_warning : R.color.bn_banana;
         boolean quick = s.codeOnly && !s.canPlay && s.phase != PrepareState.Phase.FAILED;   // the short job: one bar, no stage list
         headline.setText(a.getString(quick ? R.string.s2_quick_title : label));
@@ -298,13 +312,17 @@ final class PrepareScreen {
         count.setText(s.shadersImported ? a.getString(R.string.s2_prep_shaders_imported) : s.shadersTotal > 0 ? a.getString(R.string.s2_prep_processed, s.shadersDone, s.shadersTotal)
                 : a.getString(R.string.s2_prep_count_pending));
         for (int i = 0; i < stages.length; i++) {
-            boolean done = s.canPlay || i + 1 < s.step;
+            boolean done = s.phase == PrepareState.Phase.DONE || i + 1 < s.step;
             stages[i].setText((done ? "✓  " : i + 1 == s.step ? "●  " : "○  ") + stages[i].getTag());
             stages[i].setTextColor(Ui.col(a, done ? R.color.bn_leaf : i + 1 == s.step ? color : R.color.bn_text_2));
         }
-        go.setText(a.getString(s.canPause ? R.string.s2_prep_pause : s.phase == PrepareState.Phase.FAILED ? R.string.s2_prep_retry : R.string.s2_prep_resume));
-        go.setEnabled(s.canPause || s.canResume);
-        go.setVisibility(s.canPlay ? View.GONE : View.VISIBLE);
+        boolean reprepare = canReprepare(s);
+        go.setText(a.getString(reprepare
+                ? (s.phase == PrepareState.Phase.FAILED ? R.string.s2_prep_retry : R.string.s2_prepare_again)
+                : s.canPause ? R.string.s2_prep_pause
+                : s.phase == PrepareState.Phase.FAILED ? R.string.s2_prep_retry : R.string.s2_prep_resume));
+        go.setEnabled(reprepare || s.canPause || s.canResume);
+        go.setVisibility(!s.canPlay || reprepare ? View.VISIBLE : View.GONE);
         play.setEnabled(s.canPlay);
         play.setVisibility(s.canPlay ? View.VISIBLE : View.GONE);
         importShaders.setVisibility(s.canImportShaders ? View.VISIBLE : View.GONE);
