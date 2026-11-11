@@ -235,7 +235,10 @@ static int lib_load(void) {
     // 42k-shader rebuild is required to test/replace foliage mesh shaders.
     // This overlay is strictly same-game, same-ABI and same-current-toolchain.
     // An absent, invalid or incomplete overlay never blocks the full library.
-    if (!(e && *e)) {
+    // Compare against the known good full library without deleting or
+    // renaming the prepared hot overlay. Default ON for safely translated
+    // fragment/compute patches; DM_VK_OOT_HOT=0 is a full A/B rollback.
+    if (!(e && *e) && VKA_ENV("DM_VK_OOT_HOT", 1)) {
         char hp[1024], he[256];
         if (snprintf(hp, sizeof hp, "%s/shaders/hot/" DMSH_VK_DIR_PREFIX "%s/" DMSH_VK_LIB_FILE,
                      dir, DMSH_VK_CHAIN) < (int)sizeof hp && !access(hp, R_OK)) {
@@ -250,14 +253,28 @@ static int lib_load(void) {
                     vka_shlib_close(&g_hot);
                 } else {
                     g_hot_loaded = 1;
+                    unsigned quarantine = 0, old_mesh = 0;
+                    for (unsigned k = 0; k < g_hot.h->entry_count; k++) {
+                        const dmsh_vk_entry *entry = &g_hot.ent[k];
+                        if (entry->stage != DMSH_VK_STAGE_MS && entry->stage != DMSH_VK_STAGE_TS)
+                            continue;
+                        quarantine++;
+                        if (vka_shlib_find(&g_lib, entry->key)) old_mesh++;
+                    }
                     VLOG("GPU hot-shader overlay: %u new shaders from %s; untouched %u stable shaders from %s remain available",
                          g_hot.h->entry_count, hp, g_lib.h->entry_count, path);
+                    VLOG("Ocarina hot mesh/task safety: %u overlay mesh/task entries (%u also in full library) quarantined by default; "
+                         "captured-only mesh layouts lack validated pixel/mesh pairings and caused extreme screen-spanning triangles and ~26 FPS. "
+                         "DM_VK_OOT_HOT_MESH=1 enables the risky versions for diagnostics; DM_VK_OOT_HOT=0 disables the whole overlay. "
+                         "No library or pipeline cache changed.", quarantine, old_mesh);
                 }
             } else {
                 VRED("GPU hot-shader overlay %s rejected (%s); using full stable library unchanged", hp, he);
             }
         }
     }
+    if (!(e && *e) && !VKA_ENV("DM_VK_OOT_HOT", 1))
+        VLOG("Ocarina GPU hot-shader overlay disabled by DM_VK_OOT_HOT=0: using intact full library for an A/B render comparison");
     const char *ck = getenv("DM_VK_SHLIB_CHECK");
     if (ck && atoi(ck)) vka_shlib_check_all(&g_lib);
     return 1;
@@ -537,11 +554,26 @@ vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
     return s->bad ? NULL : s;
 }
 
-// A shader of the game's libraries by key: prefer the small current-chain
-// overlay, then fall back to the original complete imported library.
+// A shader of the game's libraries by key: the full library is always
+// available. The real Ocarina 2026-11-11 051430 test showed 57 hot entries
+// rendered enormous white mesh triangles and worsened the heavy-scene GPU
+// from ~22 to ~38 ms. The captured-only mesh_facts parser has no complete
+// mesh/fragment pairing map (flat per-primitive outputs and padding), so its
+// syntactically valid SPIR-V cannot yet be assumed visually equivalent.
+// Default to the OLD base for mesh/task; suppress unknown hot mesh/task
+// rather than letting them corrupt geometry. This is an intentional
+// correctness-first fallback until the missing pairing metadata is verified.
+// Fragment/compute hot shaders remain available. The disk overlay remains
+// intact for future repair, and users can opt into mesh experiments explicitly.
 static const vka_shlib *library_for_key(uint64_t key) {
-    if (g_hot_loaded && vka_shlib_find(&g_hot, key)) return &g_hot;
-    return &g_lib;
+    if (!g_hot_loaded) return &g_lib;
+    const dmsh_vk_entry *overlay = vka_shlib_find(&g_hot, key);
+    if (!overlay) return &g_lib;
+    if ((overlay->stage == DMSH_VK_STAGE_MS ||
+         overlay->stage == DMSH_VK_STAGE_TS) &&
+        !VKA_ENV("DM_VK_OOT_HOT_MESH", 0))
+        return &g_lib;
+    return &g_hot;
 }
 vka_shader *vka_shader_by_key(uint64_t key) {
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);

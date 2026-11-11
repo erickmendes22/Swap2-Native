@@ -26,7 +26,10 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('static vka_shlib g_lib, g_hot;', HOST)
         self.assertIn('shaders/hot/', HOST)
         self.assertIn('vka_shlib_open(&g_hot, hp, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI', HOST)
-        self.assertIn('g_hot_loaded && vka_shlib_find(&g_hot, key)', HOST)
+        self.assertIn('g_hot_loaded', HOST)
+        self.assertIn('const dmsh_vk_entry *overlay = vka_shlib_find(&g_hot, key)', HOST)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOT_MESH", 0)', HOST)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOT", 1)', HOST)
         self.assertIn('return &g_lib;', HOST)
         self.assertIn('vka_shader_make(library_for_key(key), key)', HOST)
         self.assertIn('const vka_shlib *source = library_for_key(key);', HOST)
@@ -37,6 +40,23 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('File captures = new File(job.dir().getParentFile(), "nvn_shdump")',delta)
         self.assertIn('out->sh[st] = vka_shader_make(source, key);', HOST)
         self.assertIn('An absent, invalid or incomplete overlay never blocks the full library', HOST)
+
+    def test_failed_57_shader_overlay_quarantines_unpaired_mesh_stages(self):
+        # Regression: previous version compiled 57 valid SPIR-V modules,
+        # but its 53 newly captured mesh/task shaders were not given the
+        # pixel pair metadata needed for correct geometry and produced
+        # screen-spanning white triangles and a large GPU time regression.
+        src = HOST
+        self.assertIn('overlay->stage == DMSH_VK_STAGE_MS', src)
+        self.assertIn('overlay->stage == DMSH_VK_STAGE_TS', src)
+        self.assertIn('!VKA_ENV("DM_VK_OOT_HOT_MESH", 0)', src)
+        self.assertIn('return &g_lib;', src)
+        self.assertIn('return &g_hot;', src)
+        self.assertIn('DM_VK_OOT_HOT=0', src)
+        self.assertIn('quarantine++;', src)
+        self.assertIn('vka_shlib_find(&g_lib, entry->key)', src)
+        self.assertLess(src.index('!VKA_ENV("DM_VK_OOT_HOT_MESH", 0)'),
+                        src.index('return &g_hot;', src.index('static const vka_shlib *library_for_key')))
 
     def test_heavy_shader_capture_enables_later_targeted_recompilation(self):
         self.assertIn('capture_hot_shader_source(p, i, key)', HOST)
