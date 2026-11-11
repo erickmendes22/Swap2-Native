@@ -16,6 +16,7 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_early_occlusion.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_shaders.py'
       - 'dm/gfx/tools/tests/test_ocarina_graphics_barrier_scopes.py'
+      - 'dm/gfx/tools/tests/test_ocarina_postpass_barrier_dedup.py'
       - 'dm/gfx/tools/tests/test_ocarina_attachment_stage_dependencies.py'
       - 'dm/gfx/vk_android/vka_shader.c'
       - 'dm/gfx/vk_android/vka_ndsr.c'
@@ -70,6 +71,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_early_occlusion.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_shaders.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_barrier_scopes.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_postpass_barrier_dedup.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_attachment_stage_dependencies.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c
       - name: Syntax-check real Android Vulkan texture replay with NDK
@@ -114,6 +116,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_fps_boost_vrs.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_retile.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_graphics_barrier_scopes.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_postpass_barrier_dedup.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pool_feedback.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ub_deferred.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_graphics_pass_ub_barrier.py'

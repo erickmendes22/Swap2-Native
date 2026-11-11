@@ -253,6 +253,7 @@ static int rt_same(const p_set_rt *a, int ha, const p_set_rt *b, int hb) {
 // Game barriers (OP_BARRIER) that came with a pass open: taken inside it (DM_VK_BAR_KEEP), ended it at once, ended it later at a draw that needed it (bar_hazard)
 static uint64_t g_bar_in, g_bar_kept, g_bar_late, g_bar_duplicate_avoided;
 static uint64_t g_rp_scoped, g_rp_graphics, g_rp_full, g_rp_pending_attachment;
+static uint64_t g_rp_postub_barriers_saved;
 static int g_rp_force_full; // OP_BARRIER has stricter guest-visible ordering than an ordinary pass transition
 void vka_oq_pass_end(void), vka_oq_draw(void);   // vka_exec.c "Occlusion queries"
 // A retained guest barrier need not close the graphics pass merely to
@@ -307,15 +308,27 @@ void vka_rp_end(void) {
     // vkCmdCopyBuffer is forbidden inside rendering. Flush any deferred
     // uniform writes after ending the pass, with a read->transfer dependency.
     // The draw-side shadow already held those values for in-pass consumers.
+    const int postub = vka_ub_active();
     vka_ub_flush_pass();
-    // Keep OFF as a faithful unoptimized A/B baseline. The FPS Boost mode
-    // may narrow this particular full barrier only after identifying that
-    // the pass itself produced solely graphics writes.
+    // The deferred-uniform flush performed an ALL_COMMANDS memory barrier
+    // immediately after EndRendering, then published GPU copies through
+    // TRANSFER -> ALL_COMMANDS barriers. No new draw writes occurred after
+    // it. Repeating the render-pass barrier therefore orders no work.
+    // Keep exact earlier dependencies for passes WITHOUT a deferred flush;
+    // preserve the option to restore the prior behavior for A/B tests.
+    const int reused = postub && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_POSTUB_BAR_DEDUP", 1);
     if (full || (R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0)) {
-        g_rp_full++; vka_barrier(g_cb);
+        if (reused) g_rp_postub_barriers_saved++;
+        else { g_rp_full++; vka_barrier(g_cb); }
+    } else if (R.swrite) {
+        if (reused) g_rp_postub_barriers_saved++;
+        else { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }
+    } else {
+        if (pending_attachment) g_rp_pending_attachment++;
+        if (reused) g_rp_postub_barriers_saved++;
+        else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }
     }
-    else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }
-    else { g_rp_scoped++; if (pending_attachment) g_rp_pending_attachment++; vka_attachment_write_barrier(g_cb); }
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
     if (vka_nan_on()) vka_nan_pass(g_cb, R.cim, R.clv, R.cl0, R.nci);
 }
@@ -466,16 +479,16 @@ int vka_rp_game_barrier(uint32_t bits) {
     return 1;
 }
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
-    static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0;
+    static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0, reused0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
-    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0 || g_bar_duplicate_avoided != dup0 || g_rp_scoped != scoped0 || g_rp_graphics != graphics0 || g_rp_full != full0)
-        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; pending-attachment scoped %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
+    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0 || g_bar_duplicate_avoided != dup0 || g_rp_scoped != scoped0 || g_rp_graphics != graphics0 || g_rp_full != full0 || g_rp_postub_barriers_saved != reused0)
+        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; pending-attachment scoped %.1f/frame; redundant post-uniform barriers removed %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
                  (g_bar_in - i0) / frames, (g_bar_kept - k0) / frames, (g_bar_late - l0) / frames,
                  (g_bar_duplicate_avoided - dup0) / frames,
-                 (g_rp_scoped - scoped0) / frames, (g_rp_graphics - graphics0) / frames, (g_rp_full - full0) / frames, (g_rp_pending_attachment - pending0) / frames,
+                 (g_rp_scoped - scoped0) / frames, (g_rp_graphics - graphics0) / frames, (g_rp_full - full0) / frames, (g_rp_pending_attachment - pending0) / frames, (g_rp_postub_barriers_saved - reused0) / frames,
                  (g_attachment_discards - d0) / frames, (g_attachment_loads_avoided - a0) / frames, (g_attachment_stores_avoided - s0) / frames);
     else if (n) b[0] = 0;
-    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; dup0 = g_bar_duplicate_avoided; scoped0 = g_rp_scoped; graphics0 = g_rp_graphics; full0 = g_rp_full; pending0 = g_rp_pending_attachment;
+    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; dup0 = g_bar_duplicate_avoided; scoped0 = g_rp_scoped; graphics0 = g_rp_graphics; full0 = g_rp_full; pending0 = g_rp_pending_attachment; reused0 = g_rp_postub_barriers_saved;
     d0 = g_attachment_discards; a0 = g_attachment_loads_avoided; s0 = g_attachment_stores_avoided;
 }
 // A real NVN discard ends the current pass and invalidates precisely the bound

@@ -29,8 +29,10 @@ class BarrierScopeTests(unittest.TestCase):
         self.assertIn('if (pending_attachment) g_rp_pending_attachment++;', body)
         self.assertIn('if (full || (R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) <= 0)) {', body)
         self.assertIn('g_rp_full++; vka_barrier(g_cb);', body)
-        self.assertIn('else if (R.swrite) { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }', body)
-        self.assertIn('else { g_rp_scoped++; if (pending_attachment) g_rp_pending_attachment++; vka_attachment_write_barrier(g_cb); }', body)
+        self.assertIn('g_rp_graphics++; vka_graphics_write_barrier(g_cb);', body)
+        self.assertIn('g_rp_scoped++; vka_attachment_write_barrier(g_cb);', body)
+        self.assertIn('const int postub = vka_ub_active();', body)
+        self.assertIn('DM_VK_OOT_POSTUB_BAR_DEDUP', body)
 
     def test_graphics_shader_writes_have_complete_destination(self):
         body = source_body(TEX, 'void vka_graphics_write_barrier_at(',
