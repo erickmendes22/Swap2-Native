@@ -467,6 +467,9 @@ static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im,
 }
 
 static void swap_destroy(int surface_too) {
+    // An old successful SGSR frame cannot authorize bypassing the game's
+    // internal upscaler while the swapchain/pipelines are being recreated.
+    atomic_store_explicit(&g_sgsr_last_present, 0, memory_order_release);
     if (!V.dev) return;
     vka_queue_idle();
     if (surface_too) for (unsigned k = 0; k < NFRAME; k++) fsr_free(k);   // the window is gone (the queue is idle); a new one makes them at its own size
