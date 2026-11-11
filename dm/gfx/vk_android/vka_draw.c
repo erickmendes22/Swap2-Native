@@ -21,6 +21,7 @@ uint64_t vka_n_rp;   // render passes the draws opened (vka_exec.c replay statis
 static uint64_t g_draws, g_skipped, g_dispatches;
 static int g_dispatch_overlap_pending;
 static uint64_t g_dispatch_overlap_skipped;
+uint64_t vka_frame(void);  // also used by the fail-closed SGSR chain frame tracker
 // The Metal port can overlap successive compute dispatches when NVN issued no
 // explicit barrier between them. The Vulkan replay had inserted a full GPU
 // barrier after every single dispatch. Defer that dependency across adjacent
@@ -74,7 +75,6 @@ static int oot_sgsr_chain_part(uint64_t key) {
     return 0;
 }
 static uint32_t g_claim_words;   // the draw's claim words (an upper bound of its primitives): 0 = its geometry shader takes no claim
-uint64_t vka_frame(void);
 #define SKIPQ() do { g_skipped++; if (VKA_ENV("DM_VK_SKIP_LOG", 0)) VLOG("skip log: draw or dispatch skipped at vka_draw.c:%d (frame %llu)", __LINE__, (unsigned long long)vka_frame()); return; } while (0)   // diagnostic: DM_VK_SKIP_LOG=1
 #define SKIP(...) do { g_skipped++; static _Atomic int n_; if (atomic_fetch_add(&n_, 1) < 4) VRED(__VA_ARGS__); if (VKA_ENV("DM_VK_SKIP_LOG", 0)) VLOG("skip log: draw skipped at vka_draw.c:%d (frame %llu)", __LINE__, (unsigned long long)vka_frame()); return; } while (0)
 
