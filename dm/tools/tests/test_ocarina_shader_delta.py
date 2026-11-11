@@ -111,7 +111,11 @@ class SelectedUpdateTests(unittest.TestCase):
         self.assertIn('new File(pack, "shaders/hot").getPath()', source)
         self.assertIn('new String[4 + hotKeys.size()]', source)
         self.assertIn('argv[k + 4] = hotKeys.get(k)', source)
-        self.assertIn('"--hot-keys", String.join(",", hotKeys)', source)
+        self.assertIn('"--hot-keys", String.join(",", publishedHotKeys)', source)
+        self.assertIn('new File(pack, "shaders/hot/v-"', source)
+        self.assertIn('unique.size() != selectedKeys.size()', source)
+        self.assertIn('!hotKeys.containsAll(selectedKeys)', source)
+        self.assertIn('selected_keys.tsv', source)
 
     def test_per_release_scope_is_pinned_not_guessed(self):
         code = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
