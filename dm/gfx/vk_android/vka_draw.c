@@ -1839,15 +1839,26 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     // size and 8x9x24 grid, keeping every GlobalInvocationId unchanged.
     // Only if the SPIR-V safety scan confirms no local/group-dependent ops.
     // Indirect, image-retyped and any other-size dispatch keeps the original.
+    // The GPU profiler measured this one compute dispatch at 0.5-1.4 ms
+    // even with SGSR and NDSR retile already running. Its SPIR-V patcher
+    // proves that only GlobalInvocationId is used, and refuses barriers,
+    // shared/workgroup memory, atomics and workgroup-local builtins. The
+    // 8x4x4*8x9x12 -> 8x4x2*8x9x24 mapping preserves the SAME 110,592
+    // invocations, with no change to the game's library or output.
+    // Enable automatically for the EXACT known size, independent of the
+    // quality-reducing FPS Boost/VRS option. DM_VK_OOT_CS_RETILE=0 restores
+    // the original pipeline. If the original shader fails the safety scan
+    // or Vulkan rejects the variant, keep the original compute unmodified.
     if (!p && sh[5]->key == UINT64_C(0x9e6b00b050e30801)
-        && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 && VKA_ENV("DM_VK_OOT_CS_RETILE", 1)
+        && !strcmp(DM_GAME_ID, "0400486024DEC000")
+        && VKA_ENV("DM_VK_OOT_CS_RETILE", 1)
         && !rt.b[0] && !dp->ind && !spill_bytes(sh[5])
         && dp->x == 8 && dp->y == 9 && dp->z == 12
         && V.props.limits.maxComputeWorkGroupCount[2] >= 24) {
         p = vka_cs_pipeline_oot_retile(sh[5], &lay, &oot_cs_retiled);
         if (oot_cs_retiled) { static _Atomic int logged;
             if (!atomic_exchange(&logged, 1))
-                VLOG("Ocarina compute 9e6b FPS Boost: 8x4x4*8x9x12 -> 8x4x2*8x9x24, equal global invocations; original pipeline preserved");
+                VLOG("Ocarina GPU profiled compute 9e6b: 8x4x4*8x9x12 -> 8x4x2*8x9x24, equal global invocations; original pipeline preserved; DM_VK_OOT_CS_RETILE=0 disables");
         }
     }
     if (!p) p = rt.b[0] ? vka_cs_pipeline_img(sh[5], &lay, &rt) : vka_cs_pipeline(sh[5], &lay);
