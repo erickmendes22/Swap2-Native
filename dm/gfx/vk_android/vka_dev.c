@@ -105,7 +105,17 @@ static int init_once(void) {
     // Per-pipeline coarse fragment shading for two profiled Ocarina shaders.
     // This is separate from the game's unimplemented NVN shading-rate images.
     // Only request the extension on a launch explicitly opting into FPS Boost.
-    int want_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0);
+    // Build54 GPU profiler: 13-15ms of heavy gameplay was in graphics
+    // passes, vs ~6ms compute. Qualcomm's per-pipeline 2x1 shading rate
+    // reduces FRAGMENT work without changing any 720p image dimensions,
+    // vertex/mesh work, draws, output buffers or guest shader sources.
+    // Enable only for selected measured-heavy fragment programs; users can
+    // opt out of the adaptive (moderate) mode separately from FPS Boost.
+    // No guess about driver support: all rates/features are queried below.
+    int hotpass_vrs = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+                      VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) != 0;
+    int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0);
+    int want_boost = explicit_boost > 0 ? explicit_boost : (hotpass_vrs ? 1 : 0);
     int x_fsr_rate = want_boost > 0 && has_ext(de, nde, VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
     if (x_fsr_rate) dext[ndext++] = VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME;
     // Ocarina issues shading-rate image/palette commands. They are still
@@ -174,9 +184,11 @@ static int init_once(void) {
     V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;
     V.fps_boost_height = V.fps_boost_vrs ? selected_h : 0u;
     if (want_boost > 0)
-        VLOG("Ocarina FPS Boost VRS: requested=%d, extension=%d, pipeline feature=%d, 2x1=%d, 2x2=%d, active=%d, chosen=%ux%u",
-             want_boost, x_fsr_rate, frate.pipelineFragmentShadingRate, has_2x1, has_2x2,
-             V.fps_boost_vrs, V.fps_boost_width, V.fps_boost_height);
+        VLOG("Ocarina scene-pass VRS: balanced=%d explicit_boost=%d, extension=%d, "
+             "pipeline_feature=%d, 2x1=%d, 2x2=%d, active=%d, chosen=%ux%u "
+             "(DM_VK_OOT_HOTPASS_VRS=0 restores full fragment detail)",
+             hotpass_vrs, explicit_boost, x_fsr_rate, frate.pipelineFragmentShadingRate,
+             has_2x1, has_2x2, V.fps_boost_vrs, V.fps_boost_width, V.fps_boost_height);
     if (x_mesh && !fmesh.meshShader) fmesh.taskShader = VK_FALSE;   // (task shading is of no use without mesh shading)
     V.indirect_count = f12.drawIndirectCount && f2.features.multiDrawIndirect;
     V.push_desc = x_push; V.vin_dyn = x_vin && fvin.vertexInputDynamicState; V.null_desc = x_rob && frob.nullDescriptor; V.ext_storage = f2.features.shaderStorageImageExtendedFormats; V.idx8 = x_i8 && fi8.indexTypeUint8;
