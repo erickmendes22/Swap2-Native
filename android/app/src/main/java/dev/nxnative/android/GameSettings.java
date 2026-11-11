@@ -199,7 +199,9 @@ final class GameSettings {
                 .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
                 .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
-        box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Medição de GPU", v -> GraphicsOptions.choice(a, id, "gpu_timestamps", again))
+        // GUI diagnostics & ineffective beta switches removed in 0.1.6.
+        // The existing env.txt remains the advanced troubleshooting path.
+        /*box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Medição de GPU", v -> GraphicsOptions.choice(a, id, "gpu_timestamps", again))
                 .value(GraphicsOptions.TIMINGS[GraphicsOptions.timing(a, id)]).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Registro de texturas otimizado (experimental)", v -> GraphicsOptions.choice(a, id, "reg_dedup", again))
                 .value(GraphicsOptions.REGISTRY[GraphicsOptions.regDedup(a, id)] + " · aplica no próximo início").chevron(a).view);
@@ -220,6 +222,7 @@ final class GameSettings {
                     .value(GraphicsOptions.SGSR_CHAIN[GraphicsOptions.sgsrChain(a, id)]
                             + " · reiniciar o jogo · requer SGSR no filtro da tela").chevron(a).view);
         }
+        */ 
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
             String cur = on ? Prefs.sceneLabel(Prefs.sceneScale(a, id, prof.sceneScale())) : a.getString(R.string.s2_scene_game);

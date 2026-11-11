@@ -678,4 +678,6 @@
     <string name="s2_add_added_dump">%1$s adicionado. Ele é preparado na primeira vez que você jogar.</string>
     <string name="s2_add_no_pack_title">Pacote não encontrado</string>
     <string name="s2_add_no_pack">Nenhum pacote foi encontrado para ele. Escolha a pasta do pacote (com pack.tsv), ou escolha o dump completo (com base/ e updates/, ou um .nup com o jogo base) para preparar um neste celular.</string>
+    <string name="s2_language">Idioma do aplicativo e do jogo</string>
+    <string name="s2_language_note">O jogo segue este idioma na próxima inicialização quando seus arquivos oferecem essa tradução. Caso contrário, usa o idioma alternativo do próprio jogo.</string>
 </resources>

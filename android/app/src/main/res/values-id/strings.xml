@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="s2_library">Pustaka</string>
+    <string name="s2_settings">Pengaturan</string>
+    <string name="s2_play">Mainkan</string>
+    <string name="s2_interface">Antarmuka</string>
+    <string name="s2_game_settings">Pengaturan game</string>
+    <string name="s2_graphics">Grafis dan permainan</string>
+    <string name="s2_advanced">Lanjutan</string>
+    <string name="s2_system">Sistem</string>
+    <string name="s2_about">Tentang</string>
+    <string name="s2_resolution">Resolusi</string>
+    <string name="s2_frame_cap">Batas FPS</string>
+    <string name="s2_driver">Driver GPU</string>
+    <string name="s2_language">Bahasa aplikasi dan game</string>
+    <string name="s2_language_note">Game akan menggunakan bahasa ini saat berikutnya dijalankan jika terjemahannya tersedia; jika tidak, game memilih bahasa cadangan sendiri.</string>
+</resources>

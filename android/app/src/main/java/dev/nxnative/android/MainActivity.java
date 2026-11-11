@@ -94,7 +94,7 @@ public final class MainActivity extends Activity {
 
     /** Settings › Theme: light or dark over the system's, before anything reads the resources (LauncherTheme) */
     @Override protected void attachBaseContext(android.content.Context base) {
-        super.attachBaseContext(base);
+        super.attachBaseContext(AppLanguage.wrap(base));
         LauncherTheme.apply(this);
     }
 
@@ -626,6 +626,9 @@ public final class MainActivity extends Activity {
         }
         Ui.add(theme, row, low ? 6 : 12);
         LinearLayout rows = Ui.add(p, Ui.panel(this), 12);
+        rows.addView(new Ui.Setting(this, R.drawable.s2_ic_settings, getString(R.string.s2_language), v -> AppLanguage.pick(this))
+                .value(AppLanguage.selectedLabel(this)).chevron(this).view);
+        Ui.add(p, Ui.small(this, getString(R.string.s2_language_note)), 6);
         rows.addView(new Ui.Setting(this, R.drawable.s2_ic_play, getString(R.string.s2_opening), null)
                 .value(getString(R.string.s2_opening_note)).toggle(this, LauncherTheme.opening(this), (b, on) -> LauncherTheme.opening(this, on)).view);
         rows.addView(new Ui.Setting(this, R.drawable.s2_ic_display, getString(R.string.s2_reduced_motion), null)
@@ -792,7 +795,8 @@ public final class MainActivity extends Activity {
         pipelineRow = new Ui.Setting(this, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(this, null, "bg_pipelines", this::refreshSettings)).chevron(this);
         up.addView(pipelineRow.view);
         timingRow = new Ui.Setting(this, R.drawable.s2_ic_gauge, "Medição de GPU", v -> GraphicsOptions.choice(this, null, "gpu_timestamps", this::refreshSettings)).chevron(this);
-        up.addView(timingRow.view);
+        // GPU timing is diagnostic, not a release graphics-quality setting;
+        // leave it to the explicit env.txt debugging interface.
         Ui.add(p, Ui.small(this, "Filtro e nitidez também podem ser alterados durante o jogo. Proporção, pipelines e timestamps exigem reiniciar o jogo."), 8);
         Ui.add(p, Ui.small(this, getString(R.string.s2_defaults_hint)), 8);
     }

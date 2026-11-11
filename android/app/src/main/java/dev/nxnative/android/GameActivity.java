@@ -70,6 +70,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private AudioDeviceCallback route;
     private boolean routeReady;
 
+    @Override protected void attachBaseContext(Context base) {
+        super.attachBaseContext(AppLanguage.wrap(base));
+    }
+
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         Ui.immersive(this);
@@ -456,6 +460,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 else sceneNote = "[RED] [nxlaunch] Scene resolution 720p: the overlay " + SceneOverlay.dir(files, id) + " was not made for this pack (version " + pack.version
                         + ", scale " + Prefs.sceneScale(this, id, prof.sceneScale()) + "): using the game's own render scale this run; select the internal scene resolution again";
             }
+            // Match the emulated Switch language to the selected app locale.
+            // env.txt and per-game overrides are appended later and can
+            // deliberately override this one line for advanced users.
+            // The game must contain the matching locale in its own RomFS.
+            env.add("DM_LANG=" + AppLanguage.gameCode(this));
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
             // Ocarina 0.1.2: preserve an open render pass across a game barrier

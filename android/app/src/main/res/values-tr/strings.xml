@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="s2_library">Kütüphane</string>
+    <string name="s2_settings">Ayarlar</string>
+    <string name="s2_play">Oyna</string>
+    <string name="s2_interface">Arayüz</string>
+    <string name="s2_game_settings">Oyun ayarları</string>
+    <string name="s2_graphics">Grafikler ve oyun</string>
+    <string name="s2_advanced">Gelişmiş</string>
+    <string name="s2_system">Sistem</string>
+    <string name="s2_about">Hakkında</string>
+    <string name="s2_resolution">Çözünürlük</string>
+    <string name="s2_frame_cap">FPS sınırı</string>
+    <string name="s2_driver">GPU sürücüsü</string>
+    <string name="s2_language">Uygulama ve oyun dili</string>
+    <string name="s2_language_note">Oyun, dosyalarında bu çeviri varsa bir sonraki açılışta seçilen dili kullanır; aksi hâlde kendi yedek dilini kullanır.</string>
+</resources>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="s2_library">Bibliothek</string>
+    <string name="s2_settings">Einstellungen</string>
+    <string name="s2_play">Spielen</string>
+    <string name="s2_interface">Oberfläche</string>
+    <string name="s2_game_settings">Spieleinstellungen</string>
+    <string name="s2_graphics">Grafik und Spiel</string>
+    <string name="s2_advanced">Erweitert</string>
+    <string name="s2_system">System</string>
+    <string name="s2_about">Über</string>
+    <string name="s2_resolution">Auflösung</string>
+    <string name="s2_frame_cap">FPS-Begrenzung</string>
+    <string name="s2_driver">GPU-Treiber</string>
+    <string name="s2_language">App- und Spielsprache</string>
+    <string name="s2_language_note">Das Spiel verwendet beim nächsten Start diese Sprache, sofern seine Dateien die Übersetzung enthalten. Andernfalls verwendet es seine eigene Ausweichsprache.</string>
+</resources>

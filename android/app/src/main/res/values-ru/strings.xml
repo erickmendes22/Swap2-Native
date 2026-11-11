@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="s2_library">Библиотека</string>
+    <string name="s2_settings">Настройки</string>
+    <string name="s2_play">Играть</string>
+    <string name="s2_interface">Интерфейс</string>
+    <string name="s2_game_settings">Настройки игры</string>
+    <string name="s2_graphics">Графика и игровой процесс</string>
+    <string name="s2_advanced">Дополнительно</string>
+    <string name="s2_system">Система</string>
+    <string name="s2_about">О программе</string>
+    <string name="s2_resolution">Разрешение</string>
+    <string name="s2_frame_cap">Ограничение FPS</string>
+    <string name="s2_driver">Драйвер GPU</string>
+    <string name="s2_language">Язык приложения и игры</string>
+    <string name="s2_language_note">При следующем запуске игра выберет этот язык, если её файлы содержат перевод. Иначе игра использует свой резервный язык.</string>
+</resources>

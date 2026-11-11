@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="s2_library">ライブラリ</string>
+    <string name="s2_settings">設定</string>
+    <string name="s2_play">プレイ</string>
+    <string name="s2_interface">インターフェース</string>
+    <string name="s2_game_settings">ゲーム設定</string>
+    <string name="s2_graphics">グラフィックとゲーム</string>
+    <string name="s2_advanced">詳細設定</string>
+    <string name="s2_system">システム</string>
+    <string name="s2_about">情報</string>
+    <string name="s2_resolution">解像度</string>
+    <string name="s2_frame_cap">FPS上限</string>
+    <string name="s2_driver">GPUドライバー</string>
+    <string name="s2_language">アプリとゲームの言語</string>
+    <string name="s2_language_note">ゲームに翻訳が含まれる場合、次回起動時に選択した言語を使用します。なければゲーム側の代替言語を使用します。</string>
+</resources>

@@ -684,4 +684,6 @@
     <string name="s2_add_added_dump">Added %1$s. It is prepared the first time you play it.</string>
     <string name="s2_add_no_pack_title">Pack not found</string>
     <string name="s2_add_no_pack">No pack was found for it. Pick the pack folder (with pack.tsv), or pick the full dump (with base/ and updates/, or a .nup with the base game) to prepare one on this phone.</string>
+    <string name="s2_language">App and game language</string>
+    <string name="s2_language_note">The game follows this language on its next launch when its files include that translation. Otherwise the game chooses its own fallback. App text without a translation falls back to English.</string>
 </resources>

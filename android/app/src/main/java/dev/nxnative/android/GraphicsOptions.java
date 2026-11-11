@@ -138,12 +138,16 @@ final class GraphicsOptions {
         // hot fragment shaders, not NX2navi's incompatible mirror write-back.
         // The native host checks driver feature support and logs fallback.
         if (Prefs.OCARINA_TITLE.equals(id)) {
-            out.add("DM_VK_OOT_FPS_BOOST=" + fpsBoost(c, id));
-            out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));
+            // 0.1.6 release cleanup: these VRS/FPS Boost experimental
+            // sliders produced no meaningful frame-time gain and may lower
+            // fidelity. Keep the runtime fallback switches accessible only
+            // through env.txt; ignore stale saved UI choices from beta.
+            out.add("DM_VK_OOT_FPS_BOOST=0");
+            out.add("DM_VK_OOT_HOTPASS_VRS=0");
             // Experimental iOS V19 0.25 chain bypass, but SGSR1 must have
             // ACTUALLY drawn a frame and the direct HDR source must validate.
             // OFF by default so existing shaders/playable graphics are safe.
-            out.add("DM_VK_OOT_SGSR_CHAIN=" + sgsrChain(c, id));
+            out.add("DM_VK_OOT_SGSR_CHAIN=0");
             // Backported from iOS: independent consecutive NVN compute dispatches
             // no longer force individual GPU barriers. Does not rebuild shaders.
             out.add("DM_VK_OOT_DISPATCH_OVERLAP=1");
@@ -259,7 +263,7 @@ final class GraphicsOptions {
     /** In-game controls: final output upscaler and sharpness change live; other settings restart the game. */
     static void rows(Context c, LinearLayout box, String id) {
         TextView title = new TextView(c);
-        title.setText("Imagem final · 0.1.2");
+        title.setText("Imagem final · 0.1.6");
         title.setPadding(0, 24, 0, 0);
         box.addView(title);
         RadioGroup m = new RadioGroup(c);

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="s2_library">लाइब्रेरी</string>
+    <string name="s2_settings">सेटिंग्स</string>
+    <string name="s2_play">खेलें</string>
+    <string name="s2_interface">इंटरफ़ेस</string>
+    <string name="s2_game_settings">गेम सेटिंग्स</string>
+    <string name="s2_graphics">ग्राफ़िक्स और गेम</string>
+    <string name="s2_advanced">उन्नत</string>
+    <string name="s2_system">सिस्टम</string>
+    <string name="s2_about">परिचय</string>
+    <string name="s2_resolution">रिज़ॉल्यूशन</string>
+    <string name="s2_frame_cap">FPS सीमा</string>
+    <string name="s2_driver">GPU ड्राइवर</string>
+    <string name="s2_language">ऐप और गेम की भाषा</string>
+    <string name="s2_language_note">गेम में अनुवाद होने पर अगली बार चुनी गई भाषा लागू होगी, नहीं तो गेम की वैकल्पिक भाषा इस्तेमाल होगी.</string>
+</resources>

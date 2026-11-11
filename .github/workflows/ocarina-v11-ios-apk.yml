@@ -1,4 +1,4 @@
-name: Swap2-Native Ocarina 0.1.2 Android APK
+name: Swap2-Native Ocarina 0.1.6 Android APK
 on:
   push:
     branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural]
@@ -185,8 +185,8 @@ jobs:
             -PnxApp=ootv11ios \
             -PnxV11SignStore="$HOME/.android/debug.keystore" \
             -PnxLabel="Swap2-Native Ocarina" \
-            -PnxBranchLabel=ocarina-0.1.2 \
-            -PnxVersion=0.1.2 \
+            -PnxBranchLabel=ocarina-0.1.6 \
+            -PnxVersion=0.1.6 \
             -PnxVersionCode="$GITHUB_RUN_NUMBER" \
             -PnxPackStage="$RUNNER_TEMP/oot-v11-ios/stage" apk
           test -s out/swap2-native-ootv11ios.apk
@@ -201,13 +201,13 @@ jobs:
             echo "::warning::Built 0.1.2 APK has a different signer from the installed 0.1.2 app. DO NOT install over existing app." >&2
             printf '%s\n' "AVISO: esta APK foi compilada para teste, mas a assinatura difere da ultima V11 instalada. NAO instala por cima. NAO e um release publico." > out/ASSINATURA-INCOMPATIVEL.txt
           fi
-          cp out/swap2-native-ootv11ios.apk out/swap2-native-ocarina-0.1.2.apk
+          cp out/swap2-native-ootv11ios.apk out/swap2-native-ocarina-0.1.6.apk
       - name: Upload signed 0.1.2 build and any signing warning
         uses: actions/upload-artifact@v4
         with:
-          name: Swap2-Native-Ocarina-0.1.2-Update
+          name: Swap2-Native-Ocarina-0.1.6-Update
           path: |
-            android/app/out/swap2-native-ocarina-0.1.2.apk
+            android/app/out/swap2-native-ocarina-0.1.6.apk
             android/app/out/ASSINATURA-INCOMPATIVEL.txt
           if-no-files-found: error
           retention-days: 14
