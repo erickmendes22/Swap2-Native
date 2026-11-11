@@ -209,9 +209,24 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
         refused(cs->key, "scene-linear chain source is only verified for Ocarina scale 0.25");
         goto out;
     }
-    int kernel = (g_sw.mode == 2 || large_oot) ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
+    // The 0.25 experimental replacement must remove expensive in-game
+    // upscaling taps, not run EASU at 2048x1152 and then SGSR again.
+    // A cheap full-image bilinear/colour-conversion pass produces the exact
+    // output image that later UI passes sample; Qualcomm SGSR1 does the
+    // edge-aware reconstruction once at final presentation. If SGSR was not
+    // REALLY applied, vka_draw never enables source_is_scene_linear.
+    int kernel = (g_sw.mode == 2 || large_oot || source_is_scene_linear)
+               ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
     int effective_enc = source_is_scene_linear ? VKA_NDSR_ENC_LINEAR : g_sw.enc;
     int effective_map = source_is_scene_linear ? VKA_NDSR_MAP_FULL : g_sw.map;
+    if (source_is_scene_linear) {
+        static _Atomic int logged_quarter;
+        if (!atomic_exchange(&logged_quarter, 1))
+            VLOG("Ocarina scale 0.25: native network taps removed; "
+                 "linear-HDR to game output using one bilinear colour pass "
+                 "(%ux%u); Snapdragon SGSR1 is used at final presentation",
+                 oi->w, oi->h);
+    }
     if (large_oot) {
         static _Atomic int logged;
         if (!atomic_exchange(&logged, 1))
