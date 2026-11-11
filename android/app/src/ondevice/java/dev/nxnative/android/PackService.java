@@ -423,9 +423,16 @@ public final class PackService extends Service {
                     // Captured-only repairs have no reason to re-split the
                     // entire game when all selected control/code files exist.
                     File capture = new File(j.dir().getParentFile(), "nvn_shdump");
-                    if (hot.stream().allMatch(k -> new File(capture, k + ".ctl").isFile()
-                            && new File(capture, k + ".code").isFile()))
-                        j.stepState("split", "done");
+                    if (!hot.stream().allMatch(k -> new File(capture, k + ".ctl").isFile()
+                            && new File(capture, k + ".code").isFile())) {
+                        j.fail(GameFlow.STEP, -1, -1,
+                                "One or more selected Ocarina shader capture pairs are missing. "
+                                + "No full 42,339-shader split or translation was started. "
+                                + "Play the affected area again to restore its captures.");
+                        save(j, true);
+                        return;
+                    }
+                    j.stepState("split", "done");
                     Log.i(TAG, "Ocarina incremental update: compiling exactly " + hot.size()
                             + " reviewed shader keys into a small overlay; full base preserved");
                 } else {
@@ -449,6 +456,24 @@ public final class PackService extends Service {
                 i = j.next();
                 if (i < 0) break;
                 String s = Job.STEPS[i];
+                if (s.equals("split") && !j.hotKeys().isEmpty()) {
+                    // Resuming a scoped hot job must never scan 186,583 files.
+                    // In particular, a missing capture is NOT permission to
+                    // restart the full 42,339-shader preparation.
+                    File captures = new File(j.dir().getParentFile(), "nvn_shdump");
+                    if (!j.hotKeys().stream().allMatch(k ->
+                            new File(captures, k + ".ctl").isFile()
+                                    && new File(captures, k + ".code").isFile())) {
+                        j.fail(GameFlow.STEP, -1, -1,
+                                "Selected Ocarina shader captures were lost; full split was blocked. "
+                                + "Replay the scene to recapture them.");
+                        save(j, true);
+                        break;
+                    }
+                    j.stepState("split", "done");
+                    save(j, true);
+                    continue;
+                }
                 // The pack already holds this APK's library of the game (Import shaders…, android/SHADERS.md "Shader zips"): nothing to split or translate; the pack
                 // step takes it where it is. A new job, one resumed or retried after an import, and one whose chain steps an APK update reset all come here
                 // The pack step too: a job stopped at it (or between the shaders and it) still names its own ondevice/lib, whose library pack_android.py would copy over
@@ -710,6 +735,14 @@ public final class PackService extends Service {
                         hotKeys.stream().allMatch(k ->
                                 new File(od.getParentFile(), "nvn_shdump/" + k + ".code").isFile() &&
                                 new File(od.getParentFile(), "nvn_shdump/" + k + ".ctl").isFile());
+                // An explicit Ocarina capture-only repair never falls back
+                // to the old split. A valid captured control+code pair is
+                // required for every requested key, regardless of cached
+                // shader_map.tsv or the old 42k split/pkg directory.
+                if ("0400486024DEC000".equals(j.titleId())
+                        && !hotKeys.isEmpty() && !capturedOnly)
+                    return "Captured Ocarina shader source is missing for one or more selected keys; "
+                            + "the old 42,339-shader library is unchanged and full split is blocked.";
                 // An old full 42k shader split can still be on disk. Prefer
                 // the verified capture-only source when every selected key
                 // has its pair, rather than scanning 42k static entries and
