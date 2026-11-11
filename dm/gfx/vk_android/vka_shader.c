@@ -249,6 +249,13 @@ static int lib_load(void) {
                                      err, sizeof err);
                 oot_partial_current[0] = 0;
             }
+        } else if (g_lib.h->entry_count <= 1024) {
+            // No same-ABI full base was found. Preserve the small library
+            // as an overlay and let the existing certified-ABI fallback
+            // search locate the original full library instead.
+            snprintf(oot_partial_current, sizeof oot_partial_current, "%s", path);
+            vka_shlib_close(&g_lib);
+            have = 0;
         }
     }
     if (!have && !(e && *e)) {   // this version's library not in the pack (yet): the newest other v-<V>/ that this host reads the same (its ABI)
@@ -261,6 +268,11 @@ static int lib_load(void) {
             char p[1024]; struct stat st; vka_shlib t; char e2[256];
             if (snprintf(p, sizeof p, "%s/%s/" DMSH_VK_LIB_FILE, sd, de->d_name) >= (int)sizeof p || stat(p, &st) || !strcmp(p, path)) continue;
             if (vka_shlib_open(&t, p, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI, e2, sizeof e2)) {
+                // Never fall back to another selected-only partial library.
+                if (!strcmp(DM_GAME_ID, "0400486024DEC000") && t.h->entry_count <= 1024) {
+                    vka_shlib_close(&t);
+                    continue;
+                }
                 vka_shlib_close(&t);
                 if (!*best || st.st_mtime > bt) { snprintf(best, sizeof best, "%s", p); bt = st.st_mtime; }
                 continue;
@@ -269,6 +281,10 @@ static int lib_load(void) {
             // library to stay mapped without copying or rebuilding 42k SPIR-V
             // modules. Only source-level-audited transitions appear here.
             if (certified_abi_open(&t, p, e2, sizeof e2)) {
+                if (!strcmp(DM_GAME_ID, "0400486024DEC000") && t.h->entry_count <= 1024) {
+                    vka_shlib_close(&t);
+                    continue;
+                }
                 vka_shlib_close(&t);
                 if (!*compatible || st.st_mtime > ct) {
                     snprintf(compatible, sizeof compatible, "%s", p); ct = st.st_mtime;
