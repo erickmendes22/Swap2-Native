@@ -1783,7 +1783,11 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
                 if (src && src->f.kind == 0 &&
                     src->f.vk == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
                     src->w > 0 && src->h > 0 &&
-                    src->w <= 1024 && src->h <= 576 &&
+                    // 0.6/0.667 of the guest's 1440x810 scene can still
+                    // fit within 1024x576. Those scales end at DIFFERENT
+                    // networks and cannot be short-circuited to d99.
+                    // Only arm source capture for a plausible <=0.25 image.
+                    src->w <= 640 && src->h <= 360 &&
                     src->samples == 1 &&
                     (src->usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
                     g_oot_sgsr_chain.source_tid = r->tid;
