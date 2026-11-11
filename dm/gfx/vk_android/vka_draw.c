@@ -1814,7 +1814,9 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         }
     }
     vka_imgrt rt; img_retype_of(sh[5], g_wk.r[5], g_wk.n[5], &rt);
-    VkPipeline p = vka_ndsr_pipeline(d, sh[5], &lay, g_wk.r[5], g_wk.n[5], &rt, g_cb, scene_linear);
+    uint32_t ndsr_ow = 0, ndsr_oh = 0;
+    VkPipeline p = vka_ndsr_pipeline(d, sh[5], &lay, g_wk.r[5], g_wk.n[5], &rt, g_cb,
+                                     scene_linear, &ndsr_ow, &ndsr_oh);
     if (scene_linear && !p) {
         // The last stage's output/pipeline failed its runtime checks after
         // earlier stages were skipped. Restore the old flow on later frames.
@@ -1855,6 +1857,31 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     VkBuffer ib = VK_NULL_HANDLE; VkDeviceSize io = 0;
     if (dp->ind && (!vka_addr(dp->ind, 12, &ib, &io, NULL) || (io & 3))) SKIP("indirect dispatch arguments at %#llx are not in placed guest RAM: skipped", (unsigned long long)dp->ind);
     uint32_t sb = spill_bytes(sh[5]); uint64_t ns = 0;   // shared memory in the spill buffer: the slices this dispatch binds (spill_buf)
+    // The replacement NDSR module has local_size_x=128 and a pure
+    // grid-stride image walk. The guest HMMA network often launches far
+    // fewer groups than there are output pixels, forcing each lane through
+    // the bilinear/EASU loop repeatedly. Increase ONLY the replacement's
+    // dispatch groups, targeting <=2 output texels per lane. The original
+    // shader never sees changed group sizes; no 42k shader rebuild or new
+    // SPIR-V is required. If resources, driver limits, or diagnostics do
+    // not support it, preserve the original launch unmodified.
+    uint32_t ndsr_groups_x = 0;
+    if (gp_ndsr_replaced && !dp->ind && !sb && !vka_gp_active &&
+        !vka_nan_on() && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_NDSR_RETILE", 1) &&
+        dp->x > 0 && dp->y > 0 && dp->z > 0) {
+        uint64_t native = (uint64_t)dp->x * (uint64_t)dp->y * (uint64_t)dp->z;
+        ndsr_groups_x = vka_ndsr_grid_x(ndsr_ow, ndsr_oh, native,
+                              V.props.limits.maxComputeWorkGroupCount[0]);
+        if (ndsr_groups_x) {
+            static _Atomic int noted;
+            if (!atomic_exchange(&noted, 1))
+                VLOG("Ocarina NDSR compute retile: %llu original HMMA groups -> "
+                     "%u 128-lane Vulkan groups for %ux%u output "
+                     "(<=2 texels/lane; same exact output, DM_VK_OOT_NDSR_RETILE=0 disables)",
+                     (unsigned long long)native, ndsr_groups_x, ndsr_ow, ndsr_oh);
+        }
+    }
     if (sb || dp->ind) vka_dispatch_overlap_flush(); // spill slices or GPU-sourced indirect arguments cannot overlap an earlier dispatch
     if (sb) {
         if (!spill_buf(sb)) SKIP("dispatch of %016llx skipped: no shared memory spill buffer of %u bytes", (unsigned long long)sh[5]->key, sb);
@@ -1906,7 +1933,8 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, p);
     if (dp->ind) vk.vkCmdDispatchIndirect(g_cb, ib, io);
     else if (dp->x > 0 && dp->y > 0 && dp->z > 0) {
-        if (sb && (uint64_t)dp->x * dp->y * dp->z > ns) spill_dispatch((uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z, ns);
+        if (ndsr_groups_x) vk.vkCmdDispatch(g_cb, ndsr_groups_x, 1, 1);
+        else if (sb && (uint64_t)dp->x * dp->y * dp->z > ns) spill_dispatch((uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z, ns);
         else vk.vkCmdDispatch(g_cb, (uint32_t)dp->x, (uint32_t)dp->y,
                                (uint32_t)dp->z * (oot_cs_retiled ? 2u : 1u));
     }
