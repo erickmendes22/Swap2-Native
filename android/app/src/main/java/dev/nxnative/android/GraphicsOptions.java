@@ -32,6 +32,7 @@ final class GraphicsOptions {
     static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
     static final String[] ENCODER_IDLE = {"Normal (padrão)", "Dormir quando vazio (experimental)"};
     static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: sincronização GPU + VRS 2×1 se suportado", "Agressivo: sincronização GPU + VRS 2×2 se suportado"};
+    static final String[] SGSR_CHAIN = {"Desativado (seguro)", "Ativar bypass da rede 0,25 (experimental)"};
 
     static int mode(Context c) {
         SharedPreferences p = Prefs.of(c);
@@ -68,6 +69,9 @@ final class GraphicsOptions {
     static int encoderIdle(Context c) { return clamp(Prefs.of(c).getInt("encoder_idle", 0), 0, 1); }
     static int encoderIdle(Context c, String id) {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("encoder_idle", id), encoderIdle(c)), 0, 1);
+    }
+    static int sgsrChain(Context c, String id) {
+        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_sgsr_chain", id), 0), 0, 1);
     }
     static int fpsBoost(Context c) { return clamp(Prefs.of(c).getInt("oot_fps_boost", 0), 0, 2); }
     static int fpsBoost(Context c, String id) {
@@ -127,6 +131,10 @@ final class GraphicsOptions {
         // The native host checks driver feature support and logs fallback.
         if (Prefs.OCARINA_TITLE.equals(id)) {
             out.add("DM_VK_OOT_FPS_BOOST=" + fpsBoost(c, id));
+            // Experimental iOS V19 0.25 chain bypass, but SGSR1 must have
+            // ACTUALLY drawn a frame and the direct HDR source must validate.
+            // OFF by default so existing shaders/playable graphics are safe.
+            out.add("DM_VK_OOT_SGSR_CHAIN=" + sgsrChain(c, id));
             // Backported from iOS: independent consecutive NVN compute dispatches
             // no longer force individual GPU barriers. Does not rebuild shaders.
             out.add("DM_VK_OOT_DISPATCH_OVERLAP=1");
@@ -167,7 +175,7 @@ final class GraphicsOptions {
     }
     static void reset(Context c, String id) {
         SharedPreferences.Editor e = Prefs.of(c).edit();
-        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup", "encoder_idle", "oot_fps_boost"})
+        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup", "encoder_idle", "oot_fps_boost", "oot_sgsr_chain"})
             e.remove(Prefs.gameKey(k, id));
         e.commit();
     }
@@ -200,6 +208,9 @@ final class GraphicsOptions {
             values = ENCODER_IDLE; current = encoderIdle(c, id); title = "Espera do encoder"; break;
         case "oot_fps_boost":
             values = FPS_BOOST; current = fpsBoost(c, id); title = "FPS Boost — VRS (pode reduzir detalhes)"; break;
+        case "oot_sgsr_chain":
+            values = SGSR_CHAIN; current = sgsrChain(c, id);
+            title = "Ocarina: bypass da rede em escala 0,25 + SGSR 1"; break;
         case "fsr_sharp":
             values = SHARP_NAMES; current = sharpIndex(sharp(c, id)); title = "Nitidez FSR (saída)"; break;
         default: return;
