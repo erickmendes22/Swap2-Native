@@ -19,6 +19,7 @@ on:
       - 'dm/gfx/vk_android/vka_shader.c'
       - 'dm/gfx/vk_android/vka_ndsr.c'
       - 'dm/gfx/vk_android/vka_present.c'
+      - 'dm/gfx/tools/tests/test_ocarina_720p_upscale_real_gpu.py'
       - 'dm/gfx/tools/tests/test_ocarina_abi_migration.py'
       - 'dm/tools/tests/test_ndsr_standin.py'
       - 'dm/host/tests/t_android_shlib.c'
