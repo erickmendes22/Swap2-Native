@@ -147,7 +147,7 @@ static void log_sizes(const vka_dstate *d, uint64_t key, const vka_res *t, const
     }
 }
 
-VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb) {
+VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear) {
     if (!cs || !cs->e || !(cs->e->flags & DMSH_VK_F_HMMA)) return VK_NULL_HANDLE;   // (every other dispatch: one test)
     pthread_mutex_lock(&g_mu);
     switches();
@@ -198,16 +198,29 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
     int final_upscale = VKA_ENV("DM_VK_PRESENT_FILTER", 0) >= 3;
     int large_oot = g_sw.mode == 1 && oot_network && final_upscale
                     && ((uint64_t)oi->w * oi->h > 1280ull * 720);
+    // At 0.25 the iOS V19 chain uses the original scene HDR colour from
+    // f896... instead of the three intermediate upscaler outputs. When Vulkan
+    // has a confirmed SGSR1 presentation and explicitly substitutes that
+    // source for d99fbeeb..., the source is LINEAR HDR, not the sqrt-packed
+    // output of a335.... Keep the existing EASU SPIR-V in-chain as a safe
+    // colour/size converter; Snapdragon SGSR1 runs at final presentation.
+    // Other scales and failed substitutions keep their exact original path.
+    if (source_is_scene_linear && cs->key != UINT64_C(0xd99fbeeb53d38847)) {
+        refused(cs->key, "scene-linear chain source is only verified for Ocarina scale 0.25");
+        goto out;
+    }
     int kernel = (g_sw.mode == 2 || large_oot) ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
+    int effective_enc = source_is_scene_linear ? VKA_NDSR_ENC_LINEAR : g_sw.enc;
+    int effective_map = source_is_scene_linear ? VKA_NDSR_MAP_FULL : g_sw.map;
     if (large_oot) {
         static _Atomic int logged;
         if (!atomic_exchange(&logged, 1))
             VLOG("Ocarina NDSR large-output optimization: replace full %ux%u EASU taps with converted bilinear; EASU+RCAS final capped at 1280x720",
                  oi->w, oi->h);
     }
-    p = make(cs, lay, tb, ib, bb, g_sw.enc, g_sw.map, kernel, pack);
+    p = make(cs, lay, tb, ib, bb, effective_enc, effective_map, kernel, pack);
     if (p && pack) { memset(rt, 0, sizeof *rt); rt->b[0] = (uint32_t)ib << 16 | 33u << 8 | 1u; }   // (the output an unsigned R32ui image: vka_draw.c rt_dim, then id_view)
-    if (p) log_sizes(d, cs->key, t, o, oi, g_sw.enc, g_sw.map, kernel, pack, cb);
+    if (p) log_sizes(d, cs->key, t, o, oi, effective_enc, effective_map, kernel, pack, cb);
 out:
     pthread_mutex_unlock(&g_mu);
     return p;
