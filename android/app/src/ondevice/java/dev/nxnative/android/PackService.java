@@ -779,13 +779,40 @@ public final class PackService extends Service {
             }
             case "pack": {
                 tool = "scripts/pack_android.py";
+                // The selected 57 captured sources may include unpaired mesh/task
+                // shaders. The translator now defers these individually and
+                // publishes only the source-verified, successfully compiled
+                // subset. The packer's strict exact-index check MUST use that
+                // subset, never the original 57-key request.
+                List<String> publishedHotKeys = hotKeys;
+                if (!hotKeys.isEmpty() && "0400486024DEC000".equals(j.titleId())) {
+                    File selected = new File(pack, "shaders/hot/v-"
+                            + BuildConfig.NX_DMSH_VK_CHAIN + "/selected_keys.tsv");
+                    if (!selected.isFile())
+                        return "Ocarina selective translation did not publish a verified key manifest; "
+                                + "the complete shader library and previous overlay are unchanged.";
+                    List<String> selectedKeys = Files.readAllLines(selected.toPath(), StandardCharsets.US_ASCII);
+                    java.util.HashSet<String> unique = new java.util.HashSet<>(selectedKeys);
+                    if (selectedKeys.isEmpty() || selectedKeys.size() > hotKeys.size()
+                            || unique.size() != selectedKeys.size()
+                            || !hotKeys.containsAll(selectedKeys)
+                            || !selectedKeys.stream().allMatch(k -> k.matches("[0-9a-f]{16}")))
+                        return "Ocarina selective translation selected-key manifest is stale or unsafe; "
+                                + "refusing to replace the original shader library.";
+                    publishedHotKeys = selectedKeys;
+                    j.expectedShaders(selectedKeys.size());
+                    Log.i(TAG, "Ocarina selective preparation: "
+                            + selectedKeys.size() + " verified keys, "
+                            + (hotKeys.size() - selectedKeys.size())
+                            + " unsupported captured keys deferred; original 42339 left intact");
+                }
                 // Only the job-owned completed library may be moved. An
                 // imported/user-supplied shader cache must remain untouched.
                 boolean ownedCache = j.shaderCache().getCanonicalFile()
                         .equals(new File(j.dir(), "lib").getCanonicalFile());
                 argv = !hotKeys.isEmpty()
                     ? new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(),
-                        "--keep-code", "--hot-keys", String.join(",", hotKeys),
+                        "--keep-code", "--hot-keys", String.join(",", publishedHotKeys),
                         "-j", "1", "--in-process"}
                     : ownedCache
                     ? new String[] {dump.getPath(), "--version", v, "--out", pack.getPath(),
@@ -819,6 +846,10 @@ public final class PackService extends Service {
         // iOS V22 raw segment reuse, and 8192-region Vulkan map; only the
         // shader-translation step sees these, never the old runtime library.
         boolean ocarinaShaders = "shaders".equals(s) && "0400486024DEC000".equals(j.titleId());
+        // Safe partial mode affects only explicitly selected Ocarina hot keys.
+        // The full 42,339 library still requires all its normal source entries.
+        PackEngine.setenv("DMSH_VK_OOT_PARTIAL",
+                ocarinaShaders && !hotKeys.isEmpty() ? "1" : "0");
         PackEngine.setenv("DMSH_GMEM_LAST1", ocarinaShaders ? "1" : "0");
         PackEngine.setenv("DMSH_GMEM_MAP_8192", ocarinaShaders ? "1" : "0");
         // The translator is still explicitly limited to hotKeys. A captured
