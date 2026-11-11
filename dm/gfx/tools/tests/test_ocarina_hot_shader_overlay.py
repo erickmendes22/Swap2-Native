@@ -52,7 +52,7 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('tempfile.TemporaryDirectory', BUILDER)
         src = (ROOT / "dm/gfx/tools/vk_android_build.py").read_text()
         self.assertIn("CAPTURED_MESH_FACTS = borrow_mesh_layout()", src)
-        self.assertIn("FACTS[key] = {**derived, **FACTS.get(key, {})}", src)
+        self.assertIn("FACTS[key] = {**existing, **{field: value for field, value in derived.items()", src)
         self.assertIn("n.name == 'mesh_facts'", src)
         self.assertIn("stage in ('ms', 'ts')", src)
 
