@@ -20,16 +20,19 @@ HEADER = (ROOT / "dm/gfx/vk_android/vka.h").read_text()
 
 class TestUniformUpdateTransferBarrier(unittest.TestCase):
     def test_inline_update_and_pure_transfers_use_the_new_scope(self):
-        update = next(x for x in EXEC.splitlines() if "case OP_UPDATE_UB:" in x)
-        self.assertIn("buf_update(&ub, (const uint8_t *)a + 16, d, n);", update)
-        self.assertIn("if (!batch_on) ub_flush(&ub);", update)
+        # The first switch checks whether a pass must close; the second
+        # switch records the update and handles the immediate fallback.
+        update = EXEC.split("case OP_UPDATE_UB: g_n_ub++;", 1)[1].split("} break;", 1)[0]
+        self.assertIn("buf_update(ub, (const uint8_t *)a + 16, d, n);", update)
+        self.assertIn("if (!batch_on) ub_flush(ub);", update)
+        self.assertIn("g_ub_pending[g_ub_np++]", update)
         self.assertNotIn("vka_barrier(g_cb)", update)
         self.assertEqual(EXEC.count("vka_transfer_write_barrier(g_cb)"), 1)
         self.assertIn('static void boost_transfer_barrier(VkCommandBuffer cb)', EXEC)
         self.assertIn('VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0', EXEC)
         self.assertIn('else vka_barrier(cb);', EXEC)
         self.assertIn("vk.vkCmdCopyBuffer(g_cb, b->src, b->dst, b->n, b->region);", EXEC)
-        self.assertIn('if (h.op != OP_UPDATE_UB) ub_flush(&ub);', EXEC)
+        self.assertIn('if (h.op != OP_UPDATE_UB && !g_ub_np) ub_flush(ub);', EXEC)
         self.assertIn('const int batch_on = VKA_ENV("DM_VK_UB_BATCH", 1) != 0;', EXEC)
         self.assertIn("if (hazard) ub_flush(batch);", EXEC)
         self.assertIn("ub_overlap(batch->region[i].dstOffset, batch->region[i].size, c.dstOffset, c.size)", EXEC)
@@ -49,7 +52,8 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
     def test_prior_pass_and_general_barrier_untouched(self):
         self.assertIn("vk.vkCmdEndRendering(g_cb);", DRAW)
         self.assertIn("g_rp_full++; vka_barrier(g_cb);", DRAW)
-        self.assertIn("g_rp_force_full || R.bar_pending || had_clears || vka_nan_on()", DRAW)
+        self.assertIn("int full = g_rp_force_full || had_clears || vka_nan_on();", DRAW)
+        self.assertIn("int pending_attachment = R.bar_pending && !full && !R.swrite;", DRAW)
         self.assertIn("VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT", TEX)
         self.assertIn("case OP_CLEAR_BUF: if (g_cb)", EXEC)
         self.assertIn("buf_fill(cb->addr, cb->size, cb->value); boost_transfer_barrier(g_cb);", EXEC)
