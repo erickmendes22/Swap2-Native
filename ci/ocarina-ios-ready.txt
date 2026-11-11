@@ -123,3 +123,5 @@ Ocarina 0.1.2 — targeted runtime-missing shader repair (APK after successful i
 - Bypass complete shader split only when every requested hot key has both captured source files; prepare exactly the absent keys as a bounded overlay and retain the original base.
 - Runtime overlay is keyed, versioned and ABI-checked; fails closed to the unchanged full base.
 - Tests-only CI passed: https://github.com/erickmendes22/Swap2-Native/actions/runs/42949401630 .
+
+Build 38 emergency recovery: prevent unwanted Ocarina 42,339 shader recompile after APK upgrade / paused or incomplete job state. Before resetChainSteps or any pending split/shaders/pack, validate current-or-certified compatible full installed library and reuse it in place. Preserve imported shader cache and finished game pack; never overwrite or delete a still-present unverified old library: report mismatch and require pack selection/import. Same install-over app ID/signing certificate; shaders ABI/profile left unchanged; separate prior heavy capture commit included, no new build-specific shader library created.
