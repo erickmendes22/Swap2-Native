@@ -1,16 +1,29 @@
-# Swap2-Native
+# Swap2-Native Ocarina — Android v0.1.6
 
-Play your own copies of Nintendo Switch 2 games natively on Android phones.
+A specialized Android fork of **[Swap2-Native](https://github.com/mamcjr/Swap2-Native)** by **mamcjr**, focused on *The Legend of Zelda: Ocarina of Time* (Switch 2 remake) and Snapdragon/Adreno devices. It retains the upstream native ARM64 execution, Switch services, Vulkan NVN2 replay and offline/on-device SPIR-V shader translation.
 
-It is not an emulator: the game's own ARM64 code runs directly on the phone's CPU (rewritten only where Android's kernel requires it), a host answers the Switch 2's system calls and services, the game's NVN2 graphics commands are replayed on Vulkan, and its shaders are translated to SPIR-V, offline on a computer or on the phone itself. The app is `com.swap2native`; one APK runs every game.
+**Project lineage:** [mamcjr/Swap2-Native](https://github.com/mamcjr/Swap2-Native) → [Banana Native](https://github.com/moceure/BananaNative) by moceure → [nxnative](https://github.com/seedds/nxnative) by seedds.
 
-Forked from Banana Native v0.1.1 by moceure, itself built on nxnative by seedds (MIT).
+The Ocarina-specific implementation is maintained on the [`ocarina-v11-ios-perf-from-v101` branch](https://github.com/erickmendes22/Swap2-Native/tree/ocarina-v11-ios-perf-from-v101). Other game profiles and inherited documentation are present in the source tree, but this v0.1.6 build primarily targets Ocarina.
 
 > [!CAUTION]
-> Only download the app from this repository's [Releases](https://github.com/mamcjr/Swap2-Native/releases). Copies elsewhere are not made here.
+> **These are not interchangeable APKs.** The original [mamcjr release](https://github.com/mamcjr/Swap2-Native/releases) uses `com.swap2native`. This Ocarina fork uses `com.swap2native.ootv11ios` and its own signing certificate. Install this fork separately; do not treat it as an in-place update of the original public app. Ocarina development APKs are published as [GitHub Actions build artifacts](https://github.com/erickmendes22/Swap2-Native/actions) until a public fork release is published.
 
 > [!IMPORTANT]
-> Experimental. Most of this code was written with AI coding assistants and tested by hand on two phones. Expect bugs, heat and slowdowns.
+> **Experimental software.** GPU-driver compatibility, rendering quality and performance vary by scene and device. VRS 4×2/4×4 can reduce image detail and are not guaranteed to outperform 2×2. No specific FPS target or crash-free gameplay is promised.
+
+## Changes in this fork (v0.1.6)
+
+Compared with the original **mamcjr/Swap2-Native** project:
+
+- **Vulkan and GPU optimizations:** Ocarina-focused adjustments to graphics pipelines, render passes, barriers, uniform uploads, selected compute work, occlusion query handling and pipeline prewarming, with compatibility fallbacks.
+- **Variable Rate Shading:** Optional **2×1, 2×2, 4×2 and 4×4** modes using driver-validated Vulkan rates. VRS is restricted to verified shader/pipeline cases rather than indiscriminately applied to all HDR shaders. The 2×2/4×2/4×4 modes share an expanded set of **17 identified fragment shaders**.
+- **Internal resolution:** Separate Ocarina scene-resolution presets for **720p, 540p, 480p and 360p**, with the scene palette patched through a validated RomFS overlay; presentation upscaling is configured independently.
+- **Upscaling:** FSR-based reconstruction plus an experimental **Snapdragon SGSR1** presentation path with supported fallbacks and selected reductions of redundant GPU upscaling work.
+- **Shader preparation:** Incremental, per-shader recompilation and verified hot overlays; compatible builds preserve the existing **42,339-shader** base library instead of requiring a full recompilation. ABI/input checks protect against invalid reuse.
+- **App experience:** Simplified performance settings, multilingual interface options, game-language selection where supported, and launcher/translation improvements.
+
+These are changes in the **Ocarina branch**, not a claim that every optimization is absent from all newer upstream revisions. See the [original releases](https://github.com/mamcjr/Swap2-Native/releases) for the upstream baseline and the [branch history](https://github.com/erickmendes22/Swap2-Native/commits/ocarina-v11-ios-perf-from-v101) for implementation details.
 
 ## Games
 
@@ -30,7 +43,8 @@ A dump of another game build is refused by the build check, with a message that 
 | Phone | Chip | Tested with |
 |---|---|---|
 | POCO F7 Ultra | Snapdragon 8 Elite (Adreno 830) | Qualcomm system driver, or Turnip (Turnip Gen8 from the app's driver download) |
-| RedMagic 11 Air | Snapdragon 8 Elite (Adreno 830) | used to prepare Zelda: Ocarina of Time (2026-11-07); driver not recorded |
+| RedMagic 11 Air | Snapdragon 8 Elite (Adreno 830) | used for early Zelda preparation in the upstream work (2026-11-07) |
+| RedMagic 11 Pro | Snapdragon 8 Elite Gen 5 (Adreno 840) | Ocarina fork gameplay, Vulkan profiling and VRS 2×2/4×4 comparisons (2026-11-11) |
 
 Other phones are untested. Settings › **Readiness check** says what a phone lacks before a game starts (for example a driver without placed memory maps, which some Qualcomm drivers lack: Settings › GPU driver installs a Turnip).
 
@@ -42,7 +56,7 @@ Other phones are untested. Settings › **Readiness check** says what a phone la
 
 ## Install
 
-1. Download the APK from [Releases](https://github.com/mamcjr/Swap2-Native/releases) and install it.
+1. Get the Ocarina fork APK from this repository's [Actions](https://github.com/erickmendes22/Swap2-Native/actions) build artifacts (or this fork's [Releases](https://github.com/erickmendes22/Swap2-Native/releases) when available). Do **not** download the original mamcjr APK expecting it to be this build.
 2. Open **Swap2-Native** and allow **All files access** (the app reads your games from shared storage).
 3. Optional: Settings › **GPU driver** to pick the system driver or install a Turnip, and Settings › **Readiness check**.
 
@@ -76,7 +90,9 @@ A pack can also be made on a computer with `scripts/pack_android.py` and copied 
 ## Features
 
 - Game settings per game: resolution (phone 1080p, 720p or the game's own), frame rate cap, GPU driver, extra environment lines.
-- **Upscaling:** AMD FidelityFX FSR 1 for the final picture, and for agl's games (Zelda, Mario Kart World, Donkey Kong Bananza) FSR 1 in place of the game's upscaler network, which is faster on Adreno. Zelda can also draw its 3D scene at 720p.
+- **Upscaling:** AMD FidelityFX FSR 1, with experimental Snapdragon SGSR1 for the final image and safe fallback paths. Ocarina's internal 3D scene can use 720p, 540p, 480p or 360p independently of the final output filter.
+- **VRS:** Vulkan fragment-shading-rate modes 2×1, 2×2, 4×2 and 4×4 where supported by the GPU driver; coverage is limited to identified pipelines, not all draws.
+- **Shader cache:** verified incremental updates avoid repeating the entire Ocarina shader compilation when the existing library remains ABI-compatible.
 - **Frame generation (LSFG):** Lossless Scaling's frame generation, with your own `Lossless.dll` (not included).
 - On-screen controls with a layout editor, gamepads, exefs mods, save backups, pause on return, and a performance overlay.
 
@@ -84,43 +100,43 @@ A pack can also be made on a computer with `scripts/pack_android.py` and copied 
 
 - The phone gets hot, and the frame rate drops when it throttles.
 - Some Android skins freeze the app in the background, which stops a preparation: exempt it from battery optimization or keep it in front.
-- A new app version can need a game's shaders made again; the app says so and offers Prepare.
+- Compatible Ocarina updates reuse the completed shader library; changes to shader inputs or an incompatible ABI can still require selectively rebuilding the affected shaders.
 - Per-game issues are in each game's note (linked in [Games](#games)).
 
 ## Building
 
 See [android/README.md, Build the APK](android/README.md#build-the-apk). Release keys are never in this repository.
 
-## Support the project
+## Support the original project
 
-Swap2-Native is a free, independent project. If you enjoy it and would like to support its development, you can
-sponsor me on GitHub, Ko-fi or Buy Me a Coffee. Your support helps me dedicate time to fixing bugs, improving performance and compatibility, and
-working on future releases. Sponsorship is entirely optional: it does not unlock features or guarantee specific fixes.
-Bug reports, device tests, and contributions are also greatly appreciated.
-
-This month's goal is to pay for Claude Code Max ($100/month), the AI coding tool I use to work on my projects. The
-badge below shows how much has come in this month, across all platforms and shared by BOTWRecompAndroid, TOTKDroid,
-LASRecompAndroid and Swap2-Native; I update it by hand.
-
-[![Claude Code Max goal](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmamcjr%2FBOTWRecompAndroid%2Fmain%2F.github%2Fdonation-goal.json&query=%24.raised&prefix=%24&color=2EA043&logo=claude&logoColor=white&label=Claude%20Code%20Max%20goal&suffix=%20%2F%20%24100%20this%20month)](https://github.com/mamcjr/BOTWRecompAndroid/blob/main/.github/donation-goal.json)
-
-[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-on%20GitHub-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/mamcjr)
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-mamcjr-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/mamcjr)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-mamcjr-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mamcjr)
+The upstream **Swap2-Native** project is maintained by **mamcjr**. If you want to support the original developer, see [GitHub Sponsors](https://github.com/sponsors/mamcjr), [Ko-fi](https://ko-fi.com/mamcjr), or [Buy Me a Coffee](https://buymeacoffee.com/mamcjr). These are **mamcjr's** links, not donation accounts for this Ocarina fork.
 
 ## Credits and licence
 
-- **[Banana Native](https://github.com/moceure/BananaNative)** by moceure: the direct upstream. Swap2-Native is a fork of its v0.1.1 (commit `d154da1`): the Android host and launcher.
-- **[nxnative](https://github.com/seedds/nxnative)** by seedds (MIT), and everything it credits [below](docs/nxnative.md#acknowledgements).
-- Mario Kart World findings from [kartnative](https://github.com/pahorema/kartnative) (pahorema) and [switch2mac](https://github.com/azmasm/switch2mac) (azmasm); task and mesh shader lowering from [Eglantine](https://github.com/djihads80/eglantine) via switch2mac; frame generation ported from [Eden](https://git.eden-emu.dev/eden-emu/eden) and [lsfg-vk](https://github.com/PancakeTAS/lsfg-vk); Zelda: Ocarina of Time findings from [Lichii](https://github.com/zortos293/Lichii) (ideas only).
-- **AMD FidelityFX FSR 1** (MIT), [dm/third_party/fidelityfx-fsr1](dm/third_party/fidelityfx-fsr1/README.md).
-- Other third-party code and its licences: [dm/third_party](dm/third_party/README.md).
+### Original fork and foundational upstream work
 
-The Android app is **GPL-3.0-or-later** as a whole ([android/NOTICE.md](android/NOTICE.md)); each release is built from its tagged commit. nxnative's own files keep their MIT licence ([LICENSE](LICENSE)).
+- **[Swap2-Native](https://github.com/mamcjr/Swap2-Native) — mamcjr:** **direct base of this Ocarina fork**; Android launcher, game support, Vulkan runtime and upstream fixes. Original releases and documentation remain available at the linked repository.
+- **[Banana Native / BananaNative](https://github.com/moceure/BananaNative) — moceure and contributors:** foundational Android native-host work and reference optimizations. mamcjr's Swap2-Native was itself derived from Banana Native v0.1.1.
+- **[nxnative](https://github.com/seedds/nxnative) — seedds and contributors:** earlier underlying project (MIT); see its [additional acknowledgements](docs/nxnative.md#acknowledgements).
+
+### Additional projects, references and research
+
+- **AnkaNative — EddizEge and contributors:** upstream-related Android implementation work and technical references.
+- **[Lichii](https://github.com/zortos293/Lichii) — zortos293 and contributors:** Zelda runtime, timing and optimization findings referenced during adaptation.
+- **edennx-ocarina-ios — arcatafuriosa:** iOS Ocarina port and research used as a technical reference; Android features require their own implementation and verification.
+- **[kartnative](https://github.com/pahorema/kartnative) — pahorema** and **[switch2mac](https://github.com/azmasm/switch2mac) — azmasm:** Switch 2 graphics/game compatibility findings.
+- **[Eglantine](https://github.com/djihads80/eglantine) — djihads80:** task/mesh shader research referenced through switch2mac.
+- **[Eden](https://git.eden-emu.dev/eden-emu/eden)** and **[lsfg-vk](https://github.com/PancakeTAS/lsfg-vk):** frame-generation integration references.
+- **[VideoLAN dav1d](https://code.videolan.org/videolan/dav1d):** AV1 software-decoding library used by the inherited Android video path.
+- **AMD FidelityFX FSR 1** (MIT), [bundled third-party source](dm/third_party/fidelityfx-fsr1/README.md); other dependencies and notices are in [dm/third_party](dm/third_party/README.md).
+
+Credits distinguish the **direct upstream codebase** from **additional reference projects and technical findings**. Listing a project does not imply direct participation in or endorsement of this fork.
+
+The Android app is **GPL-3.0-or-later** as a whole ([android/NOTICE.md](android/NOTICE.md)); nxnative's own files retain their MIT licence ([LICENSE](LICENSE)). Ocarina test builds are tied to their GitHub Actions source commits, while tagged releases should carry the corresponding source and notices.
 
 Nintendo Switch, The Legend of Zelda, Mario Kart, Donkey Kong and Pokémon are trademarks of their owners; this project is not affiliated with or endorsed by Nintendo. It contains no game code, keys or assets: you need your own legally dumped games.
 
-Problems: open an [issue](https://github.com/mamcjr/Swap2-Native/issues/new/choose) with the form. Questions and phone reports: [Discussions](https://github.com/mamcjr/Swap2-Native/discussions).
+For issues specific to this fork, open a report in [this repository](https://github.com/erickmendes22/Swap2-Native/issues). For bugs in the original public build, use [mamcjr/Swap2-Native issues](https://github.com/mamcjr/Swap2-Native/issues). Include the game/build, device, GPU driver, selected resolution and VRS mode, and logs.
 
 ## Upstream
 
