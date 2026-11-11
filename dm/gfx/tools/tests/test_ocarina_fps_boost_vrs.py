@@ -76,7 +76,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', PSO)
         self.assertIn('int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0)', DEV)
         self.assertIn('requested_rate > explicit_boost ? requested_rate : explicit_boost', DEV)
-        self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr || broad_hdr_scene)', PSO)
+        self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
         self.assertIn('(k->samples ? k->samples : 1) == 1', PSO)
         self.assertIn('k->ncolor > 0', PSO)
         self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
@@ -145,7 +145,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('fbi.pNext = &P->ri;', PSO)
         self.assertIn('VRS pipeline rejected', PSO)
 
-    def test_compact_vrs_options_and_expanded_opaque_hdr_shader_coverage(self):
+    def test_compact_vrs_options_with_early_quality_safe_scene_shader_caps(self):
         # Only five visible choices; legacy stored profile 3 remains supported,
         # but it does not consume a duplicate entry in the dialog.
         self.assertIn('VRS_VISIBLE_MODES = {0, 1, 2, 4, 5}', OPTIONS)
@@ -159,14 +159,17 @@ class FpsBoostTests(unittest.TestCase):
         self.assertEqual(choices.group(1).count("<item>"), 5)
         self.assertNotIn('HDR ampliado', choices.group(1))
         self.assertNotIn('experimental', choices.group(1).lower())
-        # Opaque scene HDR with D32 and single target, no UI, MSAA or blending.
-        self.assertIn('int broad_hdr_scene = game_oot && hotpass_profile >= 4', PSO)
-        self.assertIn('k->ncolor == 1', PSO)
-        self.assertIn('k->dfmt == VK_FORMAT_D32_SFLOAT', PSO)
-        self.assertIn('k->sfmt == VK_FORMAT_UNDEFINED', PSO)
-        self.assertIn('!mesh && !sh[2] && !sh[3] && !sh[4]', PSO)
-        self.assertIn('!k->att[0].en && k->att[0].mask == 0xF', PSO)
-        self.assertIn('!k->a2c && !k->logic_en', PSO)
+        # Regression: the Nov 11 4x4 experiment enabled >=128 shaders
+        # and destroyed scene detail while GPU remained ~20ms/frame.
+        self.assertNotIn('int broad_hdr_scene =', PSO)
+        self.assertIn('hotpass_profile >= 4 && !profiled_mesh_hdr', PSO)
+        self.assertIn('uint32_t rate_w = V.fps_boost_width', PSO)
+        self.assertIn('rate_w = 2u; rate_h = 1u;', PSO)
+        self.assertIn('rate_w = 2u; rate_h = 2u;', PSO)
+        self.assertIn('V.fps_boost_has_2x1', PSO)
+        self.assertIn('V.fps_boost_has_2x2', PSO)
+        self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
+        self.assertIn('k->ncolor == 2', PSO)
         self.assertIn('logged_fs[128]', PSO)
         self.assertIn('VRS pipeline rejected', PSO)
 
