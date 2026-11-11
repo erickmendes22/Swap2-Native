@@ -20,6 +20,11 @@ jobs:
         run: |
           set -euxo pipefail
           python3 -m py_compile scripts/pack_android.py dm/gfx/tools/dmsh_chain.py dm/gfx/tools/vk_android_build.py dm/games/0400486024DEC000/patches.py
+          # Fail in the lightweight validation job if any converted pack
+          # script still has invalid Bash syntax (before the costly APK job).
+          bash -n android/ondevice/build.sh
+          bash -n dm/gfx/tools/dmsh_xlate_android/build.sh
+          bash -n dm/gfx/tools/dmsh_xlate_android/build_spirv_tools.sh
           python3 dm/gfx/tools/vk_abi_migrate.py --check
           python3 -m py_compile dm/gfx/tools/vk_abi_migrate.py scripts/ocarina_shader_hot_delta.py
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_abi_migration.py'
@@ -91,9 +96,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Ubuntu GitHub-hosted runners already have these native tools.
+          # Ubuntu runner has Bash, CMake, Ninja, Clang; native scripts now use Bash.
           # apt-get update/install was failing on azure.archive.ubuntu.com DNS.
-          for tool in zsh ninja cmake clang; do
+          for tool in bash ninja cmake clang; do
             if ! command -v "$tool" >/dev/null 2>&1; then
               echo "::error::Missing preinstalled native build tool: $tool" >&2
               exit 1
@@ -166,7 +171,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          zsh android/ondevice/build.sh "$RUNNER_TEMP/oot-v11-ios" all
+          bash android/ondevice/build.sh "$RUNNER_TEMP/oot-v11-ios" all
       - name: Build separately installable optimized Ocarina APK
         shell: bash
         run: |

@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Builds the on-device packer's native side (android/ONDEVICE.md) on the Mac, the stage the APK takes (build.gradle -PnxPackStage=<work dir>/stage):
 #   python: the official CPython 3.14 Android build, Capstone 5, python-lz4 and zbic built with the NDK, and libnxpack.so (dm_pack.c)
 #   tools:  the translator (dm/gfx/tools/dmsh_xlate_android/build.sh lib: libdmsh_xlate.so, NativeAOT, .NET 10 SDK) and SPIRV-Tools' validator
@@ -11,17 +11,22 @@
 # The sources are pinned by version and SHA-256 (below; SPIRV-Tools by its Vulkan SDK tag); a mismatch stops the build. "python" makes the stage afresh, so run
 # "tools" after it (all does both).
 set -e
-W=${1:?usage: build.sh <work dir> [all|python|tools]}; WHAT=${2:-all}; HERE=${0:A:h}
-mkdir -p $W; W=${W:A}
+W=${1:?usage: build.sh <work dir> [all|python|tools]}; WHAT=${2:-all}; HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+mkdir -p "$W"; W="$(cd -- "$W" && pwd -P)"
 NDK=${ANDROID_NDK_HOME:-$(ls -d ~/Library/Android/sdk/ndk/* 2>/dev/null | sort -V | tail -1)}
 [ -d "$NDK/toolchains/llvm/prebuilt" ] || { echo "[RED] no Android NDK (set ANDROID_NDK_HOME)"; exit 1; }
 BIN=$(ls -d $NDK/toolchains/llvm/prebuilt/*/bin | head -1)
-CC="$BIN/clang --target=aarch64-linux-android33"
+CC=("$BIN/clang" "--target=aarch64-linux-android33")
 PYV=3.14.6
-fetch() {   # fetch <url> <sha256>
-  local f=$W/dl/${1:t}; mkdir -p $W/dl
-  [ -f $f ] || curl -sSfL -o $f.part $1 && { [ -f $f ] || mv $f.part $f; }
-  [ "$(shasum -a 256 $f | cut -d' ' -f1)" = $2 ] || { echo "[RED] $f: SHA-256 mismatch"; exit 1; }
+fetch() {   # fetch <url> <sha256> (Bash and Zsh compatible)
+  local url="$1" expected="$2" f="$W/dl/${1##*/}"
+  mkdir -p "$W/dl"
+  if [[ ! -f "$f" ]]; then
+    curl -sSfL --retry 3 --retry-delay 2 --retry-all-errors -o "$f.part" "$url"
+    mv -f "$f.part" "$f"
+  fi
+  [[ "$(shasum -a 256 "$f" | cut -d' ' -f1)" == "$expected" ]] ||
+    { echo "[RED] $f: SHA-256 mismatch"; exit 1; }
 }
 S=$W/stage
 if [[ $WHAT == all || $WHAT == python ]]; then
@@ -52,23 +57,23 @@ L=$W/src/lz4-4.4.5; mkdir -p $SP/lz4/block
 cp $L/lz4/__init__.py $L/lz4/version.py $SP/lz4/
 cp $L/lz4/block/__init__.py $SP/lz4/block/
 EXT=(-shared -fPIC -O2 -I$INC -I$L/lz4libs -L$P/lib -lpython3.14 -Wl,-z,max-page-size=16384)
-$=CC $EXT -o $SP/lz4/_version.$SFX $L/lz4/_version.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c
-$=CC $EXT -o $SP/lz4/block/_block.$SFX $L/lz4/block/_block.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c
+"${CC[@]}" "${EXT[@]}" -o $SP/lz4/_version.$SFX $L/lz4/_version.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c
+"${CC[@]}" "${EXT[@]}" -o $SP/lz4/block/_block.$SFX $L/lz4/block/_block.c $L/lz4libs/lz4.c $L/lz4libs/lz4hc.c
 # zbic 1.0.1.post1 (kinnay/zbic, GPLv2: Nintendo's zstd variant on Atmosphere's zstd.c): the ZBIC segments of system 22.0.0+ modules (dm/tools/nso.py;
 # Zelda: Ocarina of Time's main), one C extension built as its setup.py builds it
 Z=$W/src/zbic-1.0.1.post1
-$=CC $EXT -DZSTD_ZBIC_SUPPORT=1 -I$Z/src -o $SP/zbic.$SFX $Z/src/module.c $Z/src/zstd.c
+"${CC[@]}" "${EXT[@]}" -DZSTD_ZBIC_SUPPORT=1 -I$Z/src -o $SP/zbic.$SFX $Z/src/module.c $Z/src/zstd.c
 # libnxpack.so (dm_pack.c: the C entry and the JNI one, class dev.nxnative.android.PackNative) and the test runner
 cp $P/lib/libpython3.14.so $S/lib/
-$=CC -shared -fPIC -O2 -Wall -I$INC -o $S/lib/libnxpack.so $HERE/dm_pack.c -L$P/lib -lpython3.14 -Wl,-z,max-page-size=16384
-$=CC -O2 -Wall -o $S/bin/dm_pack_cli $HERE/dm_pack_cli.c -L$S/lib -lnxpack -lpython3.14 -Wl,-rpath,'$ORIGIN/../lib'
+"${CC[@]}" -shared -fPIC -O2 -Wall -I$INC -o $S/lib/libnxpack.so $HERE/dm_pack.c -L$P/lib -lpython3.14 -Wl,-z,max-page-size=16384
+"${CC[@]}" -O2 -Wall -o $S/bin/dm_pack_cli $HERE/dm_pack_cli.c -L$S/lib -lnxpack -lpython3.14 -Wl,-rpath,'$ORIGIN/../lib'
 find $S/python -name __pycache__ -prune -exec rm -rf {} +
 fi
 if [[ $WHAT == all || $WHAT == tools ]]; then
   [ -d $S/lib ] || { echo "[RED] $S has no lib/: run build.sh $W python first"; exit 1; }
   G=$HERE/../../dm/gfx/tools/dmsh_xlate_android
-  zsh $G/build.sh $W/xlate lib > $W/xlate.log 2>&1 || { tail -20 $W/xlate.log; echo "[RED] the translator did not build (log: $W/xlate.log)"; exit 1; }
-  zsh $G/build_spirv_tools.sh $W/spvtools > $W/spvtools.log 2>&1 || { tail -20 $W/spvtools.log; echo "[RED] SPIRV-Tools did not build (log: $W/spvtools.log)"; exit 1; }
+  bash "$G/build.sh" "$W/xlate" lib > $W/xlate.log 2>&1 || { tail -20 $W/xlate.log; echo "[RED] the translator did not build (log: $W/xlate.log)"; exit 1; }
+  bash "$G/build_spirv_tools.sh" "$W/spvtools" > $W/spvtools.log 2>&1 || { tail -20 $W/spvtools.log; echo "[RED] SPIRV-Tools did not build (log: $W/spvtools.log)"; exit 1; }
   cp $W/xlate/lib/libdmsh_xlate.so $W/spvtools/libSPIRV-Tools-shared.so $S/lib/
 fi
 du -sh $S/lib/* $S/python $S/bin/*

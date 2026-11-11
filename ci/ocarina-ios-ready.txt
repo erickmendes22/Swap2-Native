@@ -223,3 +223,9 @@ Build 56 native dependency CI unblock (DNS azure.archive.ubuntu.com):
 - GitHub Ubuntu runner preinstalls zsh/ninja/cmake/clang/zlib headers; remove redundant apt-get update/install that was DNS-failing before the Android APK stage. Fail clearly if runner lacks a required tool rather than silently skipping.
 - Use glslc and spirv-val from pinned Android NDK 28.2.13676358 shader-tools/linux-x86_64; add to GITHUB_PATH after SDK install. Keep Qualcomm SGSR1 compilation and validation and normal APK signer/ABI requirements.
 - Same ocarina-v11-ios-perf-from-v101 branch/package, install-over signing. Trigger new APK and incremental validation on this ci marker.
+
+Build 56 GitHub Actions native dependency fix 2 (previous bdbfb959 run failed missing zsh):
+- Actual failed job 130574620519 log proves runner does NOT ship zsh. Do not install it from Ubuntu apt mirrors (DNS failing).
+- Converted android/ondevice/build.sh and both dmsh_xlate_android child build scripts to Bash with portable directory resolution, Bash arrays for CC/EXT, no zsh path modifiers or $=CC, while retaining macOS-compatible commands. Correct atomic curl download and SHA-256 checks; no changes to shader contents.
+- APK workflow now invokes bash, checks bash/ninja/cmake/clang/zlib and uses NDK's shader-tools. A validation job runs bash -n on all 3 scripts before the APK stage.
+- Same ocarina-v11-ios-perf-from-v101 branch; no ABI invalidation, original shader cache untouched, same package and signer.
