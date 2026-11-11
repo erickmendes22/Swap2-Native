@@ -885,6 +885,8 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
             u32 = w[i + 1];
         if (op == OpTypeVector && len == 4 && w[i + 3] == 3)
             vec3 = w[i + 1], vec_comp = w[i + 2];
+        if (op == OpVariable && len >= 4 && w[i + 3] == 4)
+            VR_NO("workgroup storage variable");
         if (op == OpVariable && len >= 4 && w[i + 3] == SCInput &&
             w[i + 2] < bound) in[w[i + 2]] = 1;
         if (op == OpFunction && first_fn == nw) first_fn = i;
