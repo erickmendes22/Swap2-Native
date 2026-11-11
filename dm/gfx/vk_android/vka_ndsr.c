@@ -180,7 +180,17 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
     // the SPIR-V's existing one-sample bilinear kernel for the redundant
     // large NDSR stage. EASU still runs once in the 720p final pipeline.
     // This changes actual per-pixel GPU instructions, not a driver variable.
-    int large_oot = g_sw.mode == 1 && cs->key == UINT64_C(0x7c511cc23ff85d14)
+    // The Nov 11 Redmagic gameplay log uses b106afba1a18faa9 for
+    // 1275x717 -> 2048x1152, not the earlier 7c511 profile key.
+    // The former remained on costly full-resolution EASU even with final
+    // SGSR1 (or FSR1) already selected. Only simplify this duplicate large
+    // upscale when a final edge-aware upscaler is actually enabled.
+    // The bilinear SPIR-V variant keeps sqrt->linear colour conversion,
+    // output size, and the exact same storage-image binding.
+    int oot_network = cs->key == UINT64_C(0x7c511cc23ff85d14)
+                   || cs->key == UINT64_C(0xb106afba1a18faa9);
+    int final_upscale = VKA_ENV("DM_VK_PRESENT_FILTER", 0) >= 3;
+    int large_oot = g_sw.mode == 1 && oot_network && final_upscale
                     && ((uint64_t)oi->w * oi->h > 1280ull * 720);
     int kernel = (g_sw.mode == 2 || large_oot) ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
     if (large_oot) {

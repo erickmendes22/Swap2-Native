@@ -28,6 +28,22 @@ except ImportError:
     zstandard = None
 
 
+class OcarinaLargeNdsr(unittest.TestCase):
+    def test_real_redmagic_network_is_selected_only_for_final_upscale(self):
+        # Exact shader seen in 2026-11-11 720p gameplay:
+        # b106afba1a18faa9, 1275x717 -> 2048x1152.
+        src = (REPO / "dm/gfx/vk_android/vka_ndsr.c").read_text()
+        self.assertIn('UINT64_C(0xb106afba1a18faa9)', src)
+        self.assertIn('UINT64_C(0x7c511cc23ff85d14)', src)
+        self.assertIn('VKA_ENV("DM_VK_PRESENT_FILTER", 0) >= 3', src)
+        self.assertIn('g_sw.mode == 1 && oot_network && final_upscale', src)
+        self.assertIn('(uint64_t)oi->w * oi->h > 1280ull * 720', src)
+        self.assertIn('VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU', src)
+        # No FSR quality tradeoff for the 720p input itself.
+        self.assertFalse(1275 * 717 > 1280 * 720)
+        self.assertTrue(2048 * 1152 > 1280 * 720)
+
+
 class Header(unittest.TestCase):
     def test_header_is_current(self):
         if not ndsr_spv.tool('glslc') or not ndsr_spv.tool('spirv-val'):
