@@ -454,8 +454,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             String sceneNote = null;
             if (prof != null && prof.hasScene() && Prefs.scene720(this, id)) {
                 if (SceneOverlay.current(files, id, Prefs.sceneScale(this, id, prof.sceneScale()), prof.sceneExpect(), pack.version)) {
+                    String effectiveSceneScale = Prefs.sceneScale(this, id, prof.sceneScale());
                     env.add("DM_ROMFS_OVERLAY=" + SceneOverlay.dir(files, id));
-                    Native.note("[nxlaunch] internal render scene scale " + Prefs.sceneScale(this, id, prof.sceneScale()) + " from RomFS overlay (before NDSR / final output filter)");
+                    // VRS is independent of the palette patch. Tell the Vulkan
+                    // pipeline selector the ACTUAL selected scene profile, but
+                    // only when its matching RomFS overlay passed validation.
+                    // The previously broad 4x4 mode is never re-enabled for
+                    // unverified fragment shaders or larger resolutions.
+                    if (Prefs.OCARINA_TITLE.equals(id) && "0.3125".equals(effectiveSceneScale))
+                        env.add("DM_VK_OOT_SCENE_360=1");
+                    Native.note("[nxlaunch] internal render scene scale " + effectiveSceneScale
+                            + " from RomFS overlay (before NDSR / final output filter)");
                 }
                 else sceneNote = "[RED] [nxlaunch] Scene resolution 720p: the overlay " + SceneOverlay.dir(files, id) + " was not made for this pack (version " + pack.version
                         + ", scale " + Prefs.sceneScale(this, id, prof.sceneScale()) + "): using the game's own render scale this run; select the internal scene resolution again";
