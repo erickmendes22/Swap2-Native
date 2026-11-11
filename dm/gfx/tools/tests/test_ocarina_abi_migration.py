@@ -106,7 +106,9 @@ class AbiProtection(unittest.TestCase):
         self.assertIn("certified_abi_open(&g_lib, compatible", text)
         self.assertIn('!memcmp(lib->h->abi, c->old_abi, 12)', text)
         self.assertIn('!strcmp(inputs, c->inputs)', text)
-        self.assertIn("g_hot_loaded && vka_shlib_find(&g_hot, key)", text)
+        self.assertIn("const dmsh_vk_entry *overlay = vka_shlib_find(&g_hot, key)", text)
+        self.assertIn("VKA_ENV(\"DM_VK_OOT_HOT_MESH\", 0)", text)
+        self.assertIn("return &g_lib;", text)
         android = (ROOT / "android/app/src/main/java/dev/nxnative/android/ShaderLibs.java").read_text()
         self.assertIn("ShaderAbiCert.approved(titleId, h.vkChain, h.abi, h.inputs)", android)
 
