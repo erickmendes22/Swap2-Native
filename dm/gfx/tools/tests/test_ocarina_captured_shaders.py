@@ -233,7 +233,7 @@ class CapturedTests(unittest.TestCase):
     def test_flat_pixel_input_mismatch_refuses_exploding_mesh(self):
         # The previous mesh compiler provided empty pair metadata and
         # silently accepted invalid per-primitive SPIR-V interfaces.
-        key = self.write_mesh_task(7, 13)
+        key = self.write_mesh_task(7, 2)
         pixel = self.pixel_partner(flat=True)
         self.add_pair("M", key, pixel)
         with self.assertRaises(SystemExit) as caught:
