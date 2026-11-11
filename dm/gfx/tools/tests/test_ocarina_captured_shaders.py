@@ -83,6 +83,31 @@ class CapturedTests(unittest.TestCase):
         self.assertEqual(loc[key],("cs_static.bin",0))
         self.assertFalse((self.pkg/"cs_captured_repair.bin").exists())
 
+    def test_28_missing_shader_captures_build_one_bounded_overlay(self):
+        # This is the actual missing-key count from the 2026-11-11 Ocarina
+        # gameplay log. Synthetic sources, no proprietary game assets or
+        # 42,339-source split required.
+        keys = set()
+        for i in range(28):
+            code = struct.pack("<I", 1 << 10) + bytes([i + 1]) * 76
+            ctl = bytearray(0xd8)
+            ctl[:8] = bytes.fromhex("34127698c9000000")
+            ctl[0x56] = 1  # graphics stage: shader code SPH selects vertex
+            struct.pack_into("<I", ctl, 0x44, len(code))
+            key = hashlib.sha256(
+                bytes(ctl[:0x30]) + bytes(4) + bytes(ctl[0x34:0x48]) + code
+            ).hexdigest()[:16]
+            keys.add(key)
+            (self.capture / (key + ".ctl")).write_bytes(ctl)
+            (self.capture / (key + ".code")).write_bytes(code)
+        self.assertEqual(len(keys), 28)
+        loc = {}
+        self.assertEqual(self.repair(keys, loc, {}, str(self.pkg)), 28)
+        self.assertEqual(set(loc), keys)
+        self.assertTrue((self.pkg / "vs_captured_repair.bin").is_file())
+        self.assertEqual({v[0] for v in loc.values()}, {"vs_captured_repair.bin"})
+        self.assertFalse((self.pkg / "shader_map.tsv").exists())
+
     def test_corrupted_capture_is_rejected_without_packaging(self):
         key,_,_=self.write_capture()
         with (self.capture/(key+".code")).open("ab") as f:f.write(b"x")
