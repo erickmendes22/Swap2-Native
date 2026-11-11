@@ -1761,6 +1761,26 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
     vka_rp_end();
+    // GPU profiler on Build 53: several 0x0x0 guest compute records (e.g.
+    // cee08c634ef1f343, 510c344f1b4e4e55, e855420a39e60874)
+    // still allocate descriptors and issue a full VkMemoryBarrier, although
+    // Vulkan dispatch is intentionally NOT emitted for any zero dimension.
+    // These have no shader invocations and no observable shader writes.
+    // Preserve the guest dispatch constants and the earlier pass boundary,
+    // and flush any actual pending producers from dispatch overlap.
+    // The guest's explicit OP_BARRIER remains independent and untouched.
+    // Indirect dispatches are excluded because GPU-written counts are not
+    // inspectable without a readback.
+    if (!dp->ind && (dp->x <= 0 || dp->y <= 0 || dp->z <= 0) &&
+        !vka_gp_active && VKA_ENV("DM_VK_OOT_ZERO_DISPATCH", 1)) {
+        d->b.dispatch[0] = (uint32_t)dp->x;
+        d->b.dispatch[1] = (uint32_t)dp->y;
+        d->b.dispatch[2] = (uint32_t)dp->z;
+        d->b.nvn2 = (uint32_t)vka_nvn2();
+        vka_dispatch_overlap_flush();
+        g_dispatches++;
+        return;
+    }
     vka_shader *sh[VKA_NSTAGE] = {0}; unsigned bad = 0;
     if (!resolve(d->cprog, 5, &sh[5], &bad)) SKIP("dispatch skipped: no shader library");
     if (bad) SKIPQ();
