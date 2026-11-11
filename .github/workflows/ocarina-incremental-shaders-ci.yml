@@ -11,6 +11,7 @@ on:
       - 'dm/gfx/vk_android/vka_draw.c'
       - 'dm/gfx/tools/tests/test_ocarina_occlusion_fast.py'
       - 'dm/gfx/tools/tests/test_ocarina_pool_feedback.py'
+      - 'dm/gfx/tools/tests/test_ocarina_ub_deferred.py'
       - 'dm/gfx/tools/tests/test_ocarina_graphics_barrier_scopes.py'
       - 'dm/gfx/tools/tests/test_ocarina_attachment_stage_dependencies.py'
       - 'dm/gfx/vk_android/vka_shader.c'
@@ -48,6 +49,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gpu_write_index.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_occlusion_fast.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_pool_feedback.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_ub_deferred.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_barrier_scopes.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_attachment_stage_dependencies.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c
@@ -61,6 +63,8 @@ jobs:
           python3 dm/games/game.py header 0400486024DEC000 "$RUNNER_TEMP/game_profile.h"
           INC=(-I "$RUNNER_TEMP" -I dm/gfx/nvn/include -I dm/third_party/vulkan-headers/include -I dm/third_party/libvpx -I dm/third_party/libvpx/config -I dm/third_party/stb_vorbis -I dm/host)
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_tex.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_draw.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_exec.c
       - name: On-device finalization retry regressions
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_pack_finalize_atomic.py -v
       - name: Test static engine integration against source versions
