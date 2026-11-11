@@ -428,7 +428,14 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
         // profiled mesh work. Rate fallback is based on EXACT advertised
         // Vulkan sample-count-1 modes; never manufacture a pipeline rate.
         uint32_t rate_w = V.fps_boost_width, rate_h = V.fps_boost_height;
-        if (hotpass_profile >= 4 && !profiled_mesh_hdr) {
+        // Build 74 capped *all* main-scene 4x2/4x4 to 2x2/2x1,
+        // including the verified 360p scene. The phone log proved this:
+        // profile=5/chosen=4x4, yet 16/17 real pipelines were 2x1/2x2.
+        // Restore the selected full rate ONLY for the existing 17 vetted
+        // shader keys in a VERIFIED 0.3125 RomFS scene. The broader
+        // arbitrary-HDR shader expansion remains removed permanently.
+        int scene360 = game_oot && VKA_ENV("DM_VK_OOT_SCENE_360", 0) == 1;
+        if (hotpass_profile >= 4 && !profiled_mesh_hdr && !scene360) {
             if (extended_scene_hdr && V.fps_boost_has_2x1) {
                 // Five late-captured main-scene FS: preserve detail.
                 rate_w = 2u; rate_h = 1u;
@@ -442,6 +449,10 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
             }
         }
         if (rate_w) {
+            // A 1x1 rate is never substituted for a selected rate on one
+            // of the verified shaders. Vulkan's exact rate was queried on
+            // startup, so the pipeline uses it or retries the original
+            // (safe) full-detail path on driver rejection.
             P->fsrate = (VkPipelineFragmentShadingRateStateCreateInfoKHR){
                 VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
                 .pNext = NULL, .fragmentSize = {rate_w, rate_h},
