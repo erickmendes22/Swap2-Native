@@ -276,11 +276,54 @@ public final class PackService extends Service {
         }
     }
 
+    /**
+     * Recover a fully prepared Ocarina pack after an APK change or a job that
+     * was left with pending shader steps. The pack must actually be playable:
+     * correct game/build, valid complete current-or-certified shader library,
+     * matching shader-profile inputs, and unmodified code/mods. This check
+     * never rewrites an ABI stamp or assumes a version string means compatibility.
+     */
+    private boolean ocarinaPackPlayable(Job j) {
+        if (engine.simulated() || !"0400486024DEC000".equals(j.titleId())) return false;
+        if (!OcarinaShaderDelta.keys(j).isEmpty()) return false; // exact selective overlay pending
+        try {
+            Pack p = Pack.read(j.pack());
+            return !p.simulated && j.titleId().equals(p.titleId)
+                    && String.valueOf(j.version()).equals(p.version)
+                    && Pack.libraryProblem(j.pack(), j.titleId()) == null
+                    && PackCheck.playBlocking(this, p, j.dump()) == null;
+        } catch (IOException e) {
+            Log.w(TAG, "shader preservation: existing pack cannot yet be validated", e);
+            return false;
+        }
+    }
+
+    /** Preserve all 42k compiled Ocarina shaders without marking unfinished
+     * code rewriting as complete; only the already-present shader pack is reused.
+     * When rewrite is still pending, it completes normally before the job ends. */
+    private boolean reuseOcarinaShaders(Job j) throws IOException, org.json.JSONException {
+        if (!ocarinaPackPlayable(j)) return false;
+        j.shadersInPack();
+        j.stepState("pack", "done");
+        j.acceptPlayableShaderVersion();
+        Log.i(TAG, "Ocarina full shader library reused in place: split, 42k translation and repack DISABLED for this job");
+        if ("done".equals(j.stepState("identify")) && "done".equals(j.stepState("rewrite"))) {
+            j.state("done", null, null);
+            save(j, true);
+            return true;
+        }
+        save(j, true);
+        return false;
+    }
+
     private void work() {
         Job j = job;
         wake.acquire(7 * 3600_000L);
         try {
             dropOtherSplitScans(j);
+            // This recovery MUST precede apkChanged/resetChainSteps: the old
+            // logic reset a completed library whenever job.state was not done.
+            if (reuseOcarinaShaders(j)) return;
             if (j.apkChanged()) {
                 List<String> hot = OcarinaShaderDelta.keys(j);
                 // A complete same-ABI library (or an audited additive ABI
@@ -303,6 +346,18 @@ public final class PackService extends Service {
                     save(j, true);
                     return;
                 }
+                // An unverified OLD Ocarina shader library is not a reason
+                // to silently translate all 42,339 shaders again. Stop safely
+                // and leave the original files untouched for recovery/import.
+                if ("0400486024DEC000".equals(j.titleId()) && hot.isEmpty()
+                        && !Pack.libraryVersions(j.pack()).isEmpty()) {
+                    j.fail(GameFlow.STEP, -1, -1,
+                            "Existing Ocarina shaders were found but this pack's ABI/profile or game code could not be verified. "
+                            + "The original library has NOT been deleted. Select the previous prepared pack or import its shaders; "
+                            + "automatic retranslation of all 42,339 shaders is blocked.");
+                    save(j, true);
+                    return;
+                }
                 j.resetChainSteps();
                 if (!hot.isEmpty()) {
                     j.expectedShaders(hot.size());
@@ -322,6 +377,12 @@ public final class PackService extends Service {
             int i;
             while ((i = j.next()) >= 0) {
                 if (!waitWhileAuto(j)) break;
+                // A code rewrite may have completed in this very job.
+                // Recheck the pack before running a pending split/shaders/pack
+                // step: compatibility can become valid without new translation.
+                if (i >= Job.FIRST_CHAIN_STEP - 1 && reuseOcarinaShaders(j)) break;
+                i = j.next();
+                if (i < 0) break;
                 String s = Job.STEPS[i];
                 // The pack already holds this APK's library of the game (Import shaders…, android/SHADERS.md "Shader zips"): nothing to split or translate; the pack
                 // step takes it where it is. A new job, one resumed or retried after an import, and one whose chain steps an APK update reset all come here
@@ -570,6 +631,16 @@ public final class PackService extends Service {
                         new File(splitTmp, "pso_pairs.tsv").getPath()};
                 break;
             case "shaders": {
+                // Never mistake an already prepared Ocarina library from the
+                // installed version for a request to rebuild every shader.
+                // The signed ABI check above decides whether it is reusable;
+                // if not, preserve it and ask for an explicit recovery/import.
+                if ("0400486024DEC000".equals(j.titleId()) && hotKeys.isEmpty()
+                        && !Pack.libraryVersions(pack).isEmpty()) {
+                    return "Ocarina: the full shader library is already present but not confirmed compatible. "
+                            + "Refusing a destructive 42,339-shader automatic rebuild; "
+                            + "select the existing prepared pack or import matching shaders.";
+                }
                 boolean capturedOnly = !hotKeys.isEmpty() &&
                         hotKeys.stream().allMatch(k ->
                                 new File(od.getParentFile(), "nvn_shdump/" + k + ".code").isFile() &&

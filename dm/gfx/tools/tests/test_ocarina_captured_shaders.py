@@ -102,6 +102,19 @@ class CapturedTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.repair({f"{i:016x}" for i in range(129)},{},{},str(self.pkg))
 
+    def test_completed_library_fails_closed_before_mass_rebuild(self):
+        svc=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
+        ui=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/Ondevice.java").read_text()
+        self.assertLess(svc.index("if (reuseOcarinaShaders(j)) return;"),svc.index("if (j.apkChanged())"))
+        self.assertIn("j.shadersInPack();",svc)
+        self.assertIn('j.stepState("pack", "done");',svc)
+        self.assertIn("Pack.libraryProblem(j.pack(), j.titleId()) == null",svc)
+        self.assertIn("PackCheck.playBlocking(this, p, j.dump()) == null",svc)
+        self.assertIn("Refusing a destructive 42,339-shader automatic rebuild",svc)
+        self.assertIn("automatic retranslation of all 42,339 shaders is blocked.",svc)
+        self.assertIn("Nenhuma recompilação foi iniciada",ui)
+        self.assertIn("Não serão preparados os 42.339 shaders novamente",ui)
+
     def test_android_wiring_is_selective(self):
         svc=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
         java=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()

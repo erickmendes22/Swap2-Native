@@ -720,6 +720,18 @@ final class Ondevice {
                 File pd = f.packDir;
                 String lp = PackCheck.shaders(pd, r.titleId);
                 boolean code = f.build != null || again && !Boolean.TRUE.equals(f.code), shaders = lp != null;
+                if (shaders && "0400486024DEC000".equals(r.titleId)
+                        && !Pack.libraryVersions(pd).isEmpty()
+                        && deltaShaders(pd, r.titleId) < 0) {
+                    // A lost/incorrect pack pointer or an ABI/profile mismatch
+                    // must not offer a second 42k shader compilation as a
+                    // supposedly routine update. Keep the older library.
+                    quiet();
+                    a.error("A biblioteca de shaders anterior ainda existe, mas não foi reconhecida como compatível. "
+                            + "Nenhuma recompilação foi iniciada. Selecione o pacote preparado anteriormente "
+                            + "ou importe seus shaders para recuperar o jogo sem recompilar os 42.339.");
+                    return;
+                }
                 if (!code && !shaders) {
                     // Prepare again can repair shaders captured as missing at
                     // runtime, even when the complete library is already the
@@ -777,6 +789,15 @@ final class Ondevice {
             }
             Profile prof = Profile.of(r.titleId);   // DumpCheck refused a dump without one
             File target = packOverride != null ? packOverride : AppStorage.pack(a, r.titleId);
+            if ("0400486024DEC000".equals(r.titleId)
+                    && !Pack.libraryVersions(target).isEmpty()) {
+                quiet();
+                a.error("Há uma biblioteca Ocarina já compilada na pasta do pacote, "
+                        + "mas a instalação não reconheceu o pacote completo. "
+                        + "Não serão preparados os 42.339 shaders novamente. "
+                        + "Selecione ou importe o pacote anterior para recuperar essa biblioteca.");
+                return;
+            }
             // Its shaders imported already (Import shaders… with no pack yet, ShaderZip.ready): the job only rewrites the code (Job.shadersInPack)
             boolean imported = !"fake".equals(BuildConfig.NX_PACK_ENGINE) && ShaderZip.ready(target, r.titleId);
             long need = (imported ? DumpCheck.NEED_CODE : DumpCheck.NEED_FULL) + f.tools;
