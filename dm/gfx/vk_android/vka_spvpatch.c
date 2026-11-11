@@ -838,8 +838,12 @@ int vka_spv_oot_cs_retile(uint32_t *w, size_t nw, char *why, size_t whylen) {
 // Rewrite Ocarina's 9e6b compute for one 64-lane wave per 8x4x2
 // group, instead of two waves per 8x4x4 group. Unlike a bare LocalSize
 // patch, these direct builtin loads preserve the ORIGINAL 8x4x4 IDs:
-//   WorkgroupId = GlobalInvocationId >> (3,2,2)
-//   LocalInvocationId = GlobalInvocationId & (7,3,3)
+//   WorkgroupId = GlobalInvocationId >> (3,2,2), or (newGroupX,Y,Z>>1)
+//   LocalInvocationId = GlobalInvocationId & (7,3,3), or
+//                       (newLocalX,Y, (newGroupZ&1)*2+newLocalZ)
+// The second path does NOT require GlobalInvocationId to be declared.
+// Some translated NVN compute shaders only read the separate group and
+// thread builtins, which made Build59's variant unconditionally refuse.
 //   NumWorkgroups = (8,9,12), the original dispatch grid.
 // The caller only launches 8x9x24 (instead of 8x9x12), still exactly
 // 110592 total invocations. Each global index, original group and local
@@ -861,6 +865,7 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
     if (!bi || !in) VR_NO("out of memory");
     uint32_t u32 = 0, vec3 = 0, vec_comp = 0, global_var = 0;
     uint32_t local_n = 0, group_n = 0, num_n = 0, compute = 0, localmode = 0;
+    uint32_t local_var = 0, group_var = 0;
     size_t first_fn = nw, nload = 0;
     for (size_t i = 5; i < nw;) {
         uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
@@ -875,15 +880,22 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
         if (op == OpDecorate && len >= 4 && w[i + 2] == 11) {
             uint32_t id = w[i + 1], v = w[i + 3];
             if (id >= bound) VR_NO("invalid builtin ID");
-            if (v != 24 && v != 26 && v != 27 && v != 28)
+            // WorkgroupSize (25) is an original shader specialization
+            // constant, not an Input variable. Leave its original
+            // literal (8,4,4) unchanged; virtual group size must remain
+            // invisible to guest code. Other unknown builtins fail closed.
+            if (v != 24 && v != 25 && v != 26 && v != 27 && v != 28)
                 VR_NO("unsupported local/group-dependent builtin");
-            bi[id] = v;
+            if (v != 25) bi[id] = v;
         }
         if (op == OpMemberDecorate && len >= 5 && w[i + 3] == 11)
             VR_NO("member-decorated builtin");
         if (op == OpTypeInt && len == 4 && w[i + 2] == 32 && w[i + 3] == 0)
             u32 = w[i + 1];
-        if (op == OpTypeVector && len == 4 && w[i + 3] == 3)
+        if (op == OpTypeVector && len == 4 && w[i + 3] == 3 &&
+            // The final vec3 in a shader might be float3. Only keep
+            // the actual unsigned three-component ID for bit operations.
+            w[i + 2] == u32)
             vec3 = w[i + 1], vec_comp = w[i + 2];
         if (op == OpVariable && len >= 4 && w[i + 3] == 4)
             VR_NO("workgroup storage variable");
@@ -902,12 +914,17 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
         if (bi[id] == 28) {
             if (global_var) VR_NO("duplicate GlobalInvocationId");
             global_var = id;
-        } else if (bi[id] == 26) group_n++;
-        else if (bi[id] == 27) local_n++;
+        } else if (bi[id] == 26) { group_n++; group_var = id; }
+        else if (bi[id] == 27) { local_n++; local_var = id; }
         else if (bi[id] == 24) num_n++;
     }
-    if (!global_var || group_n > 1 || local_n > 1 || num_n > 1 ||
-        !(group_n + local_n + num_n)) VR_NO("incompatible builtin declarations");
+    if (group_n > 1 || local_n > 1 || num_n > 1 ||
+        !(group_n + local_n + num_n))
+        VR_NO("incompatible builtin declarations");
+    // A local-only shader can use the old route if it declares global ID;
+    // otherwise the translated shader must also declare WorkgroupId.
+    if (local_var && !global_var && !group_var)
+        VR_NO("local ID without global or workgroup ID");
     for (size_t i = 5; i < nw;) {
         uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
         if (op == OpLoad && len >= 4 && w[i + 3] < bound &&
@@ -933,8 +950,7 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
         }
         i += len;
     }
-    if (!nload || nload >= UINT32_MAX - 12u ||
-        bound >= UINT32_MAX - 12u - (uint32_t)nload)
+    if (!nload || (uint64_t)bound + 9ull + 8ull*nload >= UINT32_MAX)
         VR_NO("no direct local/group reads or insufficient IDs");
     uint32_t next = bound;
     uint32_t c2=next++, c3=next++, c7=next++, c8=next++, c9=next++, c12=next++;
@@ -963,13 +979,43 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
             uint32_t kind = bi[w[i+3]], result = w[i+2];
             if (kind == 24) { // original dispatch grid
                 VR_EMIT((4u<<16)|83u, vec3, result, grid); // OpCopyObject
-            } else {
+            } else if (global_var) {
                 uint32_t temp = next++;
                 VR_EMIT((4u<<16)|61u, vec3, temp, global_var);
-                // OpShiftRightLogical or OpBitwiseAnd, vector-wide.
+                // OpShiftRightLogical / OpBitwiseAnd, vector-wide:
+                // the new global index equals the old one for EVERY lane.
                 VR_EMIT((5u<<16)|(kind == 26 ? 194u : 199u),
                         vec3, result, temp, kind == 26 ? shift : mask);
-            }
+            } else if (kind == 26 && group_var) {
+                // Old GroupZ is new GroupZ/2. X and Y are identical.
+                uint32_t raw=next++, z=next++, shr=next++;
+                VR_EMIT((4u<<16)|61u, vec3, raw, group_var);
+                VR_EMIT((5u<<16)|81u, u32, z, raw, 2);
+                // OpShiftRightLogical u32, z, constant(1).
+                // c2 is two, so use modulo and division by 2 using
+                // OpUDiv; this keeps the scalar constant set minimal.
+                VR_EMIT((5u<<16)|134u, u32, shr, z, c2);
+                VR_EMIT((6u<<16)|82u, vec3, result, shr, raw, 2);
+            } else if (kind == 27 && group_var && local_var) {
+                // newGroupZ parity chooses original half-group 0 or 1;
+                // old LocalZ = 2*(newGroupZ&1) + newLocalZ.
+                // Keep original X,Y and all pre-existing guest workgroup
+                // IDs; no LDS, atomics, barriers or inter-lane operations.
+                uint32_t rawlocal=next++, rawgroup=next++, gz=next++;
+                uint32_t parity=next++, offset=next++, lz=next++, oldz=next++;
+                VR_EMIT((4u<<16)|61u, vec3, rawlocal, local_var);
+                VR_EMIT((4u<<16)|61u, vec3, rawgroup, group_var);
+                VR_EMIT((5u<<16)|81u, u32, gz, rawgroup, 2);
+                VR_EMIT((5u<<16)|199u, u32, parity, gz, c2);
+                // The parity must be newGroupZ modulo TWO, not bitwise
+                // AND with literal TWO. Modulo is integer-safe for >=0.
+                // Replace the last AND operation with UMod.
+                o.w[o.n - 5] = (5u<<16)|137u;
+                VR_EMIT((5u<<16)|132u, u32, offset, parity, c2);
+                VR_EMIT((5u<<16)|81u, u32, lz, rawlocal, 2);
+                VR_EMIT((5u<<16)|128u, u32, oldz, lz, offset);
+                VR_EMIT((6u<<16)|82u, vec3, result, oldz, rawlocal, 2);
+            } else VR_NO("missing local/group input needed to virtualize");
         } else if (!put_n(&o, w+i, len)) VR_NO("out of memory");
         i += len;
     }

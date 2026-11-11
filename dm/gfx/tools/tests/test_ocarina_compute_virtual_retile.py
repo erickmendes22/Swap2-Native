@@ -87,6 +87,28 @@ class VirtualRetile(unittest.TestCase):
         self.assertFalse(any(o==61 and a[-1] in (8,9,10) for o,a in lines))
         self.assertIn("virtualized 3",why)
 
+    def test_shader_without_global_invocation_id_uses_native_group_local(self):
+        # NVN translator can emit WorkgroupId and LocalInvocationId
+        # without a declared GlobalInvocationId. This was a false hard
+        # blocker in Build59; preserve the original per-lane semantics.
+        original=sample()
+        adjusted=original[:5]
+        for opcode,args in instructions(original):
+            if opcode==71 and args[0]==7: continue
+            if opcode==59 and args[1]==7: continue
+            if opcode==15:
+                args=[x for x in args if x != 7]
+            adjusted+=op(opcode,*args)
+        patched,why=self.patch(adjusted)
+        self.assertIsNotNone(patched,why)
+        parsed=list(instructions(patched))
+        self.assertTrue(any(code==82 for code,_ in parsed))
+        self.assertTrue(any(code==134 for code,_ in parsed))
+        self.assertTrue(any(code==137 for code,_ in parsed))
+        self.assertTrue(any(code==128 for code,_ in parsed))
+        self.assertFalse(any(code==61 and args[-1] in (8,9,10)
+                             for code,args in parsed))
+
     def test_identical_indices_for_all_110592_invocations(self):
         for z in range(24*2):
             for y in range(9*4):
