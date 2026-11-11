@@ -131,9 +131,18 @@ final class ShaderZip {
     /** Whether a pack folder holds this APK's library of this game, built from the profile's inputs: Prepare then translates nothing */
     static boolean ready(File pack, String titleId) {
         File lib = Pack.libraryOf(pack);
-        if (lib == null || Pack.libraryProblem(pack, titleId) != null) return false;
-        ShaderLibs.Header h = ShaderLibs.header(lib);   // libraryProblem passes "unknown" inputs without looking at the game
-        return h != null && titleId.equals(h.game) && h.fits(lib.length());
+        if (lib != null && Pack.libraryProblem(pack, titleId) == null) {
+            ShaderLibs.Header h = ShaderLibs.header(lib);
+            if (h != null && titleId.equals(h.game) && h.fits(lib.length())
+                    && (!Prefs.OCARINA_TITLE.equals(titleId) || h.entries >= 40000))
+                return true;
+        }
+        // A verified 0.1.2 Ocarina baseline is fully playable with the
+        // current ABI. Its original version and bytes MUST remain unchanged.
+        Profile profile = Profile.of(titleId);
+        return Prefs.OCARINA_TITLE.equals(titleId) && profile != null
+                && ShaderLibs.trustedOcarinaBase(pack, titleId,
+                    BuildConfig.NX_DMSH_VK_ABI, profile.shaderInputs) != null;
     }
 
     /** Whether the library was imported (its folder has source.tsv) */
@@ -204,7 +213,20 @@ final class ShaderZip {
      * takes. → its dmsh_vk.lib
      */
     static File chooseExport(File packDir, String titleId) throws Failure {
+        // Export the known first complete Ocarina library, NOT a newer
+        // experimental build or a six-shader hot overlay under v-current.
+        // Its original b6b21fb5753a header is the reference that works.
+        Profile profile = Profile.of(titleId);
+        if (Prefs.OCARINA_TITLE.equals(titleId) && profile != null) {
+            File baseline = ShaderLibs.trustedOcarinaBase(packDir, titleId,
+                    BuildConfig.NX_DMSH_VK_ABI, profile.shaderInputs);
+            if (baseline != null) return baseline;
+        }
         File cur = Pack.libraryOf(packDir);
+        if (cur != null && Prefs.OCARINA_TITLE.equals(titleId)) {
+            ShaderLibs.Header h = ShaderLibs.header(cur);
+            if (h == null || h.entries < 40000) cur = null;
+        }
         if (cur != null) {
             ShaderLibs.Header h = ShaderLibs.header(cur);
             if (h == null || !h.fits(cur.length())) throw new Failure(Why.DAMAGED, cur + " is not a whole shader library", cur.getPath());
@@ -544,12 +566,21 @@ final class ShaderZip {
             if (s.libSize < ShaderLibs.HEADER_SIZE) throw new Failure(Why.DAMAGED, "the library is " + s.libSize + " bytes", "lib_size " + s.libSize);
             s.manifest = m;
             if (t.verifyOnly) return;
-            if (!v.equals(t.current) && !restampable(v)) throw new Failure(Why.OTHER_VERSION, "the shaders are of version " + v + ", this app needs " + t.current, v, t.current);
+            if (!v.equals(t.current) && !restampable(v) && !compatibleOcarinaBase())
+                throw new Failure(Why.OTHER_VERSION, "the shaders are of version " + v + ", this app needs " + t.current, v, t.current);
             if (!"unknown".equals(t.inputs) && !t.inputs.equals(s.inputs))
                 throw new Failure(Why.OTHER_INPUTS, "the shaders were built from other shader tables (" + s.inputs + ") than the profile's (" + t.inputs + ")", s.inputs, t.inputs);
             long need = (v.equals(t.current) ? s.libSize : 2 * s.libSize) + SPARE;   // an older version is copied once more by its restamp
             long free = t.space.free(new File(t.pack, "shaders"));
             if (free < need) throw new Failure(Why.NO_SPACE, "the shaders need " + need + " bytes, " + free + " free", SaveStore.size(need), t.pack.getPath(), SaveStore.size(free));
+        }
+
+        /** The exact first successful full Ocarina build is ABI-compatible:
+         * preserve its original version, do not restamp, and do not recompile.
+         * Import still checks game, inputs, header, SHA-256, CRC and size. */
+        boolean compatibleOcarinaBase() {
+            return ShaderLibs.trustedOcarinaBase(t.titleId, s.version,
+                    s.abi, s.inputs, s.shaders, t.abi, t.inputs);
         }
 
         /** An older version is taken only when a "stamp" row names its exact bytes (its manifest's SHA-256) and the pack has no library of this version yet */
@@ -763,7 +794,12 @@ final class ShaderZip {
             Result r = new Result();
             r.from = s.version;
             r.version = s.version;
-            if (!s.version.equals(t.current)) {
+            // Preserve the source version for the exact known-good 0.1.2
+            // baseline. The native Vulkan loader already supports alternate
+            // VK versions sharing the same ABI, so no header spoof is needed.
+            boolean keepBaseline = ShaderLibs.trustedOcarinaBase(t.titleId,
+                    s.version, s.abi, s.inputs, s.shaders, t.abi, t.inputs);
+            if (!s.version.equals(t.current) && !keepBaseline) {
                 String took = ShaderLibs.restamp(t.pack, t.titleId, t.current, t.abi, t.stamps);
                 if (!s.version.equals(took) || !new File(sh, "v-" + t.current + "/" + LIB).isFile()) {
                     deleteTree(dst);
