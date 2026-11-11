@@ -162,3 +162,11 @@ Build 49 — fix Ocarina Build 48 repeated 0/57 shader compilation from uploaded
 - Invalidate selected mesh/task per-key cached translated results when pixel/task partner metadata becomes verified, but keep independent PS/CS and entire original library caches and Vulkan pipeline cache.
 - No change to Ocarina playback fallback (unverified hot mesh/task remains disabled by default), no full shader rebuild. Same APK ID com.swap2native.ootv11ios, versionName 0.1.2, unchanged install-over signer a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad, monotonically increment versionCode.
 - Source/regression validation https://github.com/erickmendes22/Swap2-Native/actions/runs/43002857670 passed. Generate native signed APK as next action and confirm certificate before user testing. No claims of FPS benefit until device validation.
+
+Build 50 — fix SGSR 720p selection ignored in Ocarina Build49 on Redmagic 11 Pro (gameplay log 20261111-073346):
+- Build49 showed DM_VK_PRESENT_FILTER=4 (SGSR 720p), launcher DM_VK_FSR=1, but the presenter reported fsr_requested=0 and method=rot-linear, meaning neither the advertised one-pass SGSR nor FSR fallback executed.
+- Make present_filter 3 (FSR) and 4 (SGSR) authoritative for fsr_wanted() in swapchain creation and every present. Explicit nearest/bilinear overrides a stale legacy flag, auto retains legacy DM_VK_FSR behavior.
+- Continue requiring a legal filterable source, Vulkan swapchain views and valid GPU pipelines; use the existing safe rotated-copy fallback if the driver cannot use the shaders.
+- Presentation GPU work, when enabled, remains capped to 1280x720 then one bilinear display pass. No changes to game shaders, 42,339 full library, 4-entry previous overlay, saved NVN source, Vulkan caches or existing selective compiler logic.
+- Tests validated on CI https://github.com/erickmendes22/Swap2-Native/actions/runs/43005599478, including specific regression for filter 4 not silently disabled. The observed GPU limit ~19-21ms in heavy scene may remain; no unmeasured FPS gain claimed.
+- Preserve original package com.swap2native.ootv11ios, version 0.1.2, SHA-256 signer a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad and incremental versionCode. Publish APK only if Android build and signer gate pass.
