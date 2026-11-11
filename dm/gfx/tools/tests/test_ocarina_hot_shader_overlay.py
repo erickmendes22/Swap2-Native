@@ -68,7 +68,7 @@ class HotShaderOverlay(unittest.TestCase):
         import re
         abi=(ROOT / "dm/gfx/nvn/dmsh_abi_vk.h").read_text()
         stages={name:int(index) for name,index in re.findall(
-            r"^#define DMSH_VK_STAGE_(VS|TCS|TES|GS|FS|CS|TS|MS)\\s+(\\d+)",
+            r"^#define DMSH_VK_STAGE_(VS|TCS|TES|GS|FS|CS|TS|MS)\s+(\d+)",
             abi, re.M)}
         self.assertEqual(stages["TCS"],1)
         self.assertEqual(stages["FS"],4)
