@@ -20,6 +20,12 @@ enum { VKA_NDSR_KERNEL_EASU = 0, VKA_NDSR_KERNEL_BILINEAR = 1 };
 enum { VKA_NDSR_PACK_NONE = 0, VKA_NDSR_PACK_B10G11R11 = 1, VKA_NDSR_PACK_RGBA8 = 2 };   // PACK (the packed variant only): the output's format
 // The packed store for an output of VkFormat vkformat (VKA_NDSR_PACK_*): B10G11R11_UFLOAT_PACK32 (122) and R8G8B8A8_UNORM (37); NONE for any other
 int vka_ndsr_pack_of(int vkformat);
+// Pure-C group selection for the stand-in SPIR-V's 128-lane grid-stride
+// kernel. Returns 0 to preserve the original dispatch, otherwise an x-only
+// group count that covers the EXACT same output texels. Never retile
+// the native guest shader, indirect dispatch or a shared-spill kernel.
+uint32_t vka_ndsr_grid_x(uint32_t width, uint32_t height,
+                          uint64_t native_groups, uint32_t max_groups_x);
 
 #ifndef VKA_NDSR_PURE
 #include "vka.h"
@@ -29,5 +35,5 @@ int vka_ndsr_pack_of(int vkformat);
 // variant runs and the output binding is entered in rt as an unsigned integer image (img_retype_of's form: binding << 16 | R32ui << 8 | 1), so vka_dispatch's g_rt5
 // has stage_writes bind it through an R32_UINT view (vka_tex.c id_view: the pair learned, the image remade with storage use through it). rt is left as it was when the
 // result is VK_NULL_HANDLE. cb: the replay's command buffer (the bound textures' images and sizes)
-VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear);
+VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear, uint32_t *output_width, uint32_t *output_height);
 #endif
