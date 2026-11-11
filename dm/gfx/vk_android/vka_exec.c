@@ -283,13 +283,26 @@ static int oq_on(void) {
     OQF(begin, vkCmdBeginQuery) OQF(end, vkCmdEndQuery) OQF(creset, vkCmdResetQueryPool) OQF(hreset, vkResetQueryPool) OQF(get, vkGetQueryPoolResults)
     #undef OQF
     PFN_vkCreateQueryPool create = (PFN_vkCreateQueryPool)vk.vkGetDeviceProcAddr(V.dev, "vkCreateQueryPool");
-    OQ.precise = f2.features.occlusionQueryPrecise != 0; OQ.host = f12.hostQueryReset && OQ.hreset;
+    // Ocarina's visibility condition compares the cumulative samples-passed
+    // values before and after a tested object. Each intervening query adds a
+    // nonnegative number of samples. For same-reset-epoch equality, replacing
+    // each positive addend with 1 preserves whether the count changed, without
+    // asking the GPU for a sample-accurate count for each of ~1400 reports/frame.
+    // This is Ocarina-only and an experimental gameplay opt-in by default:
+    // exact NVN numeric counter semantics may be needed by other code paths.
+    // DM_VK_OOT_FAST_OCCLUSION=0 restores precise counter queries unchanged.
+    const int oot_fast = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+                         VKA_ENV("DM_VK_OOT_FAST_OCCLUSION", 1) != 0;
+    OQ.precise = f2.features.occlusionQueryPrecise != 0 && !oot_fast;
+    OQ.host = f12.hostQueryReset && OQ.hreset;
     VkQueryPoolCreateInfo ci = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_OCCLUSION, .queryCount = OQ_N};
     VkResult r = create && OQ.begin && OQ.end && OQ.creset && OQ.get ? create(V.dev, &ci, NULL, &OQ.pool) : VK_ERROR_FEATURE_NOT_PRESENT;
     if (r) { OQ.pool = VK_NULL_HANDLE; VRED("occlusion queries: no query pool (%d): every samples-passed report writes 1", r); return 0; }
     if (OQ.host) { OQ.hreset(V.dev, OQ.pool, 0, OQ_N); atomic_store(&g_oq_ready, OQ_N); }   // (else oq_refill resets them at the next submission's start)
     VLOG("occlusion queries: counted on the GPU (%s; queries given back by %s; DM_VK_OCCLUSION=0: the constant 1)", OQ.precise ? "precise counts" : "not precise: a nonzero count for any sample",
          OQ.host ? "host reset" : "a reset at a submission's start");
+    if (oot_fast)
+        VLOG("Ocarina fast occlusion: boolean samples-passed queries enabled (same-reset-epoch visibility-equality preserving); DM_VK_OOT_FAST_OCCLUSION=0 restores precise counts");
     return g_oq = 1;
 }
 typedef struct { VkCommandBuffer cb; uint32_t q, end; } oq_arg;
