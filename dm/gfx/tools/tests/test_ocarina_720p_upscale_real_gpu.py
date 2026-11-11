@@ -64,6 +64,22 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('g_sw.mode == 1', NDSR)
         self.assertIn('g_sw.enc, g_sw.map, kernel, pack', NDSR)
 
+    def test_sgsr_selection_cannot_silently_disable_requested_upscaler(self):
+        # The 2026-11-11 Build 49 log reported DM_VK_PRESENT_FILTER=4 but
+        # fsr_requested=0, even though the launcher had DM_VK_FSR=1.
+        # Presentation selection is authoritative for swapchain setup,
+        # frame scheduling and descriptor pipeline initialization.
+        fn = PRESENT[PRESENT.index("static int fsr_wanted(void)"):
+                     PRESENT.index("static VkPipeline fsr_pipe(")]
+        self.assertIn('VKA_ENV("DM_VK_PRESENT_FILTER", 0)', fn)
+        self.assertIn('if (selected == 3 || selected == 4) return 1;', fn)
+        self.assertIn('return selected == 0 && VKA_ENV("DM_VK_FSR", 0) != 0;', fn)
+        self.assertIn('g_sview_fsr = fsr_wanted()', PRESENT)
+        self.assertIn('if (rot_rotates(pre) || fsr_wanted())', PRESENT)
+        self.assertIn('int fsr = fsr_wanted() && can_sample', PRESENT)
+        self.assertIn('fsr_copy(cb, k, idx, im', PRESENT)
+        self.assertIn('if (fsr && !g_sview[idx])', PRESENT)
+
     def test_ocarina_default_selects_working_720p_fsr_without_new_toggle(self):
         self.assertIn('Prefs.OCARINA_TITLE.equals(id) && previous == 0 ? 4 : previous', OPTIONS)
         self.assertIn('if (p.contains(key)) return', OPTIONS)
