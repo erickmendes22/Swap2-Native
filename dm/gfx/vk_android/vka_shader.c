@@ -631,7 +631,7 @@ static int oot_hot_scene_fragment_compatible(const dmsh_vk_entry *old,
                                              const dmsh_vk_entry *newer) {
     if (!old || !newer ||
         old->key != UINT64_C(0x1e4d2630d24846d0) ||
-        old->stage != DMSH_VK_STAGE_PS || newer->stage != DMSH_VK_STAGE_PS ||
+        old->stage != DMSH_VK_STAGE_FS || newer->stage != DMSH_VK_STAGE_FS ||
         old->flags != newer->flags || old->mod_count != newer->mod_count ||
         old->bind_count != newer->bind_count || old->c1_len != newer->c1_len ||
         old->fout_types != newer->fout_types ||
