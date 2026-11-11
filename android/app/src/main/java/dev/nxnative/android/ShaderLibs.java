@@ -150,6 +150,28 @@ final class ShaderLibs {
     }
 
     /**
+     * Stable Ocarina base: the earliest verified complete 40k+ library
+     * matching the installed game's shader inputs and a certified GPU ABI.
+     * Partial new compilations belong in shaders/hot/ and never displace it.
+     * Selection reads headers only; it never copies or invalidates shaders.
+     */
+    static File originalOcarina(File packDir, String titleId, String abi, String inputs) {
+        if (!Prefs.OCARINA_TITLE.equals(titleId)) return null;
+        File oldest = null;
+        for (File d : libraries(packDir)) {
+            File lib = new File(d, "dmsh_vk.lib");
+            Header h = header(lib);
+            if (h == null || !h.fits(lib.length()) || h.entries < 40000
+                    || !titleId.equals(h.game) || !inputs.equals(h.inputs)
+                    || !(abi.equals(h.abi) || ShaderAbiCert.approved(titleId, h.vkChain, h.abi, h.inputs)))
+                continue;
+            if (oldest == null || lib.lastModified() < oldest.lastModified())
+                oldest = lib;
+        }
+        return oldest;
+    }
+
+    /**
      * A library of another version made before the header's abi field (no ABI: whether the host reads it the same is not known), the newest; null when none. The host plays
      * it as a last resort, after any library of its ABI (vka_shader.c lib_load), with a warning instead of drawing nothing; the launcher does not block Play on it and
      * suggests one more shader update, after which updates are deltas of the same ABI
