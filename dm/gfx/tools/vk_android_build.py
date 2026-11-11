@@ -224,7 +224,11 @@ def borrow_mesh_layout():
                and n.name == 'mesh_facts'), None)
     if fn is None:
         sys.exit('[RED] shader_split.py no longer defines mesh_facts')
-    ns = {'struct': struct}
+    # The original decoder consults the actual paired pixel shader's
+    # input map via code_bytes(keys[ps][3]). For captured-only repairs that
+    # entry is the verified in-memory partner code, not a file from the
+    # full split package. No 42,339-shader scan is performed.
+    ns = {'struct': struct, 'code_bytes': lambda data: data}
     exec(compile(ast.Module(body=[fn], type_ignores=[]), SPLIT, 'exec'), ns)
     return ns['mesh_facts']
 
@@ -398,7 +402,46 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
     if not os.path.isdir(source):
         sys.exit('[RED] Ocarina captured shader folder is absent: ' + source)
     # Keep the capture build exactly bounded by the user-selected keys.
-    # Do not allow an arbitrary .ctl/.code to be interpreted as another game.
+    # Pair metadata comes from REAL NVN ProgramSetShaders records during
+    # gameplay, not a guessed mesh/fragment interface. Ocarina Build 44
+    # compiled 53 mesh/task shaders with an empty mesh_pairs list and
+    # produced full-screen white triangles. Fail safely when those partners
+    # have not yet been captured by the updated runtime.
+    pairs = []
+    pixel_sources = {}
+    pairs_path = os.path.join(source, 'mesh_pairs.tsv')
+    if os.path.isfile(pairs_path):
+        if os.path.getsize(pairs_path) > 524288:
+            sys.exit('[RED] Ocarina captured mesh pairing file exceeds safe limit')
+        for row in open(pairs_path, encoding='ascii'):
+            fields = row.strip().split('\t')
+            if len(fields) != 3 or fields[0] not in ('M', 'T') or not all(
+                    re.fullmatch('[0-9a-f]{16}', key) for key in fields[1:]):
+                continue  # tolerate one incomplete append after a crash
+            kind, key, partner = fields
+            if key not in captured: continue
+            part_ctl = os.path.join(source, partner + '.ctl')
+            part_code = os.path.join(source, partner + '.code')
+            try:
+                with open(part_ctl, 'rb') as f: ctl = f.read()
+                with open(part_code, 'rb') as f: code = f.read()
+            except OSError:
+                continue
+            if not (0xd8 <= len(ctl) <= 0x10000 and 4 <= len(code) <= (1 << 24)
+                    and ctl[:8] == bytes.fromhex('34127698c9000000')
+                    and struct.unpack_from('<I', ctl, 0x44)[0] == len(code)
+                    and hashlib.sha256(ctl[:0x30] + bytes(4) + ctl[0x34:0x48] +
+                                       code).hexdigest()[:16] == partner):
+                continue  # do not trust a forged or truncated partner
+            if kind == 'M':
+                # NVN2 pixel stage is 5 in the SPH, not control +0x56.
+                if ((struct.unpack_from('<I', code)[0] >> 10) & 15) != 5:
+                    continue
+                pixel_sources[partner] = (None, None, None, code)
+                pairs.append((key, partner, 'mesh'))
+            elif ctl[0x56] == 7:  # task -> genuine mesh stage
+                pairs.append((key, partner, 'task'))
+    pairs = sorted(set(pairs))
     records = {}
     stage_map = {0: 'vs', 1: 'ps', 5: 'cs', 6: 'ts', 7: 'ms'}
     graphics = {1: 'vs', 2: 'hs', 3: 'ds', 4: 'gs', 5: 'ps'}
@@ -436,15 +479,41 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
             global CAPTURED_MESH_FACTS
             if CAPTURED_MESH_FACTS is None:
                 CAPTURED_MESH_FACTS = borrow_mesh_layout()
-            derived = CAPTURED_MESH_FACTS(key, stage, ctl, code, {}, [])
+            observed = [p for p in pairs if p[0] == key and
+                        p[2] == ('mesh' if stage == 'ms' else 'task')]
+            if not observed:
+                sys.exit(f'[RED] {key}: captured {stage} has no verified runtime '
+                         'mesh/pixel or task/mesh pairing. Play its scene with '
+                         'the updated APK first; no full 42k translation.')
+            derived = CAPTURED_MESH_FACTS(key, stage, ctl, code,
+                                          pixel_sources, observed)
             layout = derived.get('mesh')
             if not layout or (stage == 'ms' and
                     (len(layout) < 4 or layout[0] <= 0 or layout[1] <= 0)):
                 sys.exit(f'[RED] {key}: NVN2 {stage} mesh layout cannot be recovered '
                          'from its real captured control/code; preserved 42k base and prior overlay')
+            if stage == 'ms':
+                # A mesh may be used with several pixel variants. Exact
+                # per-primitive flat inputs must match the mesh second SPH
+                # output map for ALL observed pairs, not merely one.
+                vertex = layout[3:next((i for i, c in enumerate(layout[3:], 3)
+                                        if c in (-1, -2)), len(layout))]
+                prim = (layout[layout.index(-1) + 1:
+                        layout.index(-2) if -2 in layout else len(layout)]
+                        if -1 in layout else [])
+                for _, ps, _ in observed:
+                    pcode = pixel_sources[ps][3]
+                    inputs = [(pcode[0x18 + i // 4] >> ((i % 4) * 2)) & 3
+                              for i in range(128)]
+                    flat = [4 + i for i in range(128)
+                            if inputs[i] == 1 and 4 + i not in vertex]
+                    if sorted(flat) != sorted(prim):
+                        sys.exit(f'[RED] {key}: captured mesh/fragment mismatch '
+                                 f'with pixel {ps}: flat inputs {flat}, '
+                                 f'primitive outputs {prim}; old library kept')
             # A real profile fact takes precedence, including known pairs.
-            # Only the missing mesh facts are inferred. Do not write the
-            # game profile or modify shader-library ABI and cached full base.
+            # Only missing facts are inferred. Never mutate the game's
+            # profile, original 42k library or installed driver cache.
             existing = FACTS.get(key, {})
             FACTS[key] = {**existing, **{field: value for field, value in derived.items()
                                         if not existing.get(field)}}
