@@ -26,23 +26,27 @@ class InternalSceneResolution(unittest.TestCase):
         self.assertIn("DynamicResolutionParam", DYN)
         self.assertIn("ResolutionReduceScale", DYN)
 
-    def test_exact_025_060_075_choices_are_selectable_without_recompiling_shaders(self):
-        # The user should NOT need to guess which nominal resolution maps
-        # to the iOS 0.25 / observed 0.6 / 0.75 NDSR input scales.
-        # Existing saved values and user-built RomFS overlays are untouched.
-        for scale in ('"0.25"', '"0.6"', '"0.75"'):
-            self.assertIn(scale, PREFS)
-        for label in ("0,25", "0,6", "0,75", "288p", "691p", "864p"):
-            self.assertIn(label, PREFS)
+    def test_existing_four_scene_choices_are_unchanged_and_sgsr_is_shader_driven(self):
+        # The user explicitly chose to KEEP the original resolutions:
+        # 720p 0.6133, 540p 0.46875, 480p 0.4166667,
+        # and 360p 0.3125. The iOS 0.25/0.6/0.75 values denote
+        # game-internal network variants, not new launcher resolutions.
+        self.assertIn('{"0.6133", "0.46875", "0.4166667", "0.3125"}', PREFS)
+        self.assertNotIn('"0.25"', PREFS)
+        self.assertNotIn('"0.6"', PREFS)
+        self.assertNotIn('"0.75"', PREFS)
         self.assertIn("Prefs.OCARINA_SCENE_NAMES", UI)
         self.assertIn("Prefs.OCARINA_SCENE_SCALES[w - 1]", UI)
         self.assertIn("Prefs.setSceneScale(a, id, scale)", UI)
         self.assertIn("SceneOverlay.current(files, id, scale, expect, in[0])", UI)
         self.assertIn("if scale != 0.6133", DYN)
         self.assertIn("else lambda v: scale", DYN)
-        self.assertIn("0.05 <= (a.scale if a.scale is not None else a.floor) <= 2.0", DYN)
         self.assertIn('gameKey("scene_scale", titleId), profileScale', PREFS)
         self.assertIn('for (String s : OCARINA_SCENE_SCALES) if (s.equals(v)) return v;', PREFS)
+        n = (ROOT / "dm/gfx/vk_android/vka_ndsr.c").read_text()
+        self.assertIn('cs->key == UINT64_C(0xb106afba1a18faa9)', n)
+        self.assertIn('cs->key == UINT64_C(0xfa3033d05c0a41d6)', n)
+        self.assertIn('VKA_ENV("DM_VK_OOT_SGSR_CHAIN", 0)', n)
 
     def test_separate_intermediate_and_final_filters(self):
         self.assertIn("Reconstrução da cena (GPU)", UI)
