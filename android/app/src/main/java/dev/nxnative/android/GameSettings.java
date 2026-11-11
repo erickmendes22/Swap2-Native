@@ -211,7 +211,7 @@ final class GameSettings {
             // 0.25 uses the distinct d99fbeeb upscaler. Enable only on user
             // request: the Vulkan path substitutes linear HDR source only
             // after the normal d99fbeeb dispatch and SGSR1 present succeeded.
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "SGSR 1 — rede interna em escala 0,25 (experimental)",
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "SGSR 1 — redes internas do jogo (experimental)",
                     v -> GraphicsOptions.choice(a, id, "oot_sgsr_chain", again))
                     .value(GraphicsOptions.SGSR_CHAIN[GraphicsOptions.sgsrChain(a, id)]
                             + " · reiniciar o jogo · requer SGSR no filtro da tela").chevron(a).view);
