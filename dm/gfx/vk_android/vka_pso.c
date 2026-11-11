@@ -356,8 +356,28 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     // 1e4d26... (many draws in 854x480 scene passes).
     // Unlike skipping guest draws/compute, coarse VRS keeps all geometry and
     // shading outputs. It can change pixel detail, hence opt-in only.
-    if (V.fps_boost_vrs && sh[1] && (sh[1]->key == UINT64_C(0x5ad65c0eefd09c7f)
-                                  || sh[1]->key == UINT64_C(0x1e4d2630d24846d0))
+    // Measured 720p scene passes (frame 3601 / 3901): up to 3.65ms
+    // in 581 draws, and a single 2.28ms task+mesh+fragment draw.
+    // Shade two adjacent pixels per invocation on these Ocarina fragment
+    // keys when Adreno explicitly advertises VK_KHR_fragment_shading_rate
+    // and the 2x1 feature. Other shaders, meshes, geometry, depth-only or
+    // multisampled pipelines stay EXACTLY at their original resolution.
+    // VRS reduces shader invocations, not output pixel count or draw count.
+    // Some fine texture detail may change: per-game UI / env opt-out.
+    uint64_t fs_hot = sh[1] ? sh[1]->key : 0;
+    int scene_hot = fs_hot == UINT64_C(0x185d371b6c9475b2) ||
+                    fs_hot == UINT64_C(0x09bdc3e13d9f2461) ||
+                    fs_hot == UINT64_C(0x00ce4088af2c8e12) ||
+                    fs_hot == UINT64_C(0xa566b7687b712ff3) ||
+                    fs_hot == UINT64_C(0x8ea627c8ef169ee1) ||
+                    fs_hot == UINT64_C(0x1e4d2630d24846d0) ||
+                    fs_hot == UINT64_C(0x5ad65c0eefd09c7f);
+    int explicit_hot = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 &&
+                       (fs_hot == UINT64_C(0x5ad65c0eefd09c7f) ||
+                        fs_hot == UINT64_C(0x1e4d2630d24846d0));
+    int balanced_hot = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) &&
+                       scene_hot && !strcmp(DM_GAME_ID, "0400486024DEC000");
+    if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0) {
         if (V.fps_boost_width) {
             P->fsrate = (VkPipelineFragmentShadingRateStateCreateInfoKHR){
@@ -371,7 +391,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
             P->fsrate.pNext = &P->ri;
             static _Atomic int nboost;
             if (atomic_fetch_add(&nboost, 1) < 6)
-                VLOG("Ocarina FPS Boost VRS %ux%u shader %016llx, all draws preserved",
+                VLOG("Ocarina scene-hot VRS %ux%u shader %016llx, full 720p render targets and all draws preserved",
                      P->fsrate.fragmentSize.width, P->fsrate.fragmentSize.height,
                      (unsigned long long)sh[1]->key);
         }
