@@ -716,7 +716,7 @@
     <string name="s2_about_revision">Revision: %1$s</string>
     <string name="s2_about_build_date">Build date: %1$s</string>
     <string name="s2_vrs_heavy_title">VRS in heavy graphics passes</string>
-    <string name="s2_vrs_heavy_note">4×2 and 4×4 are restricted to the validated offscreen Mesh/Task pass. The main scene is limited to 2×2 or finer to preserve detail. Restart the game to apply.</string>
+    <string name="s2_vrs_heavy_note">At 360p, VRS 4×2 and 4×4 apply to identified scene shaders. At 480p and above, the main scene is capped at 2×2 to preserve detail. Restart the game.</string>
     <string name="s2_vrs_inherit">Global default</string>
     <string-array name="s2_oot_hotpass_vrs">
         <item>Off</item>
