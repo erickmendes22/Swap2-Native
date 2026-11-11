@@ -65,6 +65,41 @@ class ComputeOverlap(unittest.TestCase):
         self.assertEqual(model(["compute", "compute_spill", "draw"]), 2)
         self.assertEqual(model(["compute", "compute_indirect", "draw"]), 2)
 
+    def test_zero_grid_dispatch_is_real_noop_not_a_redundant_gpu_barrier(self):
+        # Build53 GPU timestamps repeatedly marked compute shaders
+        # 510c344f..., e855420a..., cee08c63... at grid 0x0x0,
+        # although the dispatch code did not issue vkCmdDispatch.
+        # Return BEFORE pipeline creation, descriptor walks and GPU barrier;
+        # keep pass-ending, guest dispatch constants, and explicit barrier.
+        method = DRAW[DRAW.index('void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {'):]
+        zero = method.index('if (!dp->ind && (dp->x <= 0 || dp->y <= 0 || dp->z <= 0)')
+        lookup = method.index('vka_shader *sh[VKA_NSTAGE]')
+        self.assertLess(zero, lookup)
+        self.assertIn('vka_rp_end();', method[:zero])
+        self.assertIn('d->b.dispatch[0] = (uint32_t)dp->x;', method[zero:lookup])
+        self.assertIn('d->b.dispatch[1] = (uint32_t)dp->y;', method[zero:lookup])
+        self.assertIn('d->b.dispatch[2] = (uint32_t)dp->z;', method[zero:lookup])
+        self.assertIn('vka_dispatch_overlap_flush();', method[zero:lookup])
+        self.assertIn('!vka_gp_active', method[zero:lookup])
+        self.assertIn('DM_VK_OOT_ZERO_DISPATCH", 1', method[zero:lookup])
+        self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);', EXEC)
+        self.assertIn('if (dp->ind) vk.vkCmdDispatchIndirect(g_cb, ib, io);', DRAW)
+
+    def test_profiled_9e6b_retile_does_not_require_quality_reducing_vrs(self):
+        # Profiled 9e6b at ~0.5-1.4ms. The safe SPIR-V patcher refuses
+        # subgroup/workgroup/local indexing and preserves each global ID.
+        start = DRAW.index('if (!p && sh[5]->key == UINT64_C(0x9e6b00b050e30801)')
+        end = DRAW.index('if (!p) p = rt.b[0]', start)
+        mode = DRAW[start:end]
+        self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")', mode)
+        self.assertIn('VKA_ENV("DM_VK_OOT_CS_RETILE", 1)', mode)
+        self.assertNotIn('DM_VK_OOT_FPS_BOOST', mode)
+        self.assertIn('!rt.b[0] && !dp->ind && !spill_bytes(sh[5])', mode)
+        self.assertIn('dp->x == 8 && dp->y == 9 && dp->z == 12', mode)
+        self.assertIn('maxComputeWorkGroupCount[2] >= 24', mode)
+        self.assertIn('vka_cs_pipeline_oot_retile(', mode)
+        self.assertIn('if (!p) p = rt.b[0]', DRAW[end:])
+
     def test_original_guarded_barriers_remain(self):
         self.assertIn('vka_compute_write_barrier(g_cb);', DRAW)
         self.assertIn('vka_barrier(g_cb); // the final dispatch publishes all grouped writes', DRAW)
