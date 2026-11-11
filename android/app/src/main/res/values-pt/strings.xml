@@ -709,4 +709,14 @@
     <string name="s2_about_version">Versão %1$s</string>
     <string name="s2_about_revision">Revisão: %1$s</string>
     <string name="s2_about_build_date">Compilado em: %1$s</string>
+    <string name="s2_vrs_heavy_title">VRS nos passes gráficos pesados</string>
+    <string name="s2_vrs_heavy_note">4×2 e 4×4 são experimentais e exigem suporte do driver. Sem suporte, retorna para 4×2, 2×2 ou 2×1. Detalhes finos podem perder nitidez.</string>
+    <string-array name="s2_oot_hotpass_vrs">
+        <item>Desligado — qualidade total</item>
+        <item>Balanceado — VRS 2×1 (padrão)</item>
+        <item>Agressivo — VRS 2×2</item>
+        <item>HDR ampliado — VRS 2×2</item>
+        <item>HDR ampliado — VRS 4×2 (experimental)</item>
+        <item>HDR ampliado — VRS 4×4 (experimental)</item>
+    </string-array>
 </resources>
