@@ -121,16 +121,16 @@ final class SidePanel extends FrameLayout {
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setTextSize(20);
         box.addView(title);
-        note("The game runs on behind this panel; every change applies now and is kept.");
+        note(act.getString(R.string.s2_ig_running_note));
 
-        head("Frame rate cap");   // the game's own frame rate; frame generation (below, its own heading) adds frames on top
+        head(act.getString(R.string.s2_ig_fps_cap));   // the game's own frame rate; frame generation (below, its own heading) adds frames on top
         caps = new RadioGroup(act);
         int live = Integer.parseInt(Native.fpsCapStatus().split(" ")[0]), cur = live >= 0 ? live : Prefs.fpsCap(act, game());   // the cap in effect (env.txt or DM_CTL may have set another)
         for (int i = 0; i < Prefs.FPS_CAPS.length; i++) {
             int v = Prefs.FPS_CAPS[i];
             RadioButton b = new RadioButton(act);
             b.setId(2000 + i);
-            b.setText(v == 0 ? "The game's own" : v + " fps");
+            b.setText(v == 0 ? act.getString(R.string.s2_ig_game_own) : v + " FPS");
             if (v == cur || v == 0 && cur < 0) b.setChecked(true);   // a cap the launcher does not offer (40, 45 from env.txt or DM_CTL): none checked, the line below says it
             caps.addView(b);
         }
@@ -147,33 +147,33 @@ final class SidePanel extends FrameLayout {
 
         GraphicsOptions.rows(act, box, game());   // 0.1.2 output filter/FSR sharpness, live via DM_CTL
 
-        head("Overlay");
+        head(act.getString(R.string.s2_overlay));
         Overlay.rows(act, box, null);
 
-        head("On-screen controls");
+        head(act.getString(R.string.s2_ig_controls));
         fill.accept(box);   // GameActivity: TouchControls.controlRows
 
         Button pause = new Button(act);   // the game suspended (clock, graphics, threads, audio) until a tap on the screen, or A / Start: GameActivity.pause
-        pause.setText("Pause the game");
+        pause.setText(R.string.s2_ig_pause);
         pause.setOnClickListener(v -> { close(); if (act instanceof GameActivity) ((GameActivity) act).pause(); });
         LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         pl.topMargin = Math.round(24 * getResources().getDisplayMetrics().density);
         box.addView(pause, pl);
         android.widget.CheckBox ret = new android.widget.CheckBox(act);
-        ret.setText("Pause when the game comes back from the background");
+        ret.setText(R.string.s2_ig_pause_return);
         ret.setChecked(Prefs.pauseOnReturn(act, game()));
         ret.setOnCheckedChangeListener((b, on) -> Prefs.pauseOnReturn(act, game(), on));
         box.addView(ret);
         Button stop = new Button(act);
-        stop.setText("Stop the game");
-        stop.setOnClickListener(v -> new AlertDialog.Builder(act).setTitle("Stop the game?").setMessage("The game ends; unsaved progress is lost. The log stays for Share log.")
-                .setPositiveButton("Stop", (d, w) -> { Native.note("stopped by the user"); if (act instanceof GameActivity) ((GameActivity) act).backToFrontend(); android.os.Process.killProcess(android.os.Process.myPid()); })
-                .setNegativeButton("Keep running", null).show());
+        stop.setText(R.string.s2_ig_stop);
+        stop.setOnClickListener(v -> new AlertDialog.Builder(act).setTitle(R.string.s2_ig_stop_title).setMessage(R.string.s2_ig_stop_message)
+                .setPositiveButton(R.string.s2_ig_stop_confirm, (d, w) -> { Native.note("stopped by the user"); if (act instanceof GameActivity) ((GameActivity) act).backToFrontend(); android.os.Process.killProcess(android.os.Process.myPid()); })
+                .setNegativeButton(R.string.s2_ig_stop_cancel, null).show());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         lp.topMargin = Math.round(24 * getResources().getDisplayMetrics().density);
         box.addView(stop, lp);
         Button done = new Button(act);
-        done.setText("Back to the game");
+        done.setText(R.string.s2_ig_back);
         done.setOnClickListener(v -> close());
         box.addView(done, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
     }
@@ -192,12 +192,13 @@ final class SidePanel extends FrameLayout {
         boolean own = cap >= 0 && rates == 0 && now > 0, none = cap < 0 || own;
         caps.setVisibility(none ? GONE : VISIBLE);
         if (cap >= 0 && now > 0) Prefs.ownRate(act, game(), own);   // its Game settings hide the cap too
-        String s = cap < 0 ? "This build has no frame rate cap."
-                : now <= 0 ? "Starting…"
-                : own ? "This game picks its own frame rate."
-                : "Now " + now + " fps" + (cap > 0 ? ", capped at " + cap : ", the game's own") + ".";
+        String s = cap < 0 ? act.getString(R.string.s2_ig_no_limit)
+                : now <= 0 ? act.getString(R.string.s2_ig_starting)
+                : own ? act.getString(R.string.s2_ig_own_rate)
+                : cap > 0 ? act.getString(R.string.s2_ig_now_limit, now, cap)
+                : act.getString(R.string.s2_ig_now_game, now);
         fpsNow.setText(s);
-        if (lsfgNow != null) { String st = Native.frameGenStatus(); int sp = st.indexOf(' '); lsfgNow.setText("Now: " + (sp > 0 ? st.substring(sp + 1) : st)); }
+        if (lsfgNow != null) { String st = Native.frameGenStatus(); int sp = st.indexOf(' '); lsfgNow.setText(act.getString(R.string.s2_ig_frame_status, sp > 0 ? st.substring(sp + 1) : st)); }
         removeCallbacks(tick);   // a change calls refresh too: one loop, not one more per change
         postDelayed(tick, 500);
     }
