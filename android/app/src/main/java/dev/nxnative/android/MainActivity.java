@@ -839,9 +839,19 @@ public final class MainActivity extends Activity {
         word.setPadding(dp(14), 0, 0, 0);
         brand.addView(word, Ui.weight());
         about.addView(brand);
-        TextView tag = Ui.chip(this, Prefs.buildTag(this));   // which build this is (also the first line of every log)
+        // The About card identifies a RELEASE by version, not by the CI
+        // checkout's temporary +dirty suffix. Full diagnostics remain in logs.
+        TextView tag = Ui.chip(this, getString(R.string.s2_about_version, BuildConfig.VERSION_NAME));
         tag.setTextIsSelectable(true);
         Ui.add(about, tag, 12, Ui.wrap());
+        String revision = BuildConfig.NX_COMMIT;
+        if (revision.length() > 10 && !"unknown".equals(revision))
+            revision = revision.substring(0, 10);
+        TextView revisionLine = Ui.small(this,
+                getString(R.string.s2_about_revision, revision) + "\n" +
+                getString(R.string.s2_about_build_date, BuildConfig.NX_BUILD_TIME));
+        revisionLine.setTextIsSelectable(true);
+        Ui.add(about, revisionLine, 8);
         StringBuilder ids = new StringBuilder();
         for (Profile pr : Profile.all()) ids.append(ids.length() == 0 ? "" : ", ").append(pr.titleId);
         TextView t = Ui.small(this, getString(R.string.s2_about_ids, ids.toString()) + "\n" + getString(R.string.s2_about_credits) + (BuildConfig.NX_LSFG ? "" : " " + getString(R.string.s2_about_no_lsfg)));
