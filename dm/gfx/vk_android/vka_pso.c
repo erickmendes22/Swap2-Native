@@ -371,14 +371,21 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                     fs_hot == UINT64_C(0xa566b7687b712ff3) ||
                     fs_hot == UINT64_C(0x8ea627c8ef169ee1) ||
                     fs_hot == UINT64_C(0x1e4d2630d24846d0) ||
-                    fs_hot == UINT64_C(0x5ad65c0eefd09c7f);
+                    fs_hot == UINT64_C(0x5ad65c0eefd09c7f) ||
+                    fs_hot == UINT64_C(0x264e6e6de176460a) ||
+                    fs_hot == UINT64_C(0xedce918b7374c89b) ||
+                    fs_hot == UINT64_C(0xfb29c58b3fab8e7b);
     int explicit_hot = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 &&
                        (fs_hot == UINT64_C(0x5ad65c0eefd09c7f) ||
                         fs_hot == UINT64_C(0x1e4d2630d24846d0));
     int balanced_hot = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) &&
                        scene_hot && !strcmp(DM_GAME_ID, "0400486024DEC000");
+    // Profiled main-scene targets are B10G11R11 HDR + depth; never
+    // coarse-shade SDR UI, cutscene/video or other unrelated targets even
+    // when they reuse a fragment key elsewhere in the game.
     if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)
-        && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0) {
+        && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0 &&
+        k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
         if (V.fps_boost_width) {
             P->fsrate = (VkPipelineFragmentShadingRateStateCreateInfoKHR){
                 VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR,
