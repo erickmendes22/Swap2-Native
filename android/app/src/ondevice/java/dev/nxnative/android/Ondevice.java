@@ -586,7 +586,10 @@ final class Ondevice {
             after.setText(running ? "Pausing keeps everything done so far; Resume goes on from here. The game can be played when it is ready."
                     : "done".equals(st) ? "Play starts the game with its prepared pack." : "Nothing done so far is lost.");
             go.setText(running ? "Pause" : "done".equals(st) && !job.apkChanged() ? "Prepare again" : "failed".equals(st) ? "Retry" : "pending".equals(st) ? "Start" : "Resume");
-            go.setEnabled(!"done".equals(st) || job.apkChanged());
+            // A finished Ocarina job may be prepared again without deleting
+            // or recompiling its already-playable 42k-shader base.
+            go.setEnabled(!"done".equals(st) || job.apkChanged()
+                    || "0400486024DEC000".equals(job.titleId()));
             play.setEnabled(ready && (!running || !job.hotKeys().isEmpty()));
         }
 
@@ -1086,6 +1089,14 @@ final class Ondevice {
             if (job == null) return;
             if (go.getText().toString().equals("Pause")) { pauseJob("launcher"); return; }
             if (a.needAccess()) return;
+            // Starting an already completed job has no pending steps: the
+            // service immediately exits. Route the visible "Prepare again"
+            // action through the fresh Ocarina selective repair flow instead.
+            if ("0400486024DEC000".equals(job.titleId())
+                    && "done".equals(job.state()) && !job.apkChanged()) {
+                picked(job.dump(), false, job.pack(), true);
+                return;
+            }
             startService(job);
         }
 
