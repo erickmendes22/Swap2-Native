@@ -747,6 +747,16 @@ static int present_one(const pq_item *it) {
     // FSR from a driver fallback to linear/nearest blit. Log only on a change.
     static int last_mode = -1, last_stretch = -1, last_w = -1, last_h = -1, last_dstw = -1, last_dsth = -1, last_method = -1;
     int method = fsr_applied ? (present_filter == 4 && g_fsr.sgsr ? 4 : 3) : rotated_copy ? 2 : blit > 0 ? 1 : 0;
+    if (present_filter >= 3 && !fsr_applied) {
+        static int reported;
+        if (!reported++) VRED("Ocarina SGSR/FSR unavailable despite requested filter %d: "
+            "fsr_requested=%d sampling=%d swapchain_view=%d fsr_pipeline_state=%d "
+            "src_fmt=%d features=%#x usage=%#x input=%dx%d output=%dx%d. "
+            "Do not replace NDSR EASU based on the requested filter alone.",
+            present_filter, fsr_wanted(), can_sample, !!g_sview[idx],
+            g_fsr.state, im ? im->f.vk : 0, fp.optimalTilingFeatures,
+            im ? im->usage : 0, cw, ch, dw, dh);
+    }
     if (present_filter != last_mode || stretch != last_stretch || cw != last_w || ch != last_h ||
         dw != last_dstw || dh != last_dsth || method != last_method) {
         VLOG("present output filter=%d (0 auto,1 nearest,2 bilinear,3 FSR 720p,4 SGSR 720p), stretch=%d; image %dx%d -> %dx%d, method=%s%s",

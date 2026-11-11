@@ -187,8 +187,14 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
     // upscale when a final edge-aware upscaler is actually enabled.
     // The bilinear SPIR-V variant keeps sqrt->linear colour conversion,
     // output size, and the exact same storage-image binding.
+    // The 2026-11-11 Build 44 Redmagic session requested SGSR1 but
+    // actually used rot-linear fallback. Basing this optimization only on
+    // the REQUESTED filter removed its only working EASU pass. Default to
+    // the validated original b106 network; allow a deliberate A/B experiment
+    // only with DM_VK_OOT_NDSR_BILINEAR=1.
     int oot_network = cs->key == UINT64_C(0x7c511cc23ff85d14)
-                   || cs->key == UINT64_C(0xb106afba1a18faa9);
+                   || (cs->key == UINT64_C(0xb106afba1a18faa9)
+                       && VKA_ENV("DM_VK_OOT_NDSR_BILINEAR", 0));
     int final_upscale = VKA_ENV("DM_VK_PRESENT_FILTER", 0) >= 3;
     int large_oot = g_sw.mode == 1 && oot_network && final_upscale
                     && ((uint64_t)oi->w * oi->h > 1280ull * 720);

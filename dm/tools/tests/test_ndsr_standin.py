@@ -34,6 +34,9 @@ class OcarinaLargeNdsr(unittest.TestCase):
         # b106afba1a18faa9, 1275x717 -> 2048x1152.
         src = (REPO / "dm/gfx/vk_android/vka_ndsr.c").read_text()
         self.assertIn('UINT64_C(0xb106afba1a18faa9)', src)
+        self.assertIn('VKA_ENV("DM_VK_OOT_NDSR_BILINEAR", 0)', src)
+        present = (REPO / "dm/gfx/vk_android/vka_present.c").read_text()
+        self.assertIn('Ocarina SGSR/FSR unavailable despite requested filter', present)
         self.assertIn('UINT64_C(0x7c511cc23ff85d14)', src)
         self.assertIn('VKA_ENV("DM_VK_PRESENT_FILTER", 0) >= 3', src)
         self.assertIn('g_sw.mode == 1 && oot_network && final_upscale', src)
