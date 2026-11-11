@@ -26,6 +26,24 @@ class InternalSceneResolution(unittest.TestCase):
         self.assertIn("DynamicResolutionParam", DYN)
         self.assertIn("ResolutionReduceScale", DYN)
 
+    def test_exact_025_060_075_choices_are_selectable_without_recompiling_shaders(self):
+        # The user should NOT need to guess which nominal resolution maps
+        # to the iOS 0.25 / observed 0.6 / 0.75 NDSR input scales.
+        # Existing saved values and user-built RomFS overlays are untouched.
+        for scale in ('"0.25"', '"0.6"', '"0.75"'):
+            self.assertIn(scale, PREFS)
+        for label in ("0,25", "0,6", "0,75", "288p", "691p", "864p"):
+            self.assertIn(label, PREFS)
+        self.assertIn("Prefs.OCARINA_SCENE_NAMES", UI)
+        self.assertIn("Prefs.OCARINA_SCENE_SCALES[w - 1]", UI)
+        self.assertIn("Prefs.setSceneScale(a, id, scale)", UI)
+        self.assertIn("SceneOverlay.current(files, id, scale, expect, in[0])", UI)
+        self.assertIn("if scale != 0.6133", DYN)
+        self.assertIn("else lambda v: scale", DYN)
+        self.assertIn("0.05 <= (a.scale if a.scale is not None else a.floor) <= 2.0", DYN)
+        self.assertIn('gameKey("scene_scale", titleId), profileScale', PREFS)
+        self.assertIn('for (String s : OCARINA_SCENE_SCALES) if (s.equals(v)) return v;', PREFS)
+
     def test_separate_intermediate_and_final_filters(self):
         self.assertIn("Reconstrução da cena (GPU)", UI)
         self.assertIn("Filtro da tela (não reduz render)", UI)
