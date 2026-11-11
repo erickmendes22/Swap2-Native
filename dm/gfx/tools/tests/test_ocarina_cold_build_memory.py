@@ -24,7 +24,9 @@ class ColdShaderBuild(unittest.TestCase):
         # shaders with chain b6b21fb5753a, same ABI as current v0.1.6.
         # Never forge its header into the later 31f38178d067 version.
         self.assertIn('"b6b21fb5753a"', LIBS)
-        self.assertIn('OCARINA_BASE_MIN_ENTRIES = 40000', LIBS)
+        self.assertIn('OCARINA_BASE_ENTRIES = 42339', LIBS)
+        self.assertIn('entries == OCARINA_BASE_ENTRIES', LIBS)
+        self.assertIn('h.fits(file.length()) && titleId.equals(h.game)', LIBS)
         self.assertIn('expectedAbi.equals(abi)', LIBS)
         self.assertIn('expectedInputs.equals(inputs)', LIBS)
         self.assertIn('&& !compatibleOcarinaBase()', ZIP)
