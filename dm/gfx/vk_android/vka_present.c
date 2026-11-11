@@ -185,7 +185,17 @@ static void rot_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, 
 // each stop halves it; AMD's default 0.25). Both are live. The intermediate image has the picture's size on the window, one per frame in flight
 static struct { int state, sgsr_failed; VkFormat fmt; VkPipeline easu, rcas, sgsr; VkPipelineLayout lay; VkDescriptorSetLayout dsl; VkDescriptorPool pool; VkDescriptorSet set[NFRAME][2]; VkSampler samp;
                 VkImage mid[NFRAME], finish[NFRAME]; VkDeviceMemory mem[NFRAME], fmem[NFRAME]; VkImageView view[NFRAME], fview[NFRAME]; uint32_t mw[NFRAME], mh[NFRAME]; } g_fsr;
-static int fsr_wanted(void) { return VKA_ENV("DM_VK_FSR", 0) != 0; }
+static int fsr_wanted(void) {
+    // The user's actual presentation selection (3=FSR, 4=SGSR) is the
+    // authority. Build 49's on-device log had filter=4 but DM_VK_FSR read
+    // as 0 despite its launcher environment line being 1, so the chosen
+    // 720p upscale silently fell back to a full-size rot-linear copy.
+    // Explicit nearest/bilinear modes override a leftover legacy FSR flag;
+    // auto mode retains the legacy flag for existing non-Ocarina callers.
+    int selected = VKA_ENV("DM_VK_PRESENT_FILTER", 0);
+    if (selected == 3 || selected == 4) return 1;
+    return selected == 0 && VKA_ENV("DM_VK_FSR", 0) != 0;
+}
 static VkPipeline fsr_pipe(const uint32_t *frag, size_t fsize, VkFormat fmt) {
     VkShaderModule sm[2] = {0}; VkPipeline p = VK_NULL_HANDLE;
     VkShaderModuleCreateInfo mv = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sizeof vka_fsr_vert, .pCode = vka_fsr_vert}, mf = mv;
