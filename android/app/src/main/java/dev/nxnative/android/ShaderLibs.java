@@ -137,6 +137,9 @@ final class ShaderLibs {
             File lib = new File(d, "dmsh_vk.lib");
             Header h = header(lib);
             if (h == null || !h.fits(lib.length()) || !titleId.equals(h.game)) continue;
+            // Ocarina hot shader compilations contain only a few entries:
+            // they can never be chosen as the mandatory full fallback.
+            if (Prefs.OCARINA_TITLE.equals(titleId) && h.entries <= 1024) continue;
             // A different ABI may use the old full library only when both
             // headers were compared at build time and certified additive-safe.
             // An arbitrary ABI/header change is never treated as compatible.
