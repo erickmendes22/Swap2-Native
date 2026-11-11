@@ -134,11 +134,13 @@ final class ShaderZip {
         if (lib != null && Pack.libraryProblem(pack, titleId) == null) {
             ShaderLibs.Header h = ShaderLibs.header(lib);
             if (h != null && titleId.equals(h.game) && h.fits(lib.length())
-                    && (!Prefs.OCARINA_TITLE.equals(titleId) || h.entries >= 40000))
+                    && (!Prefs.OCARINA_TITLE.equals(titleId)
+                        || h.entries == ShaderLibs.OCARINA_BASE_ENTRIES))
                 return true;
         }
-        // A verified 0.1.2 Ocarina baseline is fully playable with the
-        // current ABI. Its original version and bytes MUST remain unchanged.
+        // Full same-ABI Ocarina library: both the original 0.1.2
+        // compilation and the user's 42,339-entry version with six replaced
+        // entries are imported and played AS-IS. Never demand a pristine SHA.
         Profile profile = Profile.of(titleId);
         return Prefs.OCARINA_TITLE.equals(titleId) && profile != null
                 && ShaderLibs.trustedOcarinaBase(pack, titleId,
@@ -213,9 +215,10 @@ final class ShaderZip {
      * takes. → its dmsh_vk.lib
      */
     static File chooseExport(File packDir, String titleId) throws Failure {
-        // Export the known first complete Ocarina library, NOT a newer
-        // experimental build or a six-shader hot overlay under v-current.
-        // Its original b6b21fb5753a header is the reference that works.
+        // The validated b6b21fb5753a chain also contains full user exports
+        // with six original shader entries REPLACED by newer translations.
+        // Export its actual bytes and SHA-256; do not swap in a historical
+        // pristine copy or choose an incomplete six-entry overlay.
         Profile profile = Profile.of(titleId);
         if (Prefs.OCARINA_TITLE.equals(titleId) && profile != null) {
             File baseline = ShaderLibs.trustedOcarinaBase(packDir, titleId,
@@ -225,7 +228,7 @@ final class ShaderZip {
         File cur = Pack.libraryOf(packDir);
         if (cur != null && Prefs.OCARINA_TITLE.equals(titleId)) {
             ShaderLibs.Header h = ShaderLibs.header(cur);
-            if (h == null || h.entries < 40000) cur = null;
+            if (h == null || h.entries != ShaderLibs.OCARINA_BASE_ENTRIES) cur = null;
         }
         if (cur != null) {
             ShaderLibs.Header h = ShaderLibs.header(cur);
@@ -575,9 +578,11 @@ final class ShaderZip {
             if (free < need) throw new Failure(Why.NO_SPACE, "the shaders need " + need + " bytes, " + free + " free", SaveStore.size(need), t.pack.getPath(), SaveStore.size(free));
         }
 
-        /** The exact first successful full Ocarina build is ABI-compatible:
-         * preserve its original version, do not restamp, and do not recompile.
-         * Import still checks game, inputs, header, SHA-256, CRC and size. */
+        /** Complete Ocarina 42,339-shader library: includes the original
+         * b6b21fb5753a version and the user's same-chain full export with
+         * six replaced entries. Neither is a partial overlay; preserve all
+         * imported bytes and version. Verify game, inputs, ABI, count, SHA,
+         * CRC and size before changing installed libraries. */
         boolean compatibleOcarinaBase() {
             return ShaderLibs.trustedOcarinaBase(t.titleId, s.version,
                     s.abi, s.inputs, s.shaders, t.abi, t.inputs);
@@ -794,9 +799,9 @@ final class ShaderZip {
             Result r = new Result();
             r.from = s.version;
             r.version = s.version;
-            // Preserve the source version for the exact known-good 0.1.2
-            // baseline. The native Vulkan loader already supports alternate
-            // VK versions sharing the same ABI, so no header spoof is needed.
+            // Keep the complete original OR its fully merged six-replacement
+            // export under their actual b6b21fb5753a chain. The Vulkan
+            // loader accepts the same-ABI library with no header spoof.
             boolean keepBaseline = ShaderLibs.trustedOcarinaBase(t.titleId,
                     s.version, s.abi, s.inputs, s.shaders, t.abi, t.inputs);
             if (!s.version.equals(t.current) && !keepBaseline) {
