@@ -69,7 +69,9 @@ final class PrepareState {
         remaining = "done".equals(s) ? -1 : j.remaining(Job.rates(c, j.titleId()), System.currentTimeMillis());
         canPause = running;
         canResume = !running && !"done".equals(s) || "done".equals(s) && j.apkChanged();
-        canPlay = ready && !running;
+        // A selected GPU shader overlay is independent from the verified full
+        // pack. Its background translation must not disable playing that pack.
+        canPlay = ready && (!running || !j.hotKeys().isEmpty());
         canImportShaders = !running && (phase == Phase.FAILED || phase == Phase.PAUSED) && (i == 2 || i == Job.SHADERS);
         shadersImported = j.shadersImported();
         this.saveFailed = saveFailed;
