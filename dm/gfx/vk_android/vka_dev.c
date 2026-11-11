@@ -194,6 +194,10 @@ static int init_once(void) {
     else if (want_boost >= 3 && has_4x2) { selected_w = 4u; selected_h = 2u; }
     else if (want_boost >= 2 && has_2x2) { selected_w = 2u; selected_h = 2u; }
     else if (want_boost > 0 && has_2x1) { selected_w = 2u; selected_h = 1u; }
+    V.fps_boost_has_2x1 = x_fsr_rate && frate.pipelineFragmentShadingRate && has_2x1;
+    V.fps_boost_has_2x2 = x_fsr_rate && frate.pipelineFragmentShadingRate && has_2x2;
+    V.fps_boost_has_4x2 = x_fsr_rate && frate.pipelineFragmentShadingRate && has_4x2;
+    V.fps_boost_has_4x4 = x_fsr_rate && frate.pipelineFragmentShadingRate && has_4x4;
     V.fps_boost_vrs = x_fsr_rate && frate.pipelineFragmentShadingRate && selected_w != 0u;
     V.fps_boost_width = V.fps_boost_vrs ? selected_w : 0u;
     V.fps_boost_height = V.fps_boost_vrs ? selected_h : 0u;
