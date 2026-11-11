@@ -29,5 +29,5 @@ int vka_ndsr_pack_of(int vkformat);
 // variant runs and the output binding is entered in rt as an unsigned integer image (img_retype_of's form: binding << 16 | R32ui << 8 | 1), so vka_dispatch's g_rt5
 // has stage_writes bind it through an R32_UINT view (vka_tex.c id_view: the pair learned, the image remade with storage use through it). rt is left as it was when the
 // result is VK_NULL_HANDLE. cb: the replay's command buffer (the bound textures' images and sizes)
-VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb);
+VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear);
 #endif
