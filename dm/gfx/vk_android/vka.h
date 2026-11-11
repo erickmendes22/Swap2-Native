@@ -419,6 +419,12 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a);   // 1 = a state re
 // The render pass the draws of a submission go into: opened at a draw, closed by anything that is not a draw or state (vka_rp_end), and by a new SET_RT
 void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot);    // the slot's per-draw descriptor sets are free again (its last fence is done)
 void vka_rp_end(void);
+int vka_rp_can_defer_ub(uint64_t addr, uint64_t size);
+int vka_ub_active(void);
+uint64_t vka_ub_seq(void);
+int vka_ub_pending_overlap(uint64_t addr, uint64_t size);
+void vka_ub_overlay(uint64_t addr, void *out, uint64_t size);
+void vka_ub_flush_pass(void);
 int vka_rp_end_covers_barrier(void); // closes the pass; true only when its last GPU command already emitted the full memory barrier
 void vka_rp_discard(const p_set_rt *rt, int has_rt, int color_index); // -1 depth/stencil; 0..7 color
 void vka_rp_predict_discard(uint32_t colors, int depth); // new-pass only, reset immediately after draw

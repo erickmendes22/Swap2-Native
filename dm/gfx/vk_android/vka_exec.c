@@ -632,6 +632,8 @@ void vka_rp_sub_begin(void) {
     { void vka_pso_pause(int on); vka_pso_pause(0); }   // the game submits: resumed (mtl_drain paused the pipeline threads)
     g_chunk_draws = VKA_ENV("DM_VK_CHUNK", 600);   // live: from the next submission
     g_nx = 0; g_chunk_d0 = g_stat_draws;
+    if (g_ub_np) { VRED_ONCE("deferred uniform writes leaked across submissions; discarding stale pending pointers"); g_ub_np = 0; }
+    g_inline_ub.n = 0;
 }
 
 // A long submission goes to the queue in parts, so the GPU starts on its first passes while the rest is recorded: before the first pass after DM_VK_CHUNK draws (default
@@ -787,6 +789,33 @@ typedef struct {
     VkBufferCopy region[UB_BATCH_MAX];
     unsigned n;
 } ub_batch;
+enum { UB_DEFER_MAX = 128 };
+typedef struct { uint64_t addr, size; const uint8_t *bytes; } ub_pass_write;
+static ub_pass_write g_ub_pending[UB_DEFER_MAX];
+static int g_ub_np;
+static uint64_t g_ub_seq = 1, g_ub_deferred, g_ub_shadows, g_ub_flushed;
+static ub_batch g_inline_ub;
+static int ub_intersect(uint64_t a, uint64_t an, uint64_t b, uint64_t bn) {
+    if (!an || !bn) return 0;
+    return a <= b ? b - a < an : a - b < bn;
+}
+int vka_ub_active(void) { return g_ub_np != 0; }
+uint64_t vka_ub_seq(void) { return g_ub_seq; }
+int vka_ub_pending_overlap(uint64_t addr, uint64_t size) {
+    for (int i = 0; i < g_ub_np; i++)
+        if (ub_intersect(addr, size, g_ub_pending[i].addr, g_ub_pending[i].size)) return 1;
+    return 0;
+}
+void vka_ub_overlay(uint64_t addr, void *out, uint64_t size) {
+    // The last write wins; guest OP_UPDATE_UB commands are replayed in order.
+    for (int i = 0; i < g_ub_np; i++) {
+        const ub_pass_write *w = &g_ub_pending[i];
+        if (!ub_intersect(addr, size, w->addr, w->size)) continue;
+        uint64_t lo = addr > w->addr ? addr : w->addr;
+        uint64_t hi = addr + size < w->addr + w->size ? addr + size : w->addr + w->size;
+        memcpy((uint8_t *)out + lo - addr, w->bytes + lo - w->addr, (size_t)(hi - lo));
+    }
+}
 static void ub_flush(ub_batch *b) {
     if (!b->n) return;
     vk.vkCmdCopyBuffer(g_cb, b->src, b->dst, b->n, b->region);
@@ -824,6 +853,21 @@ static void buf_update(ub_batch *batch, const void *data, uint64_t dst, uint64_t
     }
 }
 
+// Call only AFTER vkCmdEndRendering. Deferred updates become GPU-visible at
+// their original pass boundary, in order. A full producer/consumer dependency
+// before copies protects earlier shader and vertex reads from being overwritten
+// while executing; the existing transfer-write barrier publishes the updates.
+void vka_ub_flush_pass(void) {
+    if (!g_ub_np) return;
+    vka_barrier(g_cb);
+    for (int i = 0; i < g_ub_np; i++) {
+        const ub_pass_write *w = &g_ub_pending[i];
+        buf_update(&g_inline_ub, w->bytes, w->addr, w->size);
+    }
+    ub_flush(&g_inline_ub);
+    g_ub_flushed += (uint64_t)g_ub_np;
+    g_ub_np = 0; g_ub_seq++;
+}
 // ---------- Clears ----------
 static float srgb_enc(float c) { c = c < 0 ? 0 : c > 1 ? 1 : c; return c <= 0.0031308f ? 12.92f * c : 1.055f * powf(c, 1 / 2.4f) - 0.055f; }
 static VkClearColorValue color_value(const vka_fmt *f, const float rgba[4]) {
@@ -1152,13 +1196,19 @@ static int overlap_state_record(uint32_t op) {
     }
 }
 static void exec(const uint8_t *p, int depth) {
-    ub_batch ub = {0};
+    ub_batch *ub = &g_inline_ub;
     const int batch_on = VKA_ENV("DM_VK_UB_BATCH", 1) != 0;
     for (;;) {
         op_hdr h; memcpy(&h, p, sizeof h);
         // Flush before a draw, dispatch, query, barrier, list control, or any other command.
         // Even a nested OP_CALL is a boundary: no command may overtake these copies.
-        if (h.op != OP_UPDATE_UB) ub_flush(&ub);
+        if (h.op != OP_UPDATE_UB && !g_ub_np) ub_flush(ub);
+        // Do not carry borrowed inline-update pointers across nested lists,
+        // guest fences, explicit barriers, or changes of queue context.
+        if (g_ub_np && (h.op == OP_END || h.op == OP_BEGIN || h.op == OP_JUMP ||
+            h.op == OP_CALL || h.op == OP_BARRIER || h.op == OP_FENCE_SYNC ||
+            h.op == OP_SIGNAL_EVENT))
+            vka_rp_end();
         if (h.op != OP_DISPATCH && !overlap_state_record(h.op)) vka_dispatch_overlap_flush(); // preserve guest GPU ordering but let consecutive state/binding records pass
         const void *a = p + 8;
         int bar_kept = 0, bar_covered = 0;   // bar_covered: this pass ended with the same full GPU memory barrier that OP_BARRIER needs
@@ -1166,6 +1216,12 @@ static void exec(const uint8_t *p, int depth) {
         switch (h.op) {   // a render pass a draw opened stays open across draws and state; anything else closes it first
         case OP_END: case OP_BEGIN: case OP_JUMP: case OP_CALL: case OP_SIGNAL_EVENT: case OP_REPORT_COUNTER: case OP_FENCE_SYNC: case OP_RENDER_COND: case OP_RESET_COUNTER:
         case OP_SCISSOR: case OP_COPY_STRIDE: case OP_DRAW: case OP_DRAW_IDX: break;
+        case OP_UPDATE_UB: {
+            uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8);
+            if (g_cb && (!vka_rp_can_defer_ub(d, n) || g_ub_np >= UB_DEFER_MAX))
+                vka_rp_end();
+            break;
+        }
         case OP_SET_RT: if (g_cb && !vka_pass_keep()) vka_rp_end(); break;
         case OP_DISCARD_COLOR: case OP_DISCARD_DS: break; // the handler ends an active pass if needed
         case OP_BARRIER: if (g_cb) { int32_t bits; memcpy(&bits, a, 4); bar_kept = vka_rp_game_barrier((uint32_t)bits); if (!bar_kept) bar_covered = vka_rp_end_covers_barrier(); } break;
@@ -1198,7 +1254,16 @@ static void exec(const uint8_t *p, int depth) {
         case OP_RESET_COUNTER: { uint64_t t; memcpy(&t, a, 8); if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED) oq_reset(); break; }
         case OP_CLEAR_BUF: if (g_cb) { const p_clear_buf *cb = a; buf_fill(cb->addr, cb->size, cb->value); boost_transfer_barrier(g_cb); } break;
         case OP_COPY_B2B: if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); buf_copy(s_, d, n); boost_transfer_barrier(g_cb); } break;
-        case OP_UPDATE_UB: g_n_ub++; if (g_cb) { uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8); buf_update(&ub, (const uint8_t *)a + 16, d, n); if (!batch_on) ub_flush(&ub); } break;
+        case OP_UPDATE_UB: g_n_ub++; if (g_cb) {
+            uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8);
+            if (vka_rp_can_defer_ub(d, n) && g_ub_np < UB_DEFER_MAX) {
+                g_ub_pending[g_ub_np++] = (ub_pass_write){d, n, (const uint8_t *)a + 16};
+                g_ub_deferred++; g_ub_seq++;
+            } else {
+                buf_update(ub, (const uint8_t *)a + 16, d, n);
+                if (!batch_on) ub_flush(ub);
+            }
+        } break;
         case OP_SET_RT: S.rt = *(const p_set_rt *)a; S.has_rt = 1; break;
         case OP_DISCARD_COLOR: if (g_cb) { int32_t index; memcpy(&index, a, sizeof index); vka_rp_discard(&S.rt, S.has_rt, index); } break;
         case OP_DISCARD_DS: if (g_cb) vka_rp_discard(&S.rt, S.has_rt, -1); break;
@@ -1227,7 +1292,7 @@ static void exec(const uint8_t *p, int depth) {
         case OP_DRAW_TEX: not_yet(h.op); if (g_oq_count && !S.rc_skip) { g_oq_lost++; g_oqs_skip++; } break;
         default: break;   // state: taken by vka_state_op above
         }
-        if (h.size < 8) { ub_flush(&ub); VRED("command record of size %u at %p (op %u): the list is cut here", h.size, (const void *)p, h.op); return; }
+        if (h.size < 8) { if (g_ub_np) vka_rp_end(); ub_flush(ub); VRED("command record of size %u at %p (op %u): the list is cut here", h.size, (const void *)p, h.op); return; }
         p += h.size;
     }
 }

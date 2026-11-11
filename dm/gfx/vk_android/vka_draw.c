@@ -207,6 +207,26 @@ static uint64_t g_bar_in, g_bar_kept, g_bar_late, g_bar_duplicate_avoided;
 static uint64_t g_rp_scoped, g_rp_graphics, g_rp_full, g_rp_pending_attachment;
 static int g_rp_force_full; // OP_BARRIER has stricter guest-visible ordering than an ordinary pass transition
 void vka_oq_pass_end(void), vka_oq_draw(void);   // vka_exec.c "Occlusion queries"
+int vka_rp_can_defer_ub(uint64_t addr, uint64_t size) {
+    if (!R.on || R.swrite || R.bar_pending || !VKA_ENV("DM_VK_UB_DEFER", 1) || !size) return 0;
+    // Never defer an update into a live render attachment. That would
+    // otherwise overwrite an earlier graphics write at the delayed flush.
+    if (R.has_rt) {
+        for (int i = 0; i < R.rt.n && i < 8; i++) {
+            const tex_t *t = R.rt.color[i];
+            if (t && (!t->mem || !t->L.size ||
+                (addr <= (uint64_t)(uintptr_t)t->mem ?
+                (uint64_t)(uintptr_t)t->mem - addr < size :
+                addr - (uint64_t)(uintptr_t)t->mem < t->L.size))) return 0;
+        }
+        const tex_t *t = R.rt.depth;
+        if (t && (!t->mem || !t->L.size ||
+            (addr <= (uint64_t)(uintptr_t)t->mem ?
+            (uint64_t)(uintptr_t)t->mem - addr < size :
+            addr - (uint64_t)(uintptr_t)t->mem < t->L.size))) return 0;
+    }
+    return 1;
+}
 void vka_rp_end(void) {
     int had_clears = PC.n != 0;
     if (PC.n) pc_flush();
@@ -224,6 +244,10 @@ void vka_rp_end(void) {
     int pending_attachment = R.bar_pending && !full && !R.swrite;
     vka_oq_pass_end();   // an occlusion query active in the pass ends inside it
     vk.vkCmdEndRendering(g_cb);
+    // vkCmdCopyBuffer is forbidden inside rendering. Flush any deferred
+    // uniform writes after ending the pass, with a read->transfer dependency.
+    // The draw-side shadow already held those values for in-pass consumers.
+    vka_ub_flush_pass();
     // Keep OFF as a faithful unoptimized A/B baseline. The FPS Boost mode
     // may narrow this particular full barrier only after identifying that
     // the pass itself produced solely graphics writes.
@@ -562,6 +586,31 @@ static int rd_cb(void *ctx, uint64_t addr, void *out, size_t n) { (void)ctx; ret
 // A uniform buffer: bound in place when Vulkan's offset alignment allows, else a copy of what the CPU sees now (a GPU write earlier in this submission is missed: logged)
 static int ubo_desc(uint64_t addr, uint64_t size, VkDescriptorBufferInfo *bi) {
     if (!size || size > V.ub_range) size = size ? V.ub_range : 65536 < V.ub_range ? 65536 : V.ub_range;
+    if (vka_ub_pending_overlap(addr, size)) {
+        // Reuse one scratch snapshot for unchanged deferred-write state.
+        // The scratch allocation survives until the submission fence.
+        static struct {uint64_t addr, size, seq; vka_span s;} memo[32];
+        static uint32_t slot;
+        uint64_t seq = vka_ub_seq();
+        for (int i = 0; i < 32; i++) if (memo[i].seq == seq &&
+            memo[i].addr == addr && memo[i].size == size) {
+            *bi = (VkDescriptorBufferInfo){memo[i].s.buf, memo[i].s.off, size};
+            return 1;
+        }
+        vka_span s;
+        if (!vka_scratch(size, V.ub_align, &s)) return 0;
+        if (!vka_tex_gw_shadow_read(addr, s.ptr, size)) {
+            // A draw hazard should have ended the pass before this point;
+            // fail closed rather than bind old bytes if an opaque GPU write
+            // became visible while preparing descriptors.
+            VRED_ONCE("deferred uniform shadow cannot read a pending opaque GPU write");
+            return 0;
+        }
+        vka_ub_overlay(addr, s.ptr, size);
+        memo[slot++ & 31u] = (typeof(memo[0])){addr, size, seq, s};
+        *bi = (VkDescriptorBufferInfo){s.buf, s.off, size};
+        return 1;
+    }
     VkBuffer b; VkDeviceSize o;
     uint64_t run = vka_addr_run(addr, size, &b, &o);
     if (run && !(o % V.ub_align) && !(addr % V.ub_align)) { *bi = (VkDescriptorBufferInfo){b, o, run}; return 1; }
@@ -1408,6 +1457,34 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     // Images first used by this draw are made (cleared or uploaded) outside the render pass, then the pass opens over the bound targets
     PT(2);
     walk_all(d, sh);
+    if (R.on && vka_ub_active()) {
+        int hazard = 0;
+        // Raw global memory can load/store any guest address, so it must
+        // see placed memory, not a speculative host shadow. Storage buffers
+        // and texture buffers overlap only when their guest ranges do.
+        for (int st = 0; st < VKA_NSTAGE && !hazard; st++) {
+            if (!sh[st] || (st == 1 && d->rast_discard)) continue;
+            if (g_wk.n[st] < 0) { hazard = 1; break; }
+            for (int i = 0; i < g_wk.n[st]; i++) {
+                const vka_res *r = &g_wk.r[st][i];
+                if (r->what == VKA_R_GMEM_MAP || r->what == VKA_R_GMEM_LOG) { hazard = 1; break; }
+                if (r->what == VKA_R_TBUF) { hazard = 1; break; }
+                if (r->what == VKA_R_BUF && vka_ub_pending_overlap(r->addr, r->size)) {
+                    if (r->desc == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ||
+                        !vka_tex_gw_shadow_safe(r->addr, r->size)) { hazard = 1; break; }
+                }
+            }
+        }
+        for (int st = 0; st < 16 && !hazard; st++) {
+            uint64_t addr = d->vbuf[st].address, n = d->vbuf[st].size;
+            if (addr && vka_ub_pending_overlap(addr, n ? n : 1)) hazard = 1;
+        }
+        // Guest index/indirect arguments can be written by OP_UPDATE_UB too.
+        // Conservatively flush before those draws even with an unknown size.
+        if ((di && (di->ibuf || di->ind || di->mdi_cnt)) ||
+            (dw && (dw->ind || dw->mdi_cnt))) hazard = 1;
+        if (hazard) vka_rp_end();
+    }
     if (make_images(d, sh, 1)) { vka_rp_end(); make_images(d, sh, 0); }
     if (R.on && R.bar_pending && bar_hazard(sh, d)) { g_bar_late++; vka_rp_end(); }   // the game barrier taken inside the pass is needed here: the pass ends (its full barrier) first
     if (vka_nan_on() >= 2 && sh[1] && !d->rast_discard && vka_nan_probe(sh[1]->key)) {   // DM_VK_NANSCAN_FS: this draw's sampled textures, scanned before it
