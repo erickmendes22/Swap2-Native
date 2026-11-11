@@ -408,11 +408,29 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                              extended_hot && !mesh && k->ncolor == 1 &&
                              k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
                              k->dfmt == VK_FORMAT_D32_SFLOAT;
+    // Expanded shading-rate table for the opt-in 4x2/4x4 profiles:
+    // in addition to 17 captured fragment keys, allow other scene fragments
+    // only when pipeline metadata proves the SAME single-target B10G11R11
+    // scene HDR + D32 depth pass, with full color write and without blending,
+    // geometry/tessellation, stencil, alpha-to-coverage, or MSAA.
+    // This deliberately excludes UI, videos, transparencies, depth-only,
+    // post-process outputs and unverified Mesh/Task combinations.
+    // No shader binary, GMEM ABI, draw, render target or image size changes.
+    int broad_hdr_scene = game_oot && hotpass_profile >= 4 && sh[1] &&
+                          !mesh && !sh[2] && !sh[3] && !sh[4] &&
+                          k->ncolor == 1 &&
+                          k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
+                          k->dfmt == VK_FORMAT_D32_SFLOAT &&
+                          k->sfmt == VK_FORMAT_UNDEFINED &&
+                          (k->samples ? k->samples : 1) == 1 &&
+                          k->poly_mode == VK_POLYGON_MODE_FILL &&
+                          !k->att[0].en && k->att[0].mask == 0xF &&
+                          !k->a2c && !k->logic_en;
     // No SDR UI/video, unrelated R16 render targets, depth-only or MSAA.
     int profiled_hdr = (k->ncolor > 0 &&
                         k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32) ||
                        profiled_mesh_hdr;
-    if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)
+    if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr || broad_hdr_scene)
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0 &&
         profiled_hdr) {
         if (V.fps_boost_width) {
@@ -496,7 +514,7 @@ static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], con
     // shader whose VRS pipeline the driver actually created successfully.
     // Pipeline creation is not proof the shader was drawn in this scene.
     if (!r && P->fsrate.sType && sh[1] && sh[1]->key) {
-        static _Atomic uint64_t logged_fs[24];
+        static _Atomic uint64_t logged_fs[128]; // includes newly eligible HDR scene keys
         uint64_t key = sh[1]->key;
         for (size_t i = 0; i < sizeof logged_fs / sizeof logged_fs[0]; i++) {
             uint64_t seen = atomic_load(&logged_fs[i]);
