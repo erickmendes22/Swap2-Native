@@ -62,7 +62,7 @@ static void oot_sgsr_chain_frame(void) {
 }
 static int oot_sgsr_chain_on(void) {
     return !strcmp(DM_GAME_ID, "0400486024DEC000")
-        && VKA_ENV("DM_VK_OOT_SGSR_CHAIN", 1)
+        && VKA_ENV("DM_VK_OOT_SGSR_CHAIN", 0)
         && VKA_ENV("DM_VK_PRESENT_FILTER", 0) == 4
         && vka_present_sgsr_active() && !g_oot_sgsr_chain.refused
         && !vka_nan_on() && !vka_gp_active;
