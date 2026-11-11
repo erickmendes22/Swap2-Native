@@ -78,6 +78,13 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn("FACTS[key] = {**existing, **{field: value for field, value in derived.items()", src)
         self.assertIn("n.name == 'mesh_facts'", src)
         self.assertIn("stage in ('ms', 'ts')", src)
+        self.assertIn("mesh_pairs.tsv", src)
+        self.assertIn("observed = [p for p in pairs", src)
+        self.assertIn("pixel_sources, observed", src)
+        self.assertIn("captured mesh/fragment mismatch", src)
+        self.assertIn("'code_bytes': lambda data: data", src)
+        self.assertIn('capture_ocarina_stage_pair', HOST)
+        self.assertIn('mesh_pairs.tsv', HOST)
 
     def test_051430_upscale_regression_uses_known_good_default(self):
         # Prior good gameplay: b106 NDSR via EASU, SGSR1-single-pass.

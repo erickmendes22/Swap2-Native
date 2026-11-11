@@ -33,7 +33,7 @@ class CapturedTests(unittest.TestCase):
         self.original = os.environ.get("DMSH_VK_CAPTURE_DIR")
         os.environ["DMSH_VK_CAPTURE_DIR"] = str(self.capture)
         self.addCleanup(self.restore)
-        decoder = {'struct': struct}
+        decoder = {'struct': struct, 'code_bytes': lambda code: code}
         exec(compile(ast.Module(body=[MESH_FN], type_ignores=[]), str(SPLIT), 'exec'), decoder)
         self.facts = {}
         ns = dict(os=os, re=re, struct=struct, hashlib=hashlib, sys=sys,
@@ -136,30 +136,68 @@ class CapturedTests(unittest.TestCase):
         (self.capture / (key + ".code")).write_bytes(code)
         return key
 
+    def pixel_partner(self, flat=False):
+        code = bytearray(0x100)
+        struct.pack_into("<I", code, 0, 5 << 10) # NVN pixel SPH
+        if flat: code[0x18] = 1 # requires generic0 per-primitive
+        ctl = bytearray(0xd8)
+        ctl[:8] = bytes.fromhex("34127698c9000000")
+        struct.pack_into("<I", ctl, 0x44, len(code))
+        key = hashlib.sha256(bytes(ctl[:0x30]) + bytes(4) +
+            bytes(ctl[0x34:0x48]) + code).hexdigest()[:16]
+        (self.capture / (key + ".ctl")).write_bytes(ctl)
+        (self.capture / (key + ".code")).write_bytes(code)
+        return key
+
+    def add_pair(self, kind, key, partner):
+        assert kind in ("M", "T")
+        with (self.capture / "mesh_pairs.tsv").open("a") as f:
+            f.write(f"{kind}\t{key}\t{partner}\n")
+
+    def test_captured_mesh_without_program_pair_is_safely_refused(self):
+        key = self.write_mesh_task(7, 13)
+        with self.assertRaises(SystemExit) as caught:
+            self.repair({key}, {}, {}, str(self.pkg))
+        self.assertIn("no verified runtime mesh/pixel", str(caught.exception))
+        self.assertFalse(self.pkg.exists())
+
     def test_captured_mesh_has_real_layout_without_full_split(self):
         key = self.write_mesh_task(7, 13)
+        pixel = self.pixel_partner()
+        self.add_pair("M", key, pixel)
         loc = {}
         self.assertEqual(self.repair({key}, loc, {}, str(self.pkg)), 1)
         facts = self.facts[key]
         self.assertEqual(facts["local"], [64, 1, 1])
         self.assertEqual(facts["mesh"][:7], [64, 126, 128, 0, 1, 2, 3])
         self.assertEqual(facts["mesh_topology"], 3)
+        self.assertEqual(facts["pair"], [pixel])
         self.assertEqual(loc[key][0], "ms_captured_repair.bin")
 
     def test_captured_task_has_real_payload_layout(self):
         key = self.write_mesh_task(6, 17)
+        mesh = self.write_mesh_task(7, 13)
+        self.add_pair("T", key, mesh)
         self.assertEqual(self.repair({key}, {}, {}, str(self.pkg)), 1)
         self.assertEqual(self.facts[key]["mesh"], [0, 0, 128])
         self.assertEqual(self.facts[key]["local"], [64, 1, 1])
+        self.assertEqual(self.facts[key]["pair"], [mesh])
 
     def test_53_missing_mesh_task_layouts_have_no_profile_dependency(self):
         # Reproduce the observed 49 mesh + 4 task failures, using the real
         # shader_split mesh_facts parser on verified synthetic captures.
         keys = set()
+        pixel = self.pixel_partner()
+        meshes = []
         for i in range(49):
-            keys.add(self.write_mesh_task(7, i + 1))
+            mesh = self.write_mesh_task(7, i + 1)
+            keys.add(mesh)
+            meshes.append(mesh)
+            self.add_pair("M", mesh, pixel)
         for i in range(4):
-            keys.add(self.write_mesh_task(6, i + 65))
+            task = self.write_mesh_task(6, i + 65)
+            keys.add(task)
+            self.add_pair("T", task, meshes[i])
         self.assertEqual(len(keys), 53)
         loc = {}
         self.assertEqual(self.repair(keys, loc, {}, str(self.pkg)), 53)
@@ -180,6 +218,7 @@ class CapturedTests(unittest.TestCase):
 
     def test_malformed_mesh_layout_is_rejected_before_compiling(self):
         key = self.write_mesh_task(7, 13)
+        self.add_pair("M", key, self.pixel_partner())
         ctlp = self.capture / (key + ".ctl")
         # Invalidating the thread count changes no key (hash uses only
         # control[:0x48]), but must not produce unverified mesh facts.
@@ -190,6 +229,17 @@ class CapturedTests(unittest.TestCase):
             self.repair({key}, {}, {}, str(self.pkg))
         self.assertIn("mesh layout cannot be recovered", str(cm.exception))
         self.assertFalse((self.pkg / "ms_captured_repair.bin").exists())
+
+    def test_flat_pixel_input_mismatch_refuses_exploding_mesh(self):
+        # The previous mesh compiler provided empty pair metadata and
+        # silently accepted invalid per-primitive SPIR-V interfaces.
+        key = self.write_mesh_task(7, 13)
+        pixel = self.pixel_partner(flat=True)
+        self.add_pair("M", key, pixel)
+        with self.assertRaises(SystemExit) as caught:
+            self.repair({key}, {}, {}, str(self.pkg))
+        self.assertIn("captured mesh/fragment mismatch", str(caught.exception))
+        self.assertFalse(self.pkg.exists())
 
     def test_corrupted_capture_is_rejected_without_packaging(self):
         key,_,_=self.write_capture()
