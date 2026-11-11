@@ -115,6 +115,22 @@ class CapturedTests(unittest.TestCase):
         self.assertIn("Nenhuma recompilação foi iniciada",ui)
         self.assertIn("Não serão preparados os 42.339 shaders novamente",ui)
 
+    def test_pack_96_percent_recovers_library_without_pack_tsv(self):
+        svc=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
+        job=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/Job.java").read_text()
+        screen=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PrepareScreen.java").read_text()
+        self.assertIn('finishedOcarinaLibrary(File shaderRoot, Job j)',svc)
+        self.assertIn('new File(j.dir(), "lib")',svc)
+        self.assertIn('new File(j.pack(), "shaders")',svc)
+        self.assertIn('j.recoverFinishedShaderCache(inJob, cached.entries)',svc)
+        self.assertIn('j.stepState("pack", "pending")',svc)
+        self.assertIn('j.acceptPlayableShaderVersion()',svc)
+        self.assertIn('h.entries < p.shaderTotal',svc)
+        self.assertIn('synchronized List<String> hotKeys()',job)
+        self.assertIn('synchronized void hotKeys(List<String> keys)',job)
+        self.assertIn('synchronized void recoverFinishedShaderCache(File cache, long count)',job)
+        self.assertIn('said = s.error;',screen)
+
     def test_android_wiring_is_selective(self):
         svc=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
         java=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
@@ -136,6 +152,9 @@ class CapturedTests(unittest.TestCase):
         ui=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/Ondevice.java").read_text()
         self.assertIn('OcarinaShaderDelta.alreadyRepaired(probe, missing)',ui)
         self.assertIn('j.stepState("split", "done")',ui)
-        self.assertIn('&& OcarinaShaderDelta.keys(j).isEmpty()',svc)
+        self.assertIn('&& j.hotKeys().isEmpty()',svc)
+        self.assertIn('List<String> hotKeys = j.hotKeys();',svc)
+        self.assertNotIn('List<String> hotKeys = OcarinaShaderDelta.keys(j);',svc)
+        self.assertIn('j.hotKeys(missing);',ui)
 
 if __name__=="__main__": unittest.main()

@@ -298,20 +298,60 @@ public final class PackService extends Service {
         }
     }
 
-    /** Preserve all 42k compiled Ocarina shaders without marking unfinished
-     * code rewriting as complete; only the already-present shader pack is reused.
-     * When rewrite is still pending, it completes normally before the job ends. */
+    /**
+     * Full library validation is independent from pack.tsv: that file is
+     * written LAST, and can be absent after a failed 96% finalization. We
+     * recover only an actual complete library for this game, ABI and inputs.
+     */
+    private ShaderLibs.Header finishedOcarinaLibrary(File shaderRoot, Job j) {
+        if (engine.simulated() || !"0400486024DEC000".equals(j.titleId())) return null;
+        File lib = new File(shaderRoot, "v-" + BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+        ShaderLibs.Header h = ShaderLibs.header(lib);
+        Profile p = Profile.of(j.titleId());
+        if (h == null || p == null || !h.fits(lib.length())
+                || !j.titleId().equals(h.game) || !p.shaderInputs.equals(h.inputs)
+                || !BuildConfig.NX_DMSH_VK_CHAIN.equals(h.vkChain)
+                || !BuildConfig.NX_DMSH_VK_ABI.equals(h.abi)
+                || h.entries < p.shaderTotal) return null;
+        return h;
+    }
+
+    /**
+     * Recover either the fully installed old pack, an already-published full
+     * library whose pack.tsv failed to finalize, or the compiler's completed
+     * ondevice/lib cache. Never re-run 42k translations for a pack-only error.
+     * A hot shader update is a different, explicitly persisted job mode.
+     */
     private boolean reuseOcarinaShaders(Job j) throws IOException, org.json.JSONException {
-        if (!ocarinaPackPlayable(j)) return false;
-        j.shadersInPack();
-        j.stepState("pack", "done");
-        j.acceptPlayableShaderVersion();
-        Log.i(TAG, "Ocarina full shader library reused in place: split, 42k translation and repack DISABLED for this job");
-        if ("done".equals(j.stepState("identify")) && "done".equals(j.stepState("rewrite"))) {
-            j.state("done", null, null);
+        if (engine.simulated() || !"0400486024DEC000".equals(j.titleId())
+                || !j.hotKeys().isEmpty()) return false;
+        if (ocarinaPackPlayable(j)) {
+            j.shadersInPack();
+            j.stepState("pack", "done");
+            j.acceptPlayableShaderVersion();
+            if ("done".equals(j.stepState("identify")) && "done".equals(j.stepState("rewrite"))) {
+                j.state("done", null, null);
+                Log.i(TAG, "Ocarina: already playable pack, full 42k shader library reused");
+                save(j, true);
+                return true;
+            }
             save(j, true);
-            return true;
+            return false;
         }
+        File inPack = new File(j.pack(), "shaders");
+        File inJob = new File(j.dir(), "lib");
+        ShaderLibs.Header installed = finishedOcarinaLibrary(inPack, j);
+        ShaderLibs.Header cached = finishedOcarinaLibrary(inJob, j);
+        if (installed == null && cached == null) return false;
+        if (installed != null) j.shadersInPack();
+        else j.recoverFinishedShaderCache(inJob, cached.entries);
+        // pack.tsv is not yet valid! Keep pack pending; use the completed
+        // library to finalize it without any shader translation or re-split.
+        j.stepState("pack", "pending");
+        j.acceptPlayableShaderVersion();
+        Log.i(TAG, "Ocarina recovered " + (installed != null ? installed.entries : cached.entries)
+                + " finished shaders in " + (installed != null ? inPack : inJob)
+                + "; only Finalizar o pacote will run (no 42k shader rebuild)");
         save(j, true);
         return false;
     }
@@ -325,7 +365,7 @@ public final class PackService extends Service {
             // logic reset a completed library whenever job.state was not done.
             if (reuseOcarinaShaders(j)) return;
             if (j.apkChanged()) {
-                List<String> hot = OcarinaShaderDelta.keys(j);
+                List<String> hot = j.hotKeys();
                 // A complete same-ABI library (or an audited additive ABI
                 // extension) already runs on this APK. Preserve it and all
                 // progress when the completed job's only change is the APK:
@@ -358,9 +398,17 @@ public final class PackService extends Service {
                     save(j, true);
                     return;
                 }
+                // Full-complete job recovery was attempted above. Do not
+                // silently reinterpret a failed full pack as a hot overlay.
                 j.resetChainSteps();
                 if (!hot.isEmpty()) {
                     j.expectedShaders(hot.size());
+                    // Captured-only repairs have no reason to re-split the
+                    // entire game when all selected control/code files exist.
+                    File capture = new File(j.dir().getParentFile(), "nvn_shdump");
+                    if (hot.stream().allMatch(k -> new File(capture, k + ".ctl").isFile()
+                            && new File(capture, k + ".code").isFile()))
+                        j.stepState("split", "done");
                     Log.i(TAG, "Ocarina incremental update: compiling exactly " + hot.size()
                             + " reviewed shader keys into a small overlay; full base preserved");
                 } else {
@@ -391,7 +439,7 @@ public final class PackService extends Service {
                 boolean inPack = new File(j.pack(), "shaders").equals(j.shaderCache());
                 if ((s.equals("split") || s.equals("shaders") || s.equals("pack") && !inPack) && !engine.simulated() && ShaderZip.ready(j.pack(), j.titleId())
                         && !j.refusedImport(Pack.libraryOf(j.pack()))
-                        && OcarinaShaderDelta.keys(j).isEmpty()) {
+                        && j.hotKeys().isEmpty()) {
                     Log.i(TAG, s + ": the pack " + j.pack() + " holds this app's shader library (v-" + BuildConfig.NX_DMSH_VK_CHAIN + "): "
                             + (s.equals("pack") ? "the pack step takes it there" : "skipped, nothing is translated"));
                     j.shadersInPack();
@@ -489,7 +537,7 @@ public final class PackService extends Service {
         long need = DumpCheck.stepNeed(s, j.codeOnly());
         // A reviewed incremental hot shader update only creates a tiny overlay,
         // not another 1+ GiB full library. The split step keeps its own limit.
-        if (("shaders".equals(s) || "pack".equals(s)) && !OcarinaShaderDelta.keys(j).isEmpty())
+        if (("shaders".equals(s) || "pack".equals(s)) && !j.hotKeys().isEmpty())
             need = Math.min(need, 256L << 20);
         // A completed on-device shader library may now be installed by a
         // hard link or atomic rename, without the old second 1.2+ GB copy.
@@ -610,7 +658,7 @@ public final class PackService extends Service {
         // Scoped incremental mode requires an explicit reviewed key manifest
         // AND the older same-ABI complete library in the game's pack.
         // With neither, the old full/manifest-delta update remains unchanged.
-        List<String> hotKeys = OcarinaShaderDelta.keys(j);
+        List<String> hotKeys = j.hotKeys();  // fixed at job creation, NEVER discovered during pack finalization
         // The tools' arguments: the in-process forms (pack_android.py --in-process: the rewriter in the same Python; shader_split.py with J=1 below: no process pool;
         // vk_android_build.py with the translator and the validator as libraries, XLATE / SPIRV_VAL below; the app's process must not fork, ONDEVICE.md "No subprocesses").
         // The split is resumable by RomFS file: its scan results are kept in the app's own storage (Job.splitScan, DM_SPLIT_RESUME, shader_split.py ScanCache) and a rerun scans only the files

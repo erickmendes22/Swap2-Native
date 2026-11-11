@@ -288,6 +288,11 @@ final class PrepareScreen {
         String left = s.phase == PrepareState.Phase.RUNNING || s.phase == PrepareState.Phase.PAUSED ? s.leftText(a) : "";
         step.setText(left.isEmpty() ? s.stepName : s.stepName + " · " + left);
         String said = s.saveFailed ? a.getString(R.string.s2_prep_save_failed) + " " + s.status : s.status;
+        // A generic "stage 5 failed" conceals the real packer error.
+        // Surface it on the screen; tap the sentence for its full copyable
+        // text and log path if the device cannot fit it.
+        if (s.phase == PrepareState.Phase.FAILED && !s.error.isEmpty())
+            said = s.error;
         status.setText(said);
         status.setContentDescription(said + ". " + a.getString(R.string.s2_prep_status_details));
         count.setText(s.shadersImported ? a.getString(R.string.s2_prep_shaders_imported) : s.shadersTotal > 0 ? a.getString(R.string.s2_prep_processed, s.shadersDone, s.shadersTotal)

@@ -2,6 +2,7 @@ package dev.nxnative.android;
 
 import android.content.Context;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -11,6 +12,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -186,6 +189,51 @@ final class Job {
 
     /** Whether the pack step refused this library before (importRefused) */
     synchronized boolean refusedImport(File lib) { return lib != null && librarySignature(lib).equals(o.optString("import_refused", "")); }
+
+    /**
+     * A hot overlay is an explicit JOB MODE, not a live filesystem query.
+     * Dynamic OcarinaShaderDelta.keys() during the final pack step previously
+     * turned a complete 42,339-shader preparation into --hot-keys, failing
+     * at 96 percent because no selective overlay had been built.
+     */
+    synchronized List<String> hotKeys() {
+        JSONArray a = o.optJSONArray("hot_keys");
+        if (a == null || a.length() == 0) return List.of();
+        if (a.length() > 1024) throw new IllegalStateException("Too many shader overlay keys in job");
+        ArrayList<String> out = new ArrayList<>(a.length());
+        for (int i = 0; i < a.length(); i++) {
+            String key = a.optString(i, "");
+            if (!key.matches("[0-9a-f]{16}") || out.contains(key))
+                throw new IllegalStateException("Invalid or duplicate hot shader key in job");
+            out.add(key);
+        }
+        return List.copyOf(out);
+    }
+
+    synchronized void hotKeys(List<String> keys) throws JSONException {
+        if (keys == null || keys.isEmpty()) { o.remove("hot_keys"); return; }
+        if (keys.size() > 1024) throw new IllegalArgumentException("Too many hot shader keys");
+        JSONArray a = new JSONArray();
+        for (String key : keys) {
+            if (key == null || !key.matches("[0-9a-f]{16}")) throw new IllegalArgumentException("Bad hot shader key");
+            a.put(key);
+        }
+        o.put("hot_keys", a);
+    }
+
+    /**
+     * The shader tool ALREADY produced a verified full library in ondevice/lib
+     * but finishing pack.tsv failed. Record a finalization-only retry instead
+     * of calling shader_split.py and translating all 42,339 shaders again.
+     */
+    synchronized void recoverFinishedShaderCache(File cache, long count) throws JSONException {
+        if (count <= 0) throw new IllegalArgumentException("Incomplete shader library");
+        for (String s : new String[] {"split", "shaders"})
+            step0(s).put("state", "done").put("done", count).put("total", count).put("stage", "recovered");
+        o.put("shader_cache", cache.getPath());
+        o.remove("shaders_imported");
+        o.remove("expected_shaders");
+    }
 
     /** Starts the chain's steps over with this APK's versions; the caller deletes their outputs */
     /** The exact number of shaders a reviewed incremental hot update compiles. */

@@ -747,6 +747,7 @@ final class Ondevice {
                                     try {
                                         Job j = Job.adopt(r, pd, false, true);
                                         j.stepState("split", "done");
+                                        j.hotKeys(missing);
                                         j.expectedShaders(missing.size());
                                         begin(j, r, need, false);
                                     } catch (Exception e) {
