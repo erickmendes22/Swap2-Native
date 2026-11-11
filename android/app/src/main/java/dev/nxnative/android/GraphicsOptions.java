@@ -32,7 +32,11 @@ final class GraphicsOptions {
     static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
     static final String[] ENCODER_IDLE = {"Normal (padrão)", "Dormir quando vazio (experimental)"};
     static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: sincronização GPU + VRS 2×1 se suportado", "Agressivo: sincronização GPU + VRS 2×2 se suportado"};
-    static final String[] HOTPASS_VRS = {"Desligado (qualidade total)", "Balanceado — VRS 2×1 nos passes pesados (padrão)", "Agressivo — VRS 2×2 nos passes pesados (experimental)", "2×2 ampliado — mais fragment shaders HDR (experimental)"};
+    // Resource-backed labels are localized. Modes 4/5 use the same verified
+    // HDR hot-pass shader allowlist as mode 3, but request larger VRS tiles.
+    static final String[] HOTPASS_VRS = {"Off (full detail)", "Balanced — VRS 2×1 (default)",
+            "Aggressive — VRS 2×2", "Expanded — VRS 2×2",
+            "Expanded — VRS 4×2 (experimental)", "Expanded — VRS 4×4 (experimental)"};
     static final String[] SGSR_CHAIN = {"Desativado (seguro)", "Ativar otimização das redes internas com SGSR (experimental)"};
 
     static int mode(Context c) {
@@ -76,7 +80,7 @@ final class GraphicsOptions {
         // which remained OFF in all the GPU-profiler sessions. The new rate
         // affects only profiled HDR fragment programs, using the driver's
         // queried 2x1 or 2x2 rate with 2x1 fallback for the aggressive mode.
-        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 3);
+        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 5);
     }
     static int sgsrChain(Context c, String id) {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_sgsr_chain", id), 0), 0, 1);
@@ -206,7 +210,7 @@ final class GraphicsOptions {
             ? "SGSR 1 (reconstrução da cena + saída)" : label(MODES, mode(c, id));
     }
     static String vrsLabel(Context c, String id) {
-        return label(HOTPASS_VRS, hotpassVrs(c, id));
+        return label(c.getResources().getStringArray(R.array.s2_oot_hotpass_vrs), hotpassVrs(c, id));
     }
     static String aspectLabel(Context c, String id) { return label(ASPECTS, stretch(c, id)); }
     static String sharpLabel(float v) {
@@ -235,7 +239,7 @@ final class GraphicsOptions {
         case "oot_fps_boost":
             values = FPS_BOOST; current = fpsBoost(c, id); title = "FPS Boost — VRS (pode reduzir detalhes)"; break;
         case "oot_hotpass_vrs":
-            values = HOTPASS_VRS; current = hotpassVrs(c, id);
+            values = c.getResources().getStringArray(R.array.s2_oot_hotpass_vrs); current = hotpassVrs(c, id);
             title = "Reduzir fragment shaders dos passes gráficos pesados"; break;
         case "oot_sgsr_chain":
             values = SGSR_CHAIN; current = sgsrChain(c, id);
