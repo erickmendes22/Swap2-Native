@@ -197,6 +197,6 @@ class CapturedTests(unittest.TestCase):
         self.assertIn('&& j.hotKeys().isEmpty()',svc)
         self.assertIn('List<String> hotKeys = j.hotKeys();',svc)
         self.assertNotIn('List<String> hotKeys = OcarinaShaderDelta.keys(j);',svc)
-        self.assertIn('j.hotKeys(missing);',ui)
+        self.assertIn('j.hotKeys(selected);',ui)
 
 if __name__=="__main__": unittest.main()
