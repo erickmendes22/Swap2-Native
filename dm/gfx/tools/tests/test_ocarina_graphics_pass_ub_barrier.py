@@ -71,7 +71,6 @@ class BarrierRetainedUniformTest(unittest.TestCase):
         self.assertIn('r->desc == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER',DRAW)
         self.assertIn('vka_tex_id_overlaps_pending_ub(r->tid)',DRAW)
         self.assertIn('vka_ub_overlay(addr, s.ptr, size);',DRAW)
-        self.assertIn('if (g_ub_np) return;',EXEC) if False else None
         self.assertIn('vka_barrier(g_cb);\n    for (int i = 0; i < g_ub_np; i++)',EXEC)
         self.assertIn('vka_transfer_write_barrier(g_cb);',EXEC)
         self.assertIn('R.rt.depth',DRAW)
