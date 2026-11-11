@@ -31,12 +31,15 @@ final class ShaderLibs {
     static final int MAGIC = 0x4B56534D;   // dmsh_abi_vk.h DMSH_VK_LIB_MAGIC, DMSH_VK_LIB_VERSION
     static final int VERSION = 1;
 
-    // The first complete Ocarina library (APK run 42917509914, 2026-11-10)
-    // used this VK chain and the same audited binary ABI as v0.1.6. Never
-    // rename its header to today's tool digest or accept a small hot overlay
-    // as the full base merely because its version string is familiar.
+    // The first successful 0.1.2 compiler (APK run 42917509914) produced
+    // the 42,339-shader Ocarina library with this chain and the same ABI.
+    // Users also exported a COMPLETE 42,339-entry library under this chain
+    // after replacing exactly six shaders with verified newer variants.
+    // Both full libraries are valid candidates: never demand the old binary
+    // SHA-256, relabel them, or misclassify six replacements as a six-entry
+    // overlay. The ZIP reader verifies the actual full-file SHA-256.
     static final String OCARINA_BASE_VK = "b6b21fb5753a";
-    static final long OCARINA_BASE_MIN_ENTRIES = 40000;
+    static final long OCARINA_BASE_ENTRIES = 42339;
 
     static boolean trustedOcarinaBase(String titleId, String vkChain,
                                      String abi, String inputs, long entries,
@@ -46,14 +49,14 @@ final class ShaderLibs {
                 && expectedAbi != null && expectedAbi.equals(abi)
                 && expectedInputs != null && !"unknown".equals(expectedInputs)
                 && expectedInputs.equals(inputs)
-                && entries >= OCARINA_BASE_MIN_ENTRIES;
+                && entries == OCARINA_BASE_ENTRIES;
     }
 
     static File trustedOcarinaBase(File pack, String titleId, String abi,
                                   String inputs) {
         File file = new File(pack, "shaders/v-" + OCARINA_BASE_VK + "/dmsh_vk.lib");
         Header h = header(file);
-        return h != null && h.fits(file.length())
+        return h != null && h.fits(file.length()) && titleId.equals(h.game)
                 && trustedOcarinaBase(titleId, h.vkChain, h.abi, h.inputs,
                                       h.entries, abi, inputs) ? file : null;
     }
@@ -184,9 +187,10 @@ final class ShaderLibs {
      */
     static File originalOcarina(File packDir, String titleId, String abi, String inputs) {
         if (!Prefs.OCARINA_TITLE.equals(titleId)) return null;
-        // The Nov 10 v0.1.2 source is the verified gameplay baseline.
-        // Prefer it over later full but experimental translations, regardless
-        // of the file's last-modified time after import.
+        // The v0.1.2 shader chain also identifies the user's complete
+        // 42,339-entry export with six selectively replaced entries.
+        // Prefer the actually imported bytes (never the pristine SHA only)
+        // over later full but unreviewed translations.
         File trusted = trustedOcarinaBase(packDir, titleId, abi, inputs);
         if (trusted != null) return trusted;
         File oldest = null;
