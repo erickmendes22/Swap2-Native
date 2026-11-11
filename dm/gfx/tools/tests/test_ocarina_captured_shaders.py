@@ -301,7 +301,11 @@ class CapturedTests(unittest.TestCase):
     def test_repaired_keys_are_published_only_after_verification(self):
         source = SOURCE
         java = (ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
-        self.assertIn("write_library(results, publish=not bool(want))", source)
+        self.assertIn("lib, size = write_library(results, publish=False)", source)
+        self.assertIn("if not want and GAME.id == '0400486024DEC000':", source)
+        self.assertIn("if missing or len(_hashes) < 40000:", source)
+        self.assertLess(source.index("if missing or len(_hashes) < 40000:"),
+                        source.index("os.replace(lib, installed)"))
         self.assertIn("if want and set(_hashes) != set(want):", source)
         self.assertLess(source.index("delta.library_hashes(lib, zstd, NJ)"),
                         source.index("os.replace(lib, installed)"))
@@ -372,7 +376,7 @@ class CapturedTests(unittest.TestCase):
         self.assertNotIn("if _bad and not want and os.environ.get('DMSH_VK_REQUIRE_ALL')", src)
         self.assertIn("if not want else set()", src)
         self.assertLess(src.index("if _bad and os.environ.get('DMSH_VK_REQUIRE_ALL')"),
-                        src.index("lib, size = write_library(results, publish=not bool(want))"))
+                        src.index("lib, size = write_library(results, publish=False)"))
 
     def test_malformed_mesh_layout_is_rejected_before_compiling(self):
         key = self.write_mesh_task(7, 13)
