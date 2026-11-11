@@ -138,6 +138,8 @@ class CapturedTests(unittest.TestCase):
         self.assertIn('boolean capturedOnly = !hotKeys.isEmpty()',svc)
         self.assertIn('if (!capturedOnly) {',svc)
         self.assertIn('new File(od, "capture-pkg")',svc)
+        self.assertIn('An old full 42k shader split can still be on disk.',svc)
+        self.assertNotIn('&&\\n                        !new File(split, "pkg").isDirectory();',svc)
         self.assertIn('BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)',java)
         self.assertIn('String key = f.getName().substring(0, 16)',java)
         self.assertIn('File old = Pack.libraryOf(job.pack());',java)

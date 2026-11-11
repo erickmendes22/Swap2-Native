@@ -709,8 +709,13 @@ public final class PackService extends Service {
                 boolean capturedOnly = !hotKeys.isEmpty() &&
                         hotKeys.stream().allMatch(k ->
                                 new File(od.getParentFile(), "nvn_shdump/" + k + ".code").isFile() &&
-                                new File(od.getParentFile(), "nvn_shdump/" + k + ".ctl").isFile()) &&
-                        !new File(split, "pkg").isDirectory();
+                                new File(od.getParentFile(), "nvn_shdump/" + k + ".ctl").isFile());
+                // An old full 42k shader split can still be on disk. Prefer
+                // the verified capture-only source when every selected key
+                // has its pair, rather than scanning 42k static entries and
+                // touching the historical split package again. The Python
+                // translator verifies each control/code digest and compiles
+                // ONLY the selected key list into the partial hot library.
                 if (!new File(split, "pkg").isDirectory() && !capturedOnly) {
                     // Normal shader preparation must still split the game's
                     // approved static shader map before translation.
