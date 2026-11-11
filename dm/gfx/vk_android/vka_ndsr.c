@@ -209,14 +209,36 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
         refused(cs->key, "scene-linear chain source is only verified for Ocarina scale 0.25");
         goto out;
     }
-    // The 0.25 experimental replacement must remove expensive in-game
-    // upscaling taps, not run EASU at 2048x1152 and then SGSR again.
-    // A cheap full-image bilinear/colour-conversion pass produces the exact
-    // output image that later UI passes sample; Qualcomm SGSR1 does the
-    // edge-aware reconstruction once at final presentation. If SGSR was not
-    // REALLY applied, vka_draw never enables source_is_scene_linear.
-    int kernel = (g_sw.mode == 2 || large_oot || source_is_scene_linear)
+    // Build 51's phone logs never reached d99f... (the 0.25 network).
+    // At the tested 0.6 / 0.75 scales Ocarina instead dispatched b106...
+    // and fa303... at 1275x717 or 1536x864 -> 2048x1152. Both still did
+    // full-resolution EASU, while output SGSR1 was not starting at all.
+    // AFTER a real SGSR1 present, the user's existing opt-in also lets
+    // those two verified spatial NDSR variants do the inexpensive bilinear
+    // colour/size conversion and leave the edge-aware reconstruction to
+    // Qualcomm SGSR1 (720p, one pass). No upstream dispatch is skipped at
+    // 0.6/0.75: only redundant heavy NDSR taps are removed.
+    // Default and failed-SGSR paths keep the original network unchanged.
+    int tested_oot_network =
+        cs->key == UINT64_C(0xb106afba1a18faa9) ||
+        cs->key == UINT64_C(0xfa3033d05c0a41d6);
+    int sgsr_network_light = g_sw.mode == 1 && tested_oot_network &&
+        VKA_ENV("DM_VK_OOT_SGSR_CHAIN", 0) &&
+        vka_present_sgsr_active() &&
+        (uint64_t)oi->w * oi->h > 1280ull * 720;
+    // At 0.25 the chain's scene-linear input is a separate, validated
+    // bypass; it still writes the exact original full-size destination.
+    int kernel = (g_sw.mode == 2 || large_oot || source_is_scene_linear ||
+                  sgsr_network_light)
                ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
+    if (sgsr_network_light) {
+        static _Atomic int noted_regular;
+        if (!atomic_exchange(&noted_regular, 1))
+            VLOG("Ocarina SGSR internal network: first b106/fa303 in-game "
+                 "EASU replaced by bilinear colour conversion at %ux%u; "
+                 "Qualcomm SGSR1 is verified active on the final output",
+                 oi->w, oi->h);
+    }
     int effective_enc = source_is_scene_linear ? VKA_NDSR_ENC_LINEAR : g_sw.enc;
     int effective_map = source_is_scene_linear ? VKA_NDSR_MAP_FULL : g_sw.map;
     if (source_is_scene_linear) {
