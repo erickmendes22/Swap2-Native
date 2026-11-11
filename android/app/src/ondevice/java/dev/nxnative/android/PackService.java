@@ -825,6 +825,14 @@ public final class PackService extends Service {
         // source must be verified before it is ever given a shader key.
         PackEngine.setenv("DMSH_VK_CAPTURE_DIR",
                 ocarinaShaders ? new File(od.getParentFile(), "nvn_shdump").getPath() : "");
+        // The replay writes prewarm pairs to the app's external files/temp,
+        // NOT beside the shader cache in Switch2/Work. Tell selective repair
+        // the exact existing path: no gameplay or fresh capture is required.
+        File appFiles = getExternalFilesDir(null);
+        PackEngine.setenv("DMSH_VK_PREWARM_FILE",
+                ocarinaShaders && appFiles != null
+                        ? new File(appFiles, "temp/" + j.titleId() + "/vk_pipelines.keys").getPath()
+                        : "");
         File userProfiles = Profile.userDir();   // a game whose profile is not built into the APK: the tools find it there (dm/games/game.py DM_GAMES_DIR)
         if (userProfiles.isDirectory()) PackEngine.setenv("DM_GAMES_DIR", userProfiles.getPath());
         // The mods folder (<Switch2>/Mods/<title ID>/<mod>/exefs/<build ID>.ips|.pchtxt; an older mods/ while it is there: ExefsMods.root): the rewrite applies a module's exefs patches before rewriting it, and its key names
