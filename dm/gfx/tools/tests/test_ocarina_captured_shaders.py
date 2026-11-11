@@ -69,7 +69,7 @@ class CapturedTests(unittest.TestCase):
         key,_,_=self.write_capture()
         with (self.capture/(key+".code")).open("ab") as f:f.write(b"x")
         with self.assertRaises(SystemExit) as cm:self.repair({key},{},{},str(self.pkg))
-        self.assertIn("captured bytes hash",str(cm.exception))
+        self.assertIn("invalid NVN2 control header or code length",str(cm.exception))
         self.assertFalse((self.pkg/"cs_captured_repair.bin").exists())
 
     def test_unknown_key_never_builds_all_shaders(self):
