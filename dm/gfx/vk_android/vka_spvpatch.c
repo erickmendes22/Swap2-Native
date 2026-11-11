@@ -1006,11 +1006,8 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
                 VR_EMIT((4u<<16)|61u, vec3, rawlocal, local_var);
                 VR_EMIT((4u<<16)|61u, vec3, rawgroup, group_var);
                 VR_EMIT((5u<<16)|81u, u32, gz, rawgroup, 2);
-                VR_EMIT((5u<<16)|199u, u32, parity, gz, c2);
-                // The parity must be newGroupZ modulo TWO, not bitwise
-                // AND with literal TWO. Modulo is integer-safe for >=0.
-                // Replace the last AND operation with UMod.
-                o.w[o.n - 5] = (5u<<16)|137u;
+                // OpUMod; newGroupZ modulo 2 picks the original half.
+                VR_EMIT((5u<<16)|137u, u32, parity, gz, c2);
                 VR_EMIT((5u<<16)|132u, u32, offset, parity, c2);
                 VR_EMIT((5u<<16)|81u, u32, lz, rawlocal, 2);
                 VR_EMIT((5u<<16)|128u, u32, oldz, lz, offset);

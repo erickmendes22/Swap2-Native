@@ -118,17 +118,30 @@ VkShaderModule vka_shader_oot_cs_retile_module(vka_shader *s) {
             // preserves their original values, using GlobalInvocationId.
             // The exact 8x9x12 direct dispatch is checked at the callsite.
             size_t virtual_n = 0;
-            uint32_t *virtual_w = VKA_ENV("DM_VK_OOT_CS_VIRTUAL_RETILE", 1)
+            char virtual_why[256] = "", legacy_why[256] = "";
+            int virtual_enabled = VKA_ENV("DM_VK_OOT_CS_VIRTUAL_RETILE", 1);
+            uint32_t *virtual_w = virtual_enabled
                 ? vka_spv_oot_cs_virtual_retile(words, bytes / 4,
-                                                &virtual_n, why, sizeof why)
+                                                &virtual_n, virtual_why,
+                                                sizeof virtual_why)
                 : NULL;
-            if (virtual_w || vka_spv_oot_cs_retile(words, bytes / 4,
-                                                   why, sizeof why)) {
+            int legacy_ok = virtual_w ? 0 : vka_spv_oot_cs_retile(
+                words, bytes / 4, legacy_why, sizeof legacy_why);
+            if (virtual_w || legacy_ok) {
                 VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
                     .codeSize = virtual_w ? virtual_n * 4 : bytes,
                     .pCode = virtual_w ? virtual_w : words};
                 VkResult result = vk.vkCreateShaderModule(V.dev, &ci, NULL, &mod);
                 if (result) snprintf(why, sizeof why, "VkShaderModule rejected %d", result);
+                else snprintf(why, sizeof why, "%s",
+                              virtual_w ? virtual_why : legacy_why);
+            } else {
+                // The previous fallback overwrote the virtual-rewriter
+                // refusal with the old "local/group-dependent builtin"
+                // message, hiding why the actual shader never retiled.
+                snprintf(why, sizeof why, "virtual=%.112s; legacy=%.112s",
+                         virtual_enabled ? virtual_why : "disabled",
+                         legacy_why);
             }
             free(virtual_w);
             free(words);

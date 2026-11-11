@@ -106,7 +106,9 @@ class VirtualRetile(unittest.TestCase):
         self.assertTrue(any(code==134 for code,_ in parsed))
         self.assertTrue(any(code==137 for code,_ in parsed))
         self.assertTrue(any(code==128 for code,_ in parsed))
-        self.assertFalse(any(code==61 and args[-1] in (8,9,10)
+        # Raw hardware group/local loads are needed to reconstruct old
+        # logical values; only the old NumWorkgroups input must disappear.
+        self.assertFalse(any(code==61 and args[-1]==10
                              for code,args in parsed))
 
     def test_identical_indices_for_all_110592_invocations(self):
