@@ -65,6 +65,24 @@ class CapturedTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<2I",blob,0x28),(len(ctl),len(code)))
         self.assertEqual(blob[0x38:],code+ctl)
 
+    def test_known_key_missing_from_split_package_uses_verified_capture(self):
+        key,ctl,code=self.write_capture()
+        loc={key:("cs_static.bin",0)}
+        pc_of={key:"original-profile-metadata"}
+        self.assertEqual(self.repair({key},loc,pc_of,str(self.pkg)),1)
+        self.assertEqual(loc[key],("cs_captured_repair.bin",0))
+        self.assertEqual(pc_of[key],"original-profile-metadata")
+        self.assertEqual((self.pkg/"cs_captured_repair.bin").read_bytes()[0x38:],code+ctl)
+
+    def test_existing_static_package_never_overridden_by_capture(self):
+        key,_,_=self.write_capture()
+        self.pkg.mkdir()
+        (self.pkg/"cs_static.bin").write_bytes(b"static")
+        loc={key:("cs_static.bin",0)}
+        self.assertEqual(self.repair({key},loc,{},str(self.pkg)),0)
+        self.assertEqual(loc[key],("cs_static.bin",0))
+        self.assertFalse((self.pkg/"cs_captured_repair.bin").exists())
+
     def test_corrupted_capture_is_rejected_without_packaging(self):
         key,_,_=self.write_capture()
         with (self.capture/(key+".code")).open("ab") as f:f.write(b"x")

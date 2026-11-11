@@ -571,7 +571,9 @@ public final class PackService extends Service {
                 break;
             case "shaders": {
                 boolean capturedOnly = !hotKeys.isEmpty() &&
-                        new File(od.getParentFile(), "nvn_shdump/" + hotKeys.get(0) + ".code").isFile() &&
+                        hotKeys.stream().allMatch(k ->
+                                new File(od.getParentFile(), "nvn_shdump/" + k + ".code").isFile() &&
+                                new File(od.getParentFile(), "nvn_shdump/" + k + ".ctl").isFile()) &&
                         !new File(split, "pkg").isDirectory();
                 if (!new File(split, "pkg").isDirectory() && !capturedOnly) {
                     // Normal shader preparation must still split the game's

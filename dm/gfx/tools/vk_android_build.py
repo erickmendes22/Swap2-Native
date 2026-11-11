@@ -366,9 +366,14 @@ for ln in open(MAP):
 # Each SHA256 is verified against the file name before it enters the translator.
 def captured_oot_records(keys, loc, pc_of, package_dir):
     source = os.environ.get('DMSH_VK_CAPTURE_DIR') or ''
-    unknown = sorted(set(keys) - set(loc))
-    if not unknown: return 0
-    if GAME.id != '0400486024DEC000' or not source or len(unknown) > 128:
+    # A recorded key may already be in shader_map.tsv but still absent from
+    # the complete library (previous translation failure). In captured-only
+    # mode there is no split package, so use the verified runtime capture for
+    # that known key too. Never replace an existing packaged static record.
+    captured = sorted(k for k in set(keys) if k not in loc or
+                      not os.path.isfile(os.path.join(package_dir, loc[k][0])))
+    if not captured: return 0
+    if GAME.id != '0400486024DEC000' or not source or len(captured) > 128:
         sys.exit('[RED] selected shader keys are absent from the approved profile (capture repair unavailable or exceeds 128)')
     if not os.path.isdir(source):
         sys.exit('[RED] Ocarina captured shader folder is absent: ' + source)
@@ -377,7 +382,7 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
     records = {}
     stage_map = {0: 'vs', 1: 'ps', 5: 'cs', 6: 'ts', 7: 'ms'}
     graphics = {1: 'vs', 2: 'hs', 3: 'ds', 4: 'gs', 5: 'ps'}
-    for key in unknown:
+    for key in captured:
         if not re.fullmatch('[0-9a-f]{16}', key):
             sys.exit('[RED] bad captured shader key: ' + key)
         ctlpath, codepath = (os.path.join(source, key + suffix) for suffix in ('.ctl', '.code'))
@@ -416,9 +421,9 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
                    os.path.join(package_dir, name))
         for i, (key, _) in enumerate(items):
             loc[key] = (name, i)
-            pc_of[key] = 'captured-runtime'
-    print(f'captured Ocarina shader repair: {len(unknown)} verified missing shaders from {source}; compiling only these into a hot overlay, static 42k library and profile unchanged', flush=True)
-    return len(unknown)
+            pc_of.setdefault(key, 'captured-runtime')
+    print(f'captured Ocarina shader repair: {len(captured)} verified missing shaders from {source}; compiling only these into a hot overlay, static 42k library and profile unchanged', flush=True)
+    return len(captured)
 
 if want:
     captured_oot_records(want, loc, pc_of, dm_dir)

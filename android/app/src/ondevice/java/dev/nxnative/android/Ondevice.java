@@ -746,7 +746,7 @@ final class Ondevice {
                                 confirm(a.getString(R.string.s2_redo_title_shaders, prof.name),
                                         a.getString(R.string.s2_shaders_update_n, missing.size(), prof.shaderTotal,
                                                 about(a, r.titleId, prof.shaderTotal, missing.size(), false))
-                                                + "\\n\\n" + a.getString(R.string.s2_space_line,
+                                                + "\n\n" + a.getString(R.string.s2_space_line,
                                                         r.free / 1073741824.0, need / 1073741824.0),
                                         a.getString(R.string.s2_prepare), repair);
                                 return;
