@@ -421,33 +421,13 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0 &&
         profiled_hdr) {
-        // Keep 4x2/4x4 only on the exact captured two-color Mesh/Task
-        // offscreen pass. Those giant tiles destroyed fine scene details
-        // when used on the game's primary B10G11R11 HDR color target.
-        // This limits quality loss while retaining stronger VRS on the
-        // profiled mesh work. Rate fallback is based on EXACT advertised
-        // Vulkan sample-count-1 modes; never manufacture a pipeline rate.
+        // Apply the user's chosen validated VRS rate to the known HDR
+        // fragment allowlist at EVERY scene resolution. The former 360p-
+        // specific gate and 480p+ forced 2x2 cap made the 4x2/4x4 menu
+        // misleading, and the fast GPL link dropped VRS altogether.
+        // NEVER restore the blanket HDR shader sweep that turned >128
+        // unknown programs into 4x4 and ruined image quality in build 73.
         uint32_t rate_w = V.fps_boost_width, rate_h = V.fps_boost_height;
-        // Build 74 capped *all* main-scene 4x2/4x4 to 2x2/2x1,
-        // including the verified 360p scene. The phone log proved this:
-        // profile=5/chosen=4x4, yet 16/17 real pipelines were 2x1/2x2.
-        // Restore the selected full rate ONLY for the existing 17 vetted
-        // shader keys in a VERIFIED 0.3125 RomFS scene. The broader
-        // arbitrary-HDR shader expansion remains removed permanently.
-        int scene360 = game_oot && VKA_ENV("DM_VK_OOT_SCENE_360", 0) == 1;
-        if (hotpass_profile >= 4 && !profiled_mesh_hdr && !scene360) {
-            if (extended_scene_hdr && V.fps_boost_has_2x1) {
-                // Five late-captured main-scene FS: preserve detail.
-                rate_w = 2u; rate_h = 1u;
-            } else if (V.fps_boost_has_2x2) {
-                // Original twelve measured scene FS: at most 2x2.
-                rate_w = 2u; rate_h = 2u;
-            } else if (V.fps_boost_has_2x1) {
-                rate_w = 2u; rate_h = 1u;
-            } else {
-                rate_w = 0u; rate_h = 0u;
-            }
-        }
         if (rate_w) {
             // A 1x1 rate is never substituted for a selected rate on one
             // of the verified shaders. Vulkan's exact rate was queried on
@@ -507,19 +487,46 @@ static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], con
     int bslot = build_begin("whole graphics pipeline", pre0 ? pre0->key : 0, sh[1] ? sh[1]->key : 0);
     VkResult r = vk.vkCreateGraphicsPipelines(V.dev, g_pc, 1, &P->ci, NULL, &p);
     if (r && P->fsrate.sType) {
-        // The device advertised this 4xN rate, but an individual pipeline
-        // may still reject it (shader features, driver restrictions). Keep
-        // gameplay rendering intact: retry the exact pipeline without VRS.
-        // A rejected optional optimization must NEVER drop the guest draw.
+        // An individual shader pipeline may reject a rate even if Vulkan
+        // advertises it. Try smaller EXACT supported rates first, keeping
+        // the VkPipelineFragmentShadingRateStateCreateInfoKHR chain intact.
+        // Never jump directly from requested 4x4 to full-detail 1x1.
         VkResult vrs_error = r;
-        fbi.pNext = &P->ri;
-        p = VK_NULL_HANDLE;
-        r = vk.vkCreateGraphicsPipelines(V.dev, g_pc, 1, &P->ci, NULL, &p);
-        if (!r) {
-            P->fsrate.sType = 0; // P->ci now points directly at rendering info
-            VRED_ONCE("Ocarina optional VRS pipeline rejected (%d); rebuilt at full fragment detail", vrs_error);
-        } else {
-            VRED_ONCE("Ocarina graphics pipeline failed with and without VRS (%d / %d)", vrs_error, r);
+        uint32_t original_area = P->fsrate.fragmentSize.width *
+                                 P->fsrate.fragmentSize.height;
+        const struct { uint32_t w, h; int supported; } choices[] = {
+            {4u, 2u, V.fps_boost_has_4x2},
+            {2u, 2u, V.fps_boost_has_2x2},
+            {2u, 1u, V.fps_boost_has_2x1}
+        };
+        for (size_t i = 0; i < sizeof choices / sizeof choices[0]; i++) {
+            const uint32_t area = choices[i].w * choices[i].h;
+            if (!choices[i].supported || area >= original_area) continue;
+            P->fsrate.fragmentSize.width = choices[i].w;
+            P->fsrate.fragmentSize.height = choices[i].h;
+            p = VK_NULL_HANDLE;
+            r = vk.vkCreateGraphicsPipelines(V.dev, g_pc, 1, &P->ci, NULL, &p);
+            if (!r) {
+                VLOG("Ocarina VRS pipeline fallback: requested %u texels, "
+                     "driver rejected rate (%d), created %ux%u instead",
+                     original_area, vrs_error, choices[i].w, choices[i].h);
+                break;
+            }
+        }
+        if (r) {
+            // Only when every supported graded VRS rate is rejected do we
+            // preserve the game's draw by creating a full-detail pipeline.
+            fbi.pNext = &P->ri;
+            p = VK_NULL_HANDLE;
+            r = vk.vkCreateGraphicsPipelines(V.dev, g_pc, 1, &P->ci, NULL, &p);
+            if (!r) {
+                P->fsrate.sType = 0; // full-detail pipeline genuinely created
+                VRED_ONCE("Ocarina VRS pipeline rejected every supported coarse "
+                          "rate (initial %d); final fallback 1x1", vrs_error);
+            } else {
+                VRED_ONCE("Ocarina graphics pipeline failed with all VRS rates "
+                          "and at 1x1 (%d / %d)", vrs_error, r);
+            }
         }
     }
     build_end(bslot);
@@ -1102,7 +1109,13 @@ static gval *gfx_obtain(const gkey_full *fk, uint64_t h, size_t len, vka_shader 
     VkPipeline p = VK_NULL_HANDLE; int linked = 0;
     pstate *P = malloc(sizeof *P);
     if (P && pstate_fill(P, sh, lay, k)) {   // (else logged by vka_shader_module)
-        if (!prewarm && gpl_on() && !P->mesh) {   // (a mesh pipeline is made whole: the libraries here are cut for vertex input pipelines)
+        if (!prewarm && gpl_on() && !P->mesh && !P->fsrate.sType) {
+            // GPL's fast link currently only chains VkPipelineLibraryCreateInfoKHR
+            // and omits the pipeline fragment shading rate state. That makes
+            // a requested 4x2/4x4 behave like 1x1 in 360p, 480p and above.
+            // Bypass GPL ONLY for the selected, known VRS shader pipelines:
+            // full_pipeline carries VkPipelineFragmentShadingRateStateCreateInfoKHR
+            // at the root and reuses the persistent driver pipeline cache.
             // The pipeline cache may already hold the optimized one (made in an earlier run): then it is made at once (a fraction of a millisecond), else linked from parts
             P->ci.flags |= VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
             uint64_t t0 = now_ns();
