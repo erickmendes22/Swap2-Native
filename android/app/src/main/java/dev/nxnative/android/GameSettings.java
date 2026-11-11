@@ -201,15 +201,15 @@ final class GameSettings {
                 .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
                 .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
-        // Preserve the requested VRS 2x2 expanded option (3), separate
-        // from the older FPS Boost switch that had no measured advantage.
-        // Reuse the working Vulkan fragment rate profile without changing
-        // shader binaries or resolution settings.
-        if (Prefs.OCARINA_TITLE.equals(id))
+        // Selective HDR VRS, including driver-queried 4x2/4x4 modes.
+        // The game retains all original shaders and output dimensions.
+        if (Prefs.OCARINA_TITLE.equals(id)) {
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "VRS nos passes gráficos pesados",
+                    a.getString(R.string.s2_vrs_heavy_title),
                     v -> GraphicsOptions.choice(a, id, "oot_hotpass_vrs", again))
                     .value(GraphicsOptions.vrsLabel(a, id)).chevron(a).view);
+            Ui.add(box, Ui.small(a, a.getString(R.string.s2_vrs_heavy_note)), 6);
+        }
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
             String cur = on ? Prefs.sceneLabel(Prefs.sceneScale(a, id, prof.sceneScale())) : a.getString(R.string.s2_scene_game);
