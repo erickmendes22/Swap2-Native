@@ -36,6 +36,11 @@ class PoolFeedbackTests(unittest.TestCase):
         self.assertIn("g_wk.pool[st] && vka_tex_pool_in_pass()",DRAW)
         self.assertIn("atomic_fetch_add_explicit(&g_tpool_stamp, 1, memory_order_release);",TEX)
         self.assertIn("g_fb_stamp++;",TEX)
+        self.assertIn("static int *g_pool_active_ids, g_pool_active_count, g_pool_active_cap;",TEX)
+        self.assertIn("if (t->serial) pool_register_active(id);",TEX)
+        self.assertIn("g_pool_active_index_ok ? g_pool_active_count : g_ntreg - 1",TEX)
+        self.assertIn("g_pool_active_index_ok ? g_pool_active_ids[j] : j + 1",TEX)
+        self.assertIn("if (!ids) { g_pool_active_index_ok = 0; return; }",TEX)
         self.assertIn("if (!e->t.mem || !e->t.L.size)",TEX)
         self.assertIn("if (!f || !f->mem || !f->L.size)",TEX)
 
@@ -46,6 +51,17 @@ class PoolFeedbackTests(unittest.TestCase):
         self.assertFalse(overlaps([(0x2000,0x1000)],[(0x1000,0x1000)]))
         self.assertTrue(overlaps([(0x1000,0x1000)],[(None,0x100)]))
         self.assertTrue(overlaps([(None,0x1000)],[(0x3000,0x1000)]))
+
+    def test_sparse_active_id_set_matches_full_scan(self):
+        rng=random.Random(20261110)
+        slots=8192
+        active=sorted(set(rng.sample(range(1,slots),650)))
+        table={i:(rng.randrange(0,20000)*4096,rng.randrange(1,512)*4096) for i in active}
+        for _ in range(1000):
+            att=[(rng.randrange(0,20000)*4096,rng.randrange(1,512)*4096)]
+            allregs=[table[i] for i in range(1,slots) if i in table]
+            activeonly=[table[i] for i in active if i in table]
+            self.assertEqual(overlaps(att,allregs),overlaps(att,activeonly))
 
     def test_random_intervals(self):
         rng=random.Random(5101)

@@ -1245,6 +1245,28 @@ static int *g_tdirty, g_ntd, g_tdcap; static uint8_t *g_tdflag;
 typedef struct { tex_t t; view_t v; uint8_t has_v, img; uint64_t pgen; } treg_ent;   // pgen: the texture's pool's Initialize serial at registration (nvn_pool_live)
 static treg_ent *g_treg; static int g_ntreg;   // indexed by host texture ID
 static _Atomic uint64_t g_tpool_stamp = 1;
+// Exact active registration IDs, not the whole allocated 1M-slot table.
+// A texture ID is inserted once, with the first successful registration.
+// If allocation fails, the conservative full scan remains correct.
+static int *g_pool_active_ids, g_pool_active_count, g_pool_active_cap;
+static uint8_t *g_pool_active_seen;
+static int g_pool_active_index_ok = 1;
+static void pool_register_active(int id) {
+    if (!g_pool_active_index_ok) return;
+    if (!g_pool_active_seen) {
+        g_pool_active_seen = calloc(1 << 20, 1);
+        if (!g_pool_active_seen) { g_pool_active_index_ok = 0; return; }
+    }
+    if (g_pool_active_seen[id]) return;
+    if (g_pool_active_count == g_pool_active_cap) {
+        int cap = g_pool_active_cap ? g_pool_active_cap * 2 : 1024;
+        int *ids = realloc(g_pool_active_ids, (size_t)cap * sizeof *ids);
+        if (!ids) { g_pool_active_index_ok = 0; return; }
+        g_pool_active_ids = ids; g_pool_active_cap = cap;
+    }
+    g_pool_active_ids[g_pool_active_count++] = id;
+    g_pool_active_seen[id] = 1;
+}
 // The update-after-bind texture pool is shared across in-flight queue parts.
 // Rewriting an unchanged VkImageView is unnecessary work for the driver and
 // may race with a pending read of the same descriptor slot. Keep separate
@@ -1881,6 +1903,7 @@ static void treg(int id, const tex_t *t, const view_t *v, int img) {
                 (unsigned long long)identical, (unsigned long long)attempts);
     }
     e->t = *t; e->has_v = v != NULL; if (v) e->v = *v; e->img = (uint8_t)img; e->pgen = pgen;
+    if (t->serial) pool_register_active(id);
     atomic_fetch_add_explicit(&g_tpool_stamp, 1, memory_order_release);
     dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
     if (!g_tver) g_tver = calloc(1 << 20, sizeof *g_tver);
@@ -1988,7 +2011,9 @@ int vka_tex_pool_in_pass(void) {
             if (!f || !f->mem || !f->L.size) { possible = 1; break; }
             uintptr_t lo = (uintptr_t)f->mem;
             uint64_t sz = f->L.size;
-            for (int id = 1; id < g_ntreg; id++) {
+            int count = g_pool_active_index_ok ? g_pool_active_count : g_ntreg - 1;
+            for (int j = 0; j < count; j++) {
+                int id = g_pool_active_index_ok ? g_pool_active_ids[j] : j + 1;
                 const treg_ent *e = &g_treg[id];
                 if (!e->t.serial) continue;
                 if (!e->t.mem || !e->t.L.size) { possible = 1; break; }
