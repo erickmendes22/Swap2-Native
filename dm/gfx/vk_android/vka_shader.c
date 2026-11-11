@@ -719,6 +719,60 @@ static void capture_hot_shader_source(const prog_t *p, unsigned i, uint64_t key)
     }
 }
 
+// Persist REAL mesh<->pixel and task<->mesh bindings, not guessed SPIR-V
+// interfaces. shader_split.mesh_facts needs these pairs to derive flat and
+// per-primitive outputs. The old selected-only capture stored code/control,
+// but rebuilt each mesh with mesh_pairs=[], causing white spanning triangles.
+// Records contain only validated shader keys; source bytes stay in .ctl/.code.
+// This metadata is collected once per distinct pair, on real gameplay.
+// It never changes the installed full 42k library or the current overlay.
+typedef struct { uint64_t a, b; unsigned char kind; } oot_pair;
+static oot_pair g_oot_pairs[2048];
+static unsigned g_oot_npair;
+static pthread_mutex_t g_oot_pairs_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static void capture_ocarina_stage_pair(const prog_t *p, unsigned a_slot, uint64_t a_key,
+                                       unsigned b_slot, uint64_t b_key, unsigned char kind) {
+    if (strcmp(DM_GAME_ID, "0400486024DEC000") || !p ||
+        !a_key || !b_key || !g_hot_loaded) return;
+    const char *folder = getenv("DM_NVN_SHDUMP");
+    if (!folder || !*folder) return;
+    pthread_mutex_lock(&g_oot_pairs_mu);
+    for (unsigned n = 0; n < g_oot_npair; n++)
+        if (g_oot_pairs[n].a == a_key && g_oot_pairs[n].b == b_key &&
+            g_oot_pairs[n].kind == kind) { pthread_mutex_unlock(&g_oot_pairs_mu); return; }
+    if (g_oot_npair == sizeof(g_oot_pairs) / sizeof(g_oot_pairs[0])) {
+        pthread_mutex_unlock(&g_oot_pairs_mu); return;
+    }
+    // The pair file is useless without both original verified sources.
+    // Keep these operations under one lock so concurrent program creation
+    // cannot append a line before its corresponding source is committed.
+    if (!capture_shader_source(p, a_slot, a_key) ||
+        !capture_shader_source(p, b_slot, b_key)) {
+        pthread_mutex_unlock(&g_oot_pairs_mu); return;
+    }
+    char file[1024];
+    int n = snprintf(file, sizeof file, "%s/mesh_pairs.tsv", folder);
+    if (n <= 0 || n >= (int)sizeof file) {
+        pthread_mutex_unlock(&g_oot_pairs_mu); return;
+    }
+    FILE *out = fopen(file, "a");
+    if (out) {
+        int written = fprintf(out, "%c\\t%016llx\\t%016llx\\n",
+            kind, (unsigned long long)a_key, (unsigned long long)b_key) > 0;
+        written = written && fflush(out) == 0 && fsync(fileno(out)) == 0;
+        if (fclose(out)) written = 0;
+        if (written) {
+            g_oot_pairs[g_oot_npair++] = (oot_pair){a_key, b_key, kind};
+            static _Atomic unsigned reports;
+            if (atomic_fetch_add(&reports, 1) < 12)
+                VLOG("Ocarina captured real %c pairing %016llx -> %016llx for per-primitive mesh/pixel layout; full shader library unchanged",
+                     kind, (unsigned long long)a_key, (unsigned long long)b_key);
+        }
+    }
+    pthread_mutex_unlock(&g_oot_pairs_mu);
+}
+
 int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
     memset(out, 0, sizeof *out);
     if (!p || !p->serial) return 0;
@@ -726,10 +780,24 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
     if (e) return 1;
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
     if (!ok) return 0;
+    uint64_t pair_keys[VKA_NSTAGE] = {0};
+    unsigned pair_slots[VKA_NSTAGE] = {0}; // slot + 1; 0 means absent
     for (unsigned i = 0; i < p->nstage && i < 6; i++) {   // (a program has at most 6 shaders: hle_nvn.c nvnProgramSetShaders)
         uint8_t md[8];
         if (!prog_key(p, i, md)) continue;
         uint64_t key = vka_shlib_key(md);
+        // A quarantined hot mesh is not in the stable library; still find
+        // its actual stage and matching pixel in the SAME NVN program so a
+        // later selected translation can reconstruct the true interface.
+        const dmsh_vk_entry *known = g_hot_loaded ? vka_shlib_find(&g_hot, key) : NULL;
+        if (!known) known = vka_shlib_find(&g_lib, key);
+        if (known) {
+            int kind = vka_nvn_stage(known->stage);
+            if (kind >= 0 && kind < VKA_NSTAGE) {
+                pair_keys[kind] = key;
+                pair_slots[kind] = i + 1;
+            }
+        }
         const vka_shlib *source = library_for_key(key);
         const dmsh_vk_entry *en = vka_shlib_find(source, key);
         if (!en) {
@@ -747,6 +815,15 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
         out->sh[st] = vka_shader_make(source, key);
         if (!out->sh[st]) out->bad |= 1u << st;
     }
+    // Missing hot mesh shaders are intentionally not executed yet. Their
+    // real per-program pairing must nevertheless be captured while the
+    // scene is played, even when the original stable base skips a draw.
+    if (pair_slots[7] && pair_slots[1] && vka_shlib_find(&g_hot, pair_keys[7]))
+        capture_ocarina_stage_pair(p, pair_slots[7] - 1, pair_keys[7],
+                                   pair_slots[1] - 1, pair_keys[1], 'M');
+    if (pair_slots[6] && pair_slots[7] && vka_shlib_find(&g_hot, pair_keys[6]))
+        capture_ocarina_stage_pair(p, pair_slots[6] - 1, pair_keys[6],
+                                   pair_slots[7] - 1, pair_keys[7], 'T');
     vka_prog_put(p->serial, out);
     return 1;
 }
