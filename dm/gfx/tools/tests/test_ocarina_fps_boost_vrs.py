@@ -146,7 +146,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('fbi.pNext = &P->ri;', PSO)
         self.assertIn('VRS pipeline rejected', PSO)
 
-    def test_compact_vrs_options_with_early_quality_safe_scene_shader_caps(self):
+    def test_compact_vrs_options_without_broad_scene_shader_expansion(self):
         # Only five visible choices; legacy stored profile 3 remains supported,
         # but it does not consume a duplicate entry in the dialog.
         self.assertIn('VRS_VISIBLE_MODES = {0, 1, 2, 4, 5}', OPTIONS)
@@ -163,10 +163,10 @@ class FpsBoostTests(unittest.TestCase):
         # Regression: the Nov 11 4x4 experiment enabled >=128 shaders
         # and destroyed scene detail while GPU remained ~20ms/frame.
         self.assertNotIn('int broad_hdr_scene =', PSO)
-        self.assertIn('hotpass_profile >= 4 && !profiled_mesh_hdr', PSO)
         self.assertIn('uint32_t rate_w = V.fps_boost_width', PSO)
-        self.assertIn('rate_w = 2u; rate_h = 1u;', PSO)
-        self.assertIn('rate_w = 2u; rate_h = 2u;', PSO)
+        self.assertNotIn('hotpass_profile >= 4 && !profiled_mesh_hdr', PSO)
+        self.assertNotIn('rate_w = 2u; rate_h = 1u;', PSO)
+        self.assertNotIn('rate_w = 2u; rate_h = 2u;', PSO)
         self.assertIn('V.fps_boost_has_2x1', PSO)
         self.assertIn('V.fps_boost_has_2x2', PSO)
         self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
@@ -174,22 +174,35 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('logged_fs[128]', PSO)
         self.assertIn('VRS pipeline rejected', PSO)
 
-    def test_360p_explicit_4x2_4x4_does_not_silently_downgrade_to_1x1(self):
-        # Redmagic 11 Pro, 2026-11-11 16:01: profile=5, Vulkan chosen=4x4
-        # but 16/17 actual scene FS pipelines were capped to 2x1/2x2.
-        # The active 360p palette must reach Vulkan independently of NDSR.
-        self.assertIn('SceneOverlay.current(files, id, Prefs.sceneScale', RUN)
-        self.assertIn('"0.3125".equals(effectiveSceneScale)', RUN)
-        self.assertIn('env.add("DM_VK_OOT_SCENE_360=1")', RUN)
-        self.assertIn('int scene360 = game_oot && VKA_ENV("DM_VK_OOT_SCENE_360", 0) == 1;', PSO)
-        self.assertIn('hotpass_profile >= 4 && !profiled_mesh_hdr && !scene360', PSO)
+    def test_vrs_4x2_4x4_applies_to_vetted_shaders_at_every_resolution(self):
+        # Redmagic 11 Pro: both 360p and 480p suffered the same downgrade.
+        # A shader's requested VRS must not be silently limited by scene scale.
+        self.assertNotIn('DM_VK_OOT_SCENE_360', RUN)
+        self.assertNotIn('DM_VK_OOT_SCENE_360', PSO)
         self.assertIn('uint32_t rate_w = V.fps_boost_width, rate_h = V.fps_boost_height;', PSO)
-        # Preserve safety and compatibility: only 17 confirmed fragment
-        # keys, not the old blanket >=128 shader HDR auto-enrollment.
+        self.assertNotIn('hotpass_profile >= 4 && !profiled_mesh_hdr', PSO)
+        # Keep the 12+5 profiled HDR shaders only, never all 128+ unknown.
         self.assertNotIn('int broad_hdr_scene =', PSO)
         self.assertIn('(balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
+        self.assertIn('if (rate_w) {', PSO)
         self.assertIn('if (r && P->fsrate.sType)', PSO)
         self.assertIn('VRS pipeline rejected', PSO)
+
+    def test_gpl_does_not_discard_requested_fragment_shading_rate(self):
+        # Fast GPL link creates pNext=&libs and drops VRS -> 1x1.
+        # Force full_pipeline (cached on future runs) for the VRS allowlist.
+        self.assertIn('!P->mesh && !P->fsrate.sType)', PSO)
+        self.assertIn('p = full_pipeline(P, sh, prewarm ? " (prewarm)" : NULL);', PSO)
+        self.assertIn('P->fsrate.pNext = &P->ri;', PSO)
+
+    def test_driver_vrs_rate_rejection_tries_supported_smaller_rates_before_1x1(self):
+        self.assertIn('{4u, 2u, V.fps_boost_has_4x2}', PSO)
+        self.assertIn('{2u, 2u, V.fps_boost_has_2x2}', PSO)
+        self.assertIn('{2u, 1u, V.fps_boost_has_2x1}', PSO)
+        self.assertIn('area >= original_area', PSO)
+        self.assertIn('if (r) {', PSO)
+        self.assertIn('final fallback 1x1', PSO)
+        self.assertIn('Ocarina VRS pipeline fallback:', PSO)
 
     def test_fallback_no_invalid_pipeline_or_shader_abi_change(self):
         self.assertIn('V.fps_boost_width = V.fps_boost_vrs ? selected_w : 0u;', DEV)
