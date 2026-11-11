@@ -75,7 +75,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', DEV)
         self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', PSO)
         self.assertIn('int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0)', DEV)
-        self.assertIn('hotpass_vrs > explicit_boost ? hotpass_vrs : explicit_boost', DEV)
+        self.assertIn('requested_rate > explicit_boost ? requested_rate : explicit_boost', DEV)
         self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)', PSO)
         self.assertIn('(k->samples ? k->samples : 1) == 1', PSO)
         self.assertIn('k->ncolor > 0', PSO)
@@ -95,7 +95,7 @@ class FpsBoostTests(unittest.TestCase):
 
     def test_optional_2x2_and_accurate_hdr_mesh_coverage(self):
         self.assertIn('Agressivo — VRS 2×2 nos passes pesados', OPTIONS)
-        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 2)', OPTIONS)
+        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 3)', OPTIONS)
         self.assertIn('want_boost >= 2 && has_2x2 ? 2u', DEV)
         self.assertIn('profiled_mesh_hdr = mesh && sh[6] && sh[7]', PSO)
         self.assertIn('0xefaa4fa6a80ba719', PSO)
@@ -106,6 +106,24 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('if (!r && P->fsrate.sType && sh[1]', PSO)
         self.assertIn('Ocarina VRS pipeline ready', PSO)
         self.assertNotIn('if (atomic_fetch_add(&nboost, 1) < 6)', PSO)
+
+    def test_optional_extended_two_by_two_hdr_coverage(self):
+        # New 2026-11-11 111853 run: all 12 old shader pipelines are
+        # compiled at 2x2 already. Keep profile 2 unchanged.
+        # Only five further profiled HDR main-scene FS use profile 3.
+        self.assertIn("2×2 ampliado — mais fragment shaders HDR", OPTIONS)
+        self.assertIn("requested_rate = hotpass_vrs >= 2 ? 2 : hotpass_vrs", DEV)
+        self.assertIn('if (hotpass_vrs > 3) hotpass_vrs = 3', DEV)
+        for key in ("0x8b13ac32679a0a3e", "0x19f99e925937b038",
+                    "0x35a02875e7820e9a", "0x5a29269e72ac52aa",
+                    "0xe55bcc53f003046a"):
+            self.assertIn(key, PSO)
+        self.assertIn('hotpass_profile >= 3', PSO)
+        self.assertIn('extended_hot && !mesh && k->ncolor == 1', PSO)
+        self.assertIn('k->dfmt == VK_FORMAT_D32_SFLOAT', PSO)
+        self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
+        self.assertIn('(balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
+        self.assertNotIn('DM_VK_OOT_HOTPASS_VRS=3" &&', PSO)
 
     def test_fallback_no_invalid_pipeline_or_shader_abi_change(self):
         self.assertIn('V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;', DEV)

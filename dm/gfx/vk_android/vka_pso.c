@@ -377,11 +377,20 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                     fs_hot == UINT64_C(0xfb29c58b3fab8e7b) ||
                     fs_hot == UINT64_C(0xf48e795040c5dc9a) ||
                     fs_hot == UINT64_C(0x80d2f2ff9f9882b8);
+    // 2026-11-11 111853 GPU profile: five distinct remaining fragment
+    // keys on costly 1275x717 HDR scene passes with 160-600 draws.
+    // Opt-in extended 2x2 only. Do not alter the default 2x1/2x2.
+    int extended_hot = fs_hot == UINT64_C(0x8b13ac32679a0a3e) ||
+                       fs_hot == UINT64_C(0x19f99e925937b038) ||
+                       fs_hot == UINT64_C(0x35a02875e7820e9a) ||
+                       fs_hot == UINT64_C(0x5a29269e72ac52aa) ||
+                       fs_hot == UINT64_C(0xe55bcc53f003046a);
     int explicit_hot = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 &&
                        (fs_hot == UINT64_C(0x5ad65c0eefd09c7f) ||
                         fs_hot == UINT64_C(0x1e4d2630d24846d0));
-    int balanced_hot = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) > 0 &&
-                       scene_hot && !strcmp(DM_GAME_ID, "0400486024DEC000");
+    int hotpass_profile = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1);
+    int game_oot = !strcmp(DM_GAME_ID, "0400486024DEC000");
+    int balanced_hot = hotpass_profile > 0 && scene_hot && game_oot;
     // The profiled 637x358 Mesh+Task pass is HDR R16G16B16A16_SFLOAT x2,
     // NOT main-scene B10G11R11. It was incorrectly excluded from 2x1.
     // Strict shader-triplet and attachment checks protect other R16 passes.
@@ -392,11 +401,18 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                            k->ncolor == 2 &&
                            k->cfmt[0] == VK_FORMAT_R16G16B16A16_SFLOAT &&
                            k->cfmt[1] == VK_FORMAT_R16G16B16A16_SFLOAT;
+    // The expanded mode is restricted to the captured single-color HDR
+    // scene with D32 depth; it is deliberately not used by UI, video,
+    // postprocess, depth-only, multicolor or unverified Mesh/Task passes.
+    int extended_scene_hdr = game_oot && hotpass_profile >= 3 &&
+                             extended_hot && !mesh && k->ncolor == 1 &&
+                             k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
+                             k->dfmt == VK_FORMAT_D32_SFLOAT;
     // No SDR UI/video, unrelated R16 render targets, depth-only or MSAA.
     int profiled_hdr = (k->ncolor > 0 &&
                         k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32) ||
                        profiled_mesh_hdr;
-    if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)
+    if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0 &&
         profiled_hdr) {
         if (V.fps_boost_width) {

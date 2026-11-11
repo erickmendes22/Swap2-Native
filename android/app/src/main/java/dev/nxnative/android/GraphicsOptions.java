@@ -32,7 +32,7 @@ final class GraphicsOptions {
     static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
     static final String[] ENCODER_IDLE = {"Normal (padrão)", "Dormir quando vazio (experimental)"};
     static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: sincronização GPU + VRS 2×1 se suportado", "Agressivo: sincronização GPU + VRS 2×2 se suportado"};
-    static final String[] HOTPASS_VRS = {"Desligado (qualidade total)", "Balanceado — VRS 2×1 nos passes pesados (padrão)", "Agressivo — VRS 2×2 nos passes pesados (experimental)"};
+    static final String[] HOTPASS_VRS = {"Desligado (qualidade total)", "Balanceado — VRS 2×1 nos passes pesados (padrão)", "Agressivo — VRS 2×2 nos passes pesados (experimental)", "2×2 ampliado — mais fragment shaders HDR (experimental)"};
     static final String[] SGSR_CHAIN = {"Desativado (seguro)", "Ativar otimização das redes internas com SGSR (experimental)"};
 
     static int mode(Context c) {
@@ -76,7 +76,7 @@ final class GraphicsOptions {
         // which remained OFF in all the GPU-profiler sessions. The new rate
         // affects only profiled HDR fragment programs, using the driver's
         // queried 2x1 or 2x2 rate with 2x1 fallback for the aggressive mode.
-        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 2);
+        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 3);
     }
     static int sgsrChain(Context c, String id) {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_sgsr_chain", id), 0), 0, 1);

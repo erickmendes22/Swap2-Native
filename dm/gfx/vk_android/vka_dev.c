@@ -117,9 +117,12 @@ static int init_once(void) {
     int hotpass_vrs = !strcmp(DM_GAME_ID, "0400486024DEC000")
                       ? VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) : 0;
     if (hotpass_vrs < 0) hotpass_vrs = 0;
-    if (hotpass_vrs > 2) hotpass_vrs = 2;
+    // Profile 3 adds five captured HDR fragment programs, not a larger
+    // hardware shading tile: 2 and 3 both request the queried 2x2 rate.
+    if (hotpass_vrs > 3) hotpass_vrs = 3;
+    int requested_rate = hotpass_vrs >= 2 ? 2 : hotpass_vrs;
     int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0);
-    int want_boost = hotpass_vrs > explicit_boost ? hotpass_vrs : explicit_boost;
+    int want_boost = requested_rate > explicit_boost ? requested_rate : explicit_boost;
     int x_fsr_rate = want_boost > 0 && has_ext(de, nde, VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
     if (x_fsr_rate) dext[ndext++] = VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME;
     // Ocarina issues shading-rate image/palette commands. They are still
