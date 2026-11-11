@@ -422,6 +422,7 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a);   // 1 = a state re
 void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot);    // the slot's per-draw descriptor sets are free again (its last fence is done)
 void vka_rp_end(void);
 int vka_rp_can_defer_ub(uint64_t addr, uint64_t size);
+int vka_rp_bar_pending(void); // pending in-pass guest barrier, without shader writes
 int vka_ub_active(void);
 uint64_t vka_ub_seq(void);
 int vka_ub_pending_overlap(uint64_t addr, uint64_t size);

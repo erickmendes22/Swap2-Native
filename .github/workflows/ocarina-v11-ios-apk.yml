@@ -52,6 +52,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_graphics_barrier_scopes.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pool_feedback.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_ub_deferred.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_graphics_pass_ub_barrier.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_early_occlusion.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_occlusion_fast.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_dispatch_overlap.py'

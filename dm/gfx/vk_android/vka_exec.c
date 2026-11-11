@@ -228,7 +228,7 @@ void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 // CPU per draw (recording: mtl_sub_begin to vkEndCommandBuffer)
 extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
 static uint64_t g_ub_copy_cmds, g_ub_copy_regions;  // actual Vulkan copy commands versus independently staged inline regions
-static uint64_t g_ub_deferred, g_ub_shadows, g_ub_flushed; // in-pass deferred updates, shadows for draws and eventual flushes
+static uint64_t g_ub_deferred, g_ub_shadows, g_ub_flushed, g_ub_after_guest_bar; // in-pass deferred updates, snapshots, saves after retained guest barriers
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
 static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the submission the worker replays (vka_exec_sub_frame)
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
@@ -247,10 +247,12 @@ void mtl_set_frame(uint64_t f) {
         { static uint64_t c0, r0; VLOG("inline uniform GPU batching: %.1f staged copy regions -> %.1f vkCmdCopyBuffer calls/frame (%.1f commands removed; disjoint destination ranges only; DM_VK_UB_BATCH=0 disables)",
               (g_ub_copy_regions-r0)/n, (g_ub_copy_cmds-c0)/n, (g_ub_copy_regions-r0-g_ub_copy_cmds+c0)/n);
           c0=g_ub_copy_cmds; r0=g_ub_copy_regions; }
-        { static uint64_t deferred0, shadow0, flushed0;
-          VLOG("Ocarina in-pass uniforms: %.1f updates deferred/frame, %.1f uniform shadows built/frame, %.1f updates flushed at pass boundaries/frame; DM_VK_UB_DEFER=0 restores immediate writes",
-              (g_ub_deferred-deferred0)/n, (g_ub_shadows-shadow0)/n, (g_ub_flushed-flushed0)/n);
-          deferred0=g_ub_deferred; shadow0=g_ub_shadows; flushed0=g_ub_flushed; }
+        { static uint64_t deferred0, shadow0, flushed0, afterbar0;
+          VLOG("Ocarina in-pass uniforms: %.1f updates deferred/frame (%.1f after a kept guest barrier), %.1f uniform shadows built/frame, %.1f updates flushed at pass boundaries/frame; DM_VK_UB_DEFER=0 restores immediate writes; DM_VK_OOT_UB_AFTER_BARRIER=0 restores old barrier splits",
+              (g_ub_deferred-deferred0)/n, (g_ub_after_guest_bar-afterbar0)/n,
+              (g_ub_shadows-shadow0)/n, (g_ub_flushed-flushed0)/n);
+          deferred0=g_ub_deferred; shadow0=g_ub_shadows;
+          flushed0=g_ub_flushed; afterbar0=g_ub_after_guest_bar; }
         { static uint64_t cb0; VLOG("Ocarina compute 9e6b: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (DM_VK_OOT_CS_SYNC=0 restores full)",
               (vka_n_compute_bar - cb0) / n); cb0 = vka_n_compute_bar; }
         { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
@@ -1384,9 +1386,13 @@ static void exec(const uint8_t *p, int depth) {
                         n <= 65536 && n <= SIZE_MAX;
             if (allow) own = malloc((size_t)n);
             if (own) {
+                // Count actual deferred writes, not the twice-queried
+                // eligibility check (exec's pre-op check and this one).
+                const int after_barrier = vka_rp_bar_pending();
                 memcpy(own, (const uint8_t *)a + 16, (size_t)n);
                 g_ub_pending[g_ub_np++] = (ub_pass_write){d, n, own};
                 g_ub_deferred++; g_ub_seq++;
+                if (after_barrier) g_ub_after_guest_bar++;
             } else {
                 // OOM or oversized writes take the original safe GPU-order
                 // copy outside rendering, never a silently dropped update.

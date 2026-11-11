@@ -255,8 +255,20 @@ static uint64_t g_bar_in, g_bar_kept, g_bar_late, g_bar_duplicate_avoided;
 static uint64_t g_rp_scoped, g_rp_graphics, g_rp_full, g_rp_pending_attachment;
 static int g_rp_force_full; // OP_BARRIER has stricter guest-visible ordering than an ordinary pass transition
 void vka_oq_pass_end(void), vka_oq_draw(void);   // vka_exec.c "Occlusion queries"
+// A retained guest barrier need not close the graphics pass merely to
+// apply a following inline uniform update: with no shader-memory writes,
+// the barrier only orders rasterized attachment writes. The buffered update
+// has its own snapshot and later draws use vka_ub_overlay, while every
+// image/SSBO/vertex/indirect/opaque-memory alias still ends the pass before
+// the draw. Pass-end flush still orders previous GPU readers before copies.
+// Only Ocarina enables this expanded safe subset by default; disabling
+// DM_VK_OOT_UB_AFTER_BARRIER=0 restores the earlier strict split behavior.
+int vka_rp_bar_pending(void) { return R.on && R.bar_pending && !R.swrite; }
 int vka_rp_can_defer_ub(uint64_t addr, uint64_t size) {
-    if (!R.on || R.swrite || R.bar_pending || !VKA_ENV("DM_VK_UB_DEFER", 1) || !size) return 0;
+    if (!R.on || R.swrite || !VKA_ENV("DM_VK_UB_DEFER", 1) || !size) return 0;
+    if (R.bar_pending &&
+        !VKA_ENV("DM_VK_OOT_UB_AFTER_BARRIER",
+                 !strcmp(DM_GAME_ID, "0400486024DEC000"))) return 0;
     // Never defer an update into a live render attachment. That would
     // otherwise overwrite an earlier graphics write at the delayed flush.
     if (R.has_rt) {

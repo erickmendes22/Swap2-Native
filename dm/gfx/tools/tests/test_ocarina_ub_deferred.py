@@ -16,7 +16,9 @@ TEX=(R/"dm/gfx/vk_android/vka_tex.c").read_text()
 class DeferredUniformTests(unittest.TestCase):
     def test_passing_preconditions(self):
         self.assertIn('!VKA_ENV("DM_VK_UB_DEFER", 1)',DRAW)
-        self.assertIn('R.swrite || R.bar_pending',DRAW)
+        self.assertIn('!R.on || R.swrite || !VKA_ENV("DM_VK_UB_DEFER", 1)',DRAW)
+        self.assertIn('if (R.bar_pending &&',DRAW)
+        self.assertIn('DM_VK_OOT_UB_AFTER_BARRIER',DRAW)
         self.assertIn('R.rt.depth',DRAW)
         self.assertIn('R.rt.color[i]',DRAW)
         self.assertIn('g_ub_np < UB_DEFER_MAX',EXEC)
