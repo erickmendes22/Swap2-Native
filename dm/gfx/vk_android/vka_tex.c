@@ -287,7 +287,17 @@ void vka_tex_alias_stats(char *b, size_t n) {
              by[0][0] / 1e6, cnt[0], by[0][1] / 1e6, by[1][0] / 1e6, cnt[1], by[1][1] / 1e6, by[2][0] / 1e6, cnt[2], by[2][1] / 1e6, gw / 1e6);
 }
 static size_t hslot(uint64_t s, size_t cap) { return (size_t)((s * 0x9E3779B97F4A7C15ull) >> 20) & (cap - 1); }
-static smap_ent *map_get(uint64_t s) { if (!g_mapcap) return NULL; for (size_t i = hslot(s, g_mapcap);; i = (i + 1) & (g_mapcap - 1)) { if (g_map[i].serial == s) return &g_map[i]; if (!g_map[i].serial) return NULL; } }
+static smap_ent *map_get(uint64_t s) {
+    if (!g_mapcap || !s || s == ~0ull) return NULL;
+    size_t i = hslot(s, g_mapcap);
+    for (size_t n = 0; n < g_mapcap; n++, i = (i + 1) & (g_mapcap - 1)) {
+        if (g_map[i].serial == s) return &g_map[i];
+        if (!g_map[i].serial) return NULL;
+    }
+    // Defensive: even if an allocation failure left all slots occupied or
+    // tombstoned, a lookup must never hang the Vulkan recording thread.
+    return NULL;
+}
 static _Atomic uint32_t g_tgen, *g_tver, *g_sver;   // the recording thread's view memo: see unref_locked
 static void map_put(uint64_t s, vka_img *im);
 static void map_grow(void) {
