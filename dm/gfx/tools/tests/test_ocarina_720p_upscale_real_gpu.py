@@ -87,6 +87,42 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('else vk.vkCmdDispatch(g_cb, (uint32_t)dp->x', draw)
         self.assertIn('scene_linear, &ndsr_ow, &ndsr_oh', draw)
 
+    def test_compiled_c_ndsr_retile_contract_and_driver_limit(self):
+        # Execute the actual C selection code, not just an independent
+        # Python model. This does NOT generate game shaders or require a
+        # GPU; it validates overflow, maximum driver groups and fallback.
+        import ctypes
+        import shutil
+        import subprocess
+        import tempfile
+        cc = shutil.which('cc') or shutil.which('gcc')
+        if not cc:
+            self.skipTest("no host C compiler")
+        with tempfile.TemporaryDirectory() as td:
+            out = str(Path(td) / 'libndsr-grid.so')
+            cmd = [cc, '-std=gnu11', '-O2', '-fPIC', '-shared',
+                   '-DVKA_NDSR_PURE',
+                   '-I', str(ROOT / 'dm/third_party/vulkan-headers/include'),
+                   '-I', str(ROOT / 'dm/gfx/vk_android'),
+                   str(ROOT / 'dm/gfx/vk_android/vka_ndsr.c'),
+                   '-o', out]
+            run = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            lib = ctypes.CDLL(out)
+            fn = lib.vka_ndsr_grid_x
+            fn.argtypes = (ctypes.c_uint32, ctypes.c_uint32,
+                           ctypes.c_uint64, ctypes.c_uint32)
+            fn.restype = ctypes.c_uint32
+            self.assertEqual(fn(2048, 1152, 1024, 65535), 9216)
+            self.assertEqual(fn(1275, 717, 1024, 65535), 3571)
+            self.assertEqual(fn(1280, 720, 512, 65535), 3600)
+            self.assertEqual(fn(2048, 1152, 9216, 65535), 0)
+            self.assertEqual(fn(2048, 1152, 1024, 8192), 0)
+            self.assertEqual(fn(2048, 1152, 0, 65535), 0)
+            self.assertEqual(fn(0, 1152, 1024, 65535), 0)
+            self.assertEqual(fn(2048, 1152, 1024, 0), 0)
+            self.assertEqual(fn(0xffffffff, 0xffffffff, 100, 65535), 0)
+
     def test_ndsr_grid_stride_retile_preserves_every_output_pixel(self):
         # The committed NDSR SPIR-V's shader uses
         #   p = group_id*128 + lane + k*(groups*128).
