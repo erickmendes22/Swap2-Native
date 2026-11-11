@@ -290,21 +290,33 @@ static void fsr_free(unsigned k) {
     g_fsr.mw[k] = g_fsr.mh[k] = 0;
 }
 // Frame k's intermediate image at w x h: made again when the size changes (frame k's fence is waited for, so nothing reads the old one). 1 = ready
-static int fsr_mid(unsigned k, uint32_t w, uint32_t h) {
-    if (g_fsr.mid[k] && g_fsr.finish[k] && g_fsr.mw[k] == w && g_fsr.mh[k] == h) return 1;
+// SGSR1 draws directly into the FINAL 720p attachment. In that mode its
+// separate EASU -> RCAS intermediate is never read or written. Allocate
+// only one 720p image (3.52 MiB at 1280x720) per in-flight frame; FSR
+// fallback still allocates both images as before. The present frame fence
+// was waited before fsr_mid, so switching modes can safely free/recreate.
+static int fsr_mid(unsigned k, uint32_t w, uint32_t h, int sgsr_only) {
+    if (g_fsr.finish[k] && g_fsr.mw[k] == w && g_fsr.mh[k] == h &&
+        (sgsr_only ? !g_fsr.mid[k] : !!g_fsr.mid[k])) return 1;
     fsr_free(k);
     VkImageCreateInfo ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .imageType = VK_IMAGE_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {w, h, 1}, .mipLevels = 1, .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT, .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
-    VkResult r = vk.vkCreateImage(V.dev, &ci, NULL, &g_fsr.mid[k]);
-    VkMemoryRequirements mr = {0}; if (!r) vk.vkGetImageMemoryRequirements(V.dev, g_fsr.mid[k], &mr);
-    VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = mr.size, .memoryTypeIndex = vka_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0)};
-    if (!r && ai.memoryTypeIndex == UINT32_MAX) r = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    if (!r) r = vk.vkAllocateMemory(V.dev, &ai, NULL, &g_fsr.mem[k]);
-    if (!r) r = vk.vkBindImageMemory(V.dev, g_fsr.mid[k], g_fsr.mem[k], 0);
-    VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = g_fsr.mid[k], .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = VK_FORMAT_R8G8B8A8_UNORM, .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-    if (!r) r = vk.vkCreateImageView(V.dev, &vi, NULL, &g_fsr.view[k]);
-    // The second 720p attachment takes RCAS's output. The physical panel is
-    // sampled only once afterwards; neither EASU nor RCAS draws at 2K/3K.
+    VkResult r = VK_SUCCESS;
+    VkMemoryRequirements mr = {0};
+    VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM, .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+    if (!sgsr_only) {
+        r = vk.vkCreateImage(V.dev, &ci, NULL, &g_fsr.mid[k]);
+        if (!r) vk.vkGetImageMemoryRequirements(V.dev, g_fsr.mid[k], &mr);
+        ai.allocationSize = mr.size;
+        ai.memoryTypeIndex = vka_mem_type(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+        if (!r && ai.memoryTypeIndex == UINT32_MAX) r = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        if (!r) r = vk.vkAllocateMemory(V.dev, &ai, NULL, &g_fsr.mem[k]);
+        if (!r) r = vk.vkBindImageMemory(V.dev, g_fsr.mid[k], g_fsr.mem[k], 0);
+        vi.image = g_fsr.mid[k];
+        if (!r) r = vk.vkCreateImageView(V.dev, &vi, NULL, &g_fsr.view[k]);
+    }
     if (!r) r = vk.vkCreateImage(V.dev, &ci, NULL, &g_fsr.finish[k]);
     if (!r) vk.vkGetImageMemoryRequirements(V.dev, g_fsr.finish[k], &mr);
     ai.allocationSize = mr.size;
@@ -314,8 +326,14 @@ static int fsr_mid(unsigned k, uint32_t w, uint32_t h) {
     if (!r) r = vk.vkBindImageMemory(V.dev, g_fsr.finish[k], g_fsr.fmem[k], 0);
     vi.image = g_fsr.finish[k];
     if (!r) r = vk.vkCreateImageView(V.dev, &vi, NULL, &g_fsr.fview[k]);
-    if (r) { VRED_ONCE("FSR: 720p intermediate images %ux%u: %d; falling back to native blit", w, h, r); fsr_free(k); return 0; }
+    if (r) { VRED_ONCE("FSR/SGSR: 720p intermediate images %ux%u: %d; falling back to native blit", w, h, r); fsr_free(k); return 0; }
     g_fsr.mw[k] = w; g_fsr.mh[k] = h;
+    if (sgsr_only) {
+        static _Atomic int reported;
+        if (!atomic_exchange(&reported, 1))
+            VLOG("SGSR1 720p native residency: using only one 720p image per frame in flight "
+                 "(unused EASU intermediate not allocated; FSR fallback still supported)");
+    }
     return 1;
 }
 static uint32_t fsr_bits(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
@@ -344,7 +362,10 @@ static int fsr_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im,
         {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_fsr.set[k][1],
             .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &ii[1]}
     };
-    vk.vkUpdateDescriptorSets(V.dev, 2, w, 0, NULL);
+    // SGSR1 reads only the original scene in set[0]. Writing set[1]
+    // for its nonexistent EASU intermediate wastes a descriptor update
+    // and would bind a null image after single-image allocation.
+    vk.vkUpdateDescriptorSets(V.dev, sgsr && g_fsr.sgsr ? 1u : 2u, w, 0, NULL);
 
     // Source crop scaled into a 16:9-or-native-aspect working image <=1280x720.
     // The shader's EASU constants must use fw,fh, never the physical display.
@@ -737,7 +758,7 @@ static int present_one(const pq_item *it) {
     int fw = (int)(dw * fs + 0.5), fh = (int)(dh * fs + 0.5);
     if (fw < 1) fw = 1;
     if (fh < 1) fh = 1;
-    if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)fw, (uint32_t)fh)
+    if (fsr && fsr_ready(g_swap_fmt) && fsr_mid(k, (uint32_t)fw, (uint32_t)fh, present_filter == 4 && g_fsr.sgsr)
         && fsr_copy(cb, k, idx, im, cx, cy, cw, ch, dx, dy, dw, dh, fw, fh, present_filter == 4)) {
         static int log_fw, log_fh, log_dw, log_dh, log_method = -1;
         int effective_method = present_filter == 4 && g_fsr.sgsr ? 4 : 3;
