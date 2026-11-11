@@ -121,16 +121,16 @@ final class Prefs {
     // Nominal heights use the engine's 2048x1152 reconstruction target;
     // runtime scene dimensions can still differ due to the game.
     static final String[] OCARINA_SCENE_SCALES = {
-        "0.6133", "0.46875", "0.4166667", "0.3125",
-        "0.75", "0.6", "0.25"
+        "0.75", "0.6133", "0.6", "0.46875",
+        "0.4166667", "0.3125", "0.25"
     };
     static final String[] OCARINA_SCENE_NAMES = {
+        "864p nominal · escala 0,75 (experimental)",
         "720p · escala 0,6133 (paleta dinâmica)",
+        "691p nominal · escala 0,6 (experimental)",
         "540p nominal · escala 0,46875",
         "480p nominal · escala 0,41667",
         "360p nominal · escala 0,3125 (experimental)",
-        "864p nominal · escala 0,75 (experimental)",
-        "691p nominal · escala 0,6 (experimental)",
         "288p nominal · escala 0,25 (experimental)"
     };
     static String sceneScale(Context c, String titleId, String profileScale) {
