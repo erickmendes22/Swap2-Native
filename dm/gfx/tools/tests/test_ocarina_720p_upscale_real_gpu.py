@@ -191,7 +191,9 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('g_oot_sgsr_chain.completed = 1;', draw)
         self.assertIn('atomic_store_explicit(&g_sgsr_last_present, method == 4', present)
         self.assertIn('atomic_store_explicit(&g_sgsr_last_present, 0', present)
-        self.assertIn('DM_VK_OOT_SGSR_CHAIN=" + sgsrChain(c, id)', ui)
+        # Hidden in 0.1.6 clean release because this experimental internal
+        # chain did not improve heavy scenes. Native fallback remains.
+        self.assertIn('out.add("DM_VK_OOT_SGSR_CHAIN=0");', ui)
         self.assertIn('static int sgsrChain(Context c, String id)', ui)
 
     def test_060_and_075_networks_drop_only_redundant_easu_after_real_sgsr(self):
