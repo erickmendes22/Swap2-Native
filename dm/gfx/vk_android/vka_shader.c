@@ -253,20 +253,26 @@ static int lib_load(void) {
                     vka_shlib_close(&g_hot);
                 } else {
                     g_hot_loaded = 1;
-                    unsigned quarantine = 0, old_mesh = 0;
+                    unsigned quarantine = 0, old_mesh = 0, old_keys = 0;
                     for (unsigned k = 0; k < g_hot.h->entry_count; k++) {
                         const dmsh_vk_entry *entry = &g_hot.ent[k];
+                        int old = vka_shlib_find(&g_lib, entry->key) != NULL;
+                        if (old) old_keys++;
                         if (entry->stage != DMSH_VK_STAGE_MS && entry->stage != DMSH_VK_STAGE_TS)
                             continue;
                         quarantine++;
-                        if (vka_shlib_find(&g_lib, entry->key)) old_mesh++;
+                        if (old) old_mesh++;
                     }
                     VLOG("GPU hot-shader overlay: %u new shaders from %s; untouched %u stable shaders from %s remain available",
                          g_hot.h->entry_count, hp, g_lib.h->entry_count, path);
-                    VLOG("Ocarina hot mesh/task safety: %u overlay mesh/task entries (%u also in full library) quarantined by default; "
-                         "captured-only mesh layouts lack validated pixel/mesh pairings and caused extreme screen-spanning triangles and ~26 FPS. "
-                         "DM_VK_OOT_HOT_MESH=1 enables the risky versions for diagnostics; DM_VK_OOT_HOT=0 disables the whole overlay. "
-                         "No library or pipeline cache changed.", quarantine, old_mesh);
+                    VLOG("Ocarina hot shader safety: %u overlay mesh/task entries (%u also in full library) quarantined by default; "
+                         "%u previously working base shaders preferred until retranslation is proven equivalent. "
+                         "Captured-only mesh layouts lack validated pixel/mesh pairings and caused screen-spanning white triangles and ~26 FPS. "
+                         "DM_VK_OOT_HOT_OVERRIDE=1 enables overriding previously working shaders; "
+                         "DM_VK_OOT_HOT_MESH=1 additionally enables unvalidated mesh/task; "
+                         "DM_VK_OOT_HOT=0 disables the entire overlay. "
+                         "Original 42k shaders and all compiled hot results remain intact.",
+                         quarantine, old_mesh, old_keys);
                 }
             } else {
                 VRED("GPU hot-shader overlay %s rejected (%s); using full stable library unchanged", hp, he);
@@ -569,6 +575,13 @@ static const vka_shlib *library_for_key(uint64_t key) {
     if (!g_hot_loaded) return &g_lib;
     const dmsh_vk_entry *overlay = vka_shlib_find(&g_hot, key);
     if (!overlay) return &g_lib;
+    // Runtime shader capture says the new version is syntactically valid,
+    // not that it has the right pixel/mesh linkage. Prefer a known-good
+    // original SPIR-V module whenever there is one; experimentation is an
+    // opt-in and does not mutate either library on disk.
+    if (vka_shlib_find(&g_lib, key) &&
+        !VKA_ENV("DM_VK_OOT_HOT_OVERRIDE", 0))
+        return &g_lib;
     if ((overlay->stage == DMSH_VK_STAGE_MS ||
          overlay->stage == DMSH_VK_STAGE_TS) &&
         !VKA_ENV("DM_VK_OOT_HOT_MESH", 0))

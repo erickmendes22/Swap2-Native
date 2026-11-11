@@ -53,6 +53,9 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('return &g_lib;', src)
         self.assertIn('return &g_hot;', src)
         self.assertIn('DM_VK_OOT_HOT=0', src)
+        self.assertIn('!VKA_ENV("DM_VK_OOT_HOT_OVERRIDE", 0)', src)
+        self.assertIn('vka_shlib_find(&g_lib, key)', src)
+        self.assertIn('old_keys++;', src)
         self.assertIn('quarantine++;', src)
         self.assertIn('vka_shlib_find(&g_lib, entry->key)', src)
         self.assertLess(src.index('!VKA_ENV("DM_VK_OOT_HOT_MESH", 0)'),
