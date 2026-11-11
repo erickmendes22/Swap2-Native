@@ -183,6 +183,10 @@ static void rot_copy(VkCommandBuffer cb, unsigned k, uint32_t idx, vka_img *im, 
 // ---------- FSR 1 upscale: EASU into an intermediate image, then RCAS into the swapchain image (vka_present_fsr.h) ----------
 // DM_VK_FSR=1 replaces the bilinear blit, or the rotated copy, when the picture is scaled up; DM_VK_FSR_SHARP is RCAS's sharpness in stops (0 = the most,
 // each stop halves it; AMD's default 0.25). Both are live. The intermediate image has the picture's size on the window, one per frame in flight
+// SGSR must have ACTUALLY drawn a valid frame before the optional Ocarina
+// internal-network bypass may depend on it. Filter=4 alone is not evidence.
+static _Atomic int g_sgsr_last_present;
+int vka_present_sgsr_active(void) { return atomic_load_explicit(&g_sgsr_last_present, memory_order_acquire); }
 static struct { int state, sgsr_failed; VkFormat fmt; VkPipeline easu, rcas, sgsr; VkPipelineLayout lay; VkDescriptorSetLayout dsl; VkDescriptorPool pool; VkDescriptorSet set[NFRAME][2]; VkSampler samp;
                 VkImage mid[NFRAME], finish[NFRAME]; VkDeviceMemory mem[NFRAME], fmem[NFRAME]; VkImageView view[NFRAME], fview[NFRAME]; uint32_t mw[NFRAME], mh[NFRAME]; } g_fsr;
 static int fsr_wanted(void) {
@@ -757,6 +761,9 @@ static int present_one(const pq_item *it) {
     // FSR from a driver fallback to linear/nearest blit. Log only on a change.
     static int last_mode = -1, last_stretch = -1, last_w = -1, last_h = -1, last_dstw = -1, last_dsth = -1, last_method = -1;
     int method = fsr_applied ? (present_filter == 4 && g_fsr.sgsr ? 4 : 3) : rotated_copy ? 2 : blit > 0 ? 1 : 0;
+    // A pipeline may compile but fail to be used on this frame (source or
+    // swapchain unsupported). Publish only successful one-pass output.
+    atomic_store_explicit(&g_sgsr_last_present, method == 4, memory_order_release);
     if (present_filter >= 3 && !fsr_applied) {
         static int reported;
         if (!reported++) VRED("Ocarina SGSR/FSR unavailable despite requested filter %d: "
