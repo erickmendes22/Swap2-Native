@@ -94,6 +94,31 @@ final class ShaderLibs {
         return r;
     }
 
+    /**
+     * Binary-search the sorted guest shader keys in a complete or partial Vulkan
+     * library without loading its compressed SPIR-V. A captured missing shader
+     * must not override a key that the currently playable base already has.
+     */
+    static boolean hasKey(File lib, Header h, String key) throws IOException {
+        if (h == null || !h.fits(lib.length()) || !key.matches("[0-9a-f]{16}")) return false;
+        long wanted = Long.parseUnsignedLong(key, 16);
+        try (RandomAccessFile f = new RandomAccessFile(lib, "r")) {
+            long lo = 0, hi = h.entries;
+            while (lo < hi) {
+                long mid = lo + ((hi - lo) >>> 1);
+                f.seek(h.entryOff + mid * ENTRY_SIZE);
+                // Vulkan library fields are little-endian; keys compare as
+                // unsigned 64-bit integers, just like vka_shlib_find.
+                long found = Long.reverseBytes(f.readLong());
+                int cmp = Long.compareUnsigned(found, wanted);
+                if (cmp == 0) return true;
+                if (cmp < 0) lo = mid + 1;
+                else hi = mid;
+            }
+        }
+        return false;
+    }
+
     /** The v-&lt;V&gt; folders of a pack folder that hold a library */
     private static File[] libraries(File packDir) {
         File[] l = new File(packDir, "shaders").listFiles(f -> f.getName().startsWith("v-") && new File(f, "dmsh_vk.lib").isFile());

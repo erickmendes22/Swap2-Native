@@ -720,7 +720,44 @@ final class Ondevice {
                 File pd = f.packDir;
                 String lp = PackCheck.shaders(pd, r.titleId);
                 boolean code = f.build != null || again && !Boolean.TRUE.equals(f.code), shaders = lp != null;
-                if (!code && !shaders) { adopt(r, pd, false, false, 0, card); return; }
+                if (!code && !shaders) {
+                    // Prepare again can repair shaders captured as missing at
+                    // runtime, even when the complete library is already the
+                    // current version. Never re-split the 42k-key game map.
+                    if (again && !card && "0400486024DEC000".equals(r.titleId)) {
+                        try {
+                            Job probe = Job.adopt(r, pd, false, true);
+                            List<String> missing = OcarinaShaderDelta.keys(probe);
+                            if (!missing.isEmpty() && !OcarinaShaderDelta.alreadyRepaired(probe, missing)) {
+                                long need = (256L << 20) + f.tools;
+                                Profile prof = Profile.of(r.titleId);
+                                Runnable repair = () -> {
+                                    try {
+                                        Job j = Job.adopt(r, pd, false, true);
+                                        j.stepState("split", "done");
+                                        j.expectedShaders(missing.size());
+                                        begin(j, r, need, false);
+                                    } catch (Exception e) {
+                                        android.util.Log.e("nxpack", "selective shader repair", e);
+                                        quiet();
+                                        a.error(a.getString(R.string.s2_err_cannot_start, String.valueOf(e.getMessage())));
+                                    }
+                                };
+                                confirm(a.getString(R.string.s2_redo_title_shaders, prof.name),
+                                        a.getString(R.string.s2_shaders_update_n, missing.size(), prof.shaderTotal,
+                                                about(a, r.titleId, prof.shaderTotal, missing.size(), false))
+                                                + "\\n\\n" + a.getString(R.string.s2_space_line,
+                                                        r.free / 1073741824.0, need / 1073741824.0),
+                                        a.getString(R.string.s2_prepare), repair);
+                                return;
+                            }
+                        } catch (Exception e) {
+                            android.util.Log.w("nxpack", "cannot inspect captured shader repair", e);
+                        }
+                    }
+                    adopt(r, pd, false, false, 0, card);
+                    return;
+                }
                 long need = (shaders ? DumpCheck.NEED_FULL : DumpCheck.NEED_CODE) + f.tools;
                 Runnable redo = () -> adopt(r, pd, code, shaders, need, card);
                 // Play's short job only rewrites code: a library to make too (missing, or only an older one) is a real preparation, so it is asked like Prepare

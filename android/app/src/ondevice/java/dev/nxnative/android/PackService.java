@@ -329,7 +329,8 @@ public final class PackService extends Service {
                 // the imported one. A library the pack step refused before (Job.importRefused) is not taken again
                 boolean inPack = new File(j.pack(), "shaders").equals(j.shaderCache());
                 if ((s.equals("split") || s.equals("shaders") || s.equals("pack") && !inPack) && !engine.simulated() && ShaderZip.ready(j.pack(), j.titleId())
-                        && !j.refusedImport(Pack.libraryOf(j.pack()))) {
+                        && !j.refusedImport(Pack.libraryOf(j.pack()))
+                        && OcarinaShaderDelta.keys(j).isEmpty()) {
                     Log.i(TAG, s + ": the pack " + j.pack() + " holds this app's shader library (v-" + BuildConfig.NX_DMSH_VK_CHAIN + "): "
                             + (s.equals("pack") ? "the pack step takes it there" : "skipped, nothing is translated"));
                     j.shadersInPack();
