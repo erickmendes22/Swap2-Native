@@ -159,6 +159,12 @@ final class Ondevice {
     /** Prepare the dump (MainActivity's Add game, a game card's Prepare again): checked off the main thread, then asked before anything is written */
     static void prepare(MainActivity a, File dump, boolean again) { if (panel != null && panel.a == a) panel.picked(dump, false, null, again); }
 
+    /** Explicit Ocarina hot shader repair, independent of general Prepare again. */
+    static void repairCapturedShaders(MainActivity a, Game g) {
+        if (panel != null && panel.a == a && "0400486024DEC000".equals(g.titleId))
+            panel.repairCapturedShaders(g);
+    }
+
     /** Shaders a delta update of this pack translates (the profile's manifest rows for the pack's older libraries, ShaderLibs.toTranslate), -1 when the manifest has none of them */
     static int deltaShaders(File packDir, String titleId) { return Pack.deltaShaders(packDir, titleId); }
 
@@ -192,6 +198,11 @@ final class Ondevice {
         if (isDump(new File(g.gameDir)) && profile)
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_retry, a.getString(R.string.s2_prepare_again), v -> { close.run(); a.prepareAgain(g); })
                     .value(a.getString(R.string.s2_prepare_again_note)).chevron(a).view);
+        if (profile && isDump(new File(g.gameDir)) && "0400486024DEC000".equals(g.titleId))
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_retry,
+                    a.getString(R.string.s2_ocarina_repair),
+                    v -> { close.run(); repairCapturedShaders(a, g); })
+                    .value(a.getString(R.string.s2_ocarina_repair_note)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_folder_open, a.getString(R.string.s2_pick_pack), v -> { close.run(); a.pickPackFor(new File(g.gameDir), g.titleId); })
                 .value(a.getString(R.string.s2_pick_pack_note)).chevron(a).view);
         if (profile)
@@ -680,6 +691,89 @@ final class Ondevice {
             return a.getString(res, name) + "\n\n" + r.error;
         }
 
+        /**
+         * Explicit repair uses the saved game pack, never a newly discovered pack
+         * beside the dump. It cannot silently launch full shader preparation.
+         */
+        void repairCapturedShaders(Game g) {
+            if (a.needAccess()) return;
+            if (alive() && job != null && !"done".equals(job.state())) {
+                a.error(a.getString(R.string.s2_err_one_job, job.name()));
+                return;
+            }
+            new Thread(() -> {
+                DumpCheck.Result r = DumpCheck.check(new File(g.gameDir), 0);
+                File pack = new File(g.packDir);
+                boolean valid = false;
+                try {
+                    Pack p = Pack.read(pack);
+                    valid = !p.simulated && g.titleId.equals(p.titleId);
+                } catch (IOException e) {
+                    android.util.Log.w("nxpack", "selected shader repair: existing pack invalid", e);
+                }
+                final boolean packValid = valid;
+                long tools = PackEngine.toolsBytes(a);
+                h.post(() -> {
+                    if (!r.ok()) { quiet(); a.error(dumpError(r)); return; }
+                    if (!packValid) { quiet(); a.error(a.getString(R.string.s2_ocarina_repair_invalid)); return; }
+                    offerOcarinaHotRepair(r, pack, false, tools, true);
+                });
+            }, "nxpack-selected-shaders").start();
+        }
+
+        /**
+         * Return true only if a selective repair was offered or an explicit
+         * request was handled. A verified captured-only job runs just:
+         * shaders -> pack, with identify/rewrite/split already complete.
+         * Never substitute the normal 42k shader preparation if no captures
+         * are usable. The recorded hot_keys fixes the mode across retries.
+         */
+        boolean offerOcarinaHotRepair(DumpCheck.Result r, File packDir, boolean code,
+                                      long tools, boolean explicit) {
+            if (!"0400486024DEC000".equals(r.titleId)) return false;
+            try {
+                Job probe = Job.adopt(r, packDir, code, true);
+                List<String> selected = OcarinaShaderDelta.keys(probe);
+                if (selected.isEmpty() || OcarinaShaderDelta.alreadyRepaired(probe, selected)) {
+                    if (explicit) {
+                        quiet();
+                        a.error(a.getString(selected.isEmpty()
+                                ? R.string.s2_ocarina_repair_none
+                                : R.string.s2_ocarina_repair_done));
+                    }
+                    return explicit;
+                }
+                long need = (256L << 20) + tools + (code ? DumpCheck.NEED_CODE : 0);
+                Runnable repair = () -> {
+                    try {
+                        Job j = Job.adopt(r, packDir, code, true);
+                        j.stepState("split", "done");
+                        j.hotKeys(selected);
+                        j.expectedShaders(selected.size());
+                        // Never reset/discard the old 42k compiled base; this
+                        // scoped job writes a separate current-ABI hot overlay.
+                        begin(j, r, need, false);
+                    } catch (Exception e) {
+                        android.util.Log.e("nxpack", "selective shader repair", e);
+                        quiet();
+                        a.error(a.getString(R.string.s2_err_cannot_start, String.valueOf(e.getMessage())));
+                    }
+                };
+                Profile prof = Profile.of(r.titleId);
+                String msg = a.getString(R.string.s2_ocarina_repair_confirm, selected.size())
+                        + (code ? "\n\n" + a.getString(R.string.s2_redo_code) : "")
+                        + "\n\n" + a.getString(R.string.s2_space_line,
+                        r.free / 1073741824.0, need / 1073741824.0);
+                confirm(a.getString(R.string.s2_ocarina_repair), msg,
+                        a.getString(R.string.s2_prepare), repair);
+                return true;
+            } catch (Exception e) {
+                android.util.Log.e("nxpack", "cannot inspect selective shader repair", e);
+                if (explicit) { quiet(); a.error(a.getString(R.string.s2_ocarina_repair_invalid)); }
+                return explicit;
+            }
+        }
+
         void checked(Found f, boolean start, File packOverride, boolean again, boolean card, boolean codeOnly) {
             DumpCheck.Result r = f.r;
             if (!card && !start) screen = false;
@@ -732,42 +826,12 @@ final class Ondevice {
                             + "ou importe seus shaders para recuperar o jogo sem recompilar os 42.339.");
                     return;
                 }
+                // Prioritize the explicitly scoped Ocarina repair even when
+                // Prepare again also detects code that needs rewriting.
+                // The code step may run, but the 42k shader split/build cannot.
+                if (again && !card && !shaders &&
+                        offerOcarinaHotRepair(r, pd, code, f.tools, false)) return;
                 if (!code && !shaders) {
-                    // Prepare again can repair shaders captured as missing at
-                    // runtime, even when the complete library is already the
-                    // current version. Never re-split the 42k-key game map.
-                    if (again && !card && "0400486024DEC000".equals(r.titleId)) {
-                        try {
-                            Job probe = Job.adopt(r, pd, false, true);
-                            List<String> missing = OcarinaShaderDelta.keys(probe);
-                            if (!missing.isEmpty() && !OcarinaShaderDelta.alreadyRepaired(probe, missing)) {
-                                long need = (256L << 20) + f.tools;
-                                Profile prof = Profile.of(r.titleId);
-                                Runnable repair = () -> {
-                                    try {
-                                        Job j = Job.adopt(r, pd, false, true);
-                                        j.stepState("split", "done");
-                                        j.hotKeys(missing);
-                                        j.expectedShaders(missing.size());
-                                        begin(j, r, need, false);
-                                    } catch (Exception e) {
-                                        android.util.Log.e("nxpack", "selective shader repair", e);
-                                        quiet();
-                                        a.error(a.getString(R.string.s2_err_cannot_start, String.valueOf(e.getMessage())));
-                                    }
-                                };
-                                confirm(a.getString(R.string.s2_redo_title_shaders, prof.name),
-                                        a.getString(R.string.s2_shaders_update_n, missing.size(), prof.shaderTotal,
-                                                about(a, r.titleId, prof.shaderTotal, missing.size(), false))
-                                                + "\n\n" + a.getString(R.string.s2_space_line,
-                                                        r.free / 1073741824.0, need / 1073741824.0),
-                                        a.getString(R.string.s2_prepare), repair);
-                                return;
-                            }
-                        } catch (Exception e) {
-                            android.util.Log.w("nxpack", "cannot inspect captured shader repair", e);
-                        }
-                    }
                     adopt(r, pd, false, false, 0, card);
                     return;
                 }
