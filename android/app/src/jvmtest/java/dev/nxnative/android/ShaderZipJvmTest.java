@@ -265,51 +265,93 @@ public final class ShaderZipJvmTest {
         check(ShaderZip.exportName(ID, "", "v1").equals("swap2-shaders-" + ID + "-any-v-v1.zip") && ShaderZip.exportName(ID, "1/2", "v").contains("-1_2-"), "names");
     }
 
-    /** The exact fully compiled 0.1.2 Ocarina shaders stay importable
-     * by 0.1.6. Other versions/ABIs and incomplete hot zips stay rejected.
-     * This also guards against accidentally exporting an 6-shader overlay. */
+    /** Two FULL 42,339-entry libraries use the same original Ocarina chain:
+     * the first successful build and the user's export with exactly SIX
+     * shader records replaced. Import/re-import must retain all replacements
+     * byte for byte, without relabelling the original chain or re-compiling.
+     * Incomplete six-entry overlays and incompatible ABIs remain refused. */
     static void ocarinaBaseline(File t) throws Exception {
         final String oot = "0400486024DEC000";
         final String baseline = "b6b21fb5753a";
-        byte[] full = lib(oot, baseline, INPUTS, ABI, 42339, 4096, 149);
+        final int count = 42339;
+        byte[] originalFull = lib(oot, baseline, INPUTS, ABI, count, 4096, 149);
+        byte[] modifiedFull = originalFull.clone();
+        // Six intentionally replaced fake shader payloads. The test checks
+        // all six different bytes survive a full-library ZIP replacement.
+        // The actual game SPIR-V is validated separately by the translator.
+        int[] locations = {0, 333, 666, 999, 1332, 1665};
+        int blobStart = 128 + count * ShaderLibs.ENTRY_SIZE;
+        for (int i = 0; i < locations.length; i++)
+            modifiedFull[blobStart + locations[i]] ^= (byte) (0x33 + i);
+        int diff = 0;
+        for (int i = 0; i < originalFull.length; i++)
+            if (originalFull[i] != modifiedFull[i]) diff++;
+        check(diff == 6, "six payload modifications, not six fewer shader entries");
+
         byte[] inputs = stamp(oot, INPUTS).getBytes(StandardCharsets.UTF_8);
-        File zip = craft(new File(t, "original.zip"), full, inputs);
+        File originalZip = craft(new File(t, "original.zip"), originalFull, inputs);
+        File modifiedZip = craft(new File(t, "merged-six-replacements.zip"), modifiedFull, inputs);
         File pack = new File(t, "restored");
         ShaderZip.Target target = new ShaderZip.Target(pack, oot);
         target.inputs = INPUTS;
-        ShaderZip.Result result = importFile(zip, target);
-        File original = new File(pack, "shaders/v-" + baseline + "/dmsh_vk.lib");
-        check(result.version.equals(baseline) && result.from.equals(baseline)
-                && Arrays.equals(bytes(original), full), "trusted original stays byte identical and retains version");
-        check(!new File(pack, "shaders/v-" + CUR + "/dmsh_vk.lib").exists(), "original import never forges current shader version");
-        check(ShaderLibs.trustedOcarinaBase(pack, oot, ABI, INPUTS) != null, "validated original library available");
+        ShaderZip.Result first = importFile(originalZip, target);
+        File installed = new File(pack, "shaders/v-" + baseline + "/dmsh_vk.lib");
+        check(first.version.equals(baseline) && Arrays.equals(bytes(installed), originalFull),
+                "complete first compilation imported without relabelling");
 
-        // A later accidental hot library under v-current must not be exported
-        // in place of the full, known-good original.
+        // The user's complete 42,339-shader modified export REPLACES the
+        // older full library of the same version, not an optional hot path.
+        ShaderZip.Result modified = importFile(modifiedZip, target);
+        check(modified.shaders == count && modified.version.equals(baseline),
+                "the modified full base retains all 42339 entries and chain");
+        check(!Arrays.equals(bytes(installed), originalFull) &&
+                Arrays.equals(bytes(installed), modifiedFull) &&
+                sha(bytes(installed)).equals(sha(modifiedFull)),
+                "all six replacements preserved, older bytes not restored");
+        check(ShaderZip.ready(pack, oot), "merged complete library is playable for the same-ABI app");
+        check(!new File(pack, "shaders/v-" + CUR + "/dmsh_vk.lib").exists(),
+                "merged import must not forge the current chain");
+
+        // A partial six-entry library may coexist but must NEVER replace the
+        // complete merged base in export, launch or later updates.
         addLib(pack, CUR, lib(oot, CUR, INPUTS, ABI, 6, 4096, 150), stamp(oot, INPUTS));
-        check(ShaderZip.chooseExport(pack, oot).equals(original), "export selects complete original rather than six shaders");
+        check(ShaderZip.chooseExport(pack, oot).equals(installed),
+                "export selects full merged 42339 library, not six-entry overlay");
 
         File export = new File(t, "export");
         ShaderZip.Exported e = ShaderZip.export(pack, oot, export, "0.1.6", "src", ShaderZip.QUIET);
-        check(e.version.equals(baseline) && e.shaders == 42339, "re-export keeps original version and entries");
+        check(e.version.equals(baseline) && e.shaders == count,
+                "re-export preserves 42339 entries and the source version");
         ShaderZip.Target again = new ShaderZip.Target(new File(t, "roundtrip"), oot);
         again.inputs = INPUTS;
-        check(importStream(e.zip, again).shaders == 42339, "original can be re-imported via a document stream");
+        ShaderZip.Result roundtrip = importStream(e.zip, again);
+        File roundtripFile = new File(again.pack, "shaders/v-" + baseline + "/dmsh_vk.lib");
+        check(roundtrip.shaders == count && Arrays.equals(bytes(roundtripFile), modifiedFull),
+                "export + document-stream import retains all six replacement bytes");
+        // An exported ZIP is reused only when the full modified SHA matches.
+        check(ShaderZip.export(pack, oot, export, "0.1.6", "src", ShaderZip.QUIET).reused,
+                "re-export of unchanged complete modified file is reused");
 
         File incomplete = craft(new File(t, "hot.zip"),
                 lib(oot, baseline, INPUTS, ABI, 6, 1000, 151), inputs);
         ShaderZip.Target unsafe = new ShaderZip.Target(new File(t, "incomplete"), oot);
         unsafe.inputs = INPUTS;
-        refused("incomplete baseline", ShaderZip.Why.OTHER_VERSION, incomplete, unsafe, false);
+        refused("six-entry partial is NOT full merged base", ShaderZip.Why.OTHER_VERSION, incomplete, unsafe, false);
+
+        File missingOne = craft(new File(t, "missing-one.zip"),
+                lib(oot, baseline, INPUTS, ABI, 42338, 1000, 151), inputs);
+        unsafe = new ShaderZip.Target(new File(t, "missing-one"), oot);
+        unsafe.inputs = INPUTS;
+        refused("missing one of 42339 required shaders", ShaderZip.Why.OTHER_VERSION, missingOne, unsafe, false);
 
         File wrongAbi = craft(new File(t, "wrong_abi.zip"),
-                lib(oot, baseline, INPUTS, "ffffffffffff", 42339, 1000, 152), inputs);
+                lib(oot, baseline, INPUTS, "ffffffffffff", count, 1000, 152), inputs);
         unsafe = new ShaderZip.Target(new File(t, "wrong_abi"), oot);
         unsafe.inputs = INPUTS;
         refused("wrong baseline ABI", ShaderZip.Why.OTHER_VERSION, wrongAbi, unsafe, true);
 
         File wrongInputs = craft(new File(t, "wrong_inputs.zip"),
-                lib(oot, baseline, "ffffffffffff", ABI, 42339, 1000, 153),
+                lib(oot, baseline, "ffffffffffff", ABI, count, 1000, 153),
                 stamp(oot, "ffffffffffff").getBytes(StandardCharsets.UTF_8));
         unsafe = new ShaderZip.Target(new File(t, "wrong_inputs"), oot);
         unsafe.inputs = INPUTS;
