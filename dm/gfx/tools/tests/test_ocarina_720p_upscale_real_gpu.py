@@ -69,6 +69,51 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('make(cs, lay, tb, ib, bb, effective_enc, effective_map, kernel, pack)', NDSR)
         self.assertIn('source_is_scene_linear && cs->key != UINT64_C(0xd99fbeeb53d38847)', NDSR)
 
+    def test_ndsr_retile_replaces_guest_grid_not_guest_shader(self):
+        draw = (ROOT / 'dm/gfx/vk_android/vka_draw.c').read_text()
+        header = (ROOT / 'dm/gfx/vk_android/vka_ndsr.h').read_text()
+        # The no-new-shader-translation path modifies the dispatch of
+        # precisely the already-selected NDSR stand-in pipeline.
+        self.assertIn('vka_ndsr_grid_x(uint32_t width, uint32_t height,', header)
+        self.assertIn('gp_ndsr_replaced && !dp->ind && !sb', draw)
+        self.assertIn('!vka_gp_active', draw)
+        self.assertIn('!vka_nan_on()', draw)
+        self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")', draw)
+        self.assertIn('VKA_ENV("DM_VK_OOT_NDSR_RETILE", 1)', draw)
+        self.assertIn('vka_ndsr_grid_x(ndsr_ow, ndsr_oh, native,', draw)
+        self.assertIn('V.props.limits.maxComputeWorkGroupCount[0]', draw)
+        self.assertIn('if (ndsr_groups_x) vk.vkCmdDispatch(g_cb, ndsr_groups_x, 1, 1);', draw)
+        self.assertIn('else if (sb && (uint64_t)dp->x', draw)
+        self.assertIn('else vk.vkCmdDispatch(g_cb, (uint32_t)dp->x', draw)
+        self.assertIn('scene_linear, &ndsr_ow, &ndsr_oh', draw)
+
+    def test_ndsr_grid_stride_retile_preserves_every_output_pixel(self):
+        # The committed NDSR SPIR-V's shader uses
+        #   p = group_id*128 + lane + k*(groups*128).
+        # When we make the number of groups ceil(pixels/256), this is a
+        # bijection of all output pixels with at most two loop iterations
+        # per lane. No original shader SPIR-V or workgroup indexing is changed.
+        from math import ceil
+        for w, h in [(1, 1), (17, 13), (257, 129), (640, 360),
+                     (1275, 717), (2048, 1152), (3840, 2160)]:
+            count = w * h
+            groups = ceil(count / 256)
+            self.assertLessEqual(groups, 65535)
+            stride = 128 * groups
+            self.assertGreaterEqual(stride, count // 2)
+            self.assertLessEqual(ceil(count / stride), 2)
+            sample = range(count) if count <= 50_000 else (
+                list(range(1024)) + list(range(count - 1024, count)) +
+                [count // 2, count // 3, count // 5])
+            for p in sample:
+                lane_with_group = p % stride
+                group, lane = divmod(lane_with_group, 128)
+                loop = p // stride
+                self.assertLess(group, groups)
+                self.assertLess(lane, 128)
+                self.assertLess(loop, 2)
+                self.assertEqual(group * 128 + lane + loop * stride, p)
+
     def test_sgsr_selection_cannot_silently_disable_requested_upscaler(self):
         # The 2026-11-11 Build 49 log reported DM_VK_PRESENT_FILTER=4 but
         # fsr_requested=0, even though the launcher had DM_VK_FSR=1.
