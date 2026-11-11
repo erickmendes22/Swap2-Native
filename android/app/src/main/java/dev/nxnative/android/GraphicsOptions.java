@@ -32,6 +32,7 @@ final class GraphicsOptions {
     static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
     static final String[] ENCODER_IDLE = {"Normal (padrão)", "Dormir quando vazio (experimental)"};
     static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: sincronização GPU + VRS 2×1 se suportado", "Agressivo: sincronização GPU + VRS 2×2 se suportado"};
+    static final String[] HOTPASS_VRS = {"Desligado (qualidade total)", "Balanceado — VRS 2×1 nos passes pesados (padrão)"};
     static final String[] SGSR_CHAIN = {"Desativado (seguro)", "Ativar otimização das redes internas com SGSR (experimental)"};
 
     static int mode(Context c) {
@@ -69,6 +70,13 @@ final class GraphicsOptions {
     static int encoderIdle(Context c) { return clamp(Prefs.of(c).getInt("encoder_idle", 0), 0, 1); }
     static int encoderIdle(Context c, String id) {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("encoder_idle", id), encoderIdle(c)), 0, 1);
+    }
+    static int hotpassVrs(Context c, String id) {
+        // A moderate per-fragment rate is separate from the old FPS Boost,
+        // which remained OFF in all the GPU-profiler sessions. The new rate
+        // is only used for the seven measured-heavy scene fragment programs
+        // when the driver's queried Vulkan features support it.
+        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 1);
     }
     static int sgsrChain(Context c, String id) {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_sgsr_chain", id), 0), 0, 1);
@@ -131,6 +139,7 @@ final class GraphicsOptions {
         // The native host checks driver feature support and logs fallback.
         if (Prefs.OCARINA_TITLE.equals(id)) {
             out.add("DM_VK_OOT_FPS_BOOST=" + fpsBoost(c, id));
+            out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));
             // Experimental iOS V19 0.25 chain bypass, but SGSR1 must have
             // ACTUALLY drawn a frame and the direct HDR source must validate.
             // OFF by default so existing shaders/playable graphics are safe.
@@ -175,7 +184,7 @@ final class GraphicsOptions {
     }
     static void reset(Context c, String id) {
         SharedPreferences.Editor e = Prefs.of(c).edit();
-        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup", "encoder_idle", "oot_fps_boost", "oot_sgsr_chain"})
+        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup", "encoder_idle", "oot_fps_boost", "oot_sgsr_chain", "oot_hotpass_vrs"})
             e.remove(Prefs.gameKey(k, id));
         e.commit();
     }
@@ -208,6 +217,9 @@ final class GraphicsOptions {
             values = ENCODER_IDLE; current = encoderIdle(c, id); title = "Espera do encoder"; break;
         case "oot_fps_boost":
             values = FPS_BOOST; current = fpsBoost(c, id); title = "FPS Boost — VRS (pode reduzir detalhes)"; break;
+        case "oot_hotpass_vrs":
+            values = HOTPASS_VRS; current = hotpassVrs(c, id);
+            title = "Reduzir fragment shaders dos passes gráficos pesados"; break;
         case "oot_sgsr_chain":
             values = SGSR_CHAIN; current = sgsrChain(c, id);
             title = "Ocarina: otimizar upscale interno com SGSR 1"; break;
