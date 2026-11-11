@@ -322,6 +322,8 @@ void vka_tex_id_desc(int id, char *b, size_t n);   // texture ID id described fo
 void vka_tex_feedback(vka_img *const *ims, const uint32_t *levels, int n);   // the open pass's attachments and their levels (n 0: none; ims NULL: no pass open), for vka_tex_id_view
 int vka_tex_id_in_pass(int id);   // texture ID id's image is an attachment of the open pass (vka_tex_feedback's set)
 int vka_tex_pool_in_pass(void);   // conservative exact registered-storage overlap with the open pass, no shader ABI change
+int vka_tex_gw_shadow_safe(uint64_t addr, uint64_t n); // no pending opaque GPU writer / copy overlaps this uniform range
+int vka_tex_gw_shadow_read(uint64_t addr, void *out, uint64_t n); // apply pending known GPU updates to a guest uniform copy
 int vka_tex_id_target(int id);                      // the NVN target texture ID id stands for (its view's), -1 = not registered
 int vka_tex_id_pending(int id);                     // texture ID id is registered and its image is not made yet (its first use records commands)
 VkImageView vka_tex_id_view_rec(int id, VkCommandBuffer cb, uint8_t dim, int storage, VkImageLayout *layout);   // the same on the recording thread, through a memo (DM_VK_TEX_MEMO)

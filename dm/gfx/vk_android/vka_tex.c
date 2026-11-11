@@ -838,6 +838,45 @@ void vka_tex_gw_copy(uint64_t src, uint64_t dst, uint64_t n) { gw_add(GW_COPY, d
 void vka_tex_gw_fill(uint64_t dst, uint64_t n, uint32_t value) { gw_add(GW_FILL, dst, n, 0, value, NULL); }
 void vka_tex_gw_update(uint64_t dst, uint64_t n, const void *data) { gw_add(GW_UPDATE, dst, n, 0, 0, data); }
 void vka_tex_gw_opaque(uint64_t dst, uint64_t n) { gw_add(GW_OPAQUE, dst, n, 0, 0, NULL); }
+// A guest uniform shadow may be created on the host only when its previous
+// outstanding GPU writes have known bytes. GPU shader stores / buffer copies
+// can be unknown until completion; keep them on the original in-place path.
+// Updates and fills replay in guest GPU command order, including writes from
+// previous submissions still awaiting the fence.
+static int gw_shadow_read(uint64_t addr, void *out, uint64_t n, int copy) {
+    if (!n || addr > UINT64_MAX - n || n > SIZE_MAX) return 0;
+    uint64_t done = vka_done();
+    pthread_mutex_lock(&g_tmu);
+    for (int i = 0; i < g_ngw; i++) {
+        const gw_t *w = &g_gw[i];
+        if ((w->fence && w->fence <= done) || w->hi <= addr || w->lo >= addr + n) continue;
+        if (w->kind == GW_OPAQUE || w->kind == GW_COPY) {
+            pthread_mutex_unlock(&g_tmu);
+            return 0;
+        }
+    }
+    if (copy) {
+        if (vka_addr(addr, n, NULL, NULL, NULL))
+            memcpy(out, (const void *)(uintptr_t)addr, (size_t)n);
+        else if (plat_mem_read(addr, out, (size_t)n))
+            memset(out, 0, (size_t)n);
+        for (int i = 0; i < g_ngw; i++) {
+            const gw_t *w = &g_gw[i];
+            if ((w->fence && w->fence <= done) || w->hi <= addr || w->lo >= addr + n) continue;
+            uint64_t lo = w->lo > addr ? w->lo : addr, hi = w->hi < addr + n ? w->hi : addr + n;
+            if (w->kind == GW_UPDATE && w->data)
+                memcpy((uint8_t *)out + lo - addr, w->data + lo - w->lo, (size_t)(hi - lo));
+            else if (w->kind == GW_FILL)
+                for (uint64_t k = lo; k < hi; k++)
+                    ((uint8_t *)out)[k - addr] = (uint8_t)(w->value >> (8 * ((k - w->lo) & 3)));
+            else { pthread_mutex_unlock(&g_tmu); return 0; }
+        }
+    }
+    pthread_mutex_unlock(&g_tmu);
+    return 1;
+}
+int vka_tex_gw_shadow_safe(uint64_t addr, uint64_t n) { return gw_shadow_read(addr, NULL, n, 0); }
+int vka_tex_gw_shadow_read(uint64_t addr, void *out, uint64_t n) { return gw_shadow_read(addr, out, n, 1); }
 // Stores through raw global memory (an address the shader loaded: dmsh_abi.h DMSH_GMEM_LOG_*) land where only the GPU knows: each draw or dispatch with such stores gets a write
 // log of its own, read once its submission is done; its pages become writes of unknown bytes, done (the images over them are uploaded again)
 enum { GML_N = 256, GML_BYTES = (1 + (1 << DMSH_GMEM_LOG_LOG2)) * 4 };
