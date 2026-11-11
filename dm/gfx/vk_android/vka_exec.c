@@ -303,7 +303,12 @@ static void post(pop o) {
 // number, allocated by the replay thread and given back by the completion thread in the same order (Ocarina of Time makes hundreds of reports a frame). One count for
 // every queue, as nvn_mtl.m's. Until 2026-11-07 every samples-passed report wrote a constant 1; DM_VK_OCCLUSION=0 (read once, at the first samples-passed reset or report)
 // still does (A/B), and so does a report before any samples-passed reset. The replay statistics (DM_VK_STATS) print "occlusion queries per frame: ..."
-enum { OQ_N = 32768, OQ_RB = 256 };   // queries in the ring; results read at a time
+enum { OQ_N = 32768, OQ_RB = 256, OQ_BATCH = 1024 }; // ring, conservative per-report fallback, completed-query bulk-read chunk
+// The 2026-11-11 Ocarina 720p log has ~1,809 queries prefetched/frame
+// in ~7.8 driver calls: 256-query reads. The fence is ALREADY complete
+// when the batch runs. Reading up to 1,024 contiguous queries at once
+// reduces driver round trips without changing result availability, report
+// order, query pool allocation or fallback stack memory.
 static struct { VkQueryPool pool; int precise, host; PFN_vkCmdBeginQuery begin; PFN_vkCmdEndQuery end; PFN_vkCmdResetQueryPool creset; PFN_vkResetQueryPool hreset; PFN_vkGetQueryPoolResults get; } OQ;
 static int g_oq = -1;                      // 1 counted; 0 the constant 1 (DM_VK_OCCLUSION=0, no device or no query pool); -1 not decided yet
 static int g_oq_count, g_oq_fresh, g_oq_open;   // a samples-passed reset came (draws count); a reset since the last report (the next starts from 0); a query is active in the open pass
@@ -474,7 +479,7 @@ static void oq_batch_init(oq_batch *b, const pop *ops, int n) {
     for (uint64_t q = first; q < last;) {
         uint32_t slot = (uint32_t)(q % OQ_N);
         uint32_t k = (uint32_t)(last - q < OQ_N - slot ? last - q : OQ_N - slot);
-        if (k > OQ_RB) k = OQ_RB;
+        if (k > OQ_BATCH) k = OQ_BATCH;
         uint64_t *dst = &pairs[2 * (size_t)(q - first)];
         VkResult e = OQ.get(V.dev, OQ.pool, slot, k, 16 * (size_t)k, dst, 16,
                             VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);

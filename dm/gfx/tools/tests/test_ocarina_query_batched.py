@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[4]
 EXEC = (ROOT / "dm/gfx/vk_android/vka_exec.c").read_text()
 OQ_N = 32768
 OQ_RB = 256
+OQ_BATCH = 1024
 
 
 def batch_plan(reports):
@@ -30,7 +31,7 @@ def batch_plan(reports):
     reads = []
     q = first
     while q < last:
-        e = min(last, q + OQ_RB, q + OQ_N - q % OQ_N)
+        e = min(last, q + OQ_BATCH, q + OQ_N - q % OQ_N)
         reads.append((q, e))
         q = e
     resets = []
@@ -115,6 +116,19 @@ class TestOcclusionBatch(unittest.TestCase):
             self.assertLess(len(reads), 20)
             self.assertLessEqual(len(host_resets), 2)
             self.assertGreater(len(reports), len(reads) * 100)
+
+    def test_heavy_720p_occlusion_uses_fewer_completed_read_calls(self):
+        # Same ~1,809 queries/frame observed on the Redmagic 11 Pro.
+        # The old 256-query chunks needed eight driver queries; 1024
+        # removes six calls with exactly the same 1809 query results.
+        reports = [(q, q + 1) for q in range(1809)]
+        reads, resets = batch_plan(reports)
+        self.assertEqual(len(reads), 2)
+        self.assertEqual(sum(e - q for q, e in reads), 1809)
+        self.assertEqual(resets, [(0, 1809)])
+        self.assertIn('OQ_RB = 256, OQ_BATCH = 1024', EXEC)
+        self.assertIn('if (k > OQ_BATCH) k = OQ_BATCH;', EXEC)
+        self.assertIn('if (k > OQ_RB) k = OQ_RB;', EXEC)
 
     def test_ring_wrap_never_crosses_pool_boundary(self):
         first = OQ_N - 8
