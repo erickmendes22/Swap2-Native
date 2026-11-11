@@ -1205,6 +1205,7 @@ static void dirty(int **list, int *n, int *cap, uint8_t **flag, int nslots, int 
 static int *g_tdirty, g_ntd, g_tdcap; static uint8_t *g_tdflag;
 typedef struct { tex_t t; view_t v; uint8_t has_v, img; uint64_t pgen; } treg_ent;   // pgen: the texture's pool's Initialize serial at registration (nvn_pool_live)
 static treg_ent *g_treg; static int g_ntreg;   // indexed by host texture ID
+static _Atomic uint64_t g_tpool_stamp = 1;
 // The update-after-bind texture pool is shared across in-flight queue parts.
 // Rewriting an unchanged VkImageView is unnecessary work for the driver and
 // may race with a pending read of the same descriptor slot. Keep separate
@@ -1929,7 +1930,7 @@ static vka_img *g_fb_im[9]; static uint32_t g_fb_lv[9]; static int g_nfb, g_rp_o
 // This is safe without shader readback tracking and works on precompiled libs.
 // Increment the registration stamp even for identical descriptors when the
 // opt-in generic register dedupe is disabled.
-static _Atomic uint64_t g_tpool_stamp = 1;
+
 static uint64_t g_fb_stamp, g_pool_feedback_stamp, g_pool_feedback_fb;
 static int g_pool_feedback_possible = 1;
 void vka_tex_feedback(vka_img *const *ims, const uint32_t *levels, int n) {
