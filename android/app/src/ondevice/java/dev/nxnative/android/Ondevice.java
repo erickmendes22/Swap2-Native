@@ -730,7 +730,7 @@ final class Ondevice {
                 h.post(() -> {
                     if (!r.ok()) { quiet(); a.error(dumpError(r)); return; }
                     if (!packValid) { quiet(); a.error(a.getString(R.string.s2_ocarina_repair_invalid)); return; }
-                    offerOcarinaHotRepair(r, pack, false, tools, true);
+                    offerOcarinaHotRepair(r, pack, false, tools, true, true);
                 });
             }, "nxpack-selected-shaders").start();
         }
@@ -743,17 +743,21 @@ final class Ondevice {
          * are usable. The recorded hot_keys fixes the mode across retries.
          */
         boolean offerOcarinaHotRepair(DumpCheck.Result r, File packDir, boolean code,
-                                      long tools, boolean explicit) {
+                                      long tools, boolean explicit, boolean retryRequested) {
             if (!"0400486024DEC000".equals(r.titleId)) return false;
             try {
                 Job probe = Job.adopt(r, packDir, code, true);
                 List<String> selected = OcarinaShaderDelta.keys(probe);
-                if (selected.isEmpty() || OcarinaShaderDelta.alreadyRepaired(probe, selected)) {
+                // Already compiled does not mean visually correct: the
+                // earlier 57-key overlay contains quarantined mesh/task
+                // stages. An explicit retry must be able to rebuild those
+                // keys from the stored real pipeline associations without
+                // requiring new gameplay or touching the full library.
+                boolean done = OcarinaShaderDelta.alreadyRepaired(probe, selected);
+                if (selected.isEmpty() || done && !explicit && !retryRequested) {
                     if (explicit) {
                         quiet();
-                        a.error(a.getString(selected.isEmpty()
-                                ? R.string.s2_ocarina_repair_none
-                                : R.string.s2_ocarina_repair_done));
+                        a.error(a.getString(R.string.s2_ocarina_repair_none));
                     }
                     return explicit;
                 }
@@ -798,14 +802,25 @@ final class Ondevice {
                     Job j = Job.read(f.existing);
                     boolean same = j.dump().getPath().equals(r.dump.getPath()) && j.version() == r.version && (packOverride == null || packOverride.equals(j.pack()));
                     String s = j.state();
-                    if (same && unfinished(j) && !card) {
+                    // "Preparar novamente" is a NEW explicit request. Do not
+                    // silently resume a failed/paused Ocarina selective repair
+                    // from an earlier APK when the original full game pack is
+                    // valid and can be played. It would retry the same stale
+                    // 57-key job instead of reevaluating saved shader pairs.
+                    boolean replaceFailedOcarinaRepair = same && again && !card
+                            && "0400486024DEC000".equals(r.titleId)
+                            && f.pack != null && f.build == null
+                            && PackCheck.shaders(f.packDir, r.titleId) == null
+                            && !alive() && !"running".equals(s)
+                            && !j.hotKeys().isEmpty();
+                    if (same && unfinished(j) && !card && !replaceFailedOcarinaRepair) {
                         Job.remember(a, f.existing);
                         job = j;
                         show();
                         startService(j);
                         return;
                     }
-                    if (unfinished(j)) {   // unfinished, for another pack folder: never written over (its job.json is this dump's)
+                    if (unfinished(j) && !replaceFailedOcarinaRepair) {   // other/actively unfinished jobs keep their normal protection
                         if (card) return;   // an automatic update leaves it to the user
                         quiet();
                         otherJob(j, f, start, packOverride, again, codeOnly);
@@ -844,7 +859,7 @@ final class Ondevice {
                 // Prepare again also detects code that needs rewriting.
                 // The code step may run, but the 42k shader split/build cannot.
                 if (again && !card && !shaders &&
-                        offerOcarinaHotRepair(r, pd, code, f.tools, false)) return;
+                        offerOcarinaHotRepair(r, pd, code, f.tools, true, true)) return;
                 if (!code && !shaders) {
                     adopt(r, pd, false, false, 0, card);
                     return;
