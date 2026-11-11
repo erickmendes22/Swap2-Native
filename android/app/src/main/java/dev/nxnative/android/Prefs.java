@@ -112,27 +112,10 @@ final class Prefs {
     // These are the dynamic-resolution palette values before upscaling.
     // Existing 720p choice remains exactly the same after an APK update.
     static final String OCARINA_TITLE = "0400486024DEC000";
-    // The original 720p selection is a special BOUNDED ten-level
-    // dynamic-resolution palette, not a constant 0.6133 render scale.
-    // Other entries are exact palette scale values. The three additional
-    // choices below make the iOS V19 0.25 and Vulkan SGSR experiments
-    // directly selectable while preserving every installed user's old
-    // 720p / 540p / 480p / 360p preference and saved RomFS overlay.
-    // Nominal heights use the engine's 2048x1152 reconstruction target;
-    // runtime scene dimensions can still differ due to the game.
-    static final String[] OCARINA_SCENE_SCALES = {
-        "0.75", "0.6133", "0.6", "0.46875",
-        "0.4166667", "0.3125", "0.25"
-    };
-    static final String[] OCARINA_SCENE_NAMES = {
-        "864p nominal · escala 0,75 (experimental)",
-        "720p · escala 0,6133 (paleta dinâmica)",
-        "691p nominal · escala 0,6 (experimental)",
-        "540p nominal · escala 0,46875",
-        "480p nominal · escala 0,41667",
-        "360p nominal · escala 0,3125 (experimental)",
-        "288p nominal · escala 0,25 (experimental)"
-    };
+    // The four original options stay intact. Runtime SGSR optimizations
+    // follow the actual NDSR shader, never a new UI-only scale preset.
+    static final String[] OCARINA_SCENE_SCALES = {"0.6133", "0.46875", "0.4166667", "0.3125"};
+    static final String[] OCARINA_SCENE_NAMES = {"720p · escala 0,6133", "540p nominal · escala 0,46875", "480p nominal · escala 0,41667", "360p nominal · escala 0,3125 (experimental)"};
     static String sceneScale(Context c, String titleId, String profileScale) {
         if (!OCARINA_TITLE.equals(titleId)) return profileScale;
         String v = of(c).getString(gameKey("scene_scale", titleId), profileScale);
