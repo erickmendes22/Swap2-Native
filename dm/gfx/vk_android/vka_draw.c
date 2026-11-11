@@ -29,7 +29,14 @@ uint64_t vka_frame(void);  // also used by the fail-closed SGSR chain frame trac
 // draw, transfer, guest barrier, query, list boundary or command-buffer switch
 // flushes first, preserving the ordering of all non-compute work.
 void vka_dispatch_overlap_flush(void) {
-    if (g_dispatch_overlap_pending && g_cb) vka_barrier(g_cb);
+    // Only compute dispatches can set pending: they have no external indirect
+    // buffer or shared-memory spill and no guest OP_BARRIER between them.
+    // End their GPU dependency with the actual compute/transfer producer
+    // stages, not an ALL_COMMANDS -> ALL_COMMANDS memory drain. Every later
+    // draw, copy, readback and guest synchronization still waits and sees
+    // writes through ALL_COMMANDS read/write destination access.
+    if (g_dispatch_overlap_pending && g_cb)
+        vka_compute_write_barrier(g_cb);
     g_dispatch_overlap_pending = 0;
 }
 uint64_t vka_dispatch_overlap_skips(void) { return g_dispatch_overlap_skipped; }
