@@ -79,7 +79,10 @@ jobs:
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_exec.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_shader.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_ndsr.c
-          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_present.c
+          # vka_present.c includes generated vka_present_sgsr.h; the signed
+          # APK workflow generates it from SGSR1 and compiles the real source.
+          # The incremental runner tests its state/logic in Python above,
+          # but must not syntax-check it before this generated header exists.
       - name: Production APK full source-level regression preflight
         run: |
           set -euo pipefail
