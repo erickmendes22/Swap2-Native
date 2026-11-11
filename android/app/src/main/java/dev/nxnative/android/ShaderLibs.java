@@ -184,6 +184,11 @@ final class ShaderLibs {
      */
     static File originalOcarina(File packDir, String titleId, String abi, String inputs) {
         if (!Prefs.OCARINA_TITLE.equals(titleId)) return null;
+        // The Nov 10 v0.1.2 source is the verified gameplay baseline.
+        // Prefer it over later full but experimental translations, regardless
+        // of the file's last-modified time after import.
+        File trusted = trustedOcarinaBase(packDir, titleId, abi, inputs);
+        if (trusted != null) return trusted;
         File oldest = null;
         for (File d : libraries(packDir)) {
             File lib = new File(d, "dmsh_vk.lib");
