@@ -218,3 +218,8 @@ Build 56 — Expand measured HDR VRS coverage, correct R16 HDR Mesh+Task exclusi
 - The expensive R16 HDR 2-color Mesh+Task pass, 5ad65c0eefd09c7f/066f5daf12e43c71/efaa4fa6a80ba719 (approximately 1.8-2.3ms), was not getting the existing VRS because its format was not B10G11R11. Match that exact 3-stage shader pipeline and pair of 16-bit HDR attachments only; SDR UI/video/depth-only/MSAA/other R16 targets unchanged.
 - New per-game hotpass profile 0 off, 1 balanced 2x1 default, 2 aggressive 2x2 opt-in; independently selected from FPS Boost, with driver capability check and fallback to 2x1. Log each distinct FS only after VRS pipeline compilation succeeded; keep full resolution render targets and all draws. FPS/quality A-B to confirm real-world gain.
 - Do not invalidate or retranslate the original 42,339 shaders, restore current 720p/540p/480p/360p, SGSR1, saved library and driver settings. Build in the SAME branch, package com.swap2native.ootv11ios, version 0.1.2, incremented versionCode, existing SHA256 signer a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad.
+
+Build 56 native dependency CI unblock (DNS azure.archive.ubuntu.com):
+- GitHub Ubuntu runner preinstalls zsh/ninja/cmake/clang/zlib headers; remove redundant apt-get update/install that was DNS-failing before the Android APK stage. Fail clearly if runner lacks a required tool rather than silently skipping.
+- Use glslc and spirv-val from pinned Android NDK 28.2.13676358 shader-tools/linux-x86_64; add to GITHUB_PATH after SDK install. Keep Qualcomm SGSR1 compilation and validation and normal APK signer/ABI requirements.
+- Same ocarina-v11-ios-perf-from-v101 branch/package, install-over signing. Trigger new APK and incremental validation on this ci marker.

@@ -87,11 +87,24 @@ jobs:
           python3 dm/gfx/tools/vk_android_build.py --header
           grep -q '#define DMSH_VK_ABI "674db0a4ff79"' dm/gfx/nvn/dmsh_chain_vk.h
           cat dm/gfx/nvn/dmsh_chain_vk.h
-      - name: Install native build prerequisites
+      - name: Check runner native build prerequisites (no apt mirrors)
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zsh ninja-build cmake clang zlib1g-dev glslc spirv-tools
+          set -euo pipefail
+          # Ubuntu GitHub-hosted runners already have these native tools.
+          # apt-get update/install was failing on azure.archive.ubuntu.com DNS.
+          for tool in zsh ninja cmake clang; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "::error::Missing preinstalled native build tool: $tool" >&2
+              exit 1
+            fi
+            echo "$tool: $(command -v "$tool")"
+          done
+          test -s /usr/include/zlib.h || {
+            echo "::error::Runner zlib development headers missing" >&2
+            exit 1
+          }
+          echo "Using the Android NDK shader-tools after its SDK setup step."
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -105,7 +118,19 @@ jobs:
           set -euxo pipefail
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             "ndk;28.2.13676358" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          SHADER_TOOLS="$NDK/shader-tools/linux-x86_64"
+          # The NDK ships glslc and SPIR-V tools. Keep the existing
+          # SGSR1 compilation/validation while removing Ubuntu apt DNS.
+          for tool in glslc spirv-val; do
+            if [ ! -x "$SHADER_TOOLS/$tool" ]; then
+              echo "::error::Android NDK missing $SHADER_TOOLS/$tool" >&2
+              exit 1
+            fi
+          done
+          echo "$SHADER_TOOLS" >> "$GITHUB_PATH"
+          echo "NDK shader tools: $SHADER_TOOLS"
       - name: Compile and verify SGSR1 720p shader from Qualcomm source
         shell: bash
         run: |
