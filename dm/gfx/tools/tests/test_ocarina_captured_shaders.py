@@ -125,7 +125,7 @@ class CapturedTests(unittest.TestCase):
         self.assertIn('j.recoverFinishedShaderCache(inJob, cached.entries)',svc)
         self.assertIn('j.stepState("pack", "pending")',svc)
         self.assertIn('j.acceptPlayableShaderVersion()',svc)
-        self.assertIn('h.entries < p.shaderTotal',svc)
+        self.assertIn('header.entries < p.shaderTotal',svc)
         self.assertIn('synchronized List<String> hotKeys()',job)
         self.assertIn('synchronized void hotKeys(List<String> keys)',job)
         self.assertIn('synchronized void recoverFinishedShaderCache(File cache, long count)',job)
