@@ -50,7 +50,11 @@ final class Profile {
         List<String> env = new ArrayList<>();
         if (!hasNdsr()) return env;
         env.add("DM_VK_NDSR_INPUT=" + ndsr);
-        if ("fsr".equals(choice)) env.add("DM_VK_NDSR=fsr");
+        // SGSR scene option is a verified coupled path: EASU handles the
+        // internal NDSR replacement, SGSR1 reconstructs the final image.
+        // The Vulkan host has no standalone DM_VK_NDSR=sgsr.
+        if ("fsr".equals(choice) || "sgsr".equals(choice))
+            env.add("DM_VK_NDSR=fsr");
         return env;
     }
 

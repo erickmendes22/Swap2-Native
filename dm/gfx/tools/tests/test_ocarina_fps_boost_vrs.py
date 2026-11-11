@@ -88,8 +88,8 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('DM_VK_OOT_HOTPASS_VRS=0 restores full fragment detail', DEV)
         self.assertIn('HOTPASS_VRS = {', OPTIONS)
         self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1)', OPTIONS)
-        self.assertIn('out.add("DM_VK_OOT_HOTPASS_VRS=0");', OPTIONS)
-        self.assertNotIn('GraphicsOptions.choice(a, id, "oot_hotpass_vrs"', SETTINGS)
+        self.assertIn('out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));', OPTIONS)
+        self.assertIn('GraphicsOptions.choice(a, id, "oot_hotpass_vrs"', SETTINGS)
         self.assertIn('"DM_VK_OOT_HOTPASS_VRS"', CTL)
         self.assertNotIn('shader_abi', OPTIONS)
 

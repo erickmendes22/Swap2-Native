@@ -85,10 +85,10 @@ final class Prefs {
      * default (Profile.ndsrDefault: its ndsr_default row, else the network); a choice equal to that default is not kept, so Restore defaults and a later change of the
      * profile's default both reach it. Lines of env.txt, the game's extra environment lines or env-&lt;title ID&gt;.txt win over it for a run
      */
-    static final String NDSR_NET = "net", NDSR_FSR = "fsr";
+    static final String NDSR_NET = "net", NDSR_FSR = "fsr", NDSR_SGSR = "sgsr";
     static String ndsr(Context c, String titleId) {
         String v = of(c).getString(gameKey("ndsr", titleId), null);
-        if (NDSR_FSR.equals(v) || NDSR_NET.equals(v)) return v;
+        if (NDSR_FSR.equals(v) || NDSR_NET.equals(v) || NDSR_SGSR.equals(v)) return v;
         Profile p = Profile.of(titleId);
         return p != null ? p.ndsrDefault() : NDSR_NET;
     }
@@ -96,7 +96,7 @@ final class Prefs {
     static void ndsr(Context c, String titleId, String v) {
         Profile p = Profile.of(titleId);
         String def = p != null ? p.ndsrDefault() : NDSR_NET;
-        put(c, gameKey("ndsr", titleId), (NDSR_FSR.equals(v) || NDSR_NET.equals(v)) && !v.equals(def) ? v : null);
+        put(c, gameKey("ndsr", titleId), (NDSR_FSR.equals(v) || NDSR_NET.equals(v) || NDSR_SGSR.equals(v)) && !v.equals(def) ? v : null);
     }
 
     /**
@@ -115,7 +115,7 @@ final class Prefs {
     // The four original options stay intact. Runtime SGSR optimizations
     // follow the actual NDSR shader, never a new UI-only scale preset.
     static final String[] OCARINA_SCENE_SCALES = {"0.6133", "0.46875", "0.4166667", "0.3125"};
-    static final String[] OCARINA_SCENE_NAMES = {"720p · escala 0,6133", "540p nominal · escala 0,46875", "480p nominal · escala 0,41667", "360p nominal · escala 0,3125 (experimental)"};
+    static final String[] OCARINA_SCENE_NAMES = {"720p · Qualidade", "540p · Equilibrado", "480p · Desempenho", "360p · Máximo desempenho"};
     static String sceneScale(Context c, String titleId, String profileScale) {
         if (!OCARINA_TITLE.equals(titleId)) return profileScale;
         String v = of(c).getString(gameKey("scene_scale", titleId), profileScale);

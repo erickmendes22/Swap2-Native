@@ -117,6 +117,11 @@ final class GraphicsOptions {
      * Existing user env.txt remains last and takes precedence. */
     static void env(Context c, String id, List<String> out) {
         int m = clamp(mode(c, id), 0, 4);
+        // SGSR scene reconstruction intentionally couples fast internal
+        // conversion to the actual SGSR1 output; do not silently leave
+        // bilinear/FSR presentation selected from an older setting.
+        if (Prefs.OCARINA_TITLE.equals(id) &&
+                Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))) m = 4;
         out.add("DM_VK_PRESENT_FILTER=" + m);
         out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));
         out.add("DM_VK_FSR_SHARP=" + sharp(c, id));
@@ -143,11 +148,12 @@ final class GraphicsOptions {
             // fidelity. Keep the runtime fallback switches accessible only
             // through env.txt; ignore stale saved UI choices from beta.
             out.add("DM_VK_OOT_FPS_BOOST=0");
-            out.add("DM_VK_OOT_HOTPASS_VRS=0");
+            out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));
             // Experimental iOS V19 0.25 chain bypass, but SGSR1 must have
             // ACTUALLY drawn a frame and the direct HDR source must validate.
             // OFF by default so existing shaders/playable graphics are safe.
-            out.add("DM_VK_OOT_SGSR_CHAIN=0");
+            out.add("DM_VK_OOT_SGSR_CHAIN=" +
+                    (Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id)) ? 1 : 0));
             // Backported from iOS: independent consecutive NVN compute dispatches
             // no longer force individual GPU barriers. Does not rebuild shaders.
             out.add("DM_VK_OOT_DISPATCH_OVERLAP=1");
@@ -194,7 +200,14 @@ final class GraphicsOptions {
     }
     private static String label(String[] a, int i) { return a[clamp(i, 0, a.length - 1)]; }
     static String modeLabel(Context c) { return label(MODES, mode(c)); }
-    static String modeLabel(Context c, String id) { return label(MODES, mode(c, id)); }
+    static String modeLabel(Context c, String id) {
+        return Prefs.OCARINA_TITLE.equals(id) &&
+                Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))
+            ? "SGSR 1 (reconstrução da cena + saída)" : label(MODES, mode(c, id));
+    }
+    static String vrsLabel(Context c, String id) {
+        return label(HOTPASS_VRS, hotpassVrs(c, id));
+    }
     static String aspectLabel(Context c, String id) { return label(ASPECTS, stretch(c, id)); }
     static String sharpLabel(float v) {
         for (int i = 0; i < SHARPS.length; i++) if (Math.abs(v - SHARPS[i]) < 0.001f) return SHARP_NAMES[i];

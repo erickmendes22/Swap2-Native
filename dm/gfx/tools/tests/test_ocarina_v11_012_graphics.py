@@ -25,7 +25,7 @@ class V11Graphics012Tests(unittest.TestCase):
         # redundant game menu choice.
         self.assertIn('"gpu_timestamps"', OPTS)
         self.assertNotIn('"gpu_timestamps"', GAME)
-        self.assertIn('DM_VK_OOT_HOTPASS_VRS=0', OPTS)
+        self.assertIn('DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id)', OPTS)
         self.assertIn("GraphicsOptions.reset(a, id)", GAME)
         self.assertIn('GraphicsOptions.choice(this, null, "present_filter"', UI)
         self.assertIn('GraphicsOptions.choice(a, id, "present_filter"', GAME)

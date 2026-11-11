@@ -185,7 +185,9 @@ final class GameSettings {
         } else box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_frame_cap), v -> cap(a, g, again)).value(a.getString(R.string.s2_frame_cap_note))
                 .override(a, Prefs.ownFpsCap(a, id), MainActivity.capLabel(Prefs.fpsCap(a, id))).chevron(a).view);
         if (prof != null && prof.hasNdsr()) {   // only where agl's NDSR networks are in the game's shaders (Profile.ndsrEnv)
-            String cur = Prefs.NDSR_FSR.equals(Prefs.ndsr(a, id)) ? "Rápida (EASU, menos GPU)" : "Rede original NDSR";
+            String choice = Prefs.ndsr(a, id);
+            String cur = Prefs.NDSR_SGSR.equals(choice) ? "SGSR 1 · reconstrução combinada"
+                    : Prefs.NDSR_FSR.equals(choice) ? "Rápida (EASU, menos GPU)" : "Rede original NDSR";
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Reconstrução da cena (GPU)", v -> upscaler(a, g, again))
                     .value(cur + " · depois do render interno, antes da imagem final").chevron(a).view);
         }
@@ -199,11 +201,15 @@ final class GameSettings {
                 .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
                 .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
-        // GUI diagnostics & ineffective beta switches removed in 0.1.6.
-        // The existing env.txt remains the advanced troubleshooting path.
-        // Release: beta-only GPU timestamps, registration, encoder, VRS,
-        // FPS Boost and internal SGSR controls are no longer in the UI.
-        // Advanced overrides remain in env.txt.
+        // Preserve the requested VRS 2x2 expanded option (3), separate
+        // from the older FPS Boost switch that had no measured advantage.
+        // Reuse the working Vulkan fragment rate profile without changing
+        // shader binaries or resolution settings.
+        if (Prefs.OCARINA_TITLE.equals(id))
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "VRS nos passes gráficos pesados",
+                    v -> GraphicsOptions.choice(a, id, "oot_hotpass_vrs", again))
+                    .value(GraphicsOptions.vrsLabel(a, id)).chevron(a).view);
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
             String cur = on ? Prefs.sceneLabel(Prefs.sceneScale(a, id, prof.sceneScale())) : a.getString(R.string.s2_scene_game);
@@ -647,10 +653,23 @@ final class GameSettings {
 
     /** Upscaler: the game's NDSR network or FSR 1 in its place (Prefs.ndsr, the profile's ndsr_default without a choice; the host's lines at the next start, Profile.ndsrEnv) */
     private static void upscaler(MainActivity a, Game g, Runnable done) {
-        String[] labels = {"Rede original NDSR (mais pesada)", "Modo rápido EASU (menos GPU)"};
-        int checked = Prefs.NDSR_FSR.equals(Prefs.ndsr(a, g.titleId)) ? 1 : 0;
+        // The Snapdragon SGSR1 backend is a presentation upscaler.
+        // Its scene path uses EASU conversion internally plus SGSR1 on
+        // output, with the VRS-independent fail-closed GPU handshake.
+        String[] labels = {"Rede original NDSR (mais pesada)",
+                "Modo rápido EASU (menos GPU)",
+                "SGSR 1 · reconstrução da cena + saída (Snapdragon)"};
+        String selected = Prefs.ndsr(a, g.titleId);
+        int checked = Prefs.NDSR_SGSR.equals(selected) ? 2
+                    : Prefs.NDSR_FSR.equals(selected) ? 1 : 0;
         new AlertDialog.Builder(a).setTitle("Reconstrução da cena · " + g.name).setSingleChoiceItems(labels, checked, (x, w) -> {
-            Prefs.ndsr(a, g.titleId, w == 1 ? Prefs.NDSR_FSR : Prefs.NDSR_NET);   // (one equal to the profile's default is not kept: Prefs.ndsr)
+            Prefs.ndsr(a, g.titleId, w == 2 ? Prefs.NDSR_SGSR
+                    : w == 1 ? Prefs.NDSR_FSR : Prefs.NDSR_NET);
+            if (w == 2) {
+                // Apply both halves of the real SGSR scene route. Do not
+                // claim DM_VK_NDSR=sgsr exists; it would silently fall back.
+                GraphicsOptions.setMode(a, g.titleId, 4, false);
+            }
             x.dismiss();
             done.run();
         }).setNegativeButton(android.R.string.cancel, null).show();
