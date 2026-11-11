@@ -93,6 +93,8 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('0xf8965bffbdf51d78', draw)
         self.assertIn('0xd17eefaff4f0bc23', draw)
         self.assertIn('0xa335c1db6270c355', draw)
+        self.assertIn('src->w <= 640 && src->h <= 360', draw)
+        self.assertNotIn('src->w <= 1024 && src->h <= 576', draw)
         self.assertIn('DM_VK_OOT_SGSR_CHAIN", 0', draw)
         self.assertIn('vka_present_sgsr_active()', draw)
         self.assertIn('g_oot_sgsr_chain.primed', draw)
