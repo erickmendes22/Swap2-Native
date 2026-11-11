@@ -833,3 +833,147 @@ int vka_spv_oot_cs_retile(uint32_t *w, size_t nw, char *why, size_t whylen) {
     return 1;
 #undef RETILE_NO
 }
+
+
+// Rewrite Ocarina's 9e6b compute for one 64-lane wave per 8x4x2
+// group, instead of two waves per 8x4x4 group. Unlike a bare LocalSize
+// patch, these direct builtin loads preserve the ORIGINAL 8x4x4 IDs:
+//   WorkgroupId = GlobalInvocationId >> (3,2,2)
+//   LocalInvocationId = GlobalInvocationId & (7,3,3)
+//   NumWorkgroups = (8,9,12), the original dispatch grid.
+// The caller only launches 8x9x24 (instead of 8x9x12), still exactly
+// 110592 total invocations. Each global index, original group and local
+// index is identical before/after the retile. Refuse any shader with
+// workgroup storage, barriers, atomics, subgroup operations, unknown
+// builtins or aliased/indirect builtin pointers. No guest shader ABI or
+// disk library is changed. The caller creates an alternate VkShaderModule.
+uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
+                                       size_t *out_nw, char *why, size_t whylen) {
+#define VR_NO(msg) do { if (why && whylen) snprintf(why, whylen, "%s", msg); goto bad; } while (0)
+#define VR_EMIT(...) do { const uint32_t words_[] = {__VA_ARGS__}; if (!put_n(&o, words_, sizeof words_ / sizeof *words_)) VR_NO("out of memory"); } while (0)
+    vec_t o = {0};
+    uint32_t *bi = NULL, *in = NULL;
+    if (out_nw) *out_nw = 0;
+    if (!w || nw < 6 || w[0] != 0x07230203u || !w[3] || w[3] > (1u << 22))
+        VR_NO("invalid SPIR-V header/bound");
+    const uint32_t bound = w[3];
+    bi = calloc(bound, sizeof *bi); in = calloc(bound, sizeof *in);
+    if (!bi || !in) VR_NO("out of memory");
+    uint32_t u32 = 0, vec3 = 0, vec_comp = 0, global_var = 0;
+    uint32_t local_n = 0, group_n = 0, num_n = 0, compute = 0, localmode = 0;
+    size_t first_fn = nw, nload = 0;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
+        if (!len || i + len > nw) VR_NO("invalid SPIR-V instruction length");
+        if (op == OpEntryPoint && len >= 3 && w[i + 1] == 5) compute = 1;
+        if (op == 16 && len >= 3 && w[i + 2] == 17) {
+            if (len != 6 || localmode++ ||
+                w[i + 3] != 8 || w[i + 4] != 4 || w[i + 5] != 4)
+                VR_NO("not a single 8x4x4 LocalSize");
+        }
+        if (op == 331) VR_NO("specialized workgroup size");
+        if (op == OpDecorate && len >= 4 && w[i + 2] == 11) {
+            uint32_t id = w[i + 1], v = w[i + 3];
+            if (id >= bound) VR_NO("invalid builtin ID");
+            if (v != 24 && v != 26 && v != 27 && v != 28)
+                VR_NO("unsupported local/group-dependent builtin");
+            bi[id] = v;
+        }
+        if (op == OpMemberDecorate && len >= 5 && w[i + 3] == 11)
+            VR_NO("member-decorated builtin");
+        if (op == OpTypeInt && len == 4 && w[i + 2] == 32 && w[i + 3] == 0)
+            u32 = w[i + 1];
+        if (op == OpTypeVector && len == 4 && w[i + 3] == 3)
+            vec3 = w[i + 1], vec_comp = w[i + 2];
+        if (op == OpVariable && len >= 4 && w[i + 3] == SCInput &&
+            w[i + 2] < bound) in[w[i + 2]] = 1;
+        if (op == OpFunction && first_fn == nw) first_fn = i;
+        if (op == 224 || op == 225 || (op >= 227 && op <= 243) ||
+            (op >= 259 && op <= 269) || (op >= 333 && op <= 370))
+            VR_NO("workgroup barrier/atomics/subgroup operations");
+        i += len;
+    }
+    if (!compute || localmode != 1 || first_fn == nw || !u32 ||
+        !vec3 || vec_comp != u32) VR_NO("missing compute LocalSize/uvec3 types");
+    for (uint32_t id = 1; id < bound; id++) if (bi[id]) {
+        if (!in[id]) VR_NO("builtin is not an Input variable");
+        if (bi[id] == 28) {
+            if (global_var) VR_NO("duplicate GlobalInvocationId");
+            global_var = id;
+        } else if (bi[id] == 26) group_n++;
+        else if (bi[id] == 27) local_n++;
+        else if (bi[id] == 24) num_n++;
+    }
+    if (!global_var || group_n > 1 || local_n > 1 || num_n > 1 ||
+        !(group_n + local_n + num_n)) VR_NO("incompatible builtin declarations");
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
+        if (op == OpLoad && len >= 4 && w[i + 3] < bound &&
+            bi[w[i + 3]] && bi[w[i + 3]] != 28) {
+            if (len != 4 || w[i + 1] != vec3) VR_NO("qualified or non-uvec3 load");
+            nload++;
+        } else if (op != OpDecorate && op != OpName &&
+                   op != OpEntryPoint && op != OpVariable &&
+                   op != OpLoad && op != OpMemberName) {
+            // Any unhandled access to original local/group input could
+            // silently change semantics. Refuse rather than guess.
+            for (uint32_t j = 1; j < len; j++) {
+                uint32_t id = w[i + j];
+                if (id < bound && bi[id] && bi[id] != 28)
+                    VR_NO("aliased/indirect builtin use");
+            }
+        }
+        i += len;
+    }
+    if (!nload || nload >= UINT32_MAX - 12u ||
+        bound >= UINT32_MAX - 12u - (uint32_t)nload)
+        VR_NO("no direct local/group reads or insufficient IDs");
+    uint32_t next = bound;
+    uint32_t c2=next++, c3=next++, c7=next++, c8=next++, c9=next++, c12=next++;
+    uint32_t shift=next++, mask=next++, grid=next++;
+    if (!put_n(&o, w, 5)) VR_NO("out of memory");
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
+        if (i == first_fn) {
+            // Constants belong to the global types/constants/variables
+            // section, before any OpFunction.
+            VR_EMIT((4u<<16)|43u,u32,c2,2);
+            VR_EMIT((4u<<16)|43u,u32,c3,3);
+            VR_EMIT((4u<<16)|43u,u32,c7,7);
+            VR_EMIT((4u<<16)|43u,u32,c8,8);
+            VR_EMIT((4u<<16)|43u,u32,c9,9);
+            VR_EMIT((4u<<16)|43u,u32,c12,12);
+            VR_EMIT((6u<<16)|44u,vec3,shift,c3,c2,c2);
+            VR_EMIT((6u<<16)|44u,vec3,mask,c7,c3,c3);
+            VR_EMIT((6u<<16)|44u,vec3,grid,c8,c9,c12);
+        }
+        if (op == 16 && len == 6 && w[i+2] == 17) {
+            uint32_t l[6]; memcpy(l, w+i, sizeof l); l[5] = 2;
+            if (!put_n(&o, l, 6)) VR_NO("out of memory");
+        } else if (op == OpLoad && len == 4 && w[i+3] < bound &&
+                   bi[w[i+3]] && bi[w[i+3]] != 28) {
+            uint32_t kind = bi[w[i+3]], result = w[i+2];
+            if (kind == 24) { // original dispatch grid
+                VR_EMIT((4u<<16)|83u, vec3, result, grid); // OpCopyObject
+            } else {
+                uint32_t temp = next++;
+                VR_EMIT((4u<<16)|61u, vec3, temp, global_var);
+                // OpShiftRightLogical or OpBitwiseAnd, vector-wide.
+                VR_EMIT((5u<<16)|(kind == 26 ? 194u : 199u),
+                        vec3, result, temp, kind == 26 ? shift : mask);
+            }
+        } else if (!put_n(&o, w+i, len)) VR_NO("out of memory");
+        i += len;
+    }
+    o.w[3] = next;
+    free(bi); free(in);
+    if (out_nw) *out_nw = o.n;
+    if (why && whylen) snprintf(why, whylen,
+        "virtualized %zu local/group builtin loads, original workgroup indices retained", nload);
+    return o.w;
+bad:
+    free(bi); free(in); free(o.w);
+    return NULL;
+#undef VR_NO
+#undef VR_EMIT
+}

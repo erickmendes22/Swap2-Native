@@ -113,12 +113,24 @@ VkShaderModule vka_shader_oot_cs_retile_module(vka_shader *s) {
         size_t bytes = 0;
         uint32_t *words = m ? vka_shlib_spirv(s->lib, m, &bytes, why, sizeof why) : NULL;
         if (words) {
-            if (vka_spv_oot_cs_retile(words, bytes / 4, why, sizeof why)) {
+            // The original 9e6b contains group/local builtins and refused
+            // the bare LocalSize-only rewrite. A virtual-workgroup variant
+            // preserves their original values, using GlobalInvocationId.
+            // The exact 8x9x12 direct dispatch is checked at the callsite.
+            size_t virtual_n = 0;
+            uint32_t *virtual_w = VKA_ENV("DM_VK_OOT_CS_VIRTUAL_RETILE", 1)
+                ? vka_spv_oot_cs_virtual_retile(words, bytes / 4,
+                                                &virtual_n, why, sizeof why)
+                : NULL;
+            if (virtual_w || vka_spv_oot_cs_retile(words, bytes / 4,
+                                                   why, sizeof why)) {
                 VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                                .codeSize = bytes, .pCode = words};
+                    .codeSize = virtual_w ? virtual_n * 4 : bytes,
+                    .pCode = virtual_w ? virtual_w : words};
                 VkResult result = vk.vkCreateShaderModule(V.dev, &ci, NULL, &mod);
                 if (result) snprintf(why, sizeof why, "VkShaderModule rejected %d", result);
             }
+            free(virtual_w);
             free(words);
         }
     } else snprintf(why, sizeof why, "different compute module variant (%d)", variant);

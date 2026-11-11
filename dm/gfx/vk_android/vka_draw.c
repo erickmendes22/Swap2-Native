@@ -1986,8 +1986,15 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         g_dispatch_overlap_skipped++;
     } else {
         g_dispatch_overlap_pending = 0;
-        if (sh[5]->key == UINT64_C(0x9e6b00b050e30801) && VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0
-            && VKA_ENV("DM_VK_OOT_CS_SYNC", 1))
+        // Profiled hot Ocarina compute dispatches have only compute/transfer
+        // producer writes. Retain ALL_COMMANDS visibility for every later
+        // graphics/compute/transfer consumer, but remove unrelated graphics
+        // producer stages from the post-dispatch barrier. This applies
+        // without FPS Boost and leaves indirect/spill dispatches unchanged.
+        if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
+            !sb && !dp->ind && VKA_ENV("DM_VK_OOT_CS_SYNC", 1) &&
+            (sh[5]->key == UINT64_C(0x9e6b00b050e30801) ||
+             sh[5]->key == UINT64_C(0x9ed48d1011f1b48b)))
             vka_compute_write_barrier(g_cb);
         else
             vka_barrier(g_cb); // the final dispatch publishes all grouped writes
