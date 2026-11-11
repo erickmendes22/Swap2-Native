@@ -327,7 +327,7 @@ static void map_put(uint64_t s, vka_img *im) {
     // A tombstone does NOT end the probe: a later bucket may still hold
     // this serial. Reusing it before checking creates duplicate live keys,
     // stale texture pointers, and the appearance of a leaking texture map.
-    for (;;) {
+    for (size_t n = 0; n < g_mapcap; n++) {
         uint64_t key = g_map[i].serial;
         if (key == s) { g_map[i].im = im; return; }
         if (key == ~0ull && first_deleted == SIZE_MAX) first_deleted = i;
@@ -340,6 +340,14 @@ static void map_put(uint64_t s, vka_img *im) {
         }
         i = (i + 1) & (g_mapcap - 1);
     }
+    // If a rehash allocation failed and the table has no empty bucket, a
+    // tombstone is still a valid insertion point after a FULL probe proved
+    // the key does not already exist later in the chain.
+    if (first_deleted != SIZE_MAX) {
+        g_map[first_deleted] = (smap_ent){s, im};
+        if (g_mapdead) g_mapdead--;
+        g_mapn++;
+    } else VRED_ONCE("texture serial map table full; insertion refused");
 }
 static void map_del(uint64_t s) {
     smap_ent *e = map_get(s);
