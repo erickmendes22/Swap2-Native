@@ -74,11 +74,18 @@ class Actual720pGpuWork(unittest.TestCase):
         # fsr_requested=0, even though the launcher had DM_VK_FSR=1.
         # Presentation selection is authoritative for swapchain setup,
         # frame scheduling and descriptor pipeline initialization.
-        fn = PRESENT[PRESENT.index("static int fsr_wanted(void)"):
+        fn = PRESENT[PRESENT.index("static int present_filter_setting(void)"):
                      PRESENT.index("static VkPipeline fsr_pipe(")]
-        self.assertIn('VKA_ENV("DM_VK_PRESENT_FILTER", 0)', fn)
+        # A stale per-callsite cache had filter=4 in the present frame, but
+        # fsr_wanted=0 since it first ran earlier during swapchain startup.
+        # Both paths MUST use the same uncached reader to avoid split modes.
+        self.assertIn('vka_env_str("DM_VK_PRESENT_FILTER", value, sizeof value)', fn)
+        self.assertIn('int selected = present_filter_setting();', fn)
         self.assertIn('if (selected == 3 || selected == 4) return 1;', fn)
-        self.assertIn('return selected == 0 && VKA_ENV("DM_VK_FSR", 0) != 0;', fn)
+        self.assertIn('if (selected != 0) return 0;', fn)
+        self.assertIn('vka_env_str("DM_VK_FSR", value, sizeof value)', fn)
+        self.assertIn('int present_filter = present_filter_setting();', PRESENT)
+        self.assertNotIn('VKA_ENV("DM_VK_PRESENT_FILTER", 0)', PRESENT)
         self.assertIn('g_sview_fsr = fsr_wanted()', PRESENT)
         self.assertIn('if (rot_rotates(pre) || fsr_wanted())', PRESENT)
         self.assertIn('int fsr = fsr_wanted() && can_sample', PRESENT)
@@ -105,6 +112,20 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('atomic_store_explicit(&g_sgsr_last_present, 0', present)
         self.assertIn('DM_VK_OOT_SGSR_CHAIN=" + sgsrChain(c, id)', ui)
         self.assertIn('static int sgsrChain(Context c, String id)', ui)
+
+    def test_060_and_075_networks_drop_only_redundant_easu_after_real_sgsr(self):
+        # Logs 08:29:37 and 08:31:06 show these actual NDSR keys
+        # for 1536x864 and 1275x717 -> 2048x1152; neither is d99f.
+        self.assertIn('cs->key == UINT64_C(0xb106afba1a18faa9)', NDSR)
+        self.assertIn('cs->key == UINT64_C(0xfa3033d05c0a41d6)', NDSR)
+        self.assertIn('sgsr_network_light = g_sw.mode == 1', NDSR)
+        self.assertIn('VKA_ENV("DM_VK_OOT_SGSR_CHAIN", 0)', NDSR)
+        self.assertIn('vka_present_sgsr_active()', NDSR)
+        self.assertIn('(uint64_t)oi->w * oi->h > 1280ull * 720', NDSR)
+        self.assertIn('sgsr_network_light)', NDSR)
+        self.assertIn('VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;', NDSR)
+        self.assertIn('Ocarina SGSR internal network:', NDSR)
+        self.assertIn('Desativado (seguro)', OPTIONS)
 
     def test_025_network_really_replaces_heavy_taps_not_just_output_filter(self):
         # SGSR is applied only after this inexpensive GPU conversion; no
