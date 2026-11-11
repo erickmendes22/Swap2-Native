@@ -32,11 +32,12 @@ final class GraphicsOptions {
     static final String[] REGISTRY = {"Desativada (padrão)", "Ativada (experimental)"};
     static final String[] ENCODER_IDLE = {"Normal (padrão)", "Dormir quando vazio (experimental)"};
     static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: sincronização GPU + VRS 2×1 se suportado", "Agressivo: sincronização GPU + VRS 2×2 se suportado"};
-    // Resource-backed labels are localized. Modes 4/5 use the same verified
-    // HDR hot-pass shader allowlist as mode 3, but request larger VRS tiles.
-    static final String[] HOTPASS_VRS = {"Off (full detail)", "Balanced — VRS 2×1 (default)",
-            "Aggressive — VRS 2×2", "Expanded — VRS 2×2",
-            "Expanded — VRS 4×2 (experimental)", "Expanded — VRS 4×4 (experimental)"};
+    // Keep persisted native values from 0.1.6 intact: 3 is the old 2x2
+    // extended mode and is hidden as a duplicate, not renumbered.
+    // The UI exposes only Off / 2x1 / 2x2 / 4x2 / 4x4.
+    static final int[] VRS_VISIBLE_MODES = {0, 1, 2, 4, 5};
+    static final String[] HOTPASS_VRS = {"Desligado", "VRS 2×1", "VRS 2×2",
+            "VRS 2×2", "VRS 4×2", "VRS 4×4"};
     static final String[] SGSR_CHAIN = {"Desativado (seguro)", "Ativar otimização das redes internas com SGSR (experimental)"};
 
     static int mode(Context c) {
@@ -209,8 +210,38 @@ final class GraphicsOptions {
                 Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))
             ? "SGSR 1 (reconstrução da cena + saída)" : label(MODES, mode(c, id));
     }
+    static int vrsVisibleIndex(int storedMode) {
+        int mode = clamp(storedMode, 0, 5);
+        // Legacy 2x2-expanded profile 3 is now displayed as 2x2.
+        for (int i = 0; i < VRS_VISIBLE_MODES.length; i++)
+            if (VRS_VISIBLE_MODES[i] == mode) return i;
+        return 2;
+    }
     static String vrsLabel(Context c, String id) {
-        return label(c.getResources().getStringArray(R.array.s2_oot_hotpass_vrs), hotpassVrs(c, id));
+        return label(c.getResources().getStringArray(R.array.s2_oot_hotpass_vrs),
+                vrsVisibleIndex(hotpassVrs(c, id)));
+    }
+    private static void vrsChoice(Context c, String id, Runnable done) {
+        String[] values = c.getResources().getStringArray(R.array.s2_oot_hotpass_vrs);
+        boolean own = id != null && Prefs.of(c).contains(Prefs.gameKey("oot_hotpass_vrs", id));
+        int selected = vrsVisibleIndex(hotpassVrs(c, id));
+        String[] options = id == null ? values : new String[values.length + 1];
+        if (id != null) {
+            options[0] = c.getString(R.string.s2_vrs_inherit);
+            System.arraycopy(values, 0, options, 1, values.length);
+        }
+        new AlertDialog.Builder(c).setTitle(R.string.s2_vrs_heavy_title)
+                .setSingleChoiceItems(options, id == null ? selected : own ? selected + 1 : 0,
+                        (dialog, which) -> {
+                    if (id != null && which == 0)
+                        Prefs.of(c).edit().remove(Prefs.gameKey("oot_hotpass_vrs", id)).commit();
+                    else {
+                        int index = id == null ? which : which - 1;
+                        integer(c, id, "oot_hotpass_vrs", VRS_VISIBLE_MODES[index]);
+                    }
+                    dialog.dismiss();
+                    if (done != null) done.run();
+                }).setNegativeButton(android.R.string.cancel, null).show();
     }
     static String aspectLabel(Context c, String id) { return label(ASPECTS, stretch(c, id)); }
     static String sharpLabel(float v) {
@@ -220,6 +251,10 @@ final class GraphicsOptions {
 
     /** One dialog with a genuine inherit option for per-game overrides. */
     static void choice(Context c, String id, String key, Runnable done) {
+        if ("oot_hotpass_vrs".equals(key)) {
+            vrsChoice(c, id, done);
+            return;
+        }
         final String[] values;
         final int current;
         final String title;
@@ -238,9 +273,7 @@ final class GraphicsOptions {
             values = ENCODER_IDLE; current = encoderIdle(c, id); title = "Espera do encoder"; break;
         case "oot_fps_boost":
             values = FPS_BOOST; current = fpsBoost(c, id); title = "FPS Boost — VRS (pode reduzir detalhes)"; break;
-        case "oot_hotpass_vrs":
-            values = c.getResources().getStringArray(R.array.s2_oot_hotpass_vrs); current = hotpassVrs(c, id);
-            title = "Reduzir fragment shaders dos passes gráficos pesados"; break;
+
         case "oot_sgsr_chain":
             values = SGSR_CHAIN; current = sgsrChain(c, id);
             title = "Ocarina: otimizar upscale interno com SGSR 1"; break;
