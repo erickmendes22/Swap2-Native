@@ -76,6 +76,18 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn("n.name == 'mesh_facts'", src)
         self.assertIn("stage in ('ms', 'ts')", src)
 
+    def test_051430_upscale_regression_uses_known_good_default(self):
+        # Prior good gameplay: b106 NDSR via EASU, SGSR1-single-pass.
+        # Bad Build 44: b106 bilinear, SGSR was rot-linear fallback.
+        # The requested filter alone does NOT prove it ran.
+        ndsr = (ROOT / "dm/gfx/vk_android/vka_ndsr.c").read_text()
+        present = (ROOT / "dm/gfx/vk_android/vka_present.c").read_text()
+        self.assertIn('cs->key == UINT64_C(0xb106afba1a18faa9)', ndsr)
+        self.assertIn('VKA_ENV("DM_VK_OOT_NDSR_BILINEAR", 0)', ndsr)
+        self.assertIn('Ocarina SGSR/FSR unavailable despite requested filter', present)
+        self.assertIn('if (present_filter >= 3 && !fsr_applied)', present)
+        self.assertIn('fsr_requested=%d sampling=%d', present)
+
     def test_builder_only_compiles_explicit_hot_keys(self):
         self.assertIn('DEFAULT_KEYS = (', BUILDER)
         for key in ("066f5daf12e43c71", "efaa4fa6a80ba719",
