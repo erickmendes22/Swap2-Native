@@ -37,7 +37,7 @@ class PoolFeedbackTests(unittest.TestCase):
         self.assertIn("atomic_fetch_add_explicit(&g_tpool_stamp, 1, memory_order_release);",TEX)
         self.assertIn("g_fb_stamp++;",TEX)
         self.assertIn("static int *g_pool_active_ids, g_pool_active_count, g_pool_active_cap;",TEX)
-        self.assertIn("if (t->serial) pool_register_active(id);",TEX)
+        self.assertIn("if (t->serial && id > 0) pool_register_active(id);",TEX)
         self.assertIn("g_pool_active_index_ok ? g_pool_active_count : g_ntreg - 1",TEX)
         self.assertIn("g_pool_active_index_ok ? g_pool_active_ids[j] : j + 1",TEX)
         self.assertIn("if (!ids) { g_pool_active_index_ok = 0; return; }",TEX)
