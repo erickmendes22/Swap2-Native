@@ -48,6 +48,13 @@ on:
       - 'android/app/src/ondevice/java/dev/nxnative/android/Job.java'
       - 'dm/games/0400486024DEC000/vk_hot_delta.tsv'
       - 'dm/tools/tests/test_ocarina_shader_delta.py'
+      - 'dm/tools/tests/test_android_shaderzip.py'
+      - 'android/app/src/jvmtest/java/dev/nxnative/android/ShaderZipJvmTest.java'
+      - 'android/app/src/main/java/dev/nxnative/android/ShaderZip.java'
+      - 'android/app/src/main/java/dev/nxnative/android/ShaderLibs.java'
+      - 'android/app/src/main/java/dev/nxnative/android/ShaderAbiCert.java'
+      - 'dm/gfx/tools/vk_android_build.py'
+      - 'dm/gfx/tools/tests/test_ocarina_captured_shaders.py'
       - 'dm/gfx/tools/tests/test_ocarina_scoped_uniform_barrier.py'
       - 'dm/gfx/tools/tests/test_ocarina_vk_barrier_dedup.py'
       - 'dm/gfx/tools/tests/test_ocarina_fps_boost_vrs.py'
@@ -63,6 +70,8 @@ jobs:
         run: python3 -m py_compile scripts/ocarina_shader_hot_delta.py scripts/build_ocarina_hot_shaders.py scripts/pack_android.py dm/tools/tests/test_ocarina_shader_delta.py
       - name: Synthetic full-library and partial-overlay regression
         run: python3 -m unittest discover -s dm/tools/tests -p test_ocarina_shader_delta.py -v
+      - name: JVM full shader library ZIP import export and six replacements
+        run: python3 -m unittest discover -s dm/tools/tests -p test_android_shaderzip.py -v
       - name: Verified hot shader release manifest and ABI guards
         run: |
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_hot_shader_overlay.py -v
