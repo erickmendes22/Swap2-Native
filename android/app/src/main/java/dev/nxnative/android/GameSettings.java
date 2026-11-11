@@ -208,6 +208,13 @@ final class GameSettings {
         if (Prefs.OCARINA_TITLE.equals(id)) {
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "FPS Boost — VRS (experimental)", v -> GraphicsOptions.choice(a, id, "oot_fps_boost", again))
                     .value(GraphicsOptions.FPS_BOOST[GraphicsOptions.fpsBoost(a, id)] + " · reiniciar o jogo").chevron(a).view);
+            // 0.25 uses the distinct d99fbeeb upscaler. Enable only on user
+            // request: the Vulkan path substitutes linear HDR source only
+            // after the normal d99fbeeb dispatch and SGSR1 present succeeded.
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "SGSR 1 — rede interna em escala 0,25 (experimental)",
+                    v -> GraphicsOptions.choice(a, id, "oot_sgsr_chain", again))
+                    .value(GraphicsOptions.SGSR_CHAIN[GraphicsOptions.sgsrChain(a, id)]
+                            + " · reiniciar o jogo · requer SGSR no filtro da tela").chevron(a).view);
         }
         if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
