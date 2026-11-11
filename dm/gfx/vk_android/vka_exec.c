@@ -1314,7 +1314,15 @@ static void exec(const uint8_t *p, int depth) {
         op_hdr h; memcpy(&h, p, sizeof h);
         // Flush before a draw, dispatch, query, barrier, list control, or any other command.
         // Even a nested OP_CALL is a boundary: no command may overtake these copies.
-        if (h.op != OP_UPDATE_UB && !g_ub_np) ub_flush(ub);
+        // GPU copies need to flush before a GPU command, not before a
+        // CPU-only state/binding update. Coalesce inline uniform writes
+        // across those harmless records; preserving all guest barriers,
+        // queries, draws, dispatches, transfers and list boundaries.
+        // The existing ub_add overlap check still flushes before an
+        // overlapping destination or buffer-pair change, so "last write
+        // wins" and guest command order are unchanged.
+        if (h.op != OP_UPDATE_UB && !overlap_state_record(h.op) && !g_ub_np)
+            ub_flush(ub);
         // Do not carry borrowed inline-update pointers across nested lists,
         // guest fences, explicit barriers, or changes of queue context.
         if (g_ub_np && (h.op == OP_END || h.op == OP_BEGIN || h.op == OP_JUMP ||
