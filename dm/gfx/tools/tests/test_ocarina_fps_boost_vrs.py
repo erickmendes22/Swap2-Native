@@ -76,7 +76,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', PSO)
         self.assertIn('int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0)', DEV)
         self.assertIn('requested_rate > explicit_boost ? requested_rate : explicit_boost', DEV)
-        self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)', PSO)
+        self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
         self.assertIn('(k->samples ? k->samples : 1) == 1', PSO)
         self.assertIn('k->ncolor > 0', PSO)
         self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
