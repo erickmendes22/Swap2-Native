@@ -89,7 +89,8 @@ typedef struct {
     // and their draws skipped. mesh_inv / task_inv: the largest workgroup (maxMeshWorkGroupInvocations / maxTaskWorkGroupInvocations); mesh_out_v / mesh_out_p: the most vertices /
     // primitives a mesh workgroup may output; task_payload: maxTaskPayloadSize; task_groups / mesh_groups: maxTaskWorkGroupCount[0] / maxMeshWorkGroupCount[0] (a draw's count)
     int mesh, task; uint32_t mesh_inv, task_inv, mesh_out_v, mesh_out_p, task_payload, task_groups, mesh_groups;
-    int fps_boost_vrs; uint32_t fps_boost_width, fps_boost_height;  // Validated 1-sample Vulkan pipeline coarse shading rate
+    int fps_boost_vrs; uint32_t fps_boost_width, fps_boost_height;  // Requested maximum validated single-sample rate
+    int fps_boost_has_2x1, fps_boost_has_2x2, fps_boost_has_4x2, fps_boost_has_4x4; // Exact device capabilities, for quality-preserving per-shader caps
     int gpl;                                        // graphics pipeline libraries with fast linking (VK_EXT_graphics_pipeline_library): a pipeline the cache lacks is linked from stage libraries at once, the optimized one made in the background (vka_pso.c)
     uint32_t max_push, max_vin_bindings, subgroup_size, subgroup_min, subgroup_max, subgroup_stages;   // subgroup_stages: VkShaderStageFlags with subgroup operations
     uint32_t subgroup_req_stages;                   // VkShaderStageFlags a pipeline may pin the subgroup size in (requiredSubgroupSizeStages; 0 without subgroupSizeControl)
