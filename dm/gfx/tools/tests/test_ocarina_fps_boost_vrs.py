@@ -32,7 +32,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('VK_SAMPLE_COUNT_1_BIT', DEV)
         self.assertIn('has_2x1', DEV)
         self.assertIn('has_2x2', DEV)
-        self.assertIn('want_boost > 0 && has_2x1 ? 1u : 0u', DEV)
+        self.assertIn('else if (want_boost > 0 && has_2x1)', DEV)
         self.assertIn('vkGetPhysicalDeviceFragmentShadingRatesKHR', DEV)
         self.assertIn('V.fps_boost_vrs =', DEV)
 
@@ -94,9 +94,9 @@ class FpsBoostTests(unittest.TestCase):
         self.assertNotIn('shader_abi', OPTIONS)
 
     def test_optional_2x2_and_accurate_hdr_mesh_coverage(self):
-        self.assertIn('Agressivo — VRS 2×2 nos passes pesados', OPTIONS)
-        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 3)', OPTIONS)
-        self.assertIn('want_boost >= 2 && has_2x2 ? 2u', DEV)
+        self.assertIn('Expanded — VRS 2×2', OPTIONS)
+        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 5)', OPTIONS)
+        self.assertIn('else if (want_boost >= 2 && has_2x2)', DEV)
         self.assertIn('profiled_mesh_hdr = mesh && sh[6] && sh[7]', PSO)
         self.assertIn('0xefaa4fa6a80ba719', PSO)
         self.assertIn('0x066f5daf12e43c71', PSO)
@@ -111,9 +111,9 @@ class FpsBoostTests(unittest.TestCase):
         # New 2026-11-11 111853 run: all 12 old shader pipelines are
         # compiled at 2x2 already. Keep profile 2 unchanged.
         # Only five further profiled HDR main-scene FS use profile 3.
-        self.assertIn("2×2 ampliado — mais fragment shaders HDR", OPTIONS)
-        self.assertIn("requested_rate = hotpass_vrs >= 2 ? 2 : hotpass_vrs", DEV)
-        self.assertIn('if (hotpass_vrs > 3) hotpass_vrs = 3', DEV)
+        self.assertIn("Expanded — VRS 2×2", OPTIONS)
+        self.assertIn("hotpass_vrs >= 5 ? 4 : hotpass_vrs >= 4 ? 3", DEV)
+        self.assertIn('if (hotpass_vrs > 5) hotpass_vrs = 5', DEV)
         for key in ("0x8b13ac32679a0a3e", "0x19f99e925937b038",
                     "0x35a02875e7820e9a", "0x5a29269e72ac52aa",
                     "0xe55bcc53f003046a"):
@@ -125,8 +125,28 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('(balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
         self.assertNotIn('DM_VK_OOT_HOTPASS_VRS=3" &&', PSO)
 
+    def test_opt_in_four_by_two_and_four_by_four_query_exact_single_sample_rates(self):
+        self.assertIn('4x2', DEV)
+        self.assertIn('4x4', DEV)
+        self.assertIn('has_4x2', DEV)
+        self.assertIn('has_4x4', DEV)
+        self.assertIn('rates[i].sampleCounts & VK_SAMPLE_COUNT_1_BIT', DEV)
+        self.assertIn('fragmentSize.width == 4 && rates[i].fragmentSize.height == 2', DEV)
+        self.assertIn('fragmentSize.width == 4 && rates[i].fragmentSize.height == 4', DEV)
+        self.assertIn('want_boost >= 4 && has_4x4', DEV)
+        self.assertIn('want_boost >= 3 && has_4x2', DEV)
+        self.assertIn('want_boost >= 2 && has_2x2', DEV)
+        self.assertIn('want_boost > 0 && has_2x1', DEV)
+        self.assertIn('Expanded — VRS 4×2 (experimental)', OPTIONS)
+        self.assertIn('Expanded — VRS 4×4 (experimental)', OPTIONS)
+        self.assertIn('getStringArray(R.array.s2_oot_hotpass_vrs)', OPTIONS)
+        self.assertIn('VRS 4×4 (experimental)', (ROOT / 'android/app/src/main/res/values-pt/strings.xml').read_text())
+        self.assertIn('if (r && P->fsrate.sType)', PSO)
+        self.assertIn('fbi.pNext = &P->ri;', PSO)
+        self.assertIn('VRS pipeline rejected', PSO)
+
     def test_fallback_no_invalid_pipeline_or_shader_abi_change(self):
-        self.assertIn('V.fps_boost_width = V.fps_boost_vrs ? 2u : 0u;', DEV)
+        self.assertIn('V.fps_boost_width = V.fps_boost_vrs ? selected_w : 0u;', DEV)
         self.assertIn('if (V.fps_boost_width) {', PSO)
         self.assertNotIn('shader_abi', OPTIONS)
         self.assertNotIn('shader_library', OPTIONS)
