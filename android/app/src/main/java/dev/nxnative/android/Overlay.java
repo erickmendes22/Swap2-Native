@@ -55,10 +55,24 @@ final class Overlay {
             {"tag", "Build name (top left; off by default)"},
     };
 
+    /** Translatable item names; stable string IDs stay in ITEMS/preferences. */
+    private static int itemLabel(String key) {
+        switch (key) {
+        case "fps": return R.string.s2_overlay_item_fps;
+        case "throttle": return R.string.s2_overlay_item_throttle;
+        case "gpu": return R.string.s2_overlay_item_gpu;
+        case "cpu": return R.string.s2_overlay_item_cpu;
+        case "battery": return R.string.s2_overlay_item_battery;
+        case "memory": return R.string.s2_overlay_item_memory;
+        case "tag": return R.string.s2_overlay_item_tag;
+        default: return R.string.s2_overlay;
+        }
+    }
+
     /** The master switch and, below it, one switch per item (main screen dialog, in-game settings) */
     static void rows(Context c, LinearLayout box, String masterNote) {
         CheckBox master = new CheckBox(c);
-        master.setText("Show the overlay over the game" + (masterNote != null ? masterNote : ""));
+        master.setText(c.getString(R.string.s2_overlay_master) + (masterNote != null ? masterNote : ""));
         master.setChecked(Prefs.overlay(c));
         box.addView(master);
         android.widget.RadioGroup modes = new android.widget.RadioGroup(c);
@@ -77,7 +91,7 @@ final class Overlay {
         int indent = Math.round(24 * c.getResources().getDisplayMetrics().density);
         for (String[] it : ITEMS) {
             CheckBox b = new CheckBox(c);
-            b.setText(it[1]);
+            b.setText(c.getString(itemLabel(it[0])));
             b.setChecked(Prefs.overlayItem(c, it[0]));
             b.setEnabled(master.isChecked());
             b.setOnCheckedChangeListener((v, on) -> Prefs.overlayItem(c, it[0], on));
