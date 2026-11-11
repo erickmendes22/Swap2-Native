@@ -874,6 +874,7 @@ def finish(key, w, job, c1):
     # Source snapshot, descriptors, location declarations and every output
     # remain identical; Vulkan 1.3 validation still runs on every variant.
     oot_alu = (spv.local_alu_cse(m) if GAME.id == '0400486024DEC000'
+               and bool(want)  # NEVER rewrite the first complete 42k reference on a fresh full build
                and stage == 'ps' and key in (
                    '1e4d2630d24846d0',
                    '00ce4088af2c8e12',
@@ -1327,7 +1328,12 @@ if not want:
         if n == 'spv': shutil.rmtree(os.path.join(out, n))
 # The previous installed overlay is NOT replaced until the newly selected
 # subset has passed the final binary readback and key-index validation.
-lib, size = write_library(results, publish=not bool(want))
+# The first confirmed full Ocarina translation (0.1.2, Nov 10) is the
+# reference. Newer captured-only ALU CSE and mesh repair are NEVER part
+# of a cold build. Publish the complete library ONLY after validating
+# every shader result and reading the final binary back successfully.
+# A failed run must leave any previous playable full library untouched.
+lib, size = write_library(results, publish=False)
 if os.environ.get('DMSH_VK_LOOSE') == '1':
     os.makedirs(os.path.join(out, 'spv'), exist_ok=True)
     for key, st, _, r in results:
@@ -1360,6 +1366,22 @@ if MANIFEST:
         elif want_h in (None, '-'): print(f'[RED] delta check: {k}: in the library ({how}), the manifest has it as ' + ('not built' if want_h else 'not a shader of this version'), flush=True)
         else: print(f'[RED] delta check: {k}: library entry {got_h} ({how}), the manifest has {want_h}', flush=True)
     print(f'delta check: {len(keys) - _bad} of {len(keys)} shaders as the manifest has them ({len(REUSED)} kept, {len(keys) - len(REUSED)} translated)' + (f', {_bad} differ' if _bad else ''), flush=True)
+    if _bad:
+        sys.exit(f'[RED] {_bad} shader hashes or entries disagree with the '
+                 'verified reference; old shader library preserved, no new library published')
+# A non-selective Ocarina build must be a complete collection, not a
+# successfully built 6/57 hot subset or a corrupted 40k library. Every
+# result already passed spirv-val at translation and the library's blob
+# was decompressed/read back by delta.library_hashes above.
+if not want and GAME.id == '0400486024DEC000':
+    missing = set(keys) - set(_hashes)
+    if missing or len(_hashes) < 40000:
+        sys.exit(f'[RED] Ocarina cold shader build incomplete: '
+                 f'{len(_hashes)} valid shader entries, {len(missing)} missing; '
+                 'previous library preserved')
+    print(f'Ocarina initial full shaders: {len(_hashes)} verified entries, '
+          'no captured-only shader replacements, previous library untouched until publish',
+          flush=True)
 if want:
     # Keep the selected list next to the validated library for the Android
     # package step. The old UI's requested 57 keys MUST NOT be confused with
@@ -1379,6 +1401,12 @@ if want:
           'keys; previous overlay backed up if present; full 42339 unchanged',
           flush=True)
 else:
+    # Commit atomically only after all structural, per-key and manifest
+    # checks succeed. Both the old full library and per-shader checkpoints
+    # survive failed builds. No renamed header or synthetic shader result.
+    installed = os.path.join(out, VK['LIB_FILE'])
+    os.replace(lib, installed)
+    lib = installed
     dmsh_chain.write_stamp(out, GAME.id, INPUTS)
 if os.environ.get('DMSH_VK_KEEP') == '0': shutil.rmtree(RES, ignore_errors=True)
 progress('done')
