@@ -17,6 +17,10 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_graphics_barrier_scopes.py'
       - 'dm/gfx/tools/tests/test_ocarina_attachment_stage_dependencies.py'
       - 'dm/gfx/vk_android/vka_shader.c'
+      - 'dm/gfx/vk_android/vka_ndsr.c'
+      - 'dm/gfx/vk_android/vka_present.c'
+      - 'dm/gfx/tools/tests/test_ocarina_abi_migration.py'
+      - 'dm/tools/tests/test_ndsr_standin.py'
       - 'dm/host/tests/t_android_shlib.c'
       - 'dm/gfx/vk_android/vka_tex.c'
       - 'dm/gfx/vk_android/vka.h'
@@ -73,6 +77,9 @@ jobs:
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_tex.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_draw.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_exec.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_shader.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_ndsr.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_present.c
       - name: Production APK full source-level regression preflight
         run: |
           set -euo pipefail
