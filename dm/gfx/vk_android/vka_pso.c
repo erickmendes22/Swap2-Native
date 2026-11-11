@@ -349,7 +349,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     if (VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 && !V.fps_boost_vrs) {
         static _Atomic int logged_unsupported;
         if (!atomic_exchange(&logged_unsupported, 1))
-            VLOG("Ocarina FPS Boost requested but Vulkan driver exposes no selected 2x1/2x2 pipeline fragment shading rate; VRS not applied (original passes kept)");
+            VLOG("Ocarina VRS requested but driver exposes no supported pipeline fragment shading rate; original full-detail passes kept");
     }
     // The GPU profiler on Ocarina v131072 identified these FS keys as hot:
     // 5ad65c... (427x240 mesh+task draw, 2.6–7ms) and
@@ -469,6 +469,22 @@ static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], con
     const vka_shader *pre0 = P->mesh ? sh[7] : sh[0];
     int bslot = build_begin("whole graphics pipeline", pre0 ? pre0->key : 0, sh[1] ? sh[1]->key : 0);
     VkResult r = vk.vkCreateGraphicsPipelines(V.dev, g_pc, 1, &P->ci, NULL, &p);
+    if (r && P->fsrate.sType) {
+        // The device advertised this 4xN rate, but an individual pipeline
+        // may still reject it (shader features, driver restrictions). Keep
+        // gameplay rendering intact: retry the exact pipeline without VRS.
+        // A rejected optional optimization must NEVER drop the guest draw.
+        VkResult vrs_error = r;
+        fbi.pNext = &P->ri;
+        p = VK_NULL_HANDLE;
+        r = vk.vkCreateGraphicsPipelines(V.dev, g_pc, 1, &P->ci, NULL, &p);
+        if (!r) {
+            P->fsrate.sType = 0; // P->ci now points directly at rendering info
+            VRED_ONCE("Ocarina optional VRS pipeline rejected (%d); rebuilt at full fragment detail", vrs_error);
+        } else {
+            VRED_ONCE("Ocarina graphics pipeline failed with and without VRS (%d / %d)", vrs_error, r);
+        }
+    }
     build_end(bslot);
     P->ci.pNext = fbi.pNext;
     uint64_t dns = now_ns() - t0; double ms_ = dns / 1e6;
