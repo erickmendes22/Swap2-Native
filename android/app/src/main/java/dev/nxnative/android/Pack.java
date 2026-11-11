@@ -100,6 +100,13 @@ final class Pack {
         Profile prof = Profile.of(titleId);
         String inputs = prof == null ? "unknown" : prof.shaderInputs;
         File lib = libraryOf(dir);
+        if (lib != null && Prefs.OCARINA_TITLE.equals(titleId)) {
+            ShaderLibs.Header head = ShaderLibs.header(lib);
+            // A six-shader incremental result in v-current/ is never the
+            // mandatory full library. The original complete base stays usable.
+            if (head == null || !head.fits(lib.length()) || head.entries <= 1024)
+                lib = null;
+        }
         if (lib != null) {
             // Current only with the stamp of this APK's profile inputs, as pack_android.py's library_current asks: a library built from other shader tables
             // loads but lacks or misplaces shaders, and the pack step would refuse to take it
