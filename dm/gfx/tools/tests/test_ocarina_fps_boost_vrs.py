@@ -67,7 +67,8 @@ class FpsBoostTests(unittest.TestCase):
             "0x185d371b6c9475b2", "0x09bdc3e13d9f2461",
             "0x00ce4088af2c8e12", "0xa566b7687b712ff3",
             "0x8ea627c8ef169ee1", "0x1e4d2630d24846d0",
-            "0x5ad65c0eefd09c7f",
+            "0x5ad65c0eefd09c7f", "0x264e6e6de176460a",
+            "0xedce918b7374c89b", "0xfb29c58b3fab8e7b",
         ):
             self.assertIn(key, PSO)
         self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', DEV)
@@ -77,6 +78,8 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot)', PSO)
         self.assertIn('(k->samples ? k->samples : 1) == 1', PSO)
         self.assertIn('k->ncolor > 0', PSO)
+        self.assertIn('k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32', PSO)
+        # Non-HDR UI and video pipelines retain pixel-accurate shading.
         self.assertIn('VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME', DEV)
         self.assertIn('frate.pipelineFragmentShadingRate', DEV)
         self.assertIn('has_2x1', DEV)
