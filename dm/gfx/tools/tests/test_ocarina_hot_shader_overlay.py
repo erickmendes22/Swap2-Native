@@ -41,6 +41,23 @@ class HotShaderOverlay(unittest.TestCase):
         self.assertIn('out->sh[st] = vka_shader_make(source, key);', HOST)
         self.assertIn('An absent, invalid or incomplete overlay never blocks the full library', HOST)
 
+    def test_original_full_base_is_preferred_over_six_shader_current_version(self):
+        # Regression: six new compilation results must augment the old
+        # complete library, never substitute for its ~42k shader entries.
+        app = ROOT / "android/app/src/main/java/dev/nxnative/android"
+        pack = (app / "Pack.java").read_text()
+        shader_libs = (app / "ShaderLibs.java").read_text()
+        delta = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
+        self.assertIn('char oot_partial_current[1024]', HOST)
+        self.assertIn('n > 1024', HOST)
+        self.assertIn('st.st_mtime < best_time', HOST)
+        self.assertIn('!memcmp(other.h->inputs, g_lib.h->inputs', HOST)
+        self.assertIn('if (*oot_partial_current)', HOST)
+        self.assertIn('g_lib.h->entry_count <= 1024', HOST)
+        self.assertIn('head.entries <= 1024', pack)
+        self.assertIn('h.entries <= 1024', shader_libs)
+        self.assertIn('current.entries <= 1024', delta)
+
     def test_failed_57_shader_overlay_quarantines_unpaired_mesh_stages(self):
         # Regression: previous version compiled 57 valid SPIR-V modules,
         # but its 53 newly captured mesh/task shaders were not given the
