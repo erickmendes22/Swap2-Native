@@ -350,3 +350,5 @@ Ocarina 0.1.6 asynchronous platform output receiver (2026-11-12):
 - Android nn::codec now receives late MediaCodec output independently of further guest Submit/Acquire/Release calls, and signals the awaited NativeSync event. All codec/pool access shares the decoder mutex; Finalize stops and joins the receiver.
 - Production-code regression: previous host fails the delayed-output event wait; receiver passes 20 AV1/H.264 cycles including pre-Acquire delivery, Flush and Finalize with output pending (ASan/UBSan).
 - Same package, version, shader ABI, complete shader library and cached signing key. Device playback validation remains required; no FPS or confirmed on-device freeze-fix claim.
+
+CI follow-up: compile the vendored libvpx image/memory implementation for the asynchronous codec regression; VP8/VP9 decode entry points abort if accidentally reached. No system libvpx package or network install is required. The same 20 AV1/H.264 delayed-output cycles pass locally with ASan/UBSan.

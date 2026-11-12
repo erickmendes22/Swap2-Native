@@ -1,5 +1,4 @@
 """Exercise production codec queues and NativeSync with delayed platform output."""
-import ctypes.util
 import os
 from pathlib import Path
 import shutil
@@ -14,8 +13,6 @@ class AndroidCodecAsync(unittest.TestCase):
     def test_delayed_platform_output(self):
         compiler = shutil.which("clang") or shutil.which("gcc")
         self.assertIsNotNone(compiler, "a C compiler is required")
-        vpx = ctypes.util.find_library("vpx")
-        self.assertIsNotNone(vpx, "the system libvpx runtime is required")
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             subprocess.run([
@@ -33,8 +30,11 @@ class AndroidCodecAsync(unittest.TestCase):
                 "-Wno-tautological-compare", "-fsanitize=address,undefined",
                 "-ffunction-sections", "-fdata-sections", "-I" + directory,
                 "-I" + str(ROOT / "dm/third_party/libvpx"),
+                "-I" + str(ROOT / "dm/third_party/libvpx/config"),
                 str(ROOT / "dm/host/tests/t_android_codec_async.c"),
-                "-l:" + vpx, "-pthread", "-Wl,--gc-sections", "-o", str(executable),
+                str(ROOT / "dm/third_party/libvpx/vpx/src/vpx_image.c"),
+                str(ROOT / "dm/third_party/libvpx/vpx_mem/vpx_mem.c"),
+                "-pthread", "-Wl,--gc-sections", "-o", str(executable),
             ], check=True, cwd=ROOT)
             environment = os.environ.copy()
             # LeakSanitizer cannot enumerate threads under this workspace's

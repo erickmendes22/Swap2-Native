@@ -22,6 +22,23 @@ static int event_set(void *e) { pthread_mutex_lock(&event_mu); int r = events[ev
 static void destroy_event(void *e) { pthread_mutex_lock(&event_mu); int i = event_slot(e); events[i].addr = NULL; events[i].set = 0; pthread_mutex_unlock(&event_mu); }
 void *guest_sym(const char *s) { return !strcmp(s, "_ZN2nn2os18DestroySystemEventEPNS0_15SystemEventTypeE") ? (void *)destroy_event : NULL; }
 
+// These cases exercise only the platform AV1/H.264 path. Keep the production
+// libvpx image allocator/conversion storage, but reject any accidental call
+// into VP8/VP9 decoding instead of depending on a system decoder library.
+vpx_codec_iface_t *vpx_codec_vp8_dx(void) { abort(); }
+vpx_codec_iface_t *vpx_codec_vp9_dx(void) { abort(); }
+vpx_codec_err_t vpx_codec_dec_init_ver(vpx_codec_ctx_t *ctx, vpx_codec_iface_t *iface,
+                                     const vpx_codec_dec_cfg_t *cfg, vpx_codec_flags_t flags, int version) {
+    (void)ctx; (void)iface; (void)cfg; (void)flags; (void)version; abort();
+}
+vpx_codec_err_t vpx_codec_destroy(vpx_codec_ctx_t *ctx) { (void)ctx; abort(); }
+vpx_codec_err_t vpx_codec_decode(vpx_codec_ctx_t *ctx, const uint8_t *data, unsigned int size, void *user, long deadline) {
+    (void)ctx; (void)data; (void)size; (void)user; (void)deadline; abort();
+}
+vpx_image_t *vpx_codec_get_frame(vpx_codec_ctx_t *ctx, vpx_codec_iter_t *iter) { (void)ctx; (void)iter; abort(); }
+const char *vpx_codec_error(const vpx_codec_ctx_t *ctx) { (void)ctx; abort(); }
+const char *vpx_codec_error_detail(const vpx_codec_ctx_t *ctx) { (void)ctx; abort(); }
+
 // A platform decoder that finishes well AFTER Submit has returned.
 struct mavc { uint64_t due; int64_t pts; int pending; };
 mavc *mavc_new(void) { return calloc(1, sizeof(mavc)); }
