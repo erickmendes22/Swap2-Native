@@ -20,6 +20,7 @@
 #include "vpx/vp8dx.h"
 #include "hle_movie_yuv.h"
 #include "hle_movie_avc.h"   // H.264 on VideoToolbox
+#include "hle_codec_backpressure.h"  // CPU-only-tested AV1 movie queue escape
 
 #define CV_MAGIC 0x56436d44u        // 'DmCV'
 #define CV_SYNC 0x53436d44u         // 'DmCS': a sync handle the host made (dec id, index, generation)
@@ -138,9 +139,11 @@ static void drain(cv_dec *d) {
     int escape = 0;
     while (d->pcount && (d->nheld || d->eos_pending)) {
         int pending_queued = d->buf[d->pend[d->phead]].queued;
-        int full_av1 = d->codec == CV_AV1 && d->nheld >= CV_HOLD
-                && d->fcount && d->pcount;
-        escape = full_av1 && (!getenv("DM_MOVIE_AV1_UNBLOCK") || strcmp(getenv("DM_MOVIE_AV1_UNBLOCK"), "0"));
+        escape = cv_backpressure_escape(d->codec == CV_AV1, d->nheld, CV_HOLD,
+                                        d->fcount, d->pcount, pending_queued,
+                                        cv_clk_enabled(),
+                                        !getenv("DM_MOVIE_AV1_UNBLOCK")
+                                            || strcmp(getenv("DM_MOVIE_AV1_UNBLOCK"), "0"));
         if (cv_clk_enabled() && pending_queued && !escape) break;
         uint32_t i = d->pend[d->phead]; d->phead = (d->phead + 1) % CV_BUFS; d->pcount--;
         typeof(d->buf[0]) *b = &d->buf[i];
