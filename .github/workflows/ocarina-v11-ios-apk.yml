@@ -16,7 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Zstandard for dictionary-compressed NUP regression
-        run: python3 -m pip install --user --break-system-packages backports.zstd==1.8.0
+        run: |
+          if python3 -c 'from compression import zstd'; then
+            echo 'Using the Python standard-library Zstandard module'
+          else
+            python3 -m pip install --user --break-system-packages backports.zstd==1.8.0
+          fi
       - name: Validate shader ABI and internal scene resolution profiles
         shell: bash
         run: |
