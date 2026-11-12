@@ -127,7 +127,21 @@ static void cv_rate_log(cv_dec *d, uint64_t now) {   // the movie's rate line (E
 static void drain(cv_dec *d) {
     uint64_t now = now_ns();
     if (d->eos_drain) cv_take_mc(d, true);
-    while (d->pcount && (d->nheld || d->eos_pending) && !(cv_clk_enabled() && d->buf[d->pend[d->phead]].queued)) {
+
+    // The AV1 intro can deadlock on Android when the decoder producer has
+    // filled its eight-picture queue but the guest has not acquired a released
+    // output buffer yet. The clock path normally waits for Acquire so it can
+    // skip stale pictures. At saturation, break that ordering cycle for ONE
+    // picture: its sync point becomes signalled and packets can advance again.
+    // Never do this under normal queue load; other codecs retain their
+    // existing clock/drop semantics. DM_MOVIE_AV1_UNBLOCK=0 restores them.
+    int escape = 0;
+    while (d->pcount && (d->nheld || d->eos_pending)) {
+        int pending_queued = d->buf[d->pend[d->phead]].queued;
+        int full_av1 = d->codec == CV_AV1 && d->nheld >= CV_HOLD
+                && d->fcount && d->pcount;
+        escape = full_av1 && (!getenv("DM_MOVIE_AV1_UNBLOCK") || strcmp(getenv("DM_MOVIE_AV1_UNBLOCK"), "0"));
+        if (cv_clk_enabled() && pending_queued && !escape) break;
         uint32_t i = d->pend[d->phead]; d->phead = (d->phead + 1) % CV_BUFS; d->pcount--;
         typeof(d->buf[0]) *b = &d->buf[i];
         if (d->nheld) {
@@ -144,6 +158,12 @@ static void drain(cv_dec *d) {
         if (b->eos) LOG("[codec] %s decoder %u: end of stream after %llu pictures", k_cv_name[d->codec], d->id, (unsigned long long)d->pictures);
         b->filled = 1; b->filled_gen = b->gen;
         spt_fire(d, i);
+        if (escape) {
+            static int reported;
+            if (!reported++) LOG("[codec] AV1 decoder %u: full queue, released one picture before guest Acquire to avoid circular wait (DM_MOVIE_AV1_UNBLOCK=0 disables)",
+                                 d->id);
+            break;  // preserve frame ordering/clock for every other buffer
+        }
     }
     cv_rate_log(d, now);
     if (d->event) { if (d->nheld < CV_HOLD) hle_signal_system_event(d->event); else hle_clear_system_event(d->event); }
@@ -311,7 +331,9 @@ static int cv_take_mc(cv_dec *d, bool eos) {
 static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t size, int64_t ts, bool eos) {
     cv_dec *d = cv_of(t); if (!d) return CV_R(2004);
     pthread_mutex_lock(&d->mu);
-    if (d->nheld >= CV_HOLD) cv_clk_skip(d, now_ns());   // pictures the clock has overtaken make room: the decoder catches up while the game draws slower than the movie
+    if (d->nheld >= CV_HOLD) cv_clk_skip(d, now_ns());   // pictures the clock has overtaken make room
+    if (d->nheld >= CV_HOLD && d->codec == CV_AV1)
+        drain(d);   // may unblock one released-but-not-acquired buffer (see the saturated-queue escape)
     if (d->nheld >= CV_HOLD) { if (d->event) hle_clear_system_event(d->event); pthread_mutex_unlock(&d->mu); return CV_BUSY; }
     int got = 0;
     if (CV_MC(d) && d->avc) {   // the platform decoder reorders: pictures leave in presentation order, all of them at the end of the stream

@@ -6,6 +6,8 @@ import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 /**
@@ -37,6 +39,14 @@ public final class GpuProbeProvider extends ContentProvider {
         } catch (RuntimeException | LinkageError e) {
             Log.e("Swap2Native", "isolated Vulkan readiness failed", e);
             out.putString("facts", "unchecked=isolated Vulkan readiness failed: " + e.getClass().getSimpleName());
+        } finally {
+            // vka_driver_open caches the Vulkan driver per native process. A
+            // later run can pick a different per-game driver (891.14 instead
+            // of Turnip V37) and otherwise silently probe the OLD driver.
+            // The provider is private and only performs one GPU check; retire
+            // its process AFTER Binder has delivered this call's reply.
+            new Handler(Looper.getMainLooper()).postDelayed(
+                    () -> android.os.Process.killProcess(android.os.Process.myPid()), 1500);
         }
         return out;
     }

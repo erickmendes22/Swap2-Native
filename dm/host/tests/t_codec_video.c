@@ -194,6 +194,20 @@ int main(void) {
         // A gap over a second between acquires (a pause) restarts the clock at the next picture shown
         h_cv_vp9rel(dc, 0, sync); g_now += 1500000000;
         assert(!h_cv_vp9acq(&idx, &sync, dc) && idx == 0 && c->clk.on && c->clk.pts0 == T + 7 * F && c->clk.wall0 == g_now && c->st.drop == 5);
+        // Regression: Android AV1's platform decoder may fill all eight
+        // pictures while its guest has released, but not acquired, a buffer.
+        // Under normal clock semantics that buffer cannot be filled, so the
+        // next Submit returns BUSY and the client can wait forever. Test
+        // the same shared queue protocol using VP9 sample pictures under
+        // an AV1 codec label (no Android decoder required in this host test).
+        assert(!h_cv_vp9flush(dc) && !c->nheld);
+        h_cv_vp9rel(dc, 0, sync);
+        c->codec = CV_AV1;  // shared queue policy: decode VP9 sample through test vpx backend
+        for (int k = 0; k < CV_HOLD; k++)
+            assert(!h_cv_vp9submit(&id, dc, vp9, sizeof vp9, T + k * F, false));
+        assert(c->nheld == CV_HOLD - 1 && c->buf[0].filled && c->buf[0].queued);
+        assert(!h_cv_vp9acq(&idx, &sync, dc) && idx == 0 && h_gs_trywait(&sync));
+        c->codec = CV_VP9;  // finish with the libvpx decoder it actually owns
         assert(!h_cv_vp9fin(dc) && !cv_of(dc));
         for (int i = 0; i < 2; i++) h_cv_poolfin(pc[i]);
     }

@@ -343,6 +343,20 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 request.putStringArray("env", denv);
                 android.os.Bundle response = getContentResolver().call(GpuProbeProvider.uri(this), "vulkan-readiness", null, request);
                 probeFacts = response == null ? "unchecked=isolated GPU readiness process returned no data" : response.getString("facts");
+                // A lingering provider from the previous game's driver
+                // cannot certify a different Vulkan implementation.
+                String requested = "system";
+                for (String kv : denv) if (kv.startsWith("DM_VK_DRIVER=")) {
+                    String path = kv.substring("DM_VK_DRIVER=".length());
+                    requested = path.isEmpty() || "system".equals(path) ? "system" : new File(path).getName();
+                }
+                String observed = Readiness.facts(probeFacts).getOrDefault("driver.custom", "");
+                if (!requested.equals("system") && !observed.equals(requested)
+                        || requested.equals("system") && !observed.isEmpty()) {
+                    prestart("GPU_READINESS_STALE_DRIVER requested=" + requested + " actual=" + observed);
+                    probeFacts = "unchecked=probe driver mismatch: requested " + requested + " but inspected "
+                            + (observed.isEmpty() ? "system" : observed) + " (probe process will restart)";
+                }
                 prestart("GPU_READINESS_RETURNED isolated " + (probeFacts == null ? "no-data" : "ok"));
             } catch (RuntimeException | LinkageError ex) {
                 probeFacts = "unchecked=isolated Vulkan readiness unavailable (" + ex.getClass().getSimpleName() + ")";
