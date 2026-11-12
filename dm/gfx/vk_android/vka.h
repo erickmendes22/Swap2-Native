@@ -373,6 +373,11 @@ typedef struct vka_shader {
     uint64_t key; const dmsh_vk_entry *e; const dmsh_vk_bind *b;
     const vka_shlib *lib;               // the library the entry is in (its header's translator answers; its other modules)
     VkShaderModule mods[DMSH_VK_MOD_SHUFFLE_LDS + 1];   // by DMSH_VK_MOD_* variant, made when a pipeline first asks (the base when the shader is made)
+    // The Qualcomm hybrid route has BOTH original VK_EXT_mesh_shader and
+    // mesh->compute drawing in one process. A per-primitive pixel input must
+    // stay raw for native mesh, but be flattened for compute's vertex draw.
+    VkShaderModule native_mesh_fs[DMSH_VK_MOD_SHUFFLE_LDS + 1];
+    struct vka_vinmod *native_mesh_fout;
     struct vka_vinmod *vin;             // vertex modules with integer-fed inputs retyped, by masks (vka_shader_vin_module)
     struct vka_vinmod *fout;            // pixel modules with float outputs retyped for integer targets, by masks (vka_shader_fout_module)
     struct vka_imgmod *imgm;            // modules with storage and sampled images retyped for integer textures, by vka_imgrt (vka_shader_img_module)
@@ -398,6 +403,8 @@ vka_shader *vka_shader_by_key(uint64_t key);   // the game library's shader of k
 void vka_shader_pfb_hook(void);
 VkShaderModule vka_shader_pfb_pick(VkShaderModule m, int a2c, int alpha_func);
 VkShaderModule vka_shader_module(vka_shader *s, int variant);
+VkShaderModule vka_shader_native_mesh_fs_module(vka_shader *s, int variant); // raw per-primitive FS for VK_EXT_mesh_shader; separate from compute's flattened module
+VkShaderModule vka_shader_native_mesh_fout_module(vka_shader *s, uint32_t umask, uint32_t smask); // raw FS with integer outputs retyped
 uint32_t vka_shader_sg_pin(int stage);              // DMSH_VK_STAGE_*: the subgroup size its subgroup shaders' pipelines require (vka_shader.c sg_plan), 0 = none
 VkShaderModule vka_shader_oot_cs_retile_module(vka_shader *s); // NULL = not safely retileable; original pipeline remains usable
 VkShaderModule vka_shader_cs_module(vka_shader *s);  // a compute shader's module: its DMSH_VK_MOD_SHUFFLE_LDS one where the device takes it (vka_shader.c shuffle_plan), else the base
