@@ -40,6 +40,7 @@ on:
       - 'dm/host/tests/t_android_shlib.c'
       - 'dm/gfx/vk_android/vka_tex.c'
       - 'dm/gfx/vk_android/vka_texlimit.h'
+      - 'dm/gfx/vk_android/vka_zshare.h'
       - 'dm/gfx/vk_android/vka_dev.c'
       - 'dm/gfx/vk_android/vka_ctl.c'
       - 'dm/host/tests/t_android_texlimit.c'
