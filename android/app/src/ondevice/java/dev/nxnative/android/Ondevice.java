@@ -886,17 +886,28 @@ final class Ondevice {
             }
             Profile prof = Profile.of(r.titleId);   // DumpCheck refused a dump without one
             File target = packOverride != null ? packOverride : AppStorage.pack(a, r.titleId);
+            // Import shaders writes a complete library into a SHADERS-ONLY
+            // pack folder first. pack.tsv/main.patched.bin cannot exist until
+            // Prepare rewrites the executable. The old guard blocked ANY
+            // existing Ocarina shader folder before checking ShaderZip.ready(),
+            // including the user's complete 42,339-shader merged library.
+            // Check compatibility FIRST: a verified full import needs only
+            // code rewrite and package finalization, NOT shader translation.
+            boolean imported = !"fake".equals(BuildConfig.NX_PACK_ENGINE)
+                    && ShaderZip.ready(target, r.titleId);
             if ("0400486024DEC000".equals(r.titleId)
-                    && !Pack.libraryVersions(target).isEmpty()) {
+                    && !Pack.libraryVersions(target).isEmpty() && !imported) {
+                // Protect genuinely mismatched/partial libraries. Do NOT
+                // erase the installed bytes or automatically rebuild 42,339
+                // shaders. A compatible full library is NEVER blocked here.
                 quiet();
-                a.error("Há uma biblioteca Ocarina já compilada na pasta do pacote, "
-                        + "mas a instalação não reconheceu o pacote completo. "
-                        + "Não serão preparados os 42.339 shaders novamente. "
-                        + "Selecione ou importe o pacote anterior para recuperar essa biblioteca.");
+                a.error("Há shaders Ocarina nessa pasta, mas nenhum arquivo foi "
+                        + "validado como biblioteca completa para esta versão. "
+                        + "Os shaders existentes não foram apagados nem recompilados. "
+                        + "Confira se o arquivo importado contém os 42.339 shaders "
+                        + "e corresponde ao jogo e à ABI deste aplicativo.");
                 return;
             }
-            // Its shaders imported already (Import shaders… with no pack yet, ShaderZip.ready): the job only rewrites the code (Job.shadersInPack)
-            boolean imported = !"fake".equals(BuildConfig.NX_PACK_ENGINE) && ShaderZip.ready(target, r.titleId);
             long need = (imported ? DumpCheck.NEED_CODE : DumpCheck.NEED_FULL) + f.tools;
             String text = imported ? a.getString(R.string.s2_prepare_code_only, prof.shaderTotal) + "\n\n" + a.getString(R.string.s2_space_line, r.free / 1073741824.0, need / 1073741824.0)
                     : a.getString(R.string.s2_prepare_body, r.version == 0 ? a.getString(R.string.s2_version_base) : a.getString(R.string.s2_version_update, r.version), r.dlc,
