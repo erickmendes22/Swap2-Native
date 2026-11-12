@@ -30,6 +30,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
@@ -62,6 +63,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     private SidePanel panel;
     private final HashSet<Integer> pads = new HashSet<>();   // the gamepads connected: the on-screen controls hide while there is one
     private File log;
+    /** Persistent even if Vulkan readiness or library loading terminates the :game process before Native.start opens its log. */
+    private synchronized void prestart(String phase) {
+        if (log == null) return;
+        String line = "[prestart] " + System.currentTimeMillis() + " " + phase + "\n";
+        try (FileOutputStream out = new FileOutputStream(log, true)) {
+            out.write(line.getBytes(StandardCharsets.UTF_8));
+            out.getFD().sync();  // a native SIGSEGV does not run Java shutdown hooks
+        } catch (IOException e) {
+            android.util.Log.e("Swap2Native", "prestart log write failed", e);
+        }
+    }
     private final Handler ui = new Handler(Looper.getMainLooper());
     private boolean input, started;
     private InputManager inputManager;
@@ -76,12 +88,22 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     @Override protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        // Establish a shareable log before native library loading and before the Vulkan readiness probe.
+        // Native.start later truncates this same file and replaces the prestart trace with the normal host log.
+        String earlyId = String.valueOf(getIntent().getStringExtra("title_id"));
+        log = new File(LogProvider.dir(this), earlyId + "-" + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date()) + ".log");
+        prestart("PROCESS_STARTED title=" + earlyId + " device=" + Build.MANUFACTURER + "/" + Build.MODEL
+                + " soc=" + (Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : "unknown") + " sdk=" + Build.VERSION.SDK_INT);
+        pruneLogs(earlyId);
         Ui.immersive(this);
         // This game's own host (libnxhost_<title ID>.so, with its profile compiled in): a game this APK has no profile for gets a sentence, not a crash
         String id = String.valueOf(getIntent().getStringExtra("title_id"));
         try {
+            prestart("NATIVE_LOAD_BEGIN");
             Native.load(id);
+            prestart("NATIVE_LOAD_OK");
         } catch (IllegalStateException e) {
+            prestart("NATIVE_LOAD_FAILED " + e);
             setContentView(new FrameLayout(this));
             fail(e.getMessage());
             return;
@@ -301,7 +323,19 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             answered[0] = true;
             readinessDecide(id, probeFacts);
         };
-        new Thread(() -> { probeFacts = Native.readiness(denv); probeDone = true; ui.post(decide); }, "nxreadiness").start();
+        prestart("GPU_READINESS_BEGIN driver=" + (GpuDriver.selected(this, id) == null ? "system" : "custom"));
+        new Thread(() -> {
+            try {
+                probeFacts = Native.readiness(denv);
+                prestart("GPU_READINESS_RETURNED " + (probeFacts == null ? "no-data" : "ok"));
+            } catch (RuntimeException | LinkageError ex) {
+                probeFacts = "unchecked=Vulkan readiness threw " + ex.getClass().getSimpleName();
+                prestart("GPU_READINESS_EXCEPTION " + ex);
+            } finally {
+                probeDone = true;
+                ui.post(decide);
+            }
+        }, "nxreadiness").start();
         ui.postDelayed(() -> { if (!probeDone) probeFacts = "unchecked=the GPU check did not answer in " + READINESS_WAIT_MS / 1000 + " s"; decide.run(); }, READINESS_WAIT_MS);
         return true;
     }
@@ -425,6 +459,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Pack pack = Pack.read(packDir);
             String romfs = pack.romfsPath(game);   // a folder's RomFS folder, or <file>.nup:<selector>/romfs (NUP.md)
             if (romfs == null) throw new IOException(Nup.isNup(game) ? game.getName() + " has no " + pack.romfsSelector() + " with a RomFS" : "no RomFS in " + game);
+            prestart("PACK_READ_OK; CHECK_READINESS");
             if (readinessHold(id)) return;   // after the pack's own checks (a missing pack says so first), before the save is locked or anything is written
             // The user's lines, read first: the paths the launcher sets cannot be changed by them (guard), but the test app's env-<id>.txt may name a test save folder (one game's file only: a global DM_SAVE would point every game at one save)
             List<String> user = new ArrayList<>(guard(userEnv(new File(files, "env.txt")), "env.txt", false));   // diagnostic switches (every game: never DM_SAVE) (DM_SVC=1, DM_FS=1, ...), as the iPhone's Documents/env.txt
@@ -432,8 +467,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             user.addAll(guard(userEnv(new File(files, "env-" + id + ".txt")), "env-" + id + ".txt", testApp()));   // and env-<title ID>.txt (adb), the same for one game
             File save = saveDir(files, game, id), temp = mkdirs(new File(files, "temp/" + id)), root = mkdirs(new File(files, "root"));
             File aoc = aocLinks(mkdirs(new File(files, "aoc/" + id)), game, pack);
-            log = new File(LogProvider.dir(this), id + "-" + new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(new Date()) + ".log");
-            pruneLogs(id);
+            // Keep the file created before Native.load and the Vulkan readiness check.
+            // A crash before Native.start leaves its [prestart] trace shareable by the launcher.
             List<String> env = new ArrayList<>(List.of(
                     "DM_ROMFS=" + romfs, "DM_SAVE=" + save, "DM_TEMP=" + temp, "DM_ROOT=" + root, "DM_AOC_DIR=" + aoc,
                     "HOME=" + files, "TMPDIR=" + getCacheDir(), "DM_BUILD_COMMIT=" + BuildConfig.NX_COMMIT,
@@ -490,6 +525,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             GraphicsOptions.started(this, id, env); // effective live presentation policy (user env lines override)
             for (String kv : env) if (kv.startsWith("DM_OVERLAY=")) overlayEnv = !kv.substring(11).trim().equals("0");
             String[] args = {"nxhost", packDir.getPath()};
+            prestart("HOST_START_BEGIN ramSaver=" + Prefs.ramSaver(this, id)
+                    + " shaderLibStage=pending-host-load");
             int r = Native.start(args, env.toArray(new String[0]), log.getPath(), files.getPath());
             if (r != 0) throw new IOException("the host did not start (" + r + (r == -1 ? ": a start was already tried in this process" : "") + ")");
             // Whether this game picks its own frame rate (the host's cap status: no rate it can hold), remembered for its Game settings, which then offer no cap.
@@ -530,6 +567,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             ui.postDelayed(this::tail, 500);
             ui.postDelayed(this::fpsTick, 500);
         } catch (IOException | RuntimeException e) {
+            prestart("GAME_START_EXCEPTION " + e);
             fail(String.valueOf(e.getMessage()));
         }
     }
