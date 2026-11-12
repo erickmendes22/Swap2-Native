@@ -1301,6 +1301,7 @@ enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_E
 void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx);
 int vka_memu_on(void); int vka_memu_has(const uint8_t *p); void vka_memu_cur(const uint8_t *p);
 int vka_vegetation_mesh_omit(const vka_dstate *d);  // identical no-side-effect test to final raster cut
+int vka_mesh_route(const vka_dstate *d);  // -1 omit new supplement, 0 original native, 1 supplemental compute
 static int g_memu_cover; static uint64_t g_memu_sub = ~0ull; static vka_dstate g_memu_st;
 static int memu_allowed(uint32_t op) {
     switch (op) {
@@ -1316,10 +1317,14 @@ static int memu_allowed(uint32_t op) {
 static int memu_walk(const uint8_t *p, int phase) {
     const uint8_t *ret[17]; int nret = 0, n = 0;
     const int vegetation_off = !VKA_ENV("DM_VK_VEGETATION", 1);
-    // The existence probe (phase -1) previously avoided copying state. When
-    // vegetation is disabled, it must walk the intervening bindings too:
-    // omittability depends on the actual task/mesh/pixel programs at this draw.
-    if (phase >= 0 || vegetation_off) memcpy(&g_memu_st, &S.d, sizeof g_memu_st);
+    const int hybrid = V.memu && V.mesh && V.task &&
+                       !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+                       VKA_ENV("DM_VK_OOT_NATIVE_BASE_MESH", 1);
+    // The look-ahead must use the bindings AT EACH DRAW when routing
+    // original-library mesh draws to native. Never move supplemental
+    // compute ahead of a native mesh draw, which may write buffers/images.
+    if (phase >= 0 || vegetation_off || hybrid)
+        memcpy(&g_memu_st, &S.d, sizeof g_memu_st);
     for (int guard = 0; guard < 200000; guard++) {
         op_hdr h; memcpy(&h, p, sizeof h); const void *a = p + 8;
         if (h.op == OP_END) { if (!nret) break; p = ret[--nret]; continue; }
@@ -1327,13 +1332,18 @@ static int memu_walk(const uint8_t *p, int phase) {
         if (h.op == OP_CALL) { if (nret == 17) break; ret[nret++] = p + h.size; memcpy(&p, a, 8); continue; }
         if (!memu_allowed(h.op) || h.size < 8) break;
         if (h.op == OP_DRAW) { p_draw t; const p_draw *d = draw_rec(a, h.size, &t);
-            if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt &&
-                (!vegetation_off || !vka_vegetation_mesh_omit(&g_memu_st))) {
-                if (n == 128) break;
-                if (phase < 0) return 1;
-                vka_memu_batch(phase, &g_memu_st, d, p, n); n++;
+            if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt) {
+                int route = hybrid ? vka_mesh_route(&g_memu_st) : 1;
+                if (route == 0) break; // native mesh is an ordering boundary
+                if (route == 1 &&
+                    (!vegetation_off || !vka_vegetation_mesh_omit(&g_memu_st))) {
+                    if (n == 128) break;
+                    if (phase < 0) return 1;
+                    vka_memu_batch(phase, &g_memu_st, d, p, n); n++;
+                }
             } }
-        else if (h.op != OP_DRAW_IDX && (phase >= 0 || vegetation_off)) vka_state_op(&g_memu_st, h.op, a);
+        else if (h.op != OP_DRAW_IDX && (phase >= 0 || vegetation_off || hybrid))
+            vka_state_op(&g_memu_st, h.op, a);
         p += h.size;
     }
     return n;
@@ -1353,9 +1363,12 @@ static void memu_before_draw(const uint8_t *p, const p_draw *d) {
     if (!vka_memu_on()) return;
     if (g_memu_sub != g_n_sub) { g_memu_sub = g_n_sub; g_memu_cover = 0; }
     int mesh = d && d->prim == NVN_PRIM_MESH;
-    // Do not split an open render pass or launch mesh compute for a draw
-    // whose raster half will be omitted. Other mesh draws remain unchanged.
-    if (mesh && vka_vegetation_mesh_omit(&S.d)) {
+    // Supplemental vegetation OFF: bypass BEFORE the first mesh compute
+    // batch, not just at raster. Original-library native draws also bypass
+    // the look-ahead: no arena, no compute or render-pass split.
+    int route = mesh ? vka_mesh_route(&S.d) : 1;
+    if (mesh && route == 0) return;
+    if (mesh && (route < 0 || vka_vegetation_mesh_omit(&S.d))) {
         static uint64_t early_omits;
         if (++early_omits == 1 || (early_omits & 4095) == 0)
             VLOG("vegetation: %llu mesh draws omitted before compute/pass split",
