@@ -280,9 +280,34 @@ def lib_stamp(lib_dir):
 
 
 def library_current(lib_dir, g):
-    """True when lib_dir holds a finished full library of this game and its profile's current inputs"""
+    """Finished library matching the current profile. Ocarina also requires ALL shader records.
+
+    A six-entry hot result can carry the same correct game/inputs stamp as the
+    complete library, so checking inputs.tsv alone is unsafe: it used to make
+    the packer accept the partial library in place of 42,339 required shaders.
+    """
     st = lib_stamp(lib_dir)
-    return (lib_dir / VK_LIB).is_file() and st.get('game') == g.id and st.get('inputs') == dmsh_chain.inputs(g)
+    lib = lib_dir / VK_LIB
+    if not lib.is_file() or st.get('game') != g.id or st.get('inputs') != dmsh_chain.inputs(g):
+        return False
+    if g.id != '0400486024DEC000':
+        return True
+    import vk_android_delta as delta
+    L = None
+    try:
+        L = delta.Library(str(lib))
+        if (L.game != g.id or L.inputs != dmsh_chain.inputs(g)
+                or L.abi != delta.abi_digest() or L.ne != 42339
+                or len(L.index) != L.ne or lib_dir.name != 'v-' + L.version):
+            return False
+        for i in range(L.ne):
+            L.entry(i)  # every binding, module and c1 range must fit
+        return True
+    except (OSError, ValueError) as exc:
+        print(f'shaders: rejecting incomplete or invalid Ocarina library {lib}: {exc}', flush=True)
+        return False
+    finally:
+        if L is not None: L.close()
 
 
 def map_keys(path):
@@ -396,13 +421,17 @@ def compatible_ocarina_full_library(pack, g, current_vk):
     inputs = dmsh_chain.inputs(g)
     root = Path(pack) / 'shaders'
     candidates = sorted(root.glob('v-*/dmsh_vk.lib'),
-                        key=lambda p: p.stat().st_mtime_ns, reverse=True)
+                        # Preserve the user's imported complete 42,339-entry
+                        # b6b21f library with SIX replaced shaders. It is the
+                        # baseline used by the Vulkan host, not a partial hot zip.
+                        key=lambda p: (p.parent.name == 'v-b6b21fb5753a',
+                                       p.stat().st_mtime_ns), reverse=True)
     for path in candidates:
         L = None
         try:
             L = delta.Library(str(path))
             if (L.game != g.id or L.inputs != inputs or L.abi != abi
-                    or L.ne < 42339 or L.version == current_vk
+                    or L.ne != 42339 or L.version == current_vk
                     or path.parent.name != 'v-' + L.version
                     or len(L.index) != L.ne):
                 continue
@@ -436,8 +465,13 @@ def pack_shaders(a, g, work, out, vdir):
         return base
     cache = (a.shader_cache or work / 'android-shaders' / 'lib').resolve(); lib = cache / name
     dst = out / 'shaders' / name
-    if (a.in_process and g.id == '0400486024DEC000'
-            and not library_current(lib, g) and not library_current(dst, g)):
+    if a.in_process and g.id == '0400486024DEC000':
+        # A library may have been imported into an otherwise EMPTY pack (no
+        # pack.tsv, no rewritten code yet). Always inspect that complete
+        # b6b21f library first, even if a current-chain six-shader result is
+        # also present: the latter is NOT a replacement for the full 42k.
+        # The selected file stays byte-identical, including the six new
+        # shader entries the user previously merged into the full library.
         old = compatible_ocarina_full_library(out, g, v)
         if old is not None:
             print(f'shaders: using verified previous full library {old}, '
