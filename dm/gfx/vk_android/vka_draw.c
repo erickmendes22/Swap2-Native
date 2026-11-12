@@ -13,6 +13,7 @@
 #include "vka_memu_abi.h"
 #include "vka_prepass.h"
 #include "vka_vegetation_profiles.h"
+#include "vka_vegetation_supplement.h"  // generated 508 original task/mesh shader keys (kept ABI-stable)
 #include "game_profile.h"
 #include <math.h>
 #include <stdio.h>
@@ -1483,6 +1484,49 @@ static void draw_log(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], cons
 // Apply the same conservative, side-effect-free vegetation predicate to
 // mesh->compute preparation and to the final raster draw.  A raster-only cut
 // still does the task/mesh dispatch, allocates the arena and splits passes.
+// The 508 newly admitted mesh/task shaders are deliberately kept separate
+// from the 42,339-shader original library. The original Ocarina 0.1.6 ran its
+// existing mesh shaders natively on VK_EXT_mesh_shader. Blanket Qualcomm
+// mesh->compute emulation regressed CPU and GPU time even with foliage OFF.
+// Classify by the generated, reviewed supplement keys (sorted by key), not
+// by the small cosmetic 14-key vegetation-quality profile.
+static int veg_supplement_stage(uint64_t key) {
+    unsigned lo = 0, hi = sizeof vka_veg_entries / sizeof *vka_veg_entries;
+    while (lo < hi) {
+        unsigned mid = lo + (hi - lo) / 2;
+        uint64_t k = vka_veg_entries[mid].key;
+        if (k < key) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo < sizeof vka_veg_entries / sizeof *vka_veg_entries &&
+           vka_veg_entries[lo].key == key;
+}
+// -1: supplement draw absent from the ORIGINAL library, vegetation OFF:
+//     do not compile, dispatch, rasterize or split a pass for it.
+//  0: pre-existing native mesh draw; no compute staging needed.
+//  1: supplemental vegetation, retained on the proven compute route.
+// The same decision is made in the look-ahead and the real draw. A native
+// mesh draw is a look-ahead boundary, so compute is not reordered across it.
+// DM_VK_OOT_NATIVE_BASE_MESH=0 restores all-mesh compute for a driver A/B.
+int vka_mesh_route(const vka_dstate *d) {
+    if (!V.memu) return 0;
+    if (!d || !V.mesh || !V.task ||
+        strcmp(DM_GAME_ID, "0400486024DEC000") ||
+        !VKA_ENV("DM_VK_OOT_NATIVE_BASE_MESH", 1)) return 1;
+    const prog_t *mp = d->bst[7];
+    vka_shader *m = NULL, *ts = NULL, *ms = NULL;
+    unsigned bad = 0, b2 = 0;
+    if (d->bst[1] && d->bst[1] != mp &&
+        resolve(d->bst[1], 7, &m, &b2) &&
+        (m || (b2 & (1u << 7)))) mp = d->bst[1];
+    if (!resolve(mp, 6, &ts, &bad) ||
+        !resolve(mp, 7, &ms, &bad) || bad || !ms)
+        return 1;  // preserve the current skip/failure path for missing stages
+    int supplement = veg_supplement_stage(ms->key) ||
+                     (ts && veg_supplement_stage(ts->key));
+    if (supplement && !VKA_ENV("DM_VK_VEGETATION", 1)) return -1;
+    return supplement ? 1 : 0;
+}
 static int vegetation_omittable(const vka_dstate *d, vka_shader *const *sh) {
     if (VKA_ENV("DM_VK_VEGETATION", 1) || d->tf_on || !sh[7] ||
         !vka_vegetation_key(DM_GAME_ID, sh[7]->key)) return 0;
@@ -1590,7 +1634,21 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         if (!dw->ind && dw->count <= 0) return;   // (an indirect draw's count is the GPU's)
         if (d->tf_on) VRED_ONCE("transform feedback with a mesh draw: drawn without capture");
         if (vegetation_cut(d, sh)) return;
-        if (V.memu) {   // through compute: its mesh work was done before the pass opened; it draws the arena with the mesh shader's vertex shader
+        int route = vka_mesh_route(d);
+        if (route < 0) {
+            static uint64_t omitted_supplement;
+            if (++omitted_supplement == 1 || !(omitted_supplement & 4095))
+                VLOG("mesh hybrid: %llu supplemental draws omitted with vegetation OFF (native base retained)",
+                     (unsigned long long)omitted_supplement);
+            return;
+        }
+        if (route == 0 && V.memu) {
+            static uint64_t native_base;
+            if (++native_base == 1 || !(native_base & 4095))
+                VLOG("mesh hybrid: %llu original-library mesh draws submitted natively",
+                     (unsigned long long)native_base);
+        }
+        if (route == 1 && V.memu) {   // through compute: its mesh work was done before the pass opened; it draws the arena with the mesh shader's vertex shader
             memu_e = memu_find();
             if (!memu_e) { vka_memu_n_skip++; SKIP("mesh draw through compute that the look-ahead did not prepare: skipped"); }
             if (!memu_e->ok) { g_skipped++;  return; }   // (logged where its shaders were refused)
