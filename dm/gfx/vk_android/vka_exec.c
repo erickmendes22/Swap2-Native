@@ -1333,7 +1333,8 @@ static int memu_walk(const uint8_t *p, int phase) {
         if (!memu_allowed(h.op) || h.size < 8) break;
         if (h.op == OP_DRAW) { p_draw t; const p_draw *d = draw_rec(a, h.size, &t);
             if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt) {
-                int route = hybrid ? vka_mesh_route(&g_memu_st) : 1;
+                int route = (hybrid || vegetation_off) ?
+                            vka_mesh_route(&g_memu_st) : 1;
                 if (route == 0) break; // native mesh is an ordering boundary
                 if (route == 1 &&
                     (!vegetation_off || !vka_vegetation_mesh_omit(&g_memu_st))) {
