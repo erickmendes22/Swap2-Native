@@ -48,3 +48,5 @@ were generated with ElevenLabs Sound Effects on a paid plan that grants commerci
 The Zelda-themed touch artwork (for example `s2_zelda_controls.png`) depicts Nintendo trademarks. They are used only to identify the game the layout is for;
 Swap2-Native is not affiliated with, endorsed or sponsored by Nintendo. Nintendo, The Legend of Zelda, Mario Kart, Donkey Kong and Nintendo Switch are
 trademarks of Nintendo.
+
+Compute mesh emulation and texture-use feedback were ported from Banana Native (moceure/BananaNative, android d652abeb534496724e798ff96474752903d7953a). Compute mesh emulation derives from Hokkaido contributors (pavelgajdo/Hokkaido #569, #642), GPL-3.0-or-later. Texture-use feedback follows Anka Native (MIT, copyright 2026 seedds and EddizEge). Original copyright and SPDX notices are retained in the source.

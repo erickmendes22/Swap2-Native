@@ -7,6 +7,7 @@
 // so the next start builds from it. Layouts follow dmsh_abi_vk.h: set 0 the per-draw records of every stage (push descriptors when they fit), set 1 the pools (vka_tex.c)
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_memu_abi.h"
 #include "../nvn/nvn_mtl.h"
 #include <stdlib.h>
 #include <string.h>
@@ -60,7 +61,7 @@ static VkShaderStageFlags stage_bit(int vks) {
     return vks >= 0 && vks < 8 ? b[vks] : 0;
 }
 enum { MAXB = 6 * DMSH_VK_STAGE_BINDINGS };   // (task and mesh shaders take the tess control and vertex ranges: dmsh_abi_vk.h)
-typedef struct { uint32_t n; struct { uint16_t binding; uint8_t desc, pad; uint16_t count; uint16_t stages; } b[MAXB]; } lkey;
+typedef struct { uint32_t n, pc; struct { uint16_t binding; uint8_t desc, pad; uint16_t count; uint16_t stages; } b[MAXB]; } lkey;   // pc: the push constant's stages (a task / mesh shader's compute form, vka_memu.c)
 static kmap g_layouts = {.klen = sizeof(lkey)};
 static uint64_t g_nlayouts;
 
@@ -98,6 +99,11 @@ static int layout_slow(vka_shader *const sh[VKA_NSTAGE], int compute, vka_layout
             k.b[k.n].binding = b->binding; k.b[k.n].desc = b->desc; k.b[k.n].count = b->count ? b->count : 1; k.b[k.n].stages = (uint16_t)stage_bit(s->e->stage);
             ndesc += k.b[k.n].count; k.n++;
         }
+        if (s->memu && k.n + 2 <= MAXB) {   // a task / mesh shader drawn through compute (vka_memu.c): the arena, and for its compute form the records and the push constant
+            k.b[k.n].binding = VKA_MEMU_ARENA_BINDING; k.b[k.n].desc = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; k.b[k.n].count = 1; k.b[k.n].stages = (uint16_t)stage_bit(s->e->stage); ndesc++; k.n++;
+            if (s->memu == 1) { k.b[k.n].binding = VKA_MEMU_REC_BINDING; k.b[k.n].desc = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; k.b[k.n].count = 1; k.b[k.n].stages = (uint16_t)stage_bit(s->e->stage); ndesc++; k.n++;
+                                k.pc |= (uint32_t)stage_bit(s->e->stage); }
+        }
         if (s->gs_fx > 0 && k.n < MAXB) {   // the claim words of a geometry shader that writes memory (vka_spv_gs_claim)
             k.b[k.n].binding = VKA_GS_CLAIM_BINDING; k.b[k.n].desc = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; k.b[k.n].count = 1; k.b[k.n].stages = (uint16_t)stage_bit(s->e->stage); ndesc++; k.n++;
         }
@@ -116,8 +122,10 @@ static int layout_slow(vka_shader *const sh[VKA_NSTAGE], int compute, vka_layout
     VkResult r = vk.vkCreateDescriptorSetLayout(V.dev, &li, NULL, &L->set0);
     free(lb);
     if (!r) {
-        VkDescriptorSetLayout sets[2] = {L->set0, vka_bindless_layout()};
-        VkPipelineLayoutCreateInfo pi = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = sets[1] ? 2 : 1, .pSetLayouts = sets};
+        // set 1 the pool (bindless tables), set 2 the pool reads' bitmap when they are reported (vka_tex.c "Texture pool reads")
+        VkDescriptorSetLayout sets[3] = {L->set0, vka_bindless_layout(), vka_pfb_layout()};
+        VkPushConstantRange pr = {(VkShaderStageFlags)k.pc, 0, VKA_MEMU_PUSH_BYTES};
+        VkPipelineLayoutCreateInfo pi = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = !sets[1] ? 1 : sets[2] ? 3 : 2, .pSetLayouts = sets, .pushConstantRangeCount = k.pc ? 1 : 0, .pPushConstantRanges = &pr};
         r = vk.vkCreatePipelineLayout(V.dev, &pi, NULL, &L->layout);
     }
     if (r) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("pipeline layout of %u bindings (%u descriptors): %d", k.n, ndesc, r); L->layout = VK_NULL_HANDLE; }
@@ -306,6 +314,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                            : vka_shader_module(s, fs ? k->fs_variant : DMSH_VK_MOD_BASE);
         if (!mod && order[i] == 2 && k->gs_fx) mod = vka_shader_module(s, DMSH_VK_MOD_BASE);   // no module with the claim (logged): the shader as it is
         if (!mod) return 0;
+        if (fs) mod = vka_shader_pfb_pick(mod, k->a2c, P->afunc);
         uint32_t n = P->ns++;
         P->ss[n] = (VkPipelineShaderStageCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = (VkShaderStageFlagBits)stage_bit(s->e->stage), .module = mod, .pName = "main",
                                                     .pSpecializationInfo = gl ? &P->spec : fs && P->afunc && (s->e->flags & DMSH_VK_F_ALPHA_TEST) ? &P->aspec : NULL};
@@ -673,8 +682,8 @@ static unsigned pre_probe(const VkGraphicsPipelineCreateInfo *ci0, const pstate 
     if (pinned) { VkResult r = try_lib(c, VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT, g_pc, 0); NOTE("no subgroup size pins", r); }
     if (npre > 1) { c = *ci0; c.stageCount = 1; c.pStages = pre; c.pTessellationState = NULL; VkResult r = try_lib(c, VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT, g_pc, 0); NOTE("first stage only", r); }
     {   // The pipeline layout with independent sets (diagnostic: a pipeline of such a layout binds only with it, not adopted)
-        VkDescriptorSetLayout sets[2] = {P->set0, vka_bindless_layout()}; VkPipelineLayout il = VK_NULL_HANDLE;
-        VkPipelineLayoutCreateInfo pi = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .flags = VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT, .setLayoutCount = sets[1] ? 2 : 1, .pSetLayouts = sets};
+        VkDescriptorSetLayout sets[3] = {P->set0, vka_bindless_layout(), vka_pfb_layout()}; VkPipelineLayout il = VK_NULL_HANDLE;
+        VkPipelineLayoutCreateInfo pi = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .flags = VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT, .setLayoutCount = !sets[1] ? 1 : sets[2] ? 3 : 2, .pSetLayouts = sets};
         if (P->set0 && !vk.vkCreatePipelineLayout(V.dev, &pi, NULL, &il)) { c = *ci0; c.layout = il; VkResult r = try_lib(c, VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT, g_pc, 0); NOTE("independent-sets layout", r); vk.vkDestroyPipelineLayout(V.dev, il, NULL); }
     }
     VkResult r_comb = VK_ERROR_UNKNOWN;
@@ -1043,6 +1052,11 @@ static int pw_memory_pressure(void) {
     atomic_store_explicit(&low, pressure, memory_order_relaxed);
     return pressure;
 }
+static int pw_memu_rec(const pwrec *r) {
+    if (r->kind == 2) return 0;
+    for (int s = 0; s < (r->kind == 1 ? 1 : 5); s++) if (r->key[s] && vka_shader_memu_key(r->key[s])) return 1;
+    return 0;
+}
 static void *pw_main(void *a) {
     (void)a; pthread_setname_np(pthread_self(), "vk-prewarm"); vka_host_fp("vk-prewarm");
     setpriority(PRIO_PROCESS, 0, 10);   // this thread (Linux: per-thread nice), under the game's threads
@@ -1075,6 +1089,8 @@ static void *pw_main(void *a) {
         const uint8_t *kb = g_pw_load + offs[i] + sizeof r;
         vka_shader *sh[VKA_NSTAGE]; memset(sh, 0, sizeof sh); int bad = !pw_rec_ok(&r, kb);
         if (bad) {}
+        else if (!V.memu && pw_memu_rec(&r)) continue;
+        else if (r.kind == 2 && V.memu) continue;
         else if (r.kind == 1) { if (!(sh[5] = vka_shader_by_key(r.key[0]))) bad = 1; }
         else if (r.kind == 2) {
             // Ocarina NVN2 mesh pipelines: task, mesh and fragment are

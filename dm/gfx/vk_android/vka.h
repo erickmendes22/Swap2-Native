@@ -89,7 +89,11 @@ typedef struct {
     // NVN2 task and mesh programs (VK_EXT_mesh_shader: mesh = meshShader, task = taskShader too; DM_VK_MESH=0 leaves it off): their shaders are refused without it (vka_shader.c refusal)
     // and their draws skipped. mesh_inv / task_inv: the largest workgroup (maxMeshWorkGroupInvocations / maxTaskWorkGroupInvocations); mesh_out_v / mesh_out_p: the most vertices /
     // primitives a mesh workgroup may output; task_payload: maxTaskPayloadSize; task_groups / mesh_groups: maxTaskWorkGroupCount[0] / maxMeshWorkGroupCount[0] (a draw's count)
+    int vstores, fstores;
     int mesh, task; uint32_t mesh_inv, task_inv, mesh_out_v, mesh_out_p, task_payload, task_groups, mesh_groups;
+    // memu: NVN2 task and mesh draws drawn through compute (vka_memu.c): by default where the device lacks meshShader or taskShader, DM_VK_MESH_EMU=1 on any device, =0
+    // never (restart). cs_groups: maxComputeWorkGroupCount[0]
+    int memu; uint32_t cs_groups;
     int fps_boost_vrs; uint32_t fps_boost_width, fps_boost_height;  // Requested maximum validated single-sample rate
     int fps_boost_has_2x1, fps_boost_has_2x2, fps_boost_has_4x2, fps_boost_has_4x4; // Exact device capabilities, for quality-preserving per-shader caps
     int gpl;                                        // graphics pipeline libraries with fast linking (VK_EXT_graphics_pipeline_library): a pipeline the cache lacks is linked from stage libraries at once, the optimized one made in the background (vka_pso.c)
@@ -290,6 +294,16 @@ void vka_tex_own(vka_img *im, VkCommandBuffer cb);
 void vka_tex_big_stats(char *b, size_t n);           // the largest images the GPU has not written, with what sampled them and what lies over their storage (DM_VK_BIGIMG_MB)
 int vka_rp_is_open(void);                            // a render pass is open in the replay's command buffer (vka_draw.c)
 void vka_tex_writeback(VkCommandBuffer cb);   // mtl_sub_commit, after the last pass
+// Texture pool reads (vka_tex.c, DM_VK_POOL_FB): the texture IDs shaders read through the pool, reported by the GPU, so their images are made and kept while read
+// The bitmap, a storage buffer of 2^20 bits, in a set of its own after the pool's: on Qualcomm's driver a storage buffer in the pool's set, after its 2^20 sampled images,
+// is never written (docs/reference/rendering.md "Texture pool reads report nothing on Qualcomm's driver")
+#define VKA_POOL_FB_SET 2
+#define VKA_POOL_FB_BINDING 0
+VkDescriptorSetLayout vka_pfb_layout(void);   // the bitmap's set layout (set VKA_POOL_FB_SET of every pipeline layout), VK_NULL_HANDLE when pool reads are not reported
+VkDescriptorSet vka_pfb_set(void);            // the bitmap's set, bound with the pool's set (vka_draw.c sets_push)
+unsigned vka_tex_pfb_flags(void);              // 0: off; else the VKA_PFB_* flags of vka_spv_pool_fb for every module made (vka_shader.c's vkCreateShaderModule hook)
+void vka_tex_pfb_draw(void);                   // the draw or dispatch being recorded reads the pool (vka_draw.c): this submission copies the bitmap out
+void vka_tex_pfb_commit(VkCommandBuffer cb, uint64_t fence);   // the submission's end (vka_exec.c): the bitmap copied to a host slot and cleared
 VkImageView vka_view(vka_img *im, VkFormat fmt, VkImageViewType type, VkImageAspectFlags aspect, uint32_t level, uint32_t nlevels, uint32_t layer, uint32_t nlayers, const VkComponentMapping *swz);
 void vka_tex_prepare(VkCommandBuffer cb);           // at submit begin: dirty CPU textures re-uploaded, registered descriptors written
 void vka_tex_uploads(VkCommandBuffer cb);
@@ -346,12 +360,16 @@ VkSampler vka_samp_default(void);                   // the sampler an unbound sa
 // A shader is one library entry with its module made; it lives as long as the process
 #include "vka_shlib.h"
 #include "vka_bind.h"
+#include "vka_memu.h"
 // Formatted storage images (SULD.P / SUST.P, a float image of format Unknown in the module) and sampled textures (TEX / TLD / TLD4, a float sampled image) a compute
 // dispatch binds integer textures to: retyped in its module (vka_spv_img_retype). Each entry binding << 16 | SPIR-V Image Format << 8 | class (1 uint, 2 sint), by
 // binding, ended by 0 (the format 0 for a sampled image); all zero = none (vka_draw.c img_retype_of). A set 0 binding names one variable, so the entry needs no kind
 #define VKA_IMGRT_MAX 8
 typedef struct { uint32_t b[VKA_IMGRT_MAX]; } vka_imgrt;
 typedef struct vka_shader {
+    struct vka_memu_sh *memu_d;
+    uint8_t memu, fcomp[8];
+    uint64_t chash;
     uint64_t key; const dmsh_vk_entry *e; const dmsh_vk_bind *b;
     const vka_shlib *lib;               // the library the entry is in (its header's translator answers; its other modules)
     VkShaderModule mods[DMSH_VK_MOD_SHUFFLE_LDS + 1];   // by DMSH_VK_MOD_* variant, made when a pipeline first asks (the base when the shader is made)
@@ -372,7 +390,13 @@ int vka_ocarina_capture_mesh_draw_pair(const prog_t *mesh_program, const prog_t 
 void vka_prog_put(uint64_t serial, const vka_progsh *ps);   // a program made by the host itself (the selftest), by serial
 vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key);
 const char *vka_shader_lib_path(void);   // the library file loaded ("" before or without one): this version's, or an older one of the same ABI
+int vka_shader_lib_has(uint64_t key);
+int vka_shader_memu_key(uint64_t key);
+uint32_t *vka_shader_memu_words(vka_shader *s, size_t *nb, char *err, size_t errn);
+vka_shader *vka_shader_remap(vka_shader *s, uint64_t map);
 vka_shader *vka_shader_by_key(uint64_t key);   // the game library's shader of key (the library loaded first if needed); NULL = not there or refused
+void vka_shader_pfb_hook(void);
+VkShaderModule vka_shader_pfb_pick(VkShaderModule m, int a2c, int alpha_func);
 VkShaderModule vka_shader_module(vka_shader *s, int variant);
 uint32_t vka_shader_sg_pin(int stage);              // DMSH_VK_STAGE_*: the subgroup size its subgroup shaders' pipelines require (vka_shader.c sg_plan), 0 = none
 VkShaderModule vka_shader_oot_cs_retile_module(vka_shader *s); // NULL = not safely retileable; original pipeline remains usable

@@ -72,3 +72,12 @@ ndsr_default	fsr
 # (Pack/Bootup.Nin_Ounce_NVN2.pack.zs), checked against the originals that follow, as a RomFS overlay made on the phone from the player's files (DM_ROMFS_OVERLAY).
 # The scene is not linear in the scale: 0.625 gave 1304x734, 0.6135 gives 1275x717 (seen on the phone 2026-11-07)
 scene_scale_palette	0.6133	0.75,0.71112,0.66667,0.62223,0.58334,0.53334,0.5,0.4445,0.37223,0.33334
+
+# Reviewed depth/color vegetation pairs from Banana Native v0.3.13.
+mesh_vegetation_cut	0c1ffecd02018fb0	eed1add7c89f5d34
+mesh_vegetation_cut	25c4a740753e7d7a	73dc0b90c4082e43
+mesh_vegetation_cut	101ecb327aafe9b1	17c8ab6419068d4b
+mesh_vegetation_cut	5b737961ae3e1b10	ecead5cd0569091f
+mesh_vegetation_cut	eebdb9347d09b344	604134a5262ff670
+mesh_vegetation_cut	d98076e4148db34f	fed302d791a4ba43
+mesh_vegetation_cut	839241636fce850a	4c7d6be5a7717c8d

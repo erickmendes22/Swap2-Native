@@ -33,3 +33,19 @@ int vka_spv_oot_cs_retile(uint32_t *w, size_t nw, char *why, size_t whylen);
  * Refuse barriers/LDS/atomics/subgroups, unknown and aliased inputs. */
 uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
                                        size_t *out_nw, char *why, size_t whylen);
+
+// Texture-use feedback for the texture pool (vka_spvpatch.c vka_spv_pool_fb): before each read of the pool (a one-index access chain into the sampled-image array at set
+// `set` binding `tex_binding`) the module sets bit (id & 31) of word id >> 5 of a storage buffer at set `fb_set` binding `fb_binding`, id the index's low 20 bits: an atomic
+// OR when a load finds the bit clear. flags: VKA_PFB_VTX_STORES (the device has vertexPipelineStoresAndAtomics: vertex, tessellation and geometry modules may take it),
+// VKA_PFB_EARLY (a pixel shader whose tests can give the same result early gets EarlyFragmentTests: its stores would otherwise move its depth test after shading).
+// alpha_spec: the SpecId of the alpha test's function (DMSH_VK_SPEC_ALPHA_FUNC). A malloc'd copy (*out_nw words; *sites the reads given code; *early 0 no mode added,
+// 1 added and right for every pipeline without alpha to coverage, 2 added and right only with the alpha test off too); NULL with err empty when the module reads no pool,
+// NULL with the reason in err when it cannot take the code (the module is then used as it is: its pool reads report nothing)
+enum { VKA_PFB_VTX_STORES = 1, VKA_PFB_EARLY = 2 };
+uint32_t *vka_spv_pool_fb(const uint32_t *w, size_t nw, uint32_t set, uint32_t tex_binding, uint32_t fb_set, uint32_t fb_binding, unsigned flags, uint32_t alpha_spec, size_t *out_nw, int *sites, int *early, char *err, size_t errn);
+// A pixel shader's user inputs moved to other locations, or made constant, for another earlier stage than its own (vka_spvpatch.c vka_spv_input_remap): the input at location
+// L < 16 moves to nibble L of map, or with nibble 0xf becomes a Private (0, 0, 0, 1). A malloc'd copy (*out_nw words; *moved / *consts the original locations of each kind);
+// NULL with err empty when nothing changes, NULL with the reason in err when it cannot be made
+uint32_t *vka_spv_input_remap(const uint32_t *w, size_t nw, uint64_t map, size_t *out_nw, uint32_t *moved, uint32_t *consts, char *err, size_t errn);
+
+uint32_t *vka_spv_spec_freeze(const uint32_t *w, size_t nw, uint32_t spec_id, uint32_t value, size_t *out_nw);

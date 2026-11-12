@@ -36,6 +36,8 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cpu_written_serials.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_retired_pool_images.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pipeline_retirement.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_banana_runtime.py' -v
+          python3 dm/gfx/tools/mesh_vegetation_profile.py --check
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_isolated_readiness.py' -v
           mkdir -p /tmp/gpu-runtime-jvm
           javac -d /tmp/gpu-runtime-jvm \
@@ -157,6 +159,20 @@ jobs:
           done
           echo "$SHADER_TOOLS" >> "$GITHUB_PATH"
           echo "NDK shader tools: $SHADER_TOOLS"
+      - name: Validate compute mesh and GPU texture feedback SPIR-V
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/tools/mesh_vegetation_profile.py --check
+          clang -O1 -g -fsanitize=address,undefined \
+            dm/host/tests/t_android_memu.c dm/gfx/vk_android/vka_memu_spv.c \
+            dm/gfx/vk_android/vka_spvpatch.c dm/gfx/vk_android/vka_shlib.c \
+            dm/third_party/zstd/zstddeclib.c -lm -o /tmp/t_android_memu
+          ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_memu
+          clang -O1 -g -fsanitize=address,undefined \
+            dm/host/tests/t_android_pool_feedback.c dm/gfx/vk_android/vka_spvpatch.c \
+            -o /tmp/t_android_pool_feedback
+          ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_pool_feedback
       - name: Compile and verify SGSR1 720p shader from Qualcomm source
         shell: bash
         run: |

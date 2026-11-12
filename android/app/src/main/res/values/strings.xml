@@ -725,4 +725,6 @@
         <item>VRS 4×2</item>
         <item>VRS 4×4</item>
     </string-array>
+    <string name="s2_full_vegetation">Full vegetation</string>
+    <string name="s2_full_vegetation_note">On: draws the full grass and foliage. Off: reduces reviewed vegetation groups. Restart the game to apply.</string>
 </resources>

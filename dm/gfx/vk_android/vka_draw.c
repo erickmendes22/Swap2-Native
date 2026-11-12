@@ -10,6 +10,10 @@
 #include "vka_ndsr.h"           // vka_ndsr_pipeline (vka_dispatch)
 #include "../nvn/nvn_mtl.h"
 #include "../../host/plat/plat.h"
+#include "vka_memu_abi.h"
+#include "vka_prepass.h"
+#include "vka_vegetation_profiles.h"
+#include "game_profile.h"
 #include <math.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -1170,6 +1174,27 @@ static int push_same(VkPipelineBindPoint bp, VkPipelineLayout layout) {
     if (g_dwn) { g_pd_delta_w += g_dwn; g_pd_delta_all += g_w.n; return 2; }
     return 0;
 }
+static int sets_push(const vka_layout *lay, VkPipelineBindPoint bp, int any_pool) {
+    uint64_t t2_ = g_prof ? cntvct() : 0;
+    if (lay->push) { int ps = g_w.n ? push_same(bp, lay->layout) : 1;
+                     if (ps == 0) vk.vkCmdPushDescriptorSetKHR(g_cb, bp, lay->layout, 0, g_w.n, g_w.w);
+                     else if (ps == 2) vk.vkCmdPushDescriptorSetKHR(g_cb, bp, lay->layout, 0, g_dwn, g_dw); }
+    else {
+        g_pd[bp == VK_PIPELINE_BIND_POINT_COMPUTE].n = 0;   // set 0 bound as a set: the last push is no longer what the draws see
+        VkDescriptorSet set = set_alloc(lay->set0); if (!set) return 0;
+        for (uint32_t i = 0; i < g_w.n; i++) g_w.w[i].dstSet = set;
+        if (g_w.n) vk.vkUpdateDescriptorSets(V.dev, g_w.n, g_w.w, 0, NULL);
+        vk.vkCmdBindDescriptorSets(g_cb, bp, lay->layout, 0, 1, &set, 0, NULL);
+    }
+    if (g_prof) g_ps[2] += cntvct() - t2_;
+    if (any_pool) vka_tex_pfb_draw();   // (its pool reads are reported: this submission copies the bitmap out, vka_tex.c "Texture pool reads")
+    if (any_pool) {   // set 1 the pool, and in the same call set 2 the pool reads' bitmap when they are reported (vka_tex.c "Texture pool reads")
+        VkDescriptorSet ps[2] = {vka_bindless_set(), vka_pfb_set()};
+        if (ps[0]) vk.vkCmdBindDescriptorSets(g_cb, bp, lay->layout, 1, ps[1] ? 2 : 1, ps, 0, NULL); else VRED_ONCE("a shader reads the texture pool and there is no pool set");
+    }
+    return 1;
+}
+static void memu_bind_arena(void);
 static int bind_sets(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, VkPipelineBindPoint bp, c0_at *c0) {
     g_w.n = 0;
     int any_pool = 0;
@@ -1192,20 +1217,8 @@ static int bind_sets(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], cons
         g_w.bi[k] = (VkDescriptorBufferInfo){cs.buf, cs.off, n};
         g_w.w[k] = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = VKA_GS_CLAIM_BINDING, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &g_w.bi[k]};
     }
-    uint64_t t2_ = g_prof ? cntvct() : 0;
-    if (lay->push) { int ps = g_w.n ? push_same(bp, lay->layout) : 1;
-                     if (ps == 0) vk.vkCmdPushDescriptorSetKHR(g_cb, bp, lay->layout, 0, g_w.n, g_w.w);
-                     else if (ps == 2) vk.vkCmdPushDescriptorSetKHR(g_cb, bp, lay->layout, 0, g_dwn, g_dw); }
-    else {
-        g_pd[bp == VK_PIPELINE_BIND_POINT_COMPUTE].n = 0;   // set 0 bound as a set: the last push is no longer what the draws see
-        VkDescriptorSet set = set_alloc(lay->set0); if (!set) return 0;
-        for (uint32_t i = 0; i < g_w.n; i++) g_w.w[i].dstSet = set;
-        if (g_w.n) vk.vkUpdateDescriptorSets(V.dev, g_w.n, g_w.w, 0, NULL);
-        vk.vkCmdBindDescriptorSets(g_cb, bp, lay->layout, 0, 1, &set, 0, NULL);
-    }
-    if (g_prof) g_ps[2] += cntvct() - t2_;
-    if (any_pool) { VkDescriptorSet ps = vka_bindless_set(); if (ps) vk.vkCmdBindDescriptorSets(g_cb, bp, lay->layout, 1, 1, &ps, 0, NULL); else VRED_ONCE("a shader reads the texture pool and there is no pool set"); }
-    return 1;
+    if (sh[0] && sh[0]->memu == 2 && bp == VK_PIPELINE_BIND_POINT_GRAPHICS) memu_bind_arena();   // a mesh draw through compute: the arena it draws (vka_memu_draw.inc)
+    return sets_push(lay, bp, any_pool);
 }
 // Images first used by a draw (from the walk, walk_all), or remade with storage use (vka_tex.c img_storage_upgrade): dry = only whether there is one
 static int make_images(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], int dry) {
@@ -1466,6 +1479,26 @@ static void draw_log(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], cons
         VLOG("draw %llu:   stage %d binding %u%s texture ID %d sampler ID %d dim %#x: %s", k, st, r->binding, r->what == VKA_R_IMG ? " (image)" : "", r->tid, r->sid, r->dim, why);
     }
 }
+#include "vka_memu_draw.inc"
+static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
+    if (VKA_ENV("DM_VK_VEGETATION", 1) || d->tf_on || !sh[7] ||
+        !vka_vegetation_key(DM_GAME_ID, sh[7]->key)) return 0;
+    for (int stage = 0; stage < VKA_NSTAGE; stage++) {
+        const vka_shader *shader = sh[stage];
+        if (!shader) continue;
+        for (unsigned j = 0; j < shader->e->bind_count; j++) {
+            const dmsh_vk_bind *binding = &shader->b[j];
+            if ((binding->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC | DMSH_VK_BF_NOSLOT)) ||
+                binding->kind == DMSH_VK_KIND_GMEM_LOG || binding->kind == DMSH_VK_KIND_UNKNOWN)
+                return 0;
+        }
+    }
+    static uint64_t omitted;
+    if (++omitted == 1 || omitted % 4096 == 0)
+        VLOG("lower vegetation detail: %llu mesh draws omitted", (unsigned long long)omitted);
+    return 1;
+}
+
 void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
@@ -1487,7 +1520,8 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     PT(0);
     // An NVN2 mesh draw (nvnCommandBufferDrawMeshTasks, hle_nvn.c): the task (optional) and mesh shaders of one program, the fragment stage's shader, in a mesh pipeline
     // (vka_pso.c pstate_fill) drawn with vkCmdDrawMeshTasksEXT: no vertex input, primitive type or index buffer
-    const int mesh = dw && dw->prim == NVN_PRIM_MESH;
+    int mesh = dw && dw->prim == NVN_PRIM_MESH;
+    memu_ent *memu_e = NULL;   // a mesh draw through compute (vka_memu_draw.inc): drawn as a vertex draw of the arena
     if (mesh) {
         // (no fallback without the extension: the translated mesh programs exist only as mesh-stage modules, so a device without them draws neither the direct nor the indirect form)
         if (!V.mesh && VKA_ENV("DM_VK_SKIP_LOG", 0)) {   // diagnostic: what the skipped mesh draw would draw
@@ -1498,7 +1532,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
                  t_ ? (unsigned long long)t_->key : 0ull, m_ ? (unsigned long long)m_->key : 0ull, f_ ? (unsigned long long)f_->key : 0ull, dw->count, dw->ind ? " (indirect)" : "", has_rt && rt ? rt->n : -1,
                  c0_ ? (unsigned long long)c0_->serial : 0ull, c0_ ? c0_->d.width : 0, c0_ ? c0_->d.height : 0, c0_ ? c0_->d.format : 0,
                  dz_ ? (unsigned long long)dz_->serial : 0ull, dz_ ? dz_->d.width : 0, dz_ ? dz_->d.height : 0, dz_ ? dz_->d.format : 0, d->chmask.mask); }
-        if (!V.mesh) SKIP("mesh draw (nvnCommandBufferDrawMeshTasks%s) on a device without VK_EXT_mesh_shader (or DM_VK_MESH=0): skipped", dw->ind ? "Indirect" : "");
+        if (!V.mesh && !V.memu) SKIP("mesh draw (nvnCommandBufferDrawMeshTasks%s) on a device without VK_EXT_mesh_shader (or DM_VK_MESH=0): skipped", dw->ind ? "Indirect" : "");
         if (dw->ind && !vk.vkCmdDrawMeshTasksIndirectEXT) SKIP("indirect mesh draw: the driver has no vkCmdDrawMeshTasksIndirectEXT: skipped");
         // The program whose task and mesh shaders run: the fragment stage's when it has a mesh shader (a program's stages are bound together), else the one bound at the
         // mesh stage bit. Task and mesh come from the same program (a program's task shader feeds its own mesh shader)
@@ -1530,9 +1564,16 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
             SKIP("mesh draw: pixel shader %016llx reads per-primitive inputs that mesh shader %016llx does not write: skipped", (unsigned long long)sh[1]->key, (unsigned long long)sh[7]->key);
         if (sh[1] && !(sh[1]->e->flags & DMSH_VK_F_MESH_PRIM) && (sh[7]->e->flags & DMSH_VK_F_MESH_PRIM))
             VRED_ONCE("mesh draw: mesh shader %016llx writes per-primitive outputs and pixel shader %016llx has no per-primitive inputs: any it reads there are undefined", (unsigned long long)sh[7]->key, (unsigned long long)sh[1]->key);
-        if (dw->first) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VRED("mesh draw with first workgroup %d (count %d): drawn from 0 (the translated task / mesh shaders read their workgroup index with no base; open)", dw->first, dw->count); }
+        if (dw->first && !V.memu) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VRED("mesh draw with first workgroup %d (count %d): drawn from 0 (the translated task / mesh shaders read their workgroup index with no base; open)", dw->first, dw->count); }
         if (!dw->ind && dw->count <= 0) return;   // (an indirect draw's count is the GPU's)
         if (d->tf_on) VRED_ONCE("transform feedback with a mesh draw: drawn without capture");
+        if (vegetation_cut(d, sh)) return;
+        if (V.memu) {   // through compute: its mesh work was done before the pass opened; it draws the arena with the mesh shader's vertex shader
+            memu_e = memu_find();
+            if (!memu_e) { vka_memu_n_skip++; SKIP("mesh draw through compute that the look-ahead did not prepare: skipped"); }
+            if (!memu_e->ok) { g_skipped++;  return; }   // (logged where its shaders were refused)
+            sh[0] = memu_e->vs; sh[6] = sh[7] = NULL; mesh = 0;
+        }
     } else {
         for (int st = 0; st < 5; st++) if (!resolve(d->bst[st], st, &sh[st], &bad)) SKIP("draw skipped: no shader library");
         if (bad) SKIPQ();   // a refused or missing shader (logged when it was made)
@@ -1544,12 +1585,13 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     if (d->poly.cull == NVN_FACE_FRONT_AND_BACK && !d->rast_discard) return;
     int prim = dw ? dw->prim : di->prim, expand = 0;
     VkPrimitiveTopology topo = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;   // (a mesh pipeline's: every translated mesh shader outputs triangles)
-    if (!mesh) {
+    if (memu_e) topo = memu_e->points ? VK_PRIMITIVE_TOPOLOGY_POINT_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    else if (!mesh) {
         topo = topology(prim, &expand);
         if (expand < 0) SKIP("primitive type %d not on Vulkan: the draw is skipped", prim);
         if (topo == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) SKIP("tessellation patches are not on Vulkan yet (no patch size is recorded): the draw is skipped");
     }
-    uint64_t ind = dw ? dw->ind : di->ind;
+    uint64_t ind = memu_e ? 0 : dw ? dw->ind : di->ind;
     // A geometry shader that writes memory makes those writes in the run that claims its primitive (vka_spv_gs_claim): a zeroed word per primitive at VKA_GS_CLAIM_BINDING.
     // Primitive IDs restart with each instance and an indirect draw's count is the GPU's, so those draws take the shader as it is (each run writing)
     g_claim_words = 0;
@@ -1642,8 +1684,8 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
             blend_st b0 = adv_blend(d->blend[0]);
             if (is_src1(b0.src_rgb) || is_src1(b0.dst_rgb) || is_src1(b0.src_a) || is_src1(b0.dst_a)) variant = DMSH_VK_MOD_DUAL;
         }
-        if ((fs->e->flags & DMSH_VK_F_ALPHA_TEST) && d->color.alpha_func != NVN_ALPHA_FUNC_ALWAYS) k.alpha_func = (uint8_t)d->color.alpha_func;
     }
+    if (fs && (fs->e->flags & DMSH_VK_F_ALPHA_TEST) && d->color.alpha_func != NVN_ALPHA_FUNC_ALWAYS) k.alpha_func = (uint8_t)d->color.alpha_func;
     // No library variant for a float output into an integer attachment (the library has MOD_UINT only for outputs made of integer bits or constants): the base module
     // with those outputs retyped as the integer vectors of their bits (VKA_FS_RETYPE, vka_spv_fout_retype), which is what the hardware writes. DM_VK_FOUT_RETYPE=0: not written, as before
     // Only a module that was rewritten is used (one the rewrite refuses falls back to the base module, whose float outputs those targets then do not take: written = 0 below).
@@ -1766,7 +1808,11 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     // (vk_android_spv.py base_instance), which is each indirect draw's own firstInstance and binst for the direct ones; the build reports any other stage that reads it
     uint32_t inst = (uint32_t)((dw ? dw->instances : di->instances) > 0 ? (dw ? dw->instances : di->instances) : 1), binst = d->b.base_instance;
     if (mesh && dw->ind) vk.vkCmdDrawMeshTasksIndirectEXT(g_cb, mi.buf, mi.off, 1, 12);   // the {count, 1, 1} record mesh_ind_args made
-    else if (mesh) {   // count workgroups of the task shader, or of the mesh shader without one (the device's limit per dimension: maxTaskWorkGroupCount / maxMeshWorkGroupCount, 65535 on the Adreno 840)
+    else if (memu_e) {
+        VkDeviceSize ro = MB.rec.off + ((VkDeviceSize)memu_e->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_DRAW) * 4;
+        if (memu_e->indexed) { ib_bind(MB.arena, 0, VK_INDEX_TYPE_UINT32); vk.vkCmdDrawIndexedIndirect(g_cb, MB.rec.buf, ro, 1, 20); }
+        else vk.vkCmdDrawIndirect(g_cb, MB.rec.buf, ro, 1, 16);
+    } else if (mesh) {   // count workgroups of the task shader, or of the mesh shader without one (the device's limit per dimension: maxTaskWorkGroupCount / maxMeshWorkGroupCount, 65535 on the Adreno 840)
         static uint32_t largest; if ((uint32_t)dw->count > largest) { largest = (uint32_t)dw->count; static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VLOG("mesh draw: largest so far %u workgroups (task %016llx mesh %016llx)", largest, sh[6] ? (unsigned long long)sh[6]->key : 0ull, (unsigned long long)sh[7]->key); }
         uint32_t maxg = sh[6] ? V.task_groups : V.mesh_groups;
         if ((uint32_t)dw->count > maxg) SKIP("mesh draw of %d workgroups: more than the device's %u in one dimension; skipped", dw->count, maxg);

@@ -375,3 +375,5 @@ Ocarina 0.1.6 cold-run memory lifetime fixes (2026-11-12):
 - ASan/UBSan production-helper tests:1001 pipeline handles, publication/commit boundary, GPU completion, failed optimization, RAM thresholds/override, pool generations and alias protection. Shader ABI/library and 42k+6 import preserved. Same package/version/branch and cached update signing key; no on-device peak/FPS claim.
 
 Validate proportional optional-pipeline RAM reserve in the upstream regression.
+
+Banana Native GPU-demand texture residency and compute mesh vegetation, full-vegetation toggle ON by default; preserve shader library, ABI and signer.

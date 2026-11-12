@@ -719,4 +719,6 @@
         <item>VRS 4×2</item>
         <item>VRS 4×4</item>
     </string-array>
+    <string name="s2_full_vegetation">Vegetação completa</string>
+    <string name="s2_full_vegetation_note">Ligada: desenha a grama e a folhagem completas. Desligada: reduz os grupos de vegetação revisados. Reinicie o jogo para aplicar.</string>
 </resources>

@@ -6,6 +6,7 @@
 // thread), not at nvnProgramSetShaders
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_memu_spv.h"
 #include "../nvn/nvn_mtl.h"
 #include "../nvn/dmsh_chain.h"
 #include "../nvn/dmsh_chain_vk.h"
@@ -436,6 +437,75 @@ int vka_static(VkDeviceSize n, VkDeviceSize align, vka_span *out) {
     return 1;
 }
 
+// ---------- Texture pool reads: every module made reports the pool IDs it reads (vka_spv_pool_fb; vka_tex.c "Texture pool reads") ----------
+// The hook sits over vkCreateShaderModule, so every module of the library and every variant made from it at pipeline time (vertex inputs, outputs, textures retyped,
+// instanced, geometry claim and link, folded constants) carries the code; the replay's own modules read no pool and pass unchanged. A pixel module given
+// EarlyFragmentTests (its stores would otherwise move its depth test after shading) gets a twin without them for the pipelines whose tests must stay late: alpha to
+// coverage, or the alpha test on when its discard is the module's only one (vka_shader_pfb_pick, vka_pso.c). A module the rewrite refuses is used as it is: its pool
+// reads report nothing (counted, logged)
+static PFN_vkCreateShaderModule g_csm_next; static PFN_vkDestroyShaderModule g_dsm_next;
+typedef struct { VkShaderModule early, late; int kind; } pfb_twin;
+static pfb_twin *g_tw; static size_t g_ntw, g_twcap; static pthread_mutex_t g_twmu = PTHREAD_MUTEX_INITIALIZER;
+static _Atomic uint64_t g_pfb_mods, g_pfb_sites, g_pfb_early, g_pfb_blind;
+static VkResult VKAPI_CALL csm_pfb(VkDevice d, const VkShaderModuleCreateInfo *ci, const VkAllocationCallbacks *a, VkShaderModule *m) {
+    unsigned fl = vka_tex_pfb_flags();
+    if (!fl || !ci || !ci->pCode || ci->codeSize < 20) return g_csm_next(d, ci, a, m);
+    size_t on = 0; int sites = 0, kind = 0; char err[200] = "";
+    uint32_t *o = vka_spv_pool_fb(ci->pCode, ci->codeSize / 4, DMSH_VK_SET_POOL, DMSH_VK_POOL_TEX_BINDING, VKA_POOL_FB_SET, VKA_POOL_FB_BINDING, fl, DMSH_VK_SPEC_ALPHA_FUNC, &on, &sites, &kind, err, sizeof err);
+    if (!o) {
+        if (err[0]) { uint64_t n = atomic_fetch_add(&g_pfb_blind, 1); if (n < 8) VRED("texture pool reads: a module's pool reads report nothing (%s): a texture it alone reads through the pool is not made", err); }
+        return g_csm_next(d, ci, a, m);
+    }
+    VkShaderModuleCreateInfo c2 = *ci; c2.codeSize = on * 4; c2.pCode = o;
+    VkResult r = g_csm_next(d, &c2, a, m);
+    free(o);
+    if (r) return r;
+    uint64_t nm = atomic_fetch_add(&g_pfb_mods, 1) + 1; atomic_fetch_add(&g_pfb_sites, (uint64_t)sites);
+    if (kind) {   // the twin without EarlyFragmentTests
+        atomic_fetch_add(&g_pfb_early, 1);
+        size_t ln = 0; int ls = 0, lk = 0; uint32_t *l = vka_spv_pool_fb(ci->pCode, ci->codeSize / 4, DMSH_VK_SET_POOL, DMSH_VK_POOL_TEX_BINDING, VKA_POOL_FB_SET, VKA_POOL_FB_BINDING, fl & ~(unsigned)VKA_PFB_EARLY,
+                                                            DMSH_VK_SPEC_ALPHA_FUNC, &ln, &ls, &lk, err, sizeof err);
+        VkShaderModule lm = VK_NULL_HANDLE;
+        if (l) { c2.codeSize = ln * 4; c2.pCode = l; if (g_csm_next(d, &c2, a, &lm)) lm = VK_NULL_HANDLE; free(l); }
+        pthread_mutex_lock(&g_twmu);
+        if (lm && g_ntw == g_twcap) { size_t nc = g_twcap ? 2 * g_twcap : 256; pfb_twin *n = realloc(g_tw, nc * sizeof *n); if (n) { g_tw = n; g_twcap = nc; } }
+        if (lm && g_ntw < g_twcap) { g_tw[g_ntw++] = (pfb_twin){*m, lm, kind}; lm = VK_NULL_HANDLE; }
+        pthread_mutex_unlock(&g_twmu);
+        if (lm || !l) {   // no twin: the module without the mode serves every pipeline (late tests: correct, slower)
+            if (lm) g_dsm_next(d, lm, a);
+            g_dsm_next(d, *m, a); *m = VK_NULL_HANDLE;
+            uint32_t *w2 = vka_spv_pool_fb(ci->pCode, ci->codeSize / 4, DMSH_VK_SET_POOL, DMSH_VK_POOL_TEX_BINDING, VKA_POOL_FB_SET, VKA_POOL_FB_BINDING, fl & ~(unsigned)VKA_PFB_EARLY, DMSH_VK_SPEC_ALPHA_FUNC, &ln, &ls, &lk, err, sizeof err);
+            if (!w2) return g_csm_next(d, ci, a, m);
+            c2.codeSize = ln * 4; c2.pCode = w2; r = g_csm_next(d, &c2, a, m); free(w2);
+        }
+    }
+    if (nm == 1 || !(nm & (nm - 1)))
+        VLOG("texture pool reads: %llu modules report the pool IDs they read (%llu reads given the code, %llu pixel modules with early depth tests and a twin without, %llu refused; DM_VK_POOL_FB=0 off)",
+             (unsigned long long)nm, (unsigned long long)atomic_load(&g_pfb_sites), (unsigned long long)atomic_load(&g_pfb_early), (unsigned long long)atomic_load(&g_pfb_blind));
+    return r;
+}
+static void VKAPI_CALL dsm_pfb(VkDevice d, VkShaderModule m, const VkAllocationCallbacks *a) {
+    VkShaderModule late = VK_NULL_HANDLE;
+    if (m) { pthread_mutex_lock(&g_twmu);
+             for (size_t i = 0; i < g_ntw; i++) if (g_tw[i].early == m) { late = g_tw[i].late; g_tw[i] = g_tw[--g_ntw]; break; }
+             pthread_mutex_unlock(&g_twmu); }
+    if (late) g_dsm_next(d, late, a);
+    g_dsm_next(d, m, a);
+}
+void vka_shader_pfb_hook(void) {
+    if (!vk.vkCreateShaderModule || vk.vkCreateShaderModule == csm_pfb || !vk.vkDestroyShaderModule) return;
+    g_csm_next = vk.vkCreateShaderModule; vk.vkCreateShaderModule = csm_pfb;
+    g_dsm_next = vk.vkDestroyShaderModule; vk.vkDestroyShaderModule = dsm_pfb;
+}
+VkShaderModule vka_shader_pfb_pick(VkShaderModule m, int a2c, int alpha_func) {
+    if (!m) return m;
+    VkShaderModule r = m;
+    pthread_mutex_lock(&g_twmu);
+    for (size_t i = 0; i < g_ntw; i++) if (g_tw[i].early == m) { if (a2c || (g_tw[i].kind == 2 && alpha_func)) r = g_tw[i].late; break; }
+    pthread_mutex_unlock(&g_twmu);
+    return r;
+}
+
 // ---------- Shaders by key ----------
 typedef struct { uint64_t key; vka_shader *sh; const vka_shlib *lib; } shent;
 static shent *g_sh; static size_t g_shcap, g_shn;
@@ -462,11 +532,11 @@ static const char *refusal(const vka_shlib *L, const dmsh_vk_entry *e) {
     if (e->stage == DMSH_VK_STAGE_GS && !V.geom) return "a geometry shader on a device without geometryShader";
     if ((e->stage == DMSH_VK_STAGE_TCS || e->stage == DMSH_VK_STAGE_TES) && !V.tess) return "a tessellation shader on a device without tessellationShader";
     // NVN2 task and mesh programs, and the pixel shaders that read their per-primitive outputs (valid only in a mesh pipeline): only with VK_EXT_mesh_shader (vka_dev.c)
-    if ((e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS || (e->flags & DMSH_VK_F_MESH_PRIM)) && !V.mesh) return "a task / mesh shader (or a pixel shader of their per-primitive outputs) on a device without VK_EXT_mesh_shader (or DM_VK_MESH=0)";
-    if (e->stage == DMSH_VK_STAGE_TS && !V.task) return "a task shader on a device with mesh shaders but without taskShader";
+    if ((e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS || (e->flags & DMSH_VK_F_MESH_PRIM)) && !V.mesh && !V.memu) return "a task / mesh shader (or a pixel shader of their per-primitive outputs) on a device without VK_EXT_mesh_shader (or DM_VK_MESH=0)";
+    if (e->stage == DMSH_VK_STAGE_TS && !V.task && !V.memu) return "a task shader on a device with mesh shaders but without taskShader";
     if (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS) {   // the workgroup (the entry's local) within the device's limit
         uint64_t inv = (uint64_t)e->local[0] * e->local[1] * e->local[2];
-        if (!inv || inv > (e->stage == DMSH_VK_STAGE_TS ? V.task_inv : V.mesh_inv)) return "a task / mesh workgroup larger than the device's (maxTaskWorkGroupInvocations / maxMeshWorkGroupInvocations)";
+        if (!inv || inv > (V.memu ? V.props.limits.maxComputeWorkGroupInvocations : e->stage == DMSH_VK_STAGE_TS ? V.task_inv : V.mesh_inv)) return "a task / mesh workgroup larger than the device's (maxTaskWorkGroupInvocations / maxMeshWorkGroupInvocations)";
     }
     const dmsh_vk_bind *b = vka_shlib_binds(L, e);
     for (unsigned i = 0; i < e->bind_count; i++) if (b[i].kind == DMSH_VK_KIND_UNKNOWN) return "a binding the build could not place";
@@ -500,9 +570,18 @@ static uint32_t *spv_override(uint64_t key, unsigned variant, size_t *nb) {
     VLOG("DM_VK_SPV_OVERRIDE: shader %016llx variant %u from %s (%ld bytes)", (unsigned long long)key, variant, p, n);
     *nb = (size_t)n; return w;
 }
+static uint32_t *lib_words(const vka_shlib *L, const dmsh_vk_entry *e, const dmsh_vk_module *m, size_t *nb, char *err, size_t errn) {
+    uint32_t *w = vka_shlib_spirv(L, m, nb, err, errn);
+    if (w && V.memu && e && e->stage == DMSH_VK_STAGE_FS && (e->flags & DMSH_VK_F_MESH_PRIM)) {
+        size_t on = 0; char e2[160]; uint32_t *o = vka_memu_fs_flat(w, *nb / 4, &on, e2, sizeof e2);
+        if (o) { free(w); w = o; *nb = on * 4; }
+        else if (e2[0]) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("pixel shader %016llx: per-primitive inputs not made flat (%s): its pipelines are refused", (unsigned long long)e->key, e2); }
+    }
+    return w;
+}
 static VkShaderModule spv_module(const vka_shlib *L, const dmsh_vk_entry *e, const dmsh_vk_module *m, uint64_t key, const char **why, char *err, size_t errn) {
     size_t nb = 0; uint32_t *w = spv_override(key, m->variant, &nb);
-    if (!w) w = vka_shlib_spirv(L, m, &nb, err, errn);
+    if (!w) w = lib_words(L, e, m, &nb, err, errn);
     if (!w) { *why = err; return VK_NULL_HANDLE; }
     if (e->flags & DMSH_VK_F_SUBGROUP) single_lane(key, e->stage, &w, &nb);
     VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = nb, .pCode = w};
@@ -510,6 +589,37 @@ static VkShaderModule spv_module(const vka_shlib *L, const dmsh_vk_entry *e, con
     free(w);
     if (r) { snprintf(err, errn, "vkCreateShaderModule %d (variant %u of %016llx)", r, m->variant, (unsigned long long)key); *why = err; return VK_NULL_HANDLE; }
     return mod;
+}
+// A pixel shader drawn behind another mesh module than its own (vka_draw.c mesh_cut's depth draw): its base module with the inputs moved or made constant by map
+// (vka_spv_input_remap), as a shader of its own (another key, so neither the pipeline table nor the prewarm list takes it for the library's shader). Made once per
+// (shader, map); NULL when the rewrite refuses it (logged)
+vka_shader *vka_shader_remap(vka_shader *s, uint64_t map) {
+    static struct { vka_shader *s, *v; uint64_t map; } cache[32]; static int ncache; static pthread_mutex_t mu = PTHREAD_MUTEX_INITIALIZER;
+    if (!s || s->e->stage != DMSH_VK_STAGE_FS) return NULL;
+    pthread_mutex_lock(&mu);
+    for (int i = 0; i < ncache; i++) if (cache[i].s == s && cache[i].map == map) { vka_shader *v = cache[i].v; pthread_mutex_unlock(&mu); return v; }
+    vka_shader *v = NULL; char err[256] = ""; uint32_t mv = 0, cs = 0;
+    const dmsh_vk_module *m = ncache < 32 ? vka_shlib_module(s->lib, s->e, DMSH_VK_MOD_BASE) : NULL;
+    size_t nb = 0; uint32_t *w = m ? lib_words(s->lib, s->e, m, &nb, err, sizeof err) : NULL;
+    if (w && (s->e->flags & DMSH_VK_F_SUBGROUP)) single_lane(s->key, s->e->stage, &w, &nb);
+    size_t on = 0; uint32_t *o = w ? vka_spv_input_remap(w, nb / 4, map, &on, &mv, &cs, err, sizeof err) : NULL;
+    free(w);
+    VkShaderModule mod = VK_NULL_HANDLE;
+    if (o) { VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = on * 4, .pCode = o}; VkResult r = vk.vkCreateShaderModule(V.dev, &ci, NULL, &mod);
+             if (r) { snprintf(err, sizeof err, "vkCreateShaderModule %d", r); mod = VK_NULL_HANDLE; } }
+    free(o);
+    if (mod && (v = calloc(1, sizeof *v))) {
+        *v = *s; memset(v->mods, 0, sizeof v->mods); v->mods[DMSH_VK_MOD_BASE] = mod;
+        v->vin = NULL; v->fout = NULL; v->imgm = NULL; v->gs_claim = VK_NULL_HANDLE;
+        v->key = s->key ^ 0x52454d41505f5053ull ^ map * 0x9E3779B97F4A7C15ull;   // ("REMAP_PS"): no library key
+        VLOG("pixel shader %016llx for another mesh module: inputs at locations %#x moved, at %#x made (0, 0, 0, 1) (map %016llx)", (unsigned long long)s->key, mv, cs, (unsigned long long)map);
+    } else {
+        if (mod) vk.vkDestroyShaderModule(V.dev, mod, NULL);
+        VRED("pixel shader %016llx: its inputs not moved for another mesh module (map %016llx): %s", (unsigned long long)s->key, (unsigned long long)map, err[0] ? err : ncache >= 32 ? "too many such shaders" : "nothing to move");
+    }
+    if (ncache < 32) { cache[ncache].s = s; cache[ncache].map = map; cache[ncache++].v = v; }
+    pthread_mutex_unlock(&mu);
+    return v;
 }
 VkShaderModule vka_shader_module(vka_shader *s, int variant) {
     if (variant < 0 || variant > DMSH_VK_MOD_SHUFFLE_LDS) return VK_NULL_HANDLE;
@@ -529,7 +639,7 @@ VkShaderModule vka_shader_module(vka_shader *s, int variant) {
 // primitive, each run writing memory). out NULL: only counts them. Made from the base module after the one-invocation subgroup rewrite
 static int gs_words(vka_shader *s, uint32_t **out, size_t *on, char *err, size_t errn) {
     const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, DMSH_VK_MOD_BASE);
-    size_t nb = 0; uint32_t *w = m ? vka_shlib_spirv(s->lib, m, &nb, err, errn) : NULL;
+    size_t nb = 0; uint32_t *w = m ? lib_words(s->lib, s->e, m, &nb, err, errn) : NULL;
     if (!w) return -1;
     if (s->e->flags & DMSH_VK_F_SUBGROUP) single_lane(s->key, s->e->stage, &w, &nb);
     int r = vka_spv_gs_claim(w, nb / 4, VKA_GS_CLAIM_BINDING, out, on, err, errn);
@@ -559,7 +669,7 @@ VkShaderModule vka_shader_vin_module(vka_shader *s, uint32_t umask, uint32_t sma
     pthread_mutex_unlock(&g_mu);
     VkShaderModule mod = VK_NULL_HANDLE; char err[256] = ""; int own = 0;   // own: made here (the base module of the fallback is the shader's, never destroyed)
     const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, DMSH_VK_MOD_BASE);
-    size_t nb = 0; uint32_t *w = m ? vka_shlib_spirv(s->lib, m, &nb, err, sizeof err) : NULL;
+    size_t nb = 0; uint32_t *w = m ? lib_words(s->lib, s->e, m, &nb, err, sizeof err) : NULL;
     if (w && (s->e->flags & DMSH_VK_F_SUBGROUP)) single_lane(s->key, s->e->stage, &w, &nb);
     size_t on = 0; uint32_t *o = w ? vka_spv_vin_retype(w, nb / 4, umask, smask, &on, err, sizeof err) : NULL;
     if (o) { VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = on * 4, .pCode = o};
@@ -584,7 +694,7 @@ VkShaderModule vka_shader_fout_module(vka_shader *s, uint32_t umask, uint32_t sm
     pthread_mutex_unlock(&g_mu);
     VkShaderModule mod = VK_NULL_HANDLE; char err[256] = ""; int own = 0;
     const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, DMSH_VK_MOD_BASE);
-    size_t nb = 0; uint32_t *w = m ? vka_shlib_spirv(s->lib, m, &nb, err, sizeof err) : NULL;
+    size_t nb = 0; uint32_t *w = m ? lib_words(s->lib, s->e, m, &nb, err, sizeof err) : NULL;
     if (w && (s->e->flags & DMSH_VK_F_SUBGROUP)) single_lane(s->key, s->e->stage, &w, &nb);
     size_t on = 0; uint32_t *o = w ? vka_spv_fout_retype(w, nb / 4, umask, smask, &on, err, sizeof err) : NULL;
     if (o) { VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = on * 4, .pCode = o};
@@ -621,7 +731,7 @@ VkShaderModule vka_shader_img_module(vka_shader *s, const vka_imgrt *rt) {
     for (; n < VKA_IMGRT_MAX && rt->b[n]; n++) sel[n] = (vka_spv_imgsel){0, rt->b[n] >> 16, (uint8_t)(rt->b[n] & 0xff), (uint8_t)(rt->b[n] >> 8 & 0xff)};
     int var = vka_shader_cs_variant(s);
     const dmsh_vk_module *m = n ? vka_shlib_module(s->lib, s->e, var) : NULL;
-    size_t nb = 0; uint32_t *w = m ? vka_shlib_spirv(s->lib, m, &nb, err, sizeof err) : NULL;
+    size_t nb = 0; uint32_t *w = m ? lib_words(s->lib, s->e, m, &nb, err, sizeof err) : NULL;
     if (w && (s->e->flags & DMSH_VK_F_SUBGROUP)) single_lane(s->key, s->e->stage, &w, &nb);
     size_t on = 0; uint32_t *o = w ? vka_spv_img_retype(w, nb / 4, sel, n, &on, err, sizeof err) : NULL;
     if (o) { VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = on * 4, .pCode = o};
@@ -661,7 +771,8 @@ vka_shader *vka_shader_make(const vka_shlib *L, uint64_t key) {
         why = refusal(L, e);
         const dmsh_vk_module *m = why ? NULL : vka_shlib_module(L, e, DMSH_VK_MOD_BASE);
         if (!why && !m) why = "no base module";
-        if (m) s->mods[DMSH_VK_MOD_BASE] = spv_module(L, e, m, key, &why, err, sizeof err);
+        if (m && V.memu && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS)) {}
+        else if (m) s->mods[DMSH_VK_MOD_BASE] = spv_module(L, e, m, key, &why, err, sizeof err);
         if (!why && e->stage == DMSH_VK_STAGE_GS && VKA_ENV("DM_VK_GS_CLAIM", 1)) {   // memory writes: made once per primitive (vka_spv_gs_claim)
             char e2[256] = ""; s->gs_fx = gs_words(s, NULL, NULL, e2, sizeof e2);
             if (s->gs_fx < 0) VRED("geometry shader %016llx: memory writes not put under a claim (%s): drawn as it is, its writes repeated by the device's runs of each primitive", (unsigned long long)key, e2);
@@ -797,6 +908,7 @@ static const vka_shlib *library_for_key(uint64_t key) {
 }
 vka_shader *vka_shader_by_key(uint64_t key) {
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    if (ok && V.memu && !vka_shlib_find(&g_lib, key)) { vka_shader *d = vka_memu_by_key(key); if (d) return d; }   // a task / mesh shader's compute or vertex form (the prewarm list's)
     return ok ? vka_shader_make(library_for_key(key), key) : NULL;
 }
 
@@ -1081,4 +1193,25 @@ int vka_prog_shaders(const prog_t *p, vka_progsh *out) {
     vka_prog_put(p->serial, out);
     return 1;
 }
+// A task / mesh shader's base words for its compute form (vka_memu.c): the library's module, with the one-invocation subgroup rewrite where the device's compute stage
+// needs it (sg_plan's compute row, not the mesh stage's). malloc'd
+uint32_t *vka_shader_memu_words(vka_shader *s, size_t *nb, char *err, size_t errn) {
+    const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, DMSH_VK_MOD_BASE);
+    uint32_t *w = m ? lib_words(s->lib, s->e, m, nb, err, errn) : NULL;
+    if (!m) snprintf(err, errn, "no base module");
+    if (w && (s->e->flags & DMSH_VK_F_SUBGROUP)) single_lane(s->key, DMSH_VK_STAGE_CS, &w, nb);
+    return w;
+}
+int vka_shader_lib_has(uint64_t key) { pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu); return ok && vka_shlib_find(&g_lib, key) != NULL; }
+int vka_shader_memu_key(uint64_t key) {
+    pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
+    if (!ok || vka_shlib_find(&g_lib, key)) return 0;
+    static const uint64_t tag[3] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS};
+    for (int i = 0; i < 3; i++) {
+        const dmsh_vk_entry *e = vka_shlib_find(&g_lib, key ^ tag[i]);
+        if (e && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS)) return 1;
+    }
+    return 0;
+}
+
 #endif

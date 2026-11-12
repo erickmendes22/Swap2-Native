@@ -201,6 +201,12 @@ final class GameSettings {
                 .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
                 .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
+        if (Prefs.OCARINA_TITLE.equals(id)) {
+            Ui.Setting vegetation = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_full_vegetation), null)
+                    .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
+            vegetation.value(a.getString(R.string.s2_full_vegetation_note));
+            box.addView(vegetation.view);
+        }
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip, "Economia de RAM (usa armazenamento)", null)
                 .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
         ram.value("Guarda pools grandes de texturas no cache em armazenamento. Pode gravar ~2 GB "
