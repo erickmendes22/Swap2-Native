@@ -326,17 +326,18 @@ void vka_rp_end(void) {
     } else if (R.swrite) {
         if (reused) g_rp_postub_barriers_saved++;
         else { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }
-    } else if (!R.awrite && !strcmp(DM_GAME_ID, "0400486024DEC000")
+    } else if (!R.awrite && !R.bar_pending
+               && !strcmp(DM_GAME_ID, "0400486024DEC000")
                && VKA_ENV("DM_VK_OOT_READONLY_PASS", 1)) {
-        // A depth-test-only occlusion pass, a raster-discard pass, or a pass
-        // whose shaders wrote NONE of its colour/depth/stencil attachments
-        // has no attachment-memory producer. Vulkan still executes its
-        // draw commands, occlusion queries and EndRendering in order, but
-        // no memory dependency is needed for attachment writes that did not
-        // occur. Never skip for shader stores, loadOp/attachment clears,
-        // unknown stencil writes or explicit guest barriers (full above).
-        // Guest barriers kept INSIDE a read-only pass likewise have no
-        // attachment writes to publish. Setting =0 restores the old scope.
+        // A pure depth-test / sample-only pass has no colour/depth/stencil
+        // OR shader-memory writer (R.swrite was handled above). Its reads
+        // still need an EXECUTION dependency against later attachment or
+        // transfer writes (WAR); omitting the entire pipeline barrier is
+        // unsafe with dynamic rendering. Replace the attachment memory
+        // flush with a graphics-read -> ALL_COMMANDS execution dependency.
+        // No loadOp/attachment clear, stencil write, or explicit guest
+        // barrier may take this path. =0 keeps the original memory barrier.
+        vka_graphics_read_barrier(g_cb);
         g_rp_readonly_barriers_avoided++;
     } else {
         if (pending_attachment) g_rp_pending_attachment++;
@@ -503,7 +504,7 @@ void vka_rp_bar_stats(char *b, size_t n, double frames) {
     static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0, reused0, ro0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
     if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0 || g_bar_duplicate_avoided != dup0 || g_rp_scoped != scoped0 || g_rp_graphics != graphics0 || g_rp_full != full0 || g_rp_postub_barriers_saved != reused0 || g_rp_readonly_barriers_avoided != ro0)
-        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; pending-attachment scoped %.1f/frame; redundant post-uniform barriers removed %.1f/frame; read-only passes without attachment barrier %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
+        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; pending-attachment scoped %.1f/frame; redundant post-uniform barriers removed %.1f/frame; read-only passes using execution-only dependency %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
                  (g_bar_in - i0) / frames, (g_bar_kept - k0) / frames, (g_bar_late - l0) / frames,
                  (g_bar_duplicate_avoided - dup0) / frames,
                  (g_rp_scoped - scoped0) / frames, (g_rp_graphics - graphics0) / frames, (g_rp_full - full0) / frames, (g_rp_pending_attachment - pending0) / frames, (g_rp_postub_barriers_saved - reused0) / frames, (g_rp_readonly_barriers_avoided - ro0) / frames,
