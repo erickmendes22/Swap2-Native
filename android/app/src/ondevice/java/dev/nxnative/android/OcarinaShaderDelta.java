@@ -27,26 +27,9 @@ final class OcarinaShaderDelta {
 
     private static final String TITLE = "0400486024DEC000";
 
-    /** Static, additive NVN2 update. This file does not change base inputs. */
+    /** Available before :pack starts; never load its native engine in the launcher. */
     static List<String> vegetationKeys() {
-        try {
-            File manifest = new File(PackNative.repo(), "dm/games/" + TITLE + "/vegetation_shaders.tsv");
-            ArrayList<String> keys = new ArrayList<>();
-            for (String row : Files.readAllLines(manifest.toPath(), StandardCharsets.UTF_8)) {
-                if (row.isBlank() || row.startsWith("#")) continue;
-                String[] c = row.split("\t", -1);
-                if (c.length != 4 || !c[0].matches("[0-9a-f]{16}")
-                        || !(c[1].equals("task") || c[1].equals("mesh")) || keys.contains(c[0]))
-                    throw new IOException("Invalid vegetation manifest");
-                keys.add(c[0]);
-            }
-            if (keys.size() != 508) throw new IOException("Incomplete vegetation manifest");
-            java.util.Collections.sort(keys);
-            return List.copyOf(keys);
-        } catch (IOException | RuntimeException e) {
-            android.util.Log.w("OcarinaShaderDelta", "Vegetation manifest unavailable", e);
-            return List.of();
-        }
+        return OcarinaVegetation.KEYS;
     }
 
     static boolean vegetationJob(Job job) {

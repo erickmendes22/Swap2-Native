@@ -832,6 +832,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - on the Android replay, a black or wrong picture from a pack whose shader library loads without a `[RED]` line: every pipeline gets shaders, but the wrong ones. `pack_android.py` printed `[RED] the dump's shader_map.tsv differs from the profile's` when it split, or was given a package (`--shader-pkg`, or one already in `<work>/android-shaders/pkg`) made by another split. → [A shader package of another split gives shaders other shaders' code](../reference/shaders.md#a-shader-package-of-another-split-gives-shaders-other-shaders-code)
 - compute-mesh batches execute without preparation errors, but parts of the scene remain absent and the log reports `is not in the shader library` for task/mesh keys. → [Extended NVN2 stages absent from the shader preparation](../reference/shaders.md#extended-nvn2-stages-absent-from-the-shader-preparation)
 - a cold Android Vulkan run has a memory peak while compiling many pipelines; reopening with the driver cache populated may pass the same scene. This symptom alone does not identify an Android kill reason. → [Linked pipelines retained after optimization](../reference/shaders.md#linked-pipelines-retained-after-optimization)
+- a static shader repair offers historical captures instead of the newly shipped stage set, and its task disappears because the original game remains playable. → [Launcher shader selection before the pack process starts](../reference/shaders.md#launcher-shader-selection-before-the-pack-process-starts)
 
 ## Game state
 

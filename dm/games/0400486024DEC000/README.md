@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Launcher shader selection before the pack process starts](../../../docs/reference/shaders.md#launcher-shader-selection-before-the-pack-process-starts): build 100 selected 56 captures instead of the 508 static stages because the launcher tried to initialize a service-owned native engine.
+
 - [Extended NVN2 stages absent from the shader preparation](../../../docs/reference/shaders.md#extended-nvn2-stages-absent-from-the-shader-preparation): build 98 executes compute-mesh batches but the foliage's original shaders are absent from the preserved full library. Open; an executor-only APK cannot supply them.
 - [Pipelines compiled with the game's floating-point environment on the Vulkan replay](../../../docs/reference/rendering.md#pipelines-compiled-with-the-games-floating-point-environment-on-the-vulkan-replay): its gameplay scene was overexposed (white-yellow walls, Link a dark silhouette) on Qualcomm 891.11.
 - [The spin-wait search's decode cache is per head](../../../docs/reference/rewriter.md#the-spin-wait-searchs-decode-cache-is-per-head): its main's rewrite ran the phone's packer out of memory (5.7 GB); now 668 MB.
@@ -208,3 +210,14 @@ The on-device **Repair missing shaders** action prioritizes this explicit job ov
 At startup the runtime accepts only the exact reviewed stage set with base-compatible inputs, subgroup and buffer alignment, current-chain/ABI metadata, base SPIR-V modules and complete dependencies. The additive lookup precedes the old hot-mesh quarantine only for keys absent from the full base. Original entries retain their old modules. Program stage resolution, derived compute/vertex prewarm lookup and library membership all use that same lookup, avoiding another integration gap. The old capture bootstrap is not needed for this static update and its unverified geometry remains quarantined.
 
 Validation: synthetic NVN2 BNSH -> production extended-slot reader -> verified records; changed code and inconsistent layouts rejected; manifest coverage/dependency checks; actual `vegetation_complete` and `library_for_key` with the production library reader under ASan/UBSan. Existing capture/overlay, mesh replay and chain tests are retained. This is not a visual validation or a measured FPS/RAM improvement. The device must complete the 508-stage preparation and then show the supplement accepted in its startup log before a gameplay result can establish visible foliage.
+
+
+### Build 100 launcher-process regression (2026-11-12)
+
+The phone video `Screenrecorder-20261112-190101.mp4` shows **56**, not 508, in Repair missing shaders, and the confirmation returns to the ready library without visible preparation. Root cause: `vegetationKeys()` called `PackNative.repo()` in the launcher process. Native context is installed only by `PackEngine.create` in the separate `:pack` service process; `repo()` therefore throws `PackNative.context not set`. The exception was swallowed, returning an empty vegetation list and selecting the 56 historical captures instead. The file was present in the APK; successful native builds and extraction tests did not exercise this process boundary.
+
+Fixed: `ocarina_vegetation.py --header` generates the immutable `OcarinaVegetation.KEYS` Java registry from the same reviewed manifest as the native admission header. Launcher selection and persistent job-mode validation no longer require native context, extraction or Python. `--check` verifies both registries against the authoritative table. The shader service still verifies/extracts the real original sources before translation; embedding keys does not manufacture shader code.
+
+A second control-flow bug hid the pending or failed optional shader job whenever the existing base was playable. The launcher now keeps its task visible until the update is done, without revoking Play on the unchanged full base. Explicit repair opens the preparation screen and clears autoplay.
+
+Validation: `test_ocarina_vegetation_launcher.py` compiles the actual production selector and the actual visibility-control prefix on the JVM. With no native packer context and 56 old capture pairs, it requires exactly 508 static keys, zero native repo calls, the separate output path and visible pending/failed progress. Running the same test against build 100 reproduces `Expected 508 ... got 56`; independently restoring its old display prefix reproduces `Pending update hidden as playable base`. Both pass with the fix. Device translation and foliage rendering remain pending. See [launcher process isolation](../../../docs/reference/shaders.md#launcher-shader-selection-before-the-pack-process-starts).

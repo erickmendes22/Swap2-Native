@@ -561,10 +561,12 @@ final class Ondevice {
         void show() {
             boolean alive = job != null && alive();
             boolean ready = job != null && ready(job);
+            boolean pendingUpdate = job != null && !job.hotKeys().isEmpty()
+                    && !"done".equals(job.state());
             // A finished job: its game goes into the list with its pack (once), and the card goes: Play is on the game's card
-            if (ready && !alive && !addedKey(job).equals(Prefs.open(a, "ondevice").getString("added", ""))) addGame(job);
+            if (ready && !pendingUpdate && !alive && !addedKey(job).equals(Prefs.open(a, "ondevice").getString("added", ""))) addGame(job);
             boolean was = view.getVisibility() == View.VISIBLE;
-            if (job == null || ready && listed(job)) { view.setVisibility(View.GONE); publish(null); if (was) a.refresh(); return; }
+            if (job == null || ready && !pendingUpdate && listed(job)) { view.setVisibility(View.GONE); publish(null); if (was) a.refresh(); return; }
             view.setVisibility(View.VISIBLE);
             publish(PrepareState.of(a, job, alive, ready, saveFailed && alive));
             if (!was) a.refresh();   // the games' empty card hides while this one shows
@@ -771,6 +773,8 @@ final class Ondevice {
                         j.stepState("split", "done");
                         j.hotKeys(selected);
                         j.expectedShaders(selected.size());
+                        screen = true;
+                        autoPlay = false;
                         // Never reset/discard the old 42k compiled base; this
                         // scoped job writes a separate current-ABI hot overlay.
                         begin(j, r, need, false);
