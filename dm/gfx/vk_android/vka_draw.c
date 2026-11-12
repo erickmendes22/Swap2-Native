@@ -1480,7 +1480,10 @@ static void draw_log(const vka_dstate *d, vka_shader *const sh[VKA_NSTAGE], cons
     }
 }
 #include "vka_memu_draw.inc"
-static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
+// Apply the same conservative, side-effect-free vegetation predicate to
+// mesh->compute preparation and to the final raster draw.  A raster-only cut
+// still does the task/mesh dispatch, allocates the arena and splits passes.
+static int vegetation_omittable(const vka_dstate *d, vka_shader *const *sh) {
     if (VKA_ENV("DM_VK_VEGETATION", 1) || d->tf_on || !sh[7] ||
         !vka_vegetation_key(DM_GAME_ID, sh[7]->key)) return 0;
     for (int stage = 0; stage < VKA_NSTAGE; stage++) {
@@ -1493,12 +1496,31 @@ static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
                 return 0;
         }
     }
+    return 1;
+}
+// Called before the memu look-ahead and at draw replay.  Resolve exactly the
+// same task/mesh/pixel program pair used in vka_draw; never suppress shaders
+// with memory side effects, unverified inputs, or transform feedback.
+int vka_vegetation_mesh_omit(const vka_dstate *d) {
+    if (VKA_ENV("DM_VK_VEGETATION", 1) || !d || d->tf_on) return 0;
+    vka_shader *sh[VKA_NSTAGE] = {0}, *m = NULL;
+    unsigned bad = 0, b2 = 0;
+    const prog_t *mp = d->bst[7];
+    if (d->bst[1] && d->bst[1] != mp &&
+        resolve(d->bst[1], 7, &m, &b2) && (m || (b2 & (1u << 7))))
+        mp = d->bst[1];
+    if (!resolve(mp, 6, &sh[6], &bad) ||
+        !resolve(mp, 7, &sh[7], &bad) ||
+        !resolve(d->bst[1], 1, &sh[1], &bad) || bad) return 0;
+    return vegetation_omittable(d, sh);
+}
+static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
+    if (!vegetation_omittable(d, sh)) return 0;
     static uint64_t omitted;
     if (++omitted == 1 || omitted % 4096 == 0)
         VLOG("lower vegetation detail: %llu mesh draws omitted", (unsigned long long)omitted);
     return 1;
 }
-
 void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
