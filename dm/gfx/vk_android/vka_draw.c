@@ -229,6 +229,7 @@ static struct {
     p_set_rt rt; int has_rt;                             // the targets it was opened for: a later SET_RT of the same targets keeps it open
     uint32_t cnl[8], dnl; VkExtent2D cext[8], dext;      // each attachment's layers and level size (clears in the pass must cover what they would outside it)
     int swrite;                                          // a draw of the pass wrote memory (storage buffers or images, raw global stores, a geometry shader's claim)
+    int awrite;                                          // an actual colour/depth/stencil write or clear occurred; depth-test-only occlusion passes stay read-only
     int bar_pending;                                     // a game barrier came inside the pass and was taken there (vka_rp_game_barrier): the draws after it are checked (bar_hazard)
 } R;
 // Clears waiting for the pass of their targets (vka_rp_clear), in order: the next draw over the same targets opens its pass with them (loadOp CLEAR, or vkCmdClearAttachments),
@@ -253,6 +254,7 @@ static int rt_same(const p_set_rt *a, int ha, const p_set_rt *b, int hb) {
 // Game barriers (OP_BARRIER) that came with a pass open: taken inside it (DM_VK_BAR_KEEP), ended it at once, ended it later at a draw that needed it (bar_hazard)
 static uint64_t g_bar_in, g_bar_kept, g_bar_late, g_bar_duplicate_avoided;
 static uint64_t g_rp_scoped, g_rp_graphics, g_rp_full, g_rp_pending_attachment;
+static uint64_t g_rp_readonly_barriers_avoided; // no attachment or shader writes; no producer to publish
 static uint64_t g_rp_postub_barriers_saved;
 static int g_rp_force_full; // OP_BARRIER has stricter guest-visible ordering than an ordinary pass transition
 void vka_oq_pass_end(void), vka_oq_draw(void);   // vka_exec.c "Occlusion queries"
@@ -324,6 +326,18 @@ void vka_rp_end(void) {
     } else if (R.swrite) {
         if (reused) g_rp_postub_barriers_saved++;
         else { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }
+    } else if (!R.awrite && !strcmp(DM_GAME_ID, "0400486024DEC000")
+               && VKA_ENV("DM_VK_OOT_READONLY_PASS", 1)) {
+        // A depth-test-only occlusion pass, a raster-discard pass, or a pass
+        // whose shaders wrote NONE of its colour/depth/stencil attachments
+        // has no attachment-memory producer. Vulkan still executes its
+        // draw commands, occlusion queries and EndRendering in order, but
+        // no memory dependency is needed for attachment writes that did not
+        // occur. Never skip for shader stores, loadOp/attachment clears,
+        // unknown stencil writes or explicit guest barriers (full above).
+        // Guest barriers kept INSIDE a read-only pass likewise have no
+        // attachment writes to publish. Setting =0 restores the old scope.
+        g_rp_readonly_barriers_avoided++;
     } else {
         if (pending_attachment) g_rp_pending_attachment++;
         if (reused) g_rp_postub_barriers_saved++;
@@ -453,6 +467,13 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
         if (dp || sp) snprintf(b + bn, bn < sizeof b ? sizeof b - bn : 0, " d:%d%s", R.df ? R.df : R.sf, (dp ? dp : sp)->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ? "C" : "");
         vka_gp_pass(b);
     }
+    // A loadOp CLEAR is a real attachment write even if no subsequent draw
+    // touches it. Late vkCmdClearAttachments is also an attachment writer.
+    for (int i = 0; i < n; i++)
+        if (ca[i].imageView && ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) R.awrite = 1;
+    if ((dp && dp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) ||
+        (sp && sp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) || nlate)
+        R.awrite = 1;
     vk.vkCmdBeginRendering(g_cb, &ri);
     R.on = 1; vka_n_rp++; if (g_dyn_filter == 2) vka_dyn_invalidate();   // DM_VK_DYN_FILTER=2: the dynamic state set again at each pass (bisect)
     for (int k = 0; k < nlate; k++) { VkClearAttachment c = {late[k]->asp, late[k]->ci >= 0 ? (uint32_t)late[k]->ci : 0, late[k]->in}; VkClearRect cr = {late[k]->rc, 0, layers}; vk.vkCmdClearAttachments(g_cb, 1, &c, 1, &cr); }
@@ -479,16 +500,16 @@ int vka_rp_game_barrier(uint32_t bits) {
     return 1;
 }
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
-    static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0, reused0;
+    static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0, reused0, ro0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
-    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0 || g_bar_duplicate_avoided != dup0 || g_rp_scoped != scoped0 || g_rp_graphics != graphics0 || g_rp_full != full0 || g_rp_postub_barriers_saved != reused0)
-        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; pending-attachment scoped %.1f/frame; redundant post-uniform barriers removed %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
+    if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0 || g_bar_duplicate_avoided != dup0 || g_rp_scoped != scoped0 || g_rp_graphics != graphics0 || g_rp_full != full0 || g_rp_postub_barriers_saved != reused0 || g_rp_readonly_barriers_avoided != ro0)
+        snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; pending-attachment scoped %.1f/frame; redundant post-uniform barriers removed %.1f/frame; read-only passes without attachment barrier %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
                  (g_bar_in - i0) / frames, (g_bar_kept - k0) / frames, (g_bar_late - l0) / frames,
                  (g_bar_duplicate_avoided - dup0) / frames,
-                 (g_rp_scoped - scoped0) / frames, (g_rp_graphics - graphics0) / frames, (g_rp_full - full0) / frames, (g_rp_pending_attachment - pending0) / frames, (g_rp_postub_barriers_saved - reused0) / frames,
+                 (g_rp_scoped - scoped0) / frames, (g_rp_graphics - graphics0) / frames, (g_rp_full - full0) / frames, (g_rp_pending_attachment - pending0) / frames, (g_rp_postub_barriers_saved - reused0) / frames, (g_rp_readonly_barriers_avoided - ro0) / frames,
                  (g_attachment_discards - d0) / frames, (g_attachment_loads_avoided - a0) / frames, (g_attachment_stores_avoided - s0) / frames);
     else if (n) b[0] = 0;
-    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; dup0 = g_bar_duplicate_avoided; scoped0 = g_rp_scoped; graphics0 = g_rp_graphics; full0 = g_rp_full; pending0 = g_rp_pending_attachment; reused0 = g_rp_postub_barriers_saved;
+    i0 = g_bar_in; k0 = g_bar_kept; l0 = g_bar_late; dup0 = g_bar_duplicate_avoided; scoped0 = g_rp_scoped; graphics0 = g_rp_graphics; full0 = g_rp_full; pending0 = g_rp_pending_attachment; reused0 = g_rp_postub_barriers_saved; ro0 = g_rp_readonly_barriers_avoided;
     d0 = g_attachment_discards; a0 = g_attachment_loads_avoided; s0 = g_attachment_stores_avoided;
 }
 // A real NVN discard ends the current pass and invalidates precisely the bound
@@ -541,6 +562,7 @@ int vka_rp_clear(const p_set_rt *rt, int has_rt, const vka_dstate *d, const vka_
     if ((uint32_t)rc.offset.x + rc.extent.width > R.area.extent.width || (uint32_t)rc.offset.y + rc.extent.height > R.area.extent.height) return 0;
     VkClearAttachment ca = {c->asp, ci >= 0 ? (uint32_t)ci : 0, c->in}; VkClearRect cr = {rc, 0, nl};
     vk.vkCmdClearAttachments(g_cb, 1, &ca, 1, &cr);
+    R.awrite = 1; // a clear is never a read-only occlusion pass
     return 1;
 }
 
@@ -1129,11 +1151,12 @@ static int push_same(VkPipelineBindPoint bp, VkPipelineLayout layout) {
     }
     int c = bp == VK_PIPELINE_BIND_POINT_COMPUTE;
     if (VKA_ENV("DM_VK_PUSH_DEDUP", 1) && g_pd[c].n == k && !memcmp(g_pd[c].w, buf, k * sizeof *buf)) { g_pd_skip++; g_pd_skip_all++; return 1; }
-    // DM_VK_PUSH_DELTA=1 (live, default 0 until phone-checked): the same layout and the same writes in the same order as the last push, some of them with other descriptors:
+    // DM_VK_PUSH_DELTA=1 (default only for Ocarina; =0 restores full pushes): the same layout and the same writes in the same order as the last push, some of them with other descriptors:
     // only those are pushed. Vulkan lets push descriptors be updated incrementally; the others stay as the last push left them (until the set is disturbed: a new command
     // buffer or part, a set bound in its place, which forget g_pd)
     g_dwn = 0;
-    if (VKA_ENV("DM_VK_PUSH_DELTA", 0) && g_pd[c].n == k && g_pd[c].w[0] == buf[0] && g_pd[c].w[1] == buf[1]) {
+    if (VKA_ENV("DM_VK_PUSH_DELTA",
+                 !strcmp(DM_GAME_ID, "0400486024DEC000")) && g_pd[c].n == k && g_pd[c].w[0] == buf[0] && g_pd[c].w[1] == buf[1]) {
         int ok = 1;
         for (uint32_t i = 0; i < g_w.n && ok; i++) {
             const uint64_t *a = g_pd[c].w + 2 + 4 * (size_t)i, *b = buf + 2 + 4 * (size_t)i;
@@ -1651,6 +1674,19 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
                 src1_used = 1; b.src_rgb = zero_src1(b.src_rgb); b.dst_rgb = zero_src1(b.dst_rgb); b.src_a = zero_src1(b.src_a); b.dst_a = zero_src1(b.dst_a); }
             k.att[i] = (typeof(k.att[i])){1, (uint8_t)bfac(b.src_rgb), (uint8_t)bfac(b.dst_rgb), (uint8_t)bop(b.eq_rgb), (uint8_t)bfac(b.src_a), (uint8_t)bfac(b.dst_a), (uint8_t)bop(b.eq_a), (uint8_t)m};
         }
+    }
+    // Only mark an attachment producer when a draw CAN write it. Many
+    // Ocarina occlusion-query draws only depth-test against existing depth
+    // and have all colour writes disabled. Tracking this is necessary to
+    // skip redundant pass-end attachment barriers without guessing formats
+    // or using a timestamp/driver heuristic. An unknown enabled stencil
+    // state is deliberately considered writable.
+    if (!d->rast_discard) {
+        for (uint32_t i = 0; i < R.ncolor; i++)
+            if (k.att[i].mask) { R.awrite = 1; break; }
+        if ((R.df != VK_FORMAT_UNDEFINED && d->ds.dt && d->ds.dw) ||
+            (R.sf != VK_FORMAT_UNDEFINED && d->ds.st))
+            R.awrite = 1;
     }
     if (src1_used) VRED_ONCE("a SRC1 blend factor with no dual-source module (MOD_DUAL; the profile's dual_want.tsv) or no dualSrcBlend: the second source reads as zero");
 
