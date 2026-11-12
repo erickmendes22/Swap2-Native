@@ -377,3 +377,5 @@ Ocarina 0.1.6 cold-run memory lifetime fixes (2026-11-12):
 Validate proportional optional-pipeline RAM reserve in the upstream regression.
 
 Banana Native GPU-demand texture residency and compute mesh vegetation, full-vegetation toggle ON by default; preserve shader library, ABI and signer.
+
+Retire zero-shared descriptor predecessors after the final temporary hold and GPU fence; 1000-cycle regression.

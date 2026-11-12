@@ -1819,12 +1819,21 @@ int vka_tex_live_refs(vka_img **out, int max) {
         out[n++] = im; }
     pthread_mutex_unlock(&g_tmu); return n;
 }
+// Descriptor resolution can temporarily hold an image while a zero-shared
+// view becomes private. Its predecessor retires only after the final hold.
+static void im_unhold_locked(vka_img *im) {
+    if (!im) return;
+    if (im->holds > 0) im->holds--;
+    if (!im->holds && im->zold) {
+        vka_after(vka_fence_last() + 1, img_destroy, im->zold);
+        im->zold = NULL;
+    }
+}
 // (an image made by its holder, frame generation's outputs, starts with a reference and no hold: its last drop finds holds at 0)
 void vka_tex_drop(vka_img *im) {
     if (!im) return;
     pthread_mutex_lock(&g_tmu);
-    if (im->holds > 0) im->holds--;
-    if (!im->holds && im->zold) { vka_after(vka_fence_last() + 1, img_destroy, im->zold); im->zold = NULL; }   // (the zero-shared image it left while held: img_own)
+    im_unhold_locked(im);
     unref_locked(im);
     pthread_mutex_unlock(&g_tmu);
 }
@@ -2614,7 +2623,7 @@ static void write_tex(int id, VkCommandBuffer cb, VkWriteDescriptorSet *w, VkDes
         if (view == g_null_view) g_pfb_st[id] |= PFB_NULL; else g_pfb_st[id] &= (uint8_t)~PFB_NULL;
         if (want && im) { g_pfb_made++; g_pfb_made_b += im->bytes; if (g_pfb_st[id] & PFB_MADE) g_pfb_again++; g_pfb_st[id] |= PFB_MADE; }   // (again: an ID whose image a read made before, evicted since)
     }
-    if (im) im->holds--;
+    im_unhold_locked(im);
     if (im && e->img) { pthread_mutex_unlock(&g_tmu); vka_img_written(im); pthread_mutex_lock(&g_tmu); }   // an image registration: shaders write it (vka_tex_id_view)
     *ii = (VkDescriptorImageInfo){VK_NULL_HANDLE, view, VK_IMAGE_LAYOUT_GENERAL};
     *w = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_set, .dstBinding = e->img ? 2 : 0, .dstArrayElement = (uint32_t)id, .descriptorCount = 1,

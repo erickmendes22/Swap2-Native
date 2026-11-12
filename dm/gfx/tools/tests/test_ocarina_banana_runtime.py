@@ -57,6 +57,35 @@ int main(void) {
 }
 ''')
 
+    def test_temporary_descriptor_holds_retire_zero_views(self):
+        tex = (ROOT/'dm/gfx/vk_android/vka_tex.c').read_text()
+        self.run_c('''
+#include <assert.h>
+#include <stdint.h>
+#include <stdlib.h>
+typedef struct image { int holds; struct image *zold; } vka_img;
+static void *retired[1000]; static unsigned queued, freed;
+static uint64_t vka_fence_last(void) { return 41; }
+static void img_destroy(void *p) { free(p); freed++; }
+static void vka_after(uint64_t fence, void (*fn)(void *), void *p) {
+    assert(fence==42 && fn==img_destroy && queued<1000); retired[queued++]=p;
+}
+''' + function(tex, 'im_unhold_locked') + '''
+int main(void) {
+    for(unsigned i=0;i<1000;i++) {
+        vka_img holder={.holds=2,.zold=calloc(1,sizeof(vka_img))};
+        assert(holder.zold);
+        im_unhold_locked(&holder); assert(holder.holds==1 && holder.zold && queued==i);
+        im_unhold_locked(&holder); assert(holder.holds==0 && !holder.zold && queued==i+1);
+        im_unhold_locked(&holder); assert(queued==i+1);
+    }
+    assert(freed==0);
+    for(unsigned i=0;i<queued;i++) img_destroy(retired[i]);
+    assert(freed==1000);
+    return 0;
+}
+''')
+
     def test_gpu_feedback_demands_only_read_ids(self):
         tex = (ROOT/'dm/gfx/vk_android/vka_tex.c').read_text()
         self.run_c('''
