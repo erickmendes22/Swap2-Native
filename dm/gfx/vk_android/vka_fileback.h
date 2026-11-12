@@ -141,7 +141,8 @@ static inline int vkfb_cut(vkfb_tab *t, uintptr_t lo, uintptr_t hi, vkfb_piece *
     for (int i = 0; i < t->n; i++) {
         vkfb_piece p = t->p[i]; if (p.hi <= lo || p.lo >= hi) continue;
         uintptr_t a = p.lo > lo ? p.lo : lo, b = p.hi < hi ? p.hi : hi;
-        if (k < max) out[k] = (vkfb_piece){a, b, p.off + (a - p.lo)}; k++;
+        if (k < max) out[k] = (vkfb_piece){a, b, p.off + (a - p.lo)};
+        k++;
         if (p.lo < a && p.hi > b) {   // a hole in the middle: two pieces
             t->p[i].hi = a;
             if (!vkfb_tab_add(t, b, p.hi, p.off + (b - p.lo))) return -1;

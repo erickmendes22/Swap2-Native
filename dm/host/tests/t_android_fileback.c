@@ -100,7 +100,9 @@ int main(void) {
     CHECK(back == 21 * PG, "read back %llu bytes, want 21 pages (the file's data, page 60 among them)", (unsigned long long)back);
     same = 1; for (int p = 0; p < NP; p++) for (int i = 0; i < PG; i++) {
         uint8_t want = p < 10 || (p >= 20 && p < 30) || (p >= 40 && p < 50) ? pat(p, i) : 0;
-        if (p == 5 && i == 100) want = 0xAB; if (p == 60 && i == 0) want = 0x5A; if (p == 21 && i == 7) want = 0x77;
+        if (p == 5 && i == 100) want = 0xAB;
+        if (p == 60 && i == 0) want = 0x5A;
+        if (p == 21 && i == 7) want = 0x77;
         if (g_lo[p * PG + i] != want) { same = 0; printf("  page %d byte %d: %#x want %#x\n", p, i, g_lo[p * PG + i], want); break; } }
     CHECK(same, "bytes after the way back");
     g_lo[5 * PG + 100] = 0x11; CHECK(pread(fd, &b, 1, off + 5 * PG + 100) == 1 && b == 0, "anonymous again: a write no longer reaches the file (%#x)", b);
