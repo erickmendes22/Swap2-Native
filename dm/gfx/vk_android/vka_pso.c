@@ -312,6 +312,17 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
         VkShaderModule mod = order[i] == 0 && (k->vin_u | k->vin_s) ? vka_shader_vin_module(s, k->vin_u, k->vin_s) : order[i] == 2 && k->gs_fx ? vka_shader_gs_module(s)
                            : fs && k->fs_variant == VKA_FS_RETYPE ? (fu | fsm ? vka_shader_fout_module(s, fu, fsm) : vka_shader_module(s, DMSH_VK_MOD_BASE))
                            : vka_shader_module(s, fs ? k->fs_variant : DMSH_VK_MOD_BASE);
+        // Hybrid NVN2: a native mesh pipeline requires the ORIGINAL
+        // per-primitive FS interface. The regular module is intentionally
+        // flattened for mesh->compute's arena vertex draws. They must not
+        // share one VkShaderModule even when the source shader key is equal.
+        if (mesh && fs && V.memu && (s->e->flags & DMSH_VK_F_MESH_PRIM)) {
+            if (k->fs_variant == VKA_FS_RETYPE && (fu | fsm))
+                mod = vka_shader_native_mesh_fout_module(s, fu, fsm);
+            else
+                mod = vka_shader_native_mesh_fs_module(s,
+                    k->fs_variant == VKA_FS_RETYPE ? DMSH_VK_MOD_BASE : k->fs_variant);
+        }
         if (!mod && order[i] == 2 && k->gs_fx) mod = vka_shader_module(s, DMSH_VK_MOD_BASE);   // no module with the claim (logged): the shader as it is
         if (!mod) return 0;
         if (fs) mod = vka_shader_pfb_pick(mod, k->a2c, P->afunc);
