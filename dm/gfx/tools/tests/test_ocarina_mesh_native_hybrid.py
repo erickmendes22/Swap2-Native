@@ -50,6 +50,8 @@ static int resolve(const prog_t *p,int stage,vka_shader **out,unsigned *bad) {
 }
 """ + "static int " + function(draw, 'veg_supplement_stage') + "\nint " + function(draw, 'vka_mesh_route') + r"""
 int main(void) {
+    const uint64_t original_mesh_key = UINT64_C(0xdeadbeefef5a5120);
+    const uint64_t original_task_key = UINT64_C(0xdeadbeefef5a5121);
     vka_shader original_mesh = {UINT64_C(0xdeadbeefef5a5120)};
     vka_shader original_task = {UINT64_C(0xdeadbeefef5a5121)};
     prog_t p = { .ts=&original_task, .ms=&original_mesh };
@@ -64,17 +66,17 @@ int main(void) {
         if (i) assert(vka_veg_entries[i-1].key < vka_veg_entries[i].key);
         if (vka_veg_entries[i].stage == DMSH_VK_STAGE_MS) {
             p.ms->key = vka_veg_entries[i].key;
-            p.ts->key = original_task.key;
+            p.ts->key = original_task_key;
         } else {
             p.ts->key = vka_veg_entries[i].key;
-            p.ms->key = original_mesh.key;
+            p.ms->key = original_mesh_key;
         }
         assert(vka_mesh_route(&d) == 1);           // supplement compute
         g_vegetation_enabled = 0;
         assert(vka_mesh_route(&d) == -1);          // OFF skips work before batch
         g_vegetation_enabled = 1;
-        p.ms->key = original_mesh.key;
-        p.ts->key = original_task.key;
+        p.ms->key = original_mesh_key;
+        p.ts->key = original_task_key;
     }
     assert(vka_mesh_route(&d) == 0);                 // original still native
     V.task=0; assert(vka_mesh_route(&d) == 1);       // no task support -> old emu
