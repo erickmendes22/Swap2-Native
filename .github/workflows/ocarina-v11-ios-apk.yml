@@ -32,6 +32,7 @@ jobs:
           clang -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
             dm/host/tests/t_android_codec_backpressure.c -o /tmp/t_android_codec_backpressure
           ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_codec_backpressure
+          python3 -m unittest discover -s dm/tools/tests -p 'test_android_codec_async.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_isolated_readiness.py' -v
           mkdir -p /tmp/gpu-runtime-jvm
           javac -d /tmp/gpu-runtime-jvm \

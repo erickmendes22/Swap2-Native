@@ -16,6 +16,7 @@
 #include "hle.h"
 #include <pthread.h>
 #include <stdbool.h>
+#include <time.h>
 #include "vpx/vpx_decoder.h"
 #include "vpx/vp8dx.h"
 #include "hle_movie_yuv.h"
@@ -51,6 +52,11 @@ typedef struct {
     int eos_pending, eos_drain;   // eos_drain: the platform decoder still holds pictures of a stream that has ended (the host's queue was full)
     struct { int on; uint32_t run; uint64_t wall0, last_acq; int64_t pts0; } clk;   // the movie clock: picture time pts0 + (now - wall0) is due now
     struct { uint64_t t0, dec, acq, shown, drop; int64_t pts0, pts; int any; } st;   // the rate line's counts since t0, the times of the first and last picture shown
+#if defined(__ANDROID__)
+    pthread_t output_thread;
+    pthread_cond_t output_wake;
+    int output_started, output_stop;
+#endif
 } cv_dec;
 
 static cv_dec *g_cv[16];
@@ -177,6 +183,38 @@ static void drain(cv_dec *d) {
     if (d->event) { if (d->nheld < CV_HOLD) hle_signal_system_event(d->event); else hle_clear_system_event(d->event); }
 }
 
+#if defined(__ANDROID__)
+// MediaCodec is asynchronous. Its output can arrive after Submit's bounded
+// dequeue has returned. A guest waiting on NativeSync/MultiWait then makes no
+// further codec calls, so neither Acquire nor Release can collect that output.
+// Keep receiving while a submitted stream has a released output to fill.
+// All MediaCodec calls and pool writes use the same decoder mutex as Submit,
+// Reset and Release; Finalize joins this thread before freeing any of them.
+static void *cv_output_worker(void *ctx) {
+    cv_dec *d = ctx;
+    pthread_mutex_lock(&d->mu);
+    while (!d->output_stop) {
+        if (!d->submits || !d->pcount) {
+            pthread_cond_wait(&d->output_wake, &d->mu);
+            continue;
+        }
+        if (!d->eos_drain) cv_take_mc(d, false);
+        drain(d);
+        if (d->output_stop) break;
+        struct timespec until;
+        clock_gettime(CLOCK_REALTIME, &until);
+        until.tv_nsec += 2000000;
+        if (until.tv_nsec >= 1000000000) { until.tv_sec++; until.tv_nsec -= 1000000000; }
+        pthread_cond_timedwait(&d->output_wake, &d->mu, &until);
+    }
+    pthread_mutex_unlock(&d->mu);
+    return NULL;
+}
+static void cv_output_wake(cv_dec *d) { if (d->output_started) pthread_cond_signal(&d->output_wake); }
+#else
+static void cv_output_wake(cv_dec *d) { (void)d; }
+#endif
+
 HLE_FORCE("_ZN2nn5codec5video10InitializeEv", "the decoder service is the host's (hle_codec_video.c)", Result, h_cv_init, void) { return 0; }
 HLE_FORCE("_ZN2nn5codec5video8FinalizeEv", "the decoder service is the host's", Result, h_cv_fin, void) { return 0; }
 
@@ -252,6 +290,22 @@ static Result cv_dec_init(void *t, int codec, uint16_t w, uint16_t h, uint32_t i
         static int once; if (!once++) LOG("[RED] nn::codec AV1 decoder: no AV1 decoder on the host, Initialize fails");
         pthread_mutex_destroy(&d->mu); free(d->csd); free(d); *(void **)t = NULL; return CV_R(2004);
     }
+#if defined(__ANDROID__)
+    if (CV_MC(d)) {
+        int err = pthread_cond_init(&d->output_wake, NULL);
+        if (!err) {
+            err = pthread_create(&d->output_thread, NULL, cv_output_worker, d);
+            if (err) pthread_cond_destroy(&d->output_wake);
+        }
+        if (err) {
+            LOG("[RED] nn::codec: cannot start platform output receiver (%d)", err);
+            mavc_free(d->avc); pthread_mutex_destroy(&d->mu); free(d->csd); free(d);
+            *(void **)t = NULL; return CV_R(2004);
+        }
+        d->output_started = 1;
+        LOG("[codec] %s: asynchronous platform output receiver enabled", k_cv_name[codec]);
+    }
+#endif
     pthread_mutex_lock(&g_cv_mu);
     for (int i = 0; i < 16; i++) if (!g_cv[i]) { g_cv[i] = d; d->id = (uint32_t)i + 1; break; }
     pthread_mutex_unlock(&g_cv_mu);
@@ -264,6 +318,13 @@ static Result cv_dec_init(void *t, int codec, uint16_t w, uint16_t h, uint32_t i
 }
 static Result cv_dec_fin(void *t) {
     cv_dec *d = cv_of(t); if (!d) return 0;
+#if defined(__ANDROID__)
+    if (d->output_started) {
+        pthread_mutex_lock(&d->mu); d->output_stop = 1; pthread_cond_signal(&d->output_wake); pthread_mutex_unlock(&d->mu);
+        dm_host_thread_join(d->output_thread, NULL);
+        pthread_cond_destroy(&d->output_wake);
+    }
+#endif
     pthread_mutex_lock(&g_cv_mu); g_cv[d->id - 1] = NULL; pthread_mutex_lock(&d->mu); pthread_mutex_unlock(&d->mu); pthread_mutex_unlock(&g_cv_mu);   // no sync handle lookup is still inside
     if (!CV_MC(d) && d->vpx_ok) vpx_codec_destroy(&d->vpx);
     if (d->avc) mavc_free(d->avc);
@@ -303,6 +364,7 @@ static Result cv_dec_reset(void *t) {   // Stop / Flush: pictures not yet given 
     pthread_mutex_lock(&d->mu);
     for (int i = 0; i < d->nheld; i++) pic_free(&d->held[i]);
     d->nheld = 0; d->eos_pending = 0; d->eos_drain = 0; cv_clk_reset(d);
+    d->submits = 0;   // the output receiver sleeps until the new stream submits a packet
     cv_open(d);
     if (d->event) hle_signal_system_event(d->event);
     pthread_mutex_unlock(&d->mu);
@@ -355,6 +417,7 @@ static Result cv_dec_submit(uint64_t *out, void *t, const void *data, uint64_t s
     if (eos && !(CV_MC(d) && d->avc)) { if (got) d->held[d->nheld - 1].eos = 1; else d->eos_pending = 1; }
     *out = ++d->submits;
     drain(d);
+    cv_output_wake(d);
     pthread_mutex_unlock(&d->mu);
     return 0;
 }
@@ -368,6 +431,7 @@ static Result cv_dec_acq(uint32_t *idx, cv_sync *sync, void *t) {
     if (d->clk.last_acq && now - d->clk.last_acq > (uint64_t)CV_CLK_GAP) cv_clk_reset(d);   // a pause: the movie clock starts again at the next picture shown
     d->clk.last_acq = now; d->st.acq++;
     drain(d);   // the buffer may take its picture now
+    cv_output_wake(d);
     pthread_mutex_unlock(&d->mu);
     return 0;
 }
@@ -378,6 +442,7 @@ static void cv_dec_rel(void *t, uint32_t i, cv_sync sync) {
     if (d->pcount < CV_BUFS) { d->pend[(d->phead + d->pcount) % CV_BUFS] = i; d->pcount++; }
     if (d->fcount < 8) { d->fifo[(d->fhead + d->fcount) % 8] = i; d->fcount++; d->buf[i].queued = 1; } else LOG("[RED] nn::codec: acquirable queue full at release %u", i);
     drain(d);
+    cv_output_wake(d);
     pthread_mutex_unlock(&d->mu);
 }
 static Result cv_dec_props(uint16_t *w, uint16_t *h, uint16_t *cw, uint16_t *ch, int64_t *ts, bool *eos, void *t, uint32_t i) {

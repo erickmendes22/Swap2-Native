@@ -344,3 +344,9 @@ Ocarina 0.1.6-fix clean-install intro freeze follow-up (2026-11-12):
 - For AV1 alone, fill a released buffer as soon as a picture exists and signal its sync before guest Acquire. Clock drops still apply to held pictures. VP8/VP9/H264 unchanged. DM_MOVIE_AV1_READY_ON_RELEASE=0 restores previous AV1 behavior for diagnosis.
 - CPU-only regression proves ready-on-release predicates, existing integration test now proves the first AV1 picture fills before Acquire. Same shader library and ABI; no fresh compilation of 42,339 shaders.
 - Cause still requires on-device verification. Both frozen runs had RAM Saver ON with >1 GiB storage writes within 15 s; a controlled RAM Saver OFF comparison remains necessary if AV1 early delivery is ineffective. Hold fix2 release until clean install test passes.
+
+Ocarina 0.1.6 asynchronous platform output receiver (2026-11-12):
+- Follow-up log 122824 reaches frame 911 at 21.39 s with early AV1 delivery active; audio continues until manual stop. No stalled thread stack is available.
+- Android nn::codec now receives late MediaCodec output independently of further guest Submit/Acquire/Release calls, and signals the awaited NativeSync event. All codec/pool access shares the decoder mutex; Finalize stops and joins the receiver.
+- Production-code regression: previous host fails the delayed-output event wait; receiver passes 20 AV1/H.264 cycles including pre-Acquire delivery, Flush and Finalize with output pending (ASan/UBSan).
+- Same package, version, shader ABI, complete shader library and cached signing key. Device playback validation remains required; no FPS or confirmed on-device freeze-fix claim.

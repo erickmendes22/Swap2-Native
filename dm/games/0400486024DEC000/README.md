@@ -4,6 +4,14 @@ A Switch 2 game: update v131072 over the base v65536, SDK 22.2.8 built for the S
 
 ## What it needs
 
+Current Android movie investigation (2026-11-12): the clean-install run in
+`0400486024DEC000-20261112-122824` reaches frame 911 at 21.39 s and then logs
+only audio until the user stops it. Early AV1 release signalling is active.
+The host's asynchronous output receiver closes a separately reproduced
+late-output deadlock; device validation and the precise stalled thread in this
+run remain open. See [Platform output arriving after Submit returns](../../../docs/reference/movies.md#platform-output-arriving-after-submit-returns)
+for the mechanism and production-code regression. No gameplay FPS gain is claimed.
+
 | Setting | Where | Why |
 |---|---|---|
 | `mem_reserve 0x380000000`, `mem_alias 0x120000000`, `app_pool 0x240000000`, `sys_resource 0x3000000` | [`game.tsv`](game.tsv) | virtual address memory: the NPDM declares a system resource (24 MB in the base, 48 MB in update 131072), and the game takes both a 6.2 GB heap (`nninitStartup`) and an address region of the rest of the pool (`main+0x9c2130`) after the 1 GB node area (its `sdk` has no reviewed node-area implementation). 9 GB heap region + 4.5 GB alias region: boots past memory setup; peaks not measured (open). [A profile's system resource guessed from another game](../../../docs/reference/memory.md#a-profiles-system-resource-guessed-from-another-game) |
