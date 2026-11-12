@@ -129,13 +129,11 @@ static void drain(cv_dec *d) {
     uint64_t now = now_ns();
     if (d->eos_drain) cv_take_mc(d, true);
 
-    // The AV1 intro can deadlock on Android when the decoder producer has
-    // filled its eight-picture queue but the guest has not acquired a released
-    // output buffer yet. The clock path normally waits for Acquire so it can
-    // skip stale pictures. At saturation, break that ordering cycle for ONE
-    // picture: its sync point becomes signalled and packets can advance again.
-    // Never do this under normal queue load; other codecs retain their
-    // existing clock/drop semantics. DM_MOVIE_AV1_UNBLOCK=0 restores them.
+    // Ocarina's AV1 client can wait for NativeSync BEFORE Acquire. Waiting
+    // until Acquire to fill that same released buffer makes a circular wait
+    // even with a single decoded frame. Deliver AV1 as soon as the released
+    // buffer and a decoded frame both exist. Keep all non-AV1 clock behavior.
+    // DM_MOVIE_AV1_READY_ON_RELEASE=0 restores the previous AV1 policy.
     int escape = 0;
     while (d->pcount && (d->nheld || d->eos_pending)) {
         int pending_queued = d->buf[d->pend[d->phead]].queued;
@@ -144,7 +142,10 @@ static void drain(cv_dec *d) {
                                         cv_clk_enabled(),
                                         !getenv("DM_MOVIE_AV1_UNBLOCK")
                                             || strcmp(getenv("DM_MOVIE_AV1_UNBLOCK"), "0"));
-        if (cv_clk_enabled() && pending_queued && !escape) break;
+        int av1_early = cv_av1_ready_on_release(d->codec == CV_AV1, cv_clk_enabled(),
+                          pending_queued, !getenv("DM_MOVIE_AV1_READY_ON_RELEASE")
+                          || strcmp(getenv("DM_MOVIE_AV1_READY_ON_RELEASE"), "0"));
+        if (cv_clk_enabled() && pending_queued && !av1_early && !escape) break;
         uint32_t i = d->pend[d->phead]; d->phead = (d->phead + 1) % CV_BUFS; d->pcount--;
         typeof(d->buf[0]) *b = &d->buf[i];
         if (d->nheld) {
@@ -161,11 +162,15 @@ static void drain(cv_dec *d) {
         if (b->eos) LOG("[codec] %s decoder %u: end of stream after %llu pictures", k_cv_name[d->codec], d->id, (unsigned long long)d->pictures);
         b->filled = 1; b->filled_gen = b->gen;
         spt_fire(d, i);
-        if (escape) {
+        if (av1_early) {
+            static int once;
+            if (!once++) LOG("[codec] AV1 decoder %u: released buffer filled and NativeSync signalled before Acquire (DM_MOVIE_AV1_READY_ON_RELEASE=0 disables)",
+                             d->id);
+        } else if (escape) {
             static int reported;
             if (!reported++) LOG("[codec] AV1 decoder %u: full queue, released one picture before guest Acquire to avoid circular wait (DM_MOVIE_AV1_UNBLOCK=0 disables)",
                                  d->id);
-            break;  // preserve frame ordering/clock for every other buffer
+            break;
         }
     }
     cv_rate_log(d, now);

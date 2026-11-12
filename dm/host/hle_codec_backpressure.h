@@ -6,6 +6,14 @@
 // when its queue is below capacity. This policy is unit-tested on Linux.
 #ifndef DM_HLE_CODEC_BACKPRESSURE_H
 #define DM_HLE_CODEC_BACKPRESSURE_H
+// Android AV1 players may wait on NativeSync before Acquire, while the movie
+// clock deferred filling a released buffer until Acquire. This can deadlock
+// even with ONE picture, not only at saturation. Signal released AV1 buffers
+// proactively; keep the clock order of the other codecs unchanged.
+static inline int cv_av1_ready_on_release(int is_av1, int clock_on,
+                                          int pending_acquire, int enabled) {
+    return is_av1 && clock_on && pending_acquire && enabled;
+}
 static inline int cv_backpressure_escape(int is_av1, int held, int max_hold,
                                          int free_buffers, int pending,
                                          int pending_queued, int clock,

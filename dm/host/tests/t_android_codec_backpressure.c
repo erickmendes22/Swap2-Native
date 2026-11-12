@@ -3,6 +3,13 @@
 #include <assert.h>
 #include <stdio.h>
 int main(void) {
+    // Single picture: producer fills while a released buffer remains queued,
+    // permitting the client to await NativeSync before calling Acquire.
+    assert(cv_av1_ready_on_release(1, 1, 1, 1));
+    assert(!cv_av1_ready_on_release(1, 1, 1, 0));
+    assert(!cv_av1_ready_on_release(1, 0, 1, 1));
+    assert(!cv_av1_ready_on_release(1, 1, 0, 1));
+    assert(!cv_av1_ready_on_release(0, 1, 1, 1));
     // The movie clock blocks a released but not acquired output picture
     // until the platform AV1 decoder's queue is completely saturated.
     for (int held = 0; held < 8; held++)

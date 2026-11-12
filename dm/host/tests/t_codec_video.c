@@ -203,7 +203,11 @@ int main(void) {
         assert(!h_cv_vp9flush(dc) && !c->nheld);
         h_cv_vp9rel(dc, 0, sync);
         c->codec = CV_AV1;  // shared queue policy: decode VP9 sample through test vpx backend
-        for (int k = 0; k < CV_HOLD; k++)
+        // Must signal the released buffer BEFORE Acquire even with one picture;
+        // previously it waited until a full eight-picture queue, too late.
+        assert(!h_cv_vp9submit(&id, dc, vp9, sizeof vp9, T, false));
+        assert(c->nheld == 0 && c->buf[0].filled && c->buf[0].queued);
+        for (int k = 1; k < CV_HOLD; k++)
             assert(!h_cv_vp9submit(&id, dc, vp9, sizeof vp9, T + k * F, false));
         assert(c->nheld == CV_HOLD - 1 && c->buf[0].filled && c->buf[0].queued);
         assert(!h_cv_vp9acq(&idx, &sync, dc) && idx == 0 && h_gs_trywait(&sync));

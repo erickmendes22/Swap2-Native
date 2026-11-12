@@ -337,3 +337,10 @@ Universal nonblocking GPU launch update 2026-11-12:
 - After an actual host attempt, show actionable Vulkan driver incompatibility details from [RED] runtime logs in launcher (even if :game process exited), with share-log and GPU-driver settings buttons. Game log overlay also flags runtime driver errors.
 - Normal GPU boot, shader cache miss and working Vulkan paths are not errors (JVM regression). Keep complete 42,339 shader library, six replacements, original shader ABI, app id and signer. Same branch install-over APK.
 - No device-level fix/compatibility claim without live test.
+
+Ocarina 0.1.6-fix clean-install intro freeze follow-up (2026-11-12):
+- SM8750 / Adreno 830 Qualcomm 891.14 fresh install d7d73d7 freezes at frame 496 (14.47 s), after successful actual Vulkan start, full 42,339 shader import, and hardware AV1 decode. Audio continues. Older updated install froze at frame 561 (15.19 s); both RAM Saver ON and Qualcomm 891.14.
+- Previous eight-picture saturation escape DID FIRE during clean-install log, yet did not solve the freeze. It cannot solve a wait cycle when the player waits on NativeSync BEFORE calling Acquire while the movie clock withholds filling UNTIL Acquire, even with only one picture.
+- For AV1 alone, fill a released buffer as soon as a picture exists and signal its sync before guest Acquire. Clock drops still apply to held pictures. VP8/VP9/H264 unchanged. DM_MOVIE_AV1_READY_ON_RELEASE=0 restores previous AV1 behavior for diagnosis.
+- CPU-only regression proves ready-on-release predicates, existing integration test now proves the first AV1 picture fills before Acquire. Same shader library and ABI; no fresh compilation of 42,339 shaders.
+- Cause still requires on-device verification. Both frozen runs had RAM Saver ON with >1 GiB storage writes within 15 s; a controlled RAM Saver OFF comparison remains necessary if AV1 early delivery is ineffective. Hold fix2 release until clean install test passes.
