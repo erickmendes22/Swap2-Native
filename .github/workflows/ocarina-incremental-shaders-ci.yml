@@ -45,6 +45,9 @@ on:
       - 'dm/gfx/nvn/hle_nvn.c'
       - 'dm/host/tests/t_android_fileback.c'
       - 'android/app/src/main/java/dev/nxnative/android/GameActivity.java'
+      - 'android/app/src/main/java/dev/nxnative/android/GpuProbeProvider.java'
+      - 'android/app/src/main/AndroidManifest.xml'
+      - 'dm/gfx/tools/tests/test_ocarina_isolated_readiness.py'
       - 'dm/gfx/vk_android/vka_zshare.h'
       - 'dm/gfx/vk_android/vka_dev.c'
       - 'dm/gfx/vk_android/vka_ctl.c'
@@ -81,6 +84,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Python source compile
         run: python3 -m py_compile scripts/ocarina_shader_hot_delta.py scripts/build_ocarina_hot_shaders.py scripts/pack_android.py dm/tools/tests/test_ocarina_shader_delta.py
+      - name: Android Vulkan isolated readiness regression
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_isolated_readiness.py -v
       - name: Synthetic full-library and partial-overlay regression
         run: python3 -m unittest discover -s dm/tools/tests -p test_ocarina_shader_delta.py -v
       - name: JVM full shader library ZIP import export and six replacements

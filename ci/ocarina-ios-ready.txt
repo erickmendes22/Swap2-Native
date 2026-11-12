@@ -294,3 +294,11 @@ Ocarina 0.1.6-fix · Snapdragon 8 Elite first-launch diagnostics (2026-11-12):
 - Persistent [prestart] markers identify NATIVE_LOAD_BEGIN/OK, GPU_READINESS_BEGIN/RETURNED, and HOST_START_BEGIN, with GPU/SoC and driver selection.
 - The normal host's first log open replaces the prestart trace when native startup succeeds. Game shader library remains intact, with no shader ABI or recompilation changes.
 - Build signed Android APK for a device-specific crash investigation on Snapdragon 8 Elite; do not claim root cause until the 8 Elite's prestart log is examined.
+
+
+2026-11-12 Snapdragon 8 Elite (SM8750 / nubia NX789J) early-crash fix candidate:
+- User log ends after Vulkan custom-driver probe returns successfully and before the game host starts. Shaders have NOT been loaded at that point.
+- Run GPU preflight in a separate Android :gpu_probe process; a driver crash/destruction there must not take down :game.
+- Record UI callback failures, readiness evaluation and start milestones in the game's existing prestart log.
+- Keep the game's 42,339-shader library and six replacements unchanged, with same ABI, package and signer.
+- Full APK build and Android device testing are needed to establish that this fixes the reported crash.

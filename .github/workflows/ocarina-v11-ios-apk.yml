@@ -28,6 +28,7 @@ jobs:
           python3 dm/gfx/tools/vk_abi_migrate.py --check
           python3 -m py_compile dm/gfx/tools/vk_abi_migrate.py scripts/ocarina_shader_hot_delta.py
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_abi_migration.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_isolated_readiness.py' -v
           python3 -m unittest discover -s dm/tools/tests -p 'test_ocarina_shader_delta.py'
           # Verify that the first working 0.1.2 Ocarina shaders can still
           # be exported/imported byte for byte on the 0.1.6 launcher.
