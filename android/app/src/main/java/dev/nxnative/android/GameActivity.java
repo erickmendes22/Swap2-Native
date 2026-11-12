@@ -321,16 +321,32 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         Runnable decide = () -> {   // on the UI thread, once: with the facts, or without them after READINESS_WAIT_MS
             if (answered[0] || isFinishing()) return;
             answered[0] = true;
-            readinessDecide(id, probeFacts);
+            prestart("GPU_READINESS_DECIDE_BEGIN");
+            try {
+                readinessDecide(id, probeFacts);
+                prestart("GPU_READINESS_DECIDE_COMPLETED");
+            } catch (RuntimeException | LinkageError ex) {
+                prestart("GPU_READINESS_DECIDE_EXCEPTION " + android.util.Log.getStackTraceString(ex));
+                android.util.Log.e("Swap2Native", "Vulkan readiness UI step", ex);
+                fail("GPU readiness failed before game startup: " + ex);
+            }
         };
-        prestart("GPU_READINESS_BEGIN driver=" + (GpuDriver.selected(this, id) == null ? "system" : "custom"));
+        // Crucial: do not call the custom Vulkan driver in the :game process
+        // before the actual host boots. Drivers can leave process-global Vulkan
+        // dispatch/loader state behind after vkDestroyInstance. Some device and
+        // driver combinations fail immediately after a successful readiness call.
+        prestart("GPU_READINESS_BEGIN isolated=true driver=" + (GpuDriver.selected(this, id) == null ? "system" : "custom"));
         new Thread(() -> {
             try {
-                probeFacts = Native.readiness(denv);
-                prestart("GPU_READINESS_RETURNED " + (probeFacts == null ? "no-data" : "ok"));
+                android.os.Bundle request = new android.os.Bundle();
+                request.putString("title_id", id);
+                request.putStringArray("env", denv);
+                android.os.Bundle response = getContentResolver().call(GpuProbeProvider.uri(this), "vulkan-readiness", null, request);
+                probeFacts = response == null ? "unchecked=isolated GPU readiness process returned no data" : response.getString("facts");
+                prestart("GPU_READINESS_RETURNED isolated " + (probeFacts == null ? "no-data" : "ok"));
             } catch (RuntimeException | LinkageError ex) {
-                probeFacts = "unchecked=Vulkan readiness threw " + ex.getClass().getSimpleName();
-                prestart("GPU_READINESS_EXCEPTION " + ex);
+                probeFacts = "unchecked=isolated Vulkan readiness unavailable (" + ex.getClass().getSimpleName() + ")";
+                prestart("GPU_READINESS_EXCEPTION isolated " + ex);
             } finally {
                 probeDone = true;
                 ui.post(decide);
@@ -354,6 +370,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         Readiness.Check st = Readiness.status(p != null ? p.status : null);
         if (st != null) l.add(st);
         l.addAll(Readiness.evaluate(f, Readiness.parseReqs(p != null ? p.reqs : null)));
+        prestart("GPU_READINESS_EVALUATED gpu=" + f.getOrDefault("gpu.name", "not-reported")
+                + " failures=" + Readiness.of(l, Readiness.Status.FAIL).size()
+                + " warnings=" + Readiness.of(l, Readiness.Status.WARNING).size());
         rFacts = f;
         fps.gpu(f.get("gpu.name"), f.get("driver.name"));
         rChecks = l;
@@ -383,7 +402,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             m.setLength(m.length() - 2);
             m.append('.');
             readinessDialog("Ready, with limits", m.toString(), details(fails, warns, gpu), report, "Continue", false);
-        } else start();
+        } else { prestart("GPU_READINESS_CHECKS_PASS_STARTING_GAME"); start(); }
     }
 
     /** The Details of the start-up notice: each failure and warning with its sentence, then the GPU and memory */
