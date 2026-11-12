@@ -19,6 +19,17 @@ class IsolatedReadiness(unittest.TestCase):
         self.assertIn('android:process=":game"', xml)
         self.assertIn('android:authorities="${applicationId}.gpu_probe"', xml)
 
+    def test_snapdragon_8_elite_game_does_not_wait_for_preflight(self):
+        src = (JAVA / "GameActivity.java").read_text()
+        # 8 Elite (SM8750) is the chipset in the user log. 8 Elite Gen 5
+        # (SM8850) retains its normal readiness path.
+        self.assertIn('"SM8750".equalsIgnoreCase(Build.SOC_MODEL)', src)
+        self.assertIn('GPU_READINESS_BYPASS_SM8750', src)
+        start = src.index('private boolean readinessHold(String id)')
+        bypass = src.index('GPU_READINESS_BYPASS_SM8750', start)
+        probe = src.index('GPU_READINESS_BEGIN isolated=true', start)
+        self.assertLess(bypass, probe)
+
     def test_game_process_does_not_probe_vulkan(self):
         game = (JAVA / "GameActivity.java").read_text()
         self.assertIn('getContentResolver().call(GpuProbeProvider.uri(this)', game)

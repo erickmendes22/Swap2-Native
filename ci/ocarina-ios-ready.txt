@@ -322,3 +322,10 @@ Ocarina v0.1.6-fix 8 Elite / intro AV1 hang 2026-11-12:
 - RAM Saver was ON: 2,664 MiB reserved file-backed texture/shader pools and ~996 MiB writes before frame 561; not confirmed as hang cause, so retain user option, advise independent RAM Saver OFF A/B test.
 - Fix stale preflight provider process: earlier Turnip V37 readiness was stale while actual host used Qualcomm 891.14. Recycle :gpu_probe process after each check and mark mismatched driver facts as unchecked rather than certifying wrong driver.
 - Keep original complete shader library, hot six replacements, game ABI, package and matching signer. This is a candidate fix, not a verified 8 Elite boot-through-intro until device-tested.
+
+
+Ocarina 0.1.6-fix Snapdragon 8 Elite mandatory preflight bypass 2026-11-12:
+- User 113251 log ends immediately after GPU_READINESS_RETURNED isolated ok, before GPU_READINESS_DECIDE_BEGIN. No shaders/AV1 were loaded; this is separate from the previously observed intro freeze.
+- Previous 110856 log shows SM8750 (Adreno 830) successfully booted with custom Qualcomm 891.14, loaded 42,339 shader library, rendered 561 frames before freezing during AV1 intro.
+- For Build.SOC_MODEL SM8750 only, skip asynchronous preflight blocking GameActivity.start and proceed directly to native host; direct Vulkan initialization retains normal device capability/driver checks and logs. Gen 5 and other SoCs unchanged.
+- Keep previous AV1 saturated queue fix as isolated candidate, no shader ABI changes nor shader recompilation, same signer/package. Verify actual gameplay on device before claiming intro freeze is solved.

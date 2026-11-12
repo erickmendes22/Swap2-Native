@@ -309,6 +309,21 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
     /** true: the start waits for the check (it calls start() again when the player may go on) */
     private boolean readinessHold(String id) {
         if (readinessDone) return false;
+        // On Snapdragon 8 Elite (SM8750), we have confirmed a full host boot
+        // through frame 561 with the Qualcomm 891.14 driver, but separate
+        // attempts stop right after the isolated GPU readiness reply, before
+        // the UI decision callback runs.  The preflight is advisory and must
+        // never prevent launching a known-working native Vulkan host.
+        // Only this SoC bypasses the preflight. The manual GPU readiness
+        // screen remains available in Settings for explicit diagnostics.
+        if (Build.VERSION.SDK_INT >= 31
+                && "SM8750".equalsIgnoreCase(Build.SOC_MODEL)) {
+            readinessDone = true;
+            readinessLine = "[readiness] " + id
+                    + ": SKIPPED isolated Vulkan preflight on SM8750; game driver checked by native host";
+            prestart("GPU_READINESS_BYPASS_SM8750; running native host directly");
+            return false;
+        }
         File files = getExternalFilesDir(null);
         List<String> drv = new ArrayList<>();   // the driver as start() will set it: the launcher's pick, then the user's lines (which win)
         GpuDriver.env(this, id, drv);
