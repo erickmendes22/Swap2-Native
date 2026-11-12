@@ -635,7 +635,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             r.readFully(b);
             String text = new String(b, StandardCharsets.UTF_8);
             if (text.contains("[nvn] frame ") || text.contains("[longframe]") || text.contains("window frame rate")) drawing = true;   // the host logs these once frames are presented
-            if (text.contains("CRASH sig=") || text.contains("FATAL")) failed = true;
+            if (text.contains("CRASH sig=") || text.contains("FATAL") || GpuRuntimeError.fromText(text) != null) failed = true;
             // Not while the game loads any more (2026-11-08: the lines over the opening looked like an error): only after a crash, or with Show log on
             overlay.setVisibility(failed || TouchControls.showLog(this) ? View.VISIBLE : View.GONE);
             String[] lines = text.split("\n");

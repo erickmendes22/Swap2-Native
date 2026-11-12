@@ -33,6 +33,11 @@ jobs:
             dm/host/tests/t_android_codec_backpressure.c -o /tmp/t_android_codec_backpressure
           ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_codec_backpressure
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_isolated_readiness.py' -v
+          mkdir -p /tmp/gpu-runtime-jvm
+          javac -d /tmp/gpu-runtime-jvm \
+            android/app/src/main/java/dev/nxnative/android/GpuRuntimeError.java \
+            android/app/src/jvmtest/java/dev/nxnative/android/GpuRuntimeErrorJvmTest.java
+          java -cp /tmp/gpu-runtime-jvm dev.nxnative.android.GpuRuntimeErrorJvmTest
           python3 -m unittest discover -s dm/tools/tests -p 'test_ocarina_shader_delta.py'
           # Verify that the first working 0.1.2 Ocarina shaders can still
           # be exported/imported byte for byte on the 0.1.6 launcher.

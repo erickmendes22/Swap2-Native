@@ -329,3 +329,11 @@ Ocarina 0.1.6-fix Snapdragon 8 Elite mandatory preflight bypass 2026-11-12:
 - Previous 110856 log shows SM8750 (Adreno 830) successfully booted with custom Qualcomm 891.14, loaded 42,339 shader library, rendered 561 frames before freezing during AV1 intro.
 - For Build.SOC_MODEL SM8750 only, skip asynchronous preflight blocking GameActivity.start and proceed directly to native host; direct Vulkan initialization retains normal device capability/driver checks and logs. Gen 5 and other SoCs unchanged.
 - Keep previous AV1 saturated queue fix as isolated candidate, no shader ABI changes nor shader recompilation, same signer/package. Verify actual gameplay on device before claiming intro freeze is solved.
+
+
+Universal nonblocking GPU launch update 2026-11-12:
+- Every chipset starts the real Vulkan host immediately after valid files/pack. No automated readiness provider, driver probe, feature gate or Try anyway dialog before Play.
+- Optional Vulkan capability check stays in Settings, :readiness process; no automated probe in :game.
+- After an actual host attempt, show actionable Vulkan driver incompatibility details from [RED] runtime logs in launcher (even if :game process exited), with share-log and GPU-driver settings buttons. Game log overlay also flags runtime driver errors.
+- Normal GPU boot, shader cache miss and working Vulkan paths are not errors (JVM regression). Keep complete 42,339 shader library, six replacements, original shader ABI, app id and signer. Same branch install-over APK.
+- No device-level fix/compatibility claim without live test.

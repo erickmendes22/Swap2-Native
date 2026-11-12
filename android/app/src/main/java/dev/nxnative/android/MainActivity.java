@@ -942,6 +942,30 @@ public final class MainActivity extends Activity {
 
     private static volatile boolean leftoversChecked;   // once per process
 
+    /** Show a driver error only AFTER a real game launch. Native crashes can
+     *  terminate :game before it can present a dialog, but the log survives. */
+    private void showRuntimeDriverFailure() {
+        android.content.SharedPreferences prefs = getSharedPreferences("launcher", MODE_PRIVATE);
+        String id = prefs.getString("gpu_runtime_attempt", null);
+        if (id == null) return;
+        long when = prefs.getLong("gpu_runtime_attempt_ms", 0L);
+        prefs.edit().remove("gpu_runtime_attempt").remove("gpu_runtime_attempt_ms").apply();
+        File lastLog = LogProvider.newest(this, id);
+        if (lastLog == null || lastLog.lastModified() + 3000L < when) return;
+        GpuRuntimeError.Issue issue = GpuRuntimeError.inspect(lastLog);
+        if (issue == null) return;
+        GpuDriver.Info selected = GpuDriver.selected(this, id);
+        String driver = selected == null ? "System / game environment" : selected.label();
+        boolean pt = "pt".equals(AppLanguage.effective(this).getLanguage());
+        new AlertDialog.Builder(this).setTitle(issue.title)
+                .setMessage(issue.report(driver) + "\n\nLog: " + lastLog.getName())
+                .setNegativeButton(pt ? "Fechar" : "Close", null)
+                .setNeutralButton(pt ? "Compartilhar log" : "Share log", (d, w) -> shareLog(id))
+                .setPositiveButton(pt ? "Configurar driver" : "GPU driver settings",
+                        (d, w) -> GpuDriver.dialog(this, PICK_DRIVER))
+                .show();
+    }
+
     /**
      * The leftovers nothing uses (AppStorageReport.clean: the copies a stopped save restore, import or commit left beside the saves, stopped pack imports, packer
      * trees of older APKs, ...), removed off the main thread at the launcher's first resume, then the storage report written to the Switch2 folder: one such copy
@@ -971,6 +995,7 @@ public final class MainActivity extends Activity {
         if (!settingsPage && settingsGame == null) Ondevice.resume(this);
         Switch2Migration.start(this, this::refresh);   // once All files access is on: the Switch2 folder into Games/, Work/<id>, Mods/ (Switch2Layout), the saved paths repointed
         GameSettings.builtinDefaults(this);   // the profiles' mods that are on by default (BuiltinMods), once per game
+        showRuntimeDriverFailure();
     }
 
     private void onResumeViews() {
@@ -1965,6 +1990,9 @@ public final class MainActivity extends Activity {
     }
 
     private void start(Game g) {
+        getSharedPreferences("launcher", MODE_PRIVATE).edit()
+                .putString("gpu_runtime_attempt", g.titleId)
+                .putLong("gpu_runtime_attempt_ms", System.currentTimeMillis()).commit();
         LauncherEffects.play(this, LauncherEffects.Cue.LAUNCH);   // once, as the game starts (the pool stops with the launcher's pause)
         startActivity(new Intent(this, GameActivity.class).putExtra("title_id", g.titleId).putExtra("name", g.name).putExtra("game", g.gameDir).putExtra("pack", g.packDir));
     }

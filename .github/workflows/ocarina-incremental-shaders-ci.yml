@@ -19,6 +19,8 @@ on:
       - 'dm/gfx/tools/vk_android_build.py'
       - 'android/app/src/main/java/dev/nxnative/android/ShaderZip.java'
       - 'android/app/src/main/java/dev/nxnative/android/ShaderLibs.java'
+      - 'android/app/src/main/java/dev/nxnative/android/GpuRuntimeError.java'
+      - 'android/app/src/jvmtest/java/dev/nxnative/android/GpuRuntimeErrorJvmTest.java'
       - 'android/app/src/main/java/dev/nxnative/android/Pack.java'
       - 'dm/gfx/tools/tests/test_ocarina_cold_build_memory.py'
       - 'android/app/src/jvmtest/java/dev/nxnative/android/ShaderZipJvmTest.java'
@@ -72,6 +74,8 @@ on:
       - 'android/app/src/jvmtest/java/dev/nxnative/android/ShaderZipJvmTest.java'
       - 'android/app/src/main/java/dev/nxnative/android/ShaderZip.java'
       - 'android/app/src/main/java/dev/nxnative/android/ShaderLibs.java'
+      - 'android/app/src/main/java/dev/nxnative/android/GpuRuntimeError.java'
+      - 'android/app/src/jvmtest/java/dev/nxnative/android/GpuRuntimeErrorJvmTest.java'
       - 'android/app/src/main/java/dev/nxnative/android/ShaderAbiCert.java'
       - 'dm/gfx/tools/vk_android_build.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_shaders.py'
@@ -93,6 +97,13 @@ jobs:
           clang -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
             dm/host/tests/t_android_codec_backpressure.c -o /tmp/t_android_codec_backpressure
           ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_codec_backpressure
+      - name: Real native Vulkan GPU errors (JVM regression)
+        run: |
+          mkdir -p /tmp/gpu-runtime-jvm
+          javac -d /tmp/gpu-runtime-jvm \
+            android/app/src/main/java/dev/nxnative/android/GpuRuntimeError.java \
+            android/app/src/jvmtest/java/dev/nxnative/android/GpuRuntimeErrorJvmTest.java
+          java -cp /tmp/gpu-runtime-jvm dev.nxnative.android.GpuRuntimeErrorJvmTest
       - name: Python source compile
         run: python3 -m py_compile scripts/ocarina_shader_hot_delta.py scripts/build_ocarina_hot_shaders.py scripts/pack_android.py dm/tools/tests/test_ocarina_shader_delta.py
       - name: Android universal Play without Vulkan preflight
