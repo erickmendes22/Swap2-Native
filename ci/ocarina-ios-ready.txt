@@ -312,3 +312,13 @@ Ocarina 0.1.6-fix Vulkan 1.4 / Snapdragon 8 Elite (2026-11-12):
 - Hardware validation on Adreno 830 remains necessary, and this fix must not be announced as proven until it boots.
 
 CI rerun: fix Java test fixture to remove actual VK_KHR_map_memory2 line; Vulkan 1.4 promoted core passes, Vulkan 1.3 without extension fails. Rebuild only after JVM + NDK and shader ABI validation pass.
+
+
+Ocarina v0.1.6-fix 8 Elite / intro AV1 hang 2026-11-12:
+- Evidence in user 110856 game log: 42,339 shader library loaded correctly; reached frame 561 at 15.19 s, GPU 1.2 ms that frame; AAudio still had callbacks to 6000 after the final present, until manual Stop. Not a shader-compilation crash.
+- AV1 1920x1080 video decoder c2.qti.av1.decoder created twice during intro. cv_dec's default movie clock can defer output until Acquire, while Submit can reach CV_HOLD=8 and return BUSY without waking the consumer: potential backpressure cycle.
+- Add AV1-only bounded escape for one queued output when nheld==CV_HOLD and released output pending; preserve VP8/VP9/H.264 and default clock behavior outside saturation. Opt-out DM_MOVIE_AV1_UNBLOCK=0.
+- Add actual CPU-only test under ASan/UBSan for saturation/exclusion and Mac-host t_codec_video queue regression test. Android native APK compilation also checks C and Java integration.
+- RAM Saver was ON: 2,664 MiB reserved file-backed texture/shader pools and ~996 MiB writes before frame 561; not confirmed as hang cause, so retain user option, advise independent RAM Saver OFF A/B test.
+- Fix stale preflight provider process: earlier Turnip V37 readiness was stale while actual host used Qualcomm 891.14. Recycle :gpu_probe process after each check and mark mismatched driver facts as unchecked rather than certifying wrong driver.
+- Keep original complete shader library, hot six replacements, game ABI, package and matching signer. This is a candidate fix, not a verified 8 Elite boot-through-intro until device-tested.

@@ -46,6 +46,11 @@ on:
       - 'dm/host/tests/t_android_fileback.c'
       - 'android/app/src/main/java/dev/nxnative/android/GameActivity.java'
       - 'android/app/src/main/java/dev/nxnative/android/GpuProbeProvider.java'
+      - 'dm/host/hle_codec_video.c'
+      - 'dm/host/hle_codec_backpressure.h'
+      - 'dm/host/tests/t_android_codec_backpressure.c'
+      - 'dm/host/tests/t_codec_video.c'
+      - 'android/app/src/main/java/dev/nxnative/android/GpuProbeProvider.java'
       - 'android/app/src/main/AndroidManifest.xml'
       - 'dm/gfx/tools/tests/test_ocarina_isolated_readiness.py'
       - 'dm/gfx/vk_android/vka_zshare.h'
@@ -82,6 +87,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: AV1 intro full-queue backpressure regression (ASan/UBSan)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          clang -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+            dm/host/tests/t_android_codec_backpressure.c -o /tmp/t_android_codec_backpressure
+          ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_codec_backpressure
       - name: Python source compile
         run: python3 -m py_compile scripts/ocarina_shader_hot_delta.py scripts/build_ocarina_hot_shaders.py scripts/pack_android.py dm/tools/tests/test_ocarina_shader_delta.py
       - name: Android Vulkan isolated readiness regression
