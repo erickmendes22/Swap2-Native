@@ -1303,6 +1303,19 @@ int vka_memu_on(void); int vka_memu_has(const uint8_t *p); void vka_memu_cur(con
 int vka_vegetation_mesh_omit(const vka_dstate *d);  // identical no-side-effect test to final raster cut
 int vka_mesh_route(const vka_dstate *d);  // -1 omit new supplement, 0 original native, 1 supplemental compute
 static int g_memu_cover; static uint64_t g_memu_sub = ~0ull; static vka_dstate g_memu_st;
+// The replay executes OP_CALL recursively. A mesh look-ahead launched FROM
+// a nested list must resume its parent(s) at OP_END, just as the iterative
+// Banana Native replay does. Otherwise it stops at the first inner OP_END:
+// repeated 1-draw batches cause extra helper dispatches, full dependencies
+// and render-pass splits in Ocarina's dense foliage. A per-replay-thread
+// caller stack mirrors exec(depth), but the look-ahead only READS it.
+static _Thread_local const uint8_t *g_memu_caller[16];
+static _Thread_local int g_memu_depth;
+static uint64_t g_memu_parent_resumes, g_memu_nested_batches;
+void vka_memu_caller_stats(uint64_t *resumes, uint64_t *nested) {
+    if (resumes) *resumes = g_memu_parent_resumes;
+    if (nested) *nested = g_memu_nested_batches;
+}
 static int memu_allowed(uint32_t op) {
     switch (op) {
     case OP_END: case OP_JUMP: case OP_BEGIN: case OP_CALL: case OP_DRAW: case OP_DRAW_IDX: case OP_SCISSOR: case OP_COPY_STRIDE: case OP_CLEAR_COLOR: case OP_CLEAR_DS:
@@ -1315,7 +1328,11 @@ static int memu_allowed(uint32_t op) {
 }
 // One walk from record p; phase MEMU_ADD counts the mesh draws it hands over (the later walks meet the same ones in the same order); phase -1 only says whether there is one, without the state
 static int memu_walk(const uint8_t *p, int phase) {
-    const uint8_t *ret[17]; int nret = 0, n = 0;
+    const uint8_t *ret[17];
+    int nret = g_memu_depth, n = 0;
+    if (nret < 0 || nret > 16) nret = 0; // never read an invalid stack
+    for (int i = 0; i < nret; i++) ret[i] = g_memu_caller[i];
+    if (phase == MEMU_ADD && nret) g_memu_nested_batches++;
     const int vegetation_off = !VKA_ENV("DM_VK_VEGETATION", 1);
     const int hybrid = V.memu && V.mesh && V.task &&
                        !strcmp(DM_GAME_ID, "0400486024DEC000") &&
@@ -1327,7 +1344,12 @@ static int memu_walk(const uint8_t *p, int phase) {
         memcpy(&g_memu_st, &S.d, sizeof g_memu_st);
     for (int guard = 0; guard < 200000; guard++) {
         op_hdr h; memcpy(&h, p, sizeof h); const void *a = p + 8;
-        if (h.op == OP_END) { if (!nret) break; p = ret[--nret]; continue; }
+        if (h.op == OP_END) {
+            if (!nret) break;
+            if (phase == MEMU_ADD) g_memu_parent_resumes++;
+            p = ret[--nret];
+            continue;
+        }
         if (h.op == OP_JUMP) { memcpy(&p, a, 8); continue; }
         if (h.op == OP_CALL) { if (nret == 17) break; ret[nret++] = p + h.size; memcpy(&p, a, 8); continue; }
         if (!memu_allowed(h.op) || h.size < 8) break;
@@ -1404,6 +1426,7 @@ static int overlap_state_record(uint32_t op) {
     }
 }
 static void exec(const uint8_t *p, int depth) {
+    g_memu_depth = depth; // current recursive caller stack for any mesh scan
     ub_batch *ub = &g_inline_ub;
     const int batch_on = VKA_ENV("DM_VK_UB_BATCH", 1) != 0;
     for (;;) {
@@ -1449,7 +1472,15 @@ static void exec(const uint8_t *p, int depth) {
         case OP_END: return;
         case OP_BEGIN: break;
         case OP_JUMP: memcpy(&p, a, 8); continue;
-        case OP_CALL: { uint64_t t; memcpy(&t, a, 8); if (depth < 16) exec((const uint8_t *)(uintptr_t)t, depth + 1); else VRED_ONCE("command lists nested deeper than 16"); break; }
+        case OP_CALL: {
+            uint64_t t; memcpy(&t, a, 8);
+            if (depth < 16) {
+                g_memu_caller[depth] = p + h.size; // resume AFTER this call
+                exec((const uint8_t *)(uintptr_t)t, depth + 1);
+                g_memu_depth = depth; // child returned: parent is active again
+            } else VRED_ONCE("command lists nested deeper than 16");
+            break;
+        }
         case OP_SIGNAL_EVENT: { uint64_t val; uint32_t m, v; memcpy(&val, a, 8); memcpy(&m, (const uint8_t *)a + 8, 4); memcpy(&v, (const uint8_t *)a + 12, 4); post((pop){1, m, v, 0, val}); break; }
         case OP_REPORT_COUNTER: { uint64_t t, ad; memcpy(&t, a, 8); memcpy(&ad, (const uint8_t *)a + 8, 8);
             if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED && oq_report(ad, (uint32_t)t)) { if (DM_GAME_RENDER_COND) rc_note(ad, 3); }   // counted (Occlusion queries)
