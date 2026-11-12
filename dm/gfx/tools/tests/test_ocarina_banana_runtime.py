@@ -35,7 +35,7 @@ static int full = 1;
 #define VLOG(...) ((void)0)
 typedef struct { int tf_on; } vka_dstate;
 typedef struct { const dmsh_vk_entry *e; const dmsh_vk_bind *b; uint64_t key; } vka_shader;
-''' + function(draw, 'vegetation_cut') + '''
+''' + function(draw, 'vegetation_omittable') + function(draw, 'vegetation_cut') + '''
 int main(void) {
     dmsh_vk_entry entry = {0}; dmsh_vk_bind binding = {0};
     vka_shader mesh = {.e=&entry,.b=&binding,.key=UINT64_C(0x0c1ffecd02018fb0)};
