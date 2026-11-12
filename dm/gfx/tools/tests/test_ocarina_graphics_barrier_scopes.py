@@ -71,6 +71,33 @@ class BarrierScopeTests(unittest.TestCase):
         self.assertIn('w->descriptorCount != 1', DRAW)
         self.assertIn('g_pd[c].w[0] == buf[0] && g_pd[c].w[1] == buf[1]', DRAW)
 
+    def test_delta_descriptor_write_model_preserves_exact_full_set(self):
+        import random
+        rng = random.Random(20261111)
+        previous_layout, previous = None, ()
+        gpu = {}
+        emitted, baseline = 0, 0
+        for frame in range(8000):
+            layout = 7 + (frame // 41) % 3
+            order = tuple(range(16)) if frame % 103 else tuple(range(15))
+            values = tuple((i, (frame ^ (i * 13)) if i == frame % 16 else i + 700)
+                           for i in order)
+            baseline += len(values)
+            if previous_layout == layout and tuple(k for k, _ in previous) == order:
+                changed = tuple((key, val) for (key, val), (_, old) in zip(values, previous)
+                                if val != old)
+            else:
+                changed = values
+                gpu = {}
+            for key, val in changed:
+                gpu[key] = val
+            emitted += len(changed)
+            self.assertEqual(gpu, dict(values),
+                             "partial push must have exactly the final bindings of full push")
+            previous_layout, previous = layout, values
+        # A CPU-side behavioral test, NOT a measurement on Adreno.
+        self.assertLess(emitted, baseline // 2)
+
     def test_readonly_barrier_truth_table(self):
         from itertools import product
         # Every possible combination of NVN operations must keep a barrier
