@@ -111,7 +111,7 @@ class SelectedUpdateTests(unittest.TestCase):
 
     def test_android_command_line_updates_exact_shaders(self):
         source = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
-        self.assertIn('new File(pack, "shaders/hot").getPath()', source)
+        self.assertIn('new File(pack, vegetation ? "shaders/vegetation" : "shaders/hot").getPath()', source)
         self.assertIn('new String[4 + hotKeys.size()]', source)
         self.assertIn('argv[k + 4] = hotKeys.get(k)', source)
         self.assertIn('"--hot-keys", String.join(",", publishedHotKeys)', source)
