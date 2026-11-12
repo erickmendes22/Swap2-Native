@@ -1509,10 +1509,14 @@ static int veg_supplement_stage(uint64_t key) {
 // mesh draw is a look-ahead boundary, so compute is not reordered across it.
 // DM_VK_OOT_NATIVE_BASE_MESH=0 restores all-mesh compute for a driver A/B.
 int vka_mesh_route(const vka_dstate *d) {
-    if (!V.memu) return 0;
-    if (!d || !V.mesh || !V.task ||
-        strcmp(DM_GAME_ID, "0400486024DEC000") ||
-        !VKA_ENV("DM_VK_OOT_NATIVE_BASE_MESH", 1)) return 1;
+    if (!d || strcmp(DM_GAME_ID, "0400486024DEC000"))
+        return V.memu ? 1 : 0;
+    const int hybrid = V.memu && V.mesh && V.task &&
+                       VKA_ENV("DM_VK_OOT_NATIVE_BASE_MESH", 1);
+    const int vegetation_on = VKA_ENV("DM_VK_VEGETATION", 1);
+    // The no-foliage option must omit newly added mesh stages even on
+    // devices lacking native mesh support and on the all-compute rollback.
+    if (!hybrid && vegetation_on) return V.memu ? 1 : 0;
     const prog_t *mp = d->bst[7];
     vka_shader *m = NULL, *ts = NULL, *ms = NULL;
     unsigned bad = 0, b2 = 0;
@@ -1524,8 +1528,8 @@ int vka_mesh_route(const vka_dstate *d) {
         return 1;  // preserve the current skip/failure path for missing stages
     int supplement = veg_supplement_stage(ms->key) ||
                      (ts && veg_supplement_stage(ts->key));
-    if (supplement && !VKA_ENV("DM_VK_VEGETATION", 1)) return -1;
-    return supplement ? 1 : 0;
+    if (supplement && !vegetation_on) return -1;
+    return hybrid ? (supplement ? 1 : 0) : (V.memu ? 1 : 0);
 }
 static int vegetation_omittable(const vka_dstate *d, vka_shader *const *sh) {
     if (VKA_ENV("DM_VK_VEGETATION", 1) || d->tf_on || !sh[7] ||
