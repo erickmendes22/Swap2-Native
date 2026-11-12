@@ -13,7 +13,15 @@ run remain open. See [Platform output arriving after Submit returns](../../../do
 for the mechanism and production-code regression. Build 91 still froze with
 the receiver active in logs `125440` and `125938`; the latter has RAM Saver
 disabled. The next host corrects [completed sync handles after buffer reuse](../../../docs/reference/movies.md#completed-decoder-sync-handles-after-buffer-reuse)
-and enables nonfatal stall-state capture. Device validation remains open.
+and enables nonfatal stall-state capture. Build 92 still froze; its `132541`
+dump shows `ModuleSystemWorker2` burning CPU while texture destruction is
+in progress, the main thread waiting for module work, and AV1 with completed
+buffers and no released output to fill. The CPU-written texture serial set
+can exhaust all empty slots with tombstones despite zero live entries, then
+loop forever under the texture lock. The new host removes that tombstone
+table; see [CPU-written serial churn stalls texture destruction](../../../docs/reference/rendering.md#cpu-written-serial-churn-stalls-texture-destruction).
+The deterministic production-helper regression hung before the fix and passes
+205,056 texture lifetimes after it. Device validation remains open.
 No gameplay FPS gain is claimed.
 
 | Setting | Where | Why |

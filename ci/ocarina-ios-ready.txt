@@ -359,3 +359,10 @@ Ocarina 0.1.6 sync completion lifetime follow-up (2026-11-12):
 - Regression first fails on the old filled-state check, then passes 20 AV1/H264 delayed-output/release/recreation cycles under ASan/UBSan with corrected completion and decoder IDs.
 - Enable DM_WATCH_REPORT=5: at most two nonfatal stall state dumps after presentation has started; paused/background holds are honored. Does not enable a timeout that closes the app. Dumps codec buffer generations/queues plus guest/native thread state for any remaining freeze.
 - Same shader ABI/library, package, app version, branch and cached signing key. Device freeze resolution remains unverified.
+
+Ocarina 0.1.6 CPU-written serial table freeze fix (2026-11-12):
+- Build92 log 132541 finally captures the freeze: ModuleSystemWorker2 CPU 5.92 s with a TEX object, golden-ratio hash multiplier and PC consistent with the CPU-written texture serial removal loop. Main awaits module completion. AV1 buffers are filled and decoder output is idle, with no pipeline compiling.
+- Root mechanism reproduced: insert/remove one key into each of the original 256 buckets; live count returns to zero, all slots become tombstones, removing an absent serial loops indefinitely while holding g_tmu.
+- Replace this separate tombstone set with the existing nvn_hmap (8-byte keys, backward-shift deletion) for insertion, removal and capture queries. Preserve all CPU-written image work.
+- Production-helper regression previously timed out; fixed code passes 205056 texture lifetimes including duplicate/live-survivor/capture checks under ASan/UBSan. Existing nvn_hmap tests pass 380000 random operations.
+- Keep decoder lifetime fixes and bounded nonfatal state capture. Same shader library/ABI, app package/version and cached update signing key. Device verification pending.

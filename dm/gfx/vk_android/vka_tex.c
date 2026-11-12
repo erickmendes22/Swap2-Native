@@ -10,6 +10,7 @@
 #include "../tex/nvn_deswizzle.h"
 #include "../nvn/dmsh_abi_vk.h"
 #include "../nvn/nvn_dirty.h"
+#include "../nvn/nvn_hmap.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -276,7 +277,7 @@ static void live_mem_add(vka_img *im) {
 static vka_img *live_mem_first(const void *p) {
     return p ? g_live_mem[live_mem_slot(p)] : NULL;
 }
-static uint64_t *g_cpuw; static size_t g_cpuwcap, g_cpuwn;   // serials the CPU wrote before their image existed (a set, open addressing)
+static nvn_hmap g_cpuw = {.klen = 8};   // CPU-written serials before their image exists; protected by g_tmu, backward-shift deletion (no tombstones)
 static pthread_mutex_t g_tmu = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t g_img_bytes;
 static int g_zwant;   // (under g_tmu) img_create_ may make a zero-shared image: vka_tex_get's new image whose content is ST_ZERO ("Zero-shared images" below)
@@ -378,28 +379,12 @@ static void map_del(uint64_t s) {
     }
 }
 static int cpuw_take(uint64_t s, int add) {   // add: insert; else: remove and say whether it was there
-    if (add && (g_cpuwn + 1) * 2 > g_cpuwcap) {
-        size_t oc = g_cpuwcap; uint64_t *o = g_cpuw; g_cpuwcap = oc ? oc * 2 : 256; g_cpuw = calloc(g_cpuwcap, 8); g_cpuwn = 0;
-        for (size_t i = 0; i < oc; i++) if (o[i] && o[i] != ~0ull) cpuw_take(o[i], 1);
-        free(o);
-    }
-    if (!g_cpuwcap) return 0;
-    size_t first_deleted = SIZE_MAX;
-    for (size_t i = hslot(s, g_cpuwcap);; i = (i + 1) & (g_cpuwcap - 1)) {
-        uint64_t key = g_cpuw[i];
-        if (key == s) {
-            if (!add) { g_cpuw[i] = ~0ull; if (g_cpuwn) g_cpuwn--; }
-            return 1;
-        }
-        if (key == ~0ull && first_deleted == SIZE_MAX) first_deleted = i;
-        if (!key) {
-            if (add) {
-                g_cpuw[first_deleted != SIZE_MAX ? first_deleted : i] = s;
-                g_cpuwn++;
-            }
-            return 0;
-        }
-    }
+    // Live-count-only growth left the old set entirely tombstoned after
+    // streaming churn. An absent serial then probed forever under g_tmu,
+    // blocking texture destruction and the game's ModuleSystem workers.
+    // Share the replay's existing table with backward-shift deletion instead.
+    return add ? nvn_hm_put(&g_cpuw, &s, (void *)1) != NULL
+               : nvn_hm_del(&g_cpuw, &s) != NULL;
 }
 
 static void img_destroy(void *arg) {
@@ -3023,7 +3008,7 @@ int vka_cap_sreg(int id, samp_par *p, int *n) {
 }
 int vka_cap_cpuw(uint64_t serial) {
     pthread_mutex_lock(&g_tmu);
-    int r = 0; if (g_cpuwcap) for (size_t i = hslot(serial, g_cpuwcap);; i = (i + 1) & (g_cpuwcap - 1)) { if (g_cpuw[i] == serial) { r = 1; break; } if (!g_cpuw[i]) break; }
+    int r = nvn_hm_get(&g_cpuw, &serial) != NULL;
     pthread_mutex_unlock(&g_tmu);
     return r;
 }

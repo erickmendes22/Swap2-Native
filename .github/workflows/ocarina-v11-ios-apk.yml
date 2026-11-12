@@ -33,6 +33,7 @@ jobs:
             dm/host/tests/t_android_codec_backpressure.c -o /tmp/t_android_codec_backpressure
           ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_codec_backpressure
           python3 -m unittest discover -s dm/tools/tests -p 'test_android_codec_async.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cpu_written_serials.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_isolated_readiness.py' -v
           mkdir -p /tmp/gpu-runtime-jvm
           javac -d /tmp/gpu-runtime-jvm \
