@@ -48,7 +48,7 @@ static int resolve(const prog_t *p,int stage,vka_shader **out,unsigned *bad) {
     (void)bad; *out = p ? (stage == 6 ? p->ts : stage == 7 ? p->ms : NULL) : NULL;
     return 1;
 }
-""" + function(draw, 'veg_supplement_stage') + "\n" + function(draw, 'vka_mesh_route') + r"""
+""" + "static int " + function(draw, 'veg_supplement_stage') + "\nint " + function(draw, 'vka_mesh_route') + r"""
 int main(void) {
     vka_shader original_mesh = {UINT64_C(0xdeadbeefef5a5120)};
     vka_shader original_task = {UINT64_C(0xdeadbeefef5a5121)};
