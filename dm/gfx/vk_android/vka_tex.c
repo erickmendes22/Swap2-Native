@@ -1557,7 +1557,9 @@ static int img_evict_locked(vka_img *im) {
     for (size_t i = 0; i < g_mapcap; i++)
         if (g_map[i].serial && g_map[i].serial != ~0ull && g_map[i].im == im) refs++;
     if (!refs || refs != im->refs) return 0;
-    redirty_ids(im);
+    // Registered bindless images cannot be discarded until shader-use
+    // feedback can demand them again. Otherwise redirty_ids would recreate
+    // them immediately in vka_tex_prepare, for no net memory saving.
     for (size_t i = 0; i < g_mapcap; i++) {
         if (g_map[i].serial && g_map[i].serial != ~0ull && g_map[i].im == im) {
             map_del(g_map[i].serial);
@@ -1631,15 +1633,31 @@ static void vka_tex_prune_locked(void) {
     img_limit_update(frame);
     uint64_t total = g_img_bytes + vka_imem_zbytes();
     if (!g_img_limit || total <= g_img_limit || g_prune_dry == frame) return;
+    // The GPU can sample texture-pool IDs that were not requested directly
+    // by the CPU. Keep registered descriptors alive (especially lightmaps).
+    // A future shader-use feedback cache may safely free these too.
+    uint8_t *registered = calloc((size_t)g_nlive, 1);
+    if (!registered) return;
+    unsigned bound_count = 0;
+    for (int id = 1; id < g_ntreg; id++) if (g_treg[id].t.serial) {
+        smap_ent *e = map_get(g_treg[id].t.serial);
+        if (!e || !e->im) continue;
+        int ix = e->im->live_index;
+        if (ix >= 0 && ix < g_nlive && g_live[ix] == e->im && !registered[ix]) {
+            registered[ix] = 1; bound_count++;
+        }
+    }
     static prune_ent *c; static size_t cap;
     if (cap < (size_t)g_nlive) {
         size_t want = (size_t)g_nlive + 256;
         prune_ent *tmp = realloc(c, want * sizeof *tmp);
-        if (!tmp) return; c = tmp; cap = want;
+        if (!tmp) { free(registered); return; }
+        c = tmp; cap = want;
     }
     uint64_t done = vka_done();
     size_t nc = 0;
     for (int i=0;i<g_nlive;i++) {
+        if (registered[i]) continue;
         vka_img *im = g_live[i];
         uint64_t last = __atomic_load_n(&im->last_frame, __ATOMIC_RELAXED);
         uint64_t fence = __atomic_load_n(&im->last_fence, __ATOMIC_RELAXED);
@@ -1648,6 +1666,7 @@ static void vka_tex_prune_locked(void) {
         if (vktl_evictable(frame,last,im->holds,im->gpu_owned,fence && done < fence,can))
             c[nc++] = (prune_ent){im,last};
     }
+    free(registered);
     qsort(c,nc,sizeof *c,prune_cmp);
     uint64_t target = vktl_target(g_img_limit), saved=0;
     int evicted=0;
@@ -1669,8 +1688,8 @@ static void vka_tex_prune_locked(void) {
         static uint64_t logged;
         if (total>logged+256*VKTL_MIB) {
             logged=total;
-            VLOG("RAM cache: %.0f MiB above limit %.0f MiB; protected active/GPU-written images retained rather than risking missing textures",
-                 total/1048576.0,g_img_limit/1048576.0);
+            VLOG("RAM cache: %.0f MiB above limit %.0f MiB; protected active/GPU-written images and registered bindless textures retained (%u registered) to avoid missing effects",
+                 total/1048576.0,g_img_limit/1048576.0,bound_count);
         }
     }
 }
