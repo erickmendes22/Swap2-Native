@@ -67,6 +67,7 @@ run: $(B)/t_language $(B)/t_motion $(B)/t_heap_size $(B)/t_touch $(B)/t_gesture 
 	$(B)/t_android_shlib
 	$(B)/t_android_imgmem
 	$(B)/t_android_zshare
+	$(B)/t_android_texlimit
 	$(B)/t_android_place
 	$(B)/t_audio_instream
 run: $(B)/t_nro
@@ -375,3 +376,8 @@ $(B)/t_android_place: t_android_place.c $(VKA)/vka_place.h | $(B)
 # validated by spirv-val when it is on the PATH; DM_VK_SPV_DIR=<.spv folder> adds those modules
 $(B)/t_android_spvpatch: t_android_spvpatch.c t_android_spvpatch_img.h $(VKA)/vka_spvpatch.c $(VKA)/vka_spvpatch.h $(VKA)/vka_selftest_spv.h | $(B)
 	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_spvpatch.c $(VKA)/vka_spvpatch.c
+
+# RAM limiter / GPU-resource lifetime policy; CPU-only regression test
+$(B)/t_android_texlimit: t_android_texlimit.c ../../gfx/vk_android/vka_texlimit.h | $(B)
+	$(CLANG) -O1 -Wall -Werror -o $@ t_android_texlimit.c
+run: $(B)/t_android_texlimit

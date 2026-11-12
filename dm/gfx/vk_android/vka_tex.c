@@ -17,6 +17,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include "vka_zshare.h"
+#include "vka_texlimit.h"
+#include <fcntl.h>
 
 // ---------- Formats ----------
 typedef struct { VkFormat vk; uint8_t kind, srgb; } fmt_ent;
@@ -278,6 +280,8 @@ static uint64_t *g_cpuw; static size_t g_cpuwcap, g_cpuwn;   // serials the CPU 
 static pthread_mutex_t g_tmu = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t g_img_bytes;
 static int g_zwant;   // (under g_tmu) img_create_ may make a zero-shared image: vka_tex_get's new image whose content is ST_ZERO ("Zero-shared images" below)
+static uint64_t g_img_limit, g_img_limit_frame, g_prune_dry, g_img_pruned, g_img_pruned_bytes;
+static unsigned g_img_psi;
 
 // The images' memory for the stats line: all of it, and the part whose content the GPU wrote (render targets, copy and storage destinations); the rest was filled from the
 // texture's storage in guest memory, which stays in its memory pool, so those bytes are held twice
@@ -437,7 +441,10 @@ static void unref_locked(vka_img *im) {
     }
     for (int i = 0; i < g_nbig; i++) if (g_big[i] == im) { g_big[i] = g_big[--g_nbig]; break; }
     g_img_bytes -= im->bytes;
-    vka_after(vka_fence_last(), img_destroy, im);
+    uint64_t last = __atomic_load_n(&im->last_fence, __ATOMIC_RELAXED);
+    uint64_t fence = vka_fence_last();
+    if (last > fence) fence = last;
+    vka_after(fence, img_destroy, im);
 }
 
 // Textures of one memory and shape share an image (one storage, many texture objects: a clear through one and a present through another meet), and so do ones of another
@@ -736,12 +743,10 @@ static vka_img *img_create_(const tex_t *t, const vka_fmt *f, uint32_t base, int
     // A 3D texture is drawn into slice by slice (NVN render target views of its slices, or all of them layered): 2D / 2D-array views of slices need this (Vulkan 1.1 maintenance1)
     if (is3d && (u & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) fl |= VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
     // Zero-shared images (below): a large GPU-content image the caller makes (g_zwant: vka_tex_get, its content ST_ZERO) is made to alias the zeroed memory of its create info
-    int zs = g_zwant && !(d->flags & NVN_TEXTURE_FLAGS_IMAGE) && VKA_ENV("DM_VK_ZSHARE", 1)
-          && vkz_candidate(t->L.size, (uint64_t)(VKA_ENVF("DM_VK_ZSHARE_MB", 4.0) * 1048576.0),
-                           vkz_max(f->kind >= 3, V.driver_id == VK_DRIVER_ID_MESA_TURNIP,
-                                   (int64_t)VKA_ENVF("DM_VK_ZSHARE_MAX_MB", -1.0)),
-                           res, im->samples, is3d, compressed(f),
-                           (d->flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET | NVN_TEXTURE_FLAGS_DISPLAY)) != 0);
+    int color_max_mb = VKA_ENV("DM_VK_ZSHARE_MAX_MB", V.driver_id == VK_DRIVER_ID_MESA_TURNIP ? 0 : 32);
+    uint64_t max_zero_bytes = f->kind >= 3 ? 32ull * VKTL_MIB : color_max_mb <= 0 ? UINT64_MAX : (uint64_t)color_max_mb * VKTL_MIB;
+    int zs = g_zwant && t->L.size <= max_zero_bytes && VKA_ENV("DM_VK_ZSHARE", 1) && vkz_candidate(t->L.size, (uint64_t)(VKA_ENVF("DM_VK_ZSHARE_MB", 4.0) * 1048576.0), res, im->samples, is3d, compressed(f),
+                                                                    (d->flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET | NVN_TEXTURE_FLAGS_DISPLAY)) != 0);
     if (zs) fl |= VK_IMAGE_CREATE_ALIAS_BIT;
     VkImageType it = is3d ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
     VkImageFormatProperties ip;
@@ -1544,11 +1549,160 @@ static void img_first_use(vka_img *im, const tex_t *t, VkCommandBuffer cb, int m
     if (cb) vka_barrier(cb);
 }
 
+// Evict only images reconstructible from still-live guest storage or known zeros.
+// Never evict GPU-written attachments: their content is NOT in guest memory.
+// All map references must be accounted for before any entry changes.
+static int img_evict_locked(vka_img *im) {
+    if (!im || im->holds || im->gpu_owned) return 0;
+    int refs = 0;
+    for (size_t i = 0; i < g_mapcap; i++)
+        if (g_map[i].serial && g_map[i].serial != ~0ull && g_map[i].im == im) refs++;
+    if (!refs || refs != im->refs) return 0;
+    redirty_ids(im);
+    for (size_t i = 0; i < g_mapcap; i++) {
+        if (g_map[i].serial && g_map[i].serial != ~0ull && g_map[i].im == im) {
+            map_del(g_map[i].serial);
+            unref_locked(im);
+        }
+    }
+    return refs;
+}
+static uint64_t meminfo_kb(const char *buf, const char *key) {
+    const char *p = strstr(buf, key);
+    return p ? strtoull(p + strlen(key), NULL, 10) : 0;
+}
+static unsigned img_psi100(void) {
+    if (!VKA_ENV("DM_VK_IMG_PSI", 1)) return 0;
+    int fd = open("/proc/pressure/memory", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    char b[512]; ssize_t n = read(fd, b, sizeof b - 1); close(fd);
+    if (n <= 0) return 0;
+    b[n] = 0;
+    const char *p = strstr(b, "some avg10=");
+    if (!p) return 0;
+    double pct = strtod(p + sizeof("some avg10=") - 1, NULL);
+    return pct > 0 ? (unsigned)(pct * 100.0 + 0.5) : 0;
+}
+static void img_limit_update(uint64_t frame) {
+    if (g_img_limit && frame < g_img_limit_frame + (g_img_psi >= 500 ? 15 : 60)) return;
+    g_img_limit_frame = frame;
+    uint64_t imgs = g_img_bytes + vka_imem_zbytes();
+    int env = VKA_ENV("DM_VK_IMG_LIMIT_MB", 0);
+    vktl_in in = {.img_bytes = imgs};
+    if (env <= 0) {
+        int fd = open("/proc/meminfo", O_RDONLY | O_CLOEXEC);
+        if (fd >= 0) {
+            char b[2048]; ssize_t n = read(fd, b, sizeof b - 1); close(fd);
+            if (n > 0) { b[n] = 0;
+                in.mem_total = meminfo_kb(b,"MemTotal:") << 10;
+                in.mem_avail = meminfo_kb(b,"MemAvailable:") << 10;
+            }
+        }
+        uint32_t heap = V.local_type < V.memp.memoryTypeCount ? V.memp.memoryTypes[V.local_type].heapIndex : UINT32_MAX;
+        if (heap < V.memp.memoryHeapCount) in.heap_size = V.memp.memoryHeaps[heap].size;
+        static PFN_vkGetPhysicalDeviceMemoryProperties2 props2;
+        if (V.mem_budget && !props2)
+            props2 = (PFN_vkGetPhysicalDeviceMemoryProperties2)vk.vkGetInstanceProcAddr(V.inst, "vkGetPhysicalDeviceMemoryProperties2");
+        if (V.mem_budget && props2 && heap < VK_MAX_MEMORY_HEAPS) {
+            VkPhysicalDeviceMemoryBudgetPropertiesEXT b = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT};
+            VkPhysicalDeviceMemoryProperties2 p = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2, .pNext=&b};
+            props2(V.pd, &p); in.heap_budget = b.heapBudget[heap]; in.heap_usage = b.heapUsage[heap];
+        }
+    }
+    unsigned psi = img_psi100();
+    uint64_t old = g_img_limit;
+    uint64_t limit = env > 0 ? (uint64_t)env * VKTL_MIB : vktl_limit(&in);
+    if (env <= 0) limit = vktl_pressure_limit(limit, imgs, psi);
+    g_img_limit = limit;
+    int crossed = (psi >= 500) != (g_img_psi >= 500) || (psi >= 1500) != (g_img_psi >= 1500);
+    g_img_psi = psi;
+    if (crossed || !old || old > limit + 512 * VKTL_MIB || limit > old + 512 * VKTL_MIB) {
+        VLOG("RAM cache: limit %.0f MiB, images %.0f MiB, MemAvailable %.0f MiB, reserve %.0f MiB, heap budget %.0f MiB, heap used %.0f MiB, PSI some avg10 %.2f%% %s",
+             limit / 1048576.0, imgs / 1048576.0, in.mem_avail / 1048576.0,
+             vktl_reserve(in.mem_total) / 1048576.0, in.heap_budget / 1048576.0,
+             in.heap_usage / 1048576.0, psi / 100.0, psi >= 1500 ? "(shed 1/8)" : psi >= 500 ? "(no growth)" : "");
+    }
+}
+typedef struct { vka_img *im; uint64_t last; } prune_ent;
+static int prune_cmp(const void *a, const void *b) {
+    const prune_ent *x = a, *y = b; return vktl_order(x->last, y->last);
+}
+static void vka_tex_prune_locked(void) {
+    uint64_t frame = vka_frame(); if (!frame) return;
+    img_limit_update(frame);
+    uint64_t total = g_img_bytes + vka_imem_zbytes();
+    if (!g_img_limit || total <= g_img_limit || g_prune_dry == frame) return;
+    static prune_ent *c; static size_t cap;
+    if (cap < (size_t)g_nlive) {
+        size_t want = (size_t)g_nlive + 256;
+        prune_ent *tmp = realloc(c, want * sizeof *tmp);
+        if (!tmp) return; c = tmp; cap = want;
+    }
+    uint64_t done = vka_done();
+    size_t nc = 0;
+    for (int i=0;i<g_nlive;i++) {
+        vka_img *im = g_live[i];
+        uint64_t last = __atomic_load_n(&im->last_frame, __ATOMIC_RELAXED);
+        uint64_t fence = __atomic_load_n(&im->last_fence, __ATOMIC_RELAXED);
+        // GPU-written or finalized-pool images cannot be reconstructed safely.
+        int can = im->mode == ST_ZERO || (im->from_mem && im->mem && im->pool && !img_pool_dead(im));
+        if (vktl_evictable(frame,last,im->holds,im->gpu_owned,fence && done < fence,can))
+            c[nc++] = (prune_ent){im,last};
+    }
+    qsort(c,nc,sizeof *c,prune_cmp);
+    uint64_t target = vktl_target(g_img_limit), saved=0;
+    int evicted=0;
+    for(size_t k=0;k<nc && total>target;k++) {
+        vka_img *im=c[k].im;
+        uint64_t alloc=im->bytes, f=__atomic_load_n(&im->last_fence,__ATOMIC_RELAXED);
+        if (f && vka_done() < f) continue;
+        if (!img_evict_locked(im)) continue;
+        saved+=alloc; evicted++;
+        total=g_img_bytes+vka_imem_zbytes();
+    }
+    if (evicted) {
+        g_img_pruned+=(uint64_t)evicted; g_img_pruned_bytes+=saved;
+        VLOG("RAM cache: evicted %d reconstructible images (%.0f MiB scheduled for release, %d remain); cache %.0f MiB / limit %.0f MiB, PSI %.2f%%",
+             evicted,saved/1048576.0,g_nlive,total/1048576.0,g_img_limit/1048576.0,g_img_psi/100.0);
+    }
+    if (total>g_img_limit) {
+        g_prune_dry=frame;
+        static uint64_t logged;
+        if (total>logged+256*VKTL_MIB) {
+            logged=total;
+            VLOG("RAM cache: %.0f MiB above limit %.0f MiB; protected active/GPU-written images retained rather than risking missing textures",
+                 total/1048576.0,g_img_limit/1048576.0);
+        }
+    }
+}
+void vka_tex_cache_stats(char *b,size_t n) {
+    if (!n) return; b[0]=0;
+    pthread_mutex_lock(&g_tmu);
+    uint64_t gpu=0,cpu=0,zero=0,held=0,unrecoverable=0;
+    uint64_t frame=vka_frame(), done=vka_done();
+    for(int i=0;i<g_nlive;i++) {
+        vka_img *im=g_live[i];
+        if (im->gpu_owned) gpu+=im->bytes;
+        else if (im->mode==ST_ZERO) zero+=im->bytes;
+        else cpu+=im->bytes;
+        if (im->holds || (__atomic_load_n(&im->last_fence,__ATOMIC_RELAXED)>done) ||
+            frame<=__atomic_load_n(&im->last_frame,__ATOMIC_RELAXED)+1) held+=im->bytes;
+        if (im->gpu_owned || (im->from_mem && (!im->pool || img_pool_dead(im)))) unrecoverable+=im->bytes;
+    }
+    snprintf(b,n,"RAM cache: images GPU-written %.0f MiB, zero-content %.0f MiB, from storage %.0f MiB; protected recent/held %.0f MiB, unreconstructible %.0f MiB, evicted %llu (%.0f MiB), limit %.0f MiB, PSI %.2f%%",
+             gpu/1048576.0,zero/1048576.0,cpu/1048576.0,held/1048576.0,unrecoverable/1048576.0,
+             (unsigned long long)g_img_pruned,g_img_pruned_bytes/1048576.0,g_img_limit/1048576.0,g_img_psi/100.0);
+    pthread_mutex_unlock(&g_tmu);
+}
+
 vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
     if (!t || !t->serial || !vka_ok()) return NULL;
     pthread_mutex_lock(&g_tmu);
     smap_ent *e = map_get(t->serial);
-    if (e) { vka_img *im = e->im; pthread_mutex_unlock(&g_tmu); return im; }
+    if (e) { vka_img *im = e->im; if (im) {
+        __atomic_store_n(&im->last_frame,vka_frame(),__ATOMIC_RELAXED);
+        __atomic_store_n(&im->last_fence,vka_fence_last(),__ATOMIC_RELAXED);
+    } pthread_mutex_unlock(&g_tmu); return im; }
     vka_fmt f; vka_img *im = NULL; int throttle = 0;
     if (vka_fmt_of(t->d.format, &f)) {
         // (not an image whose pool was finalized: a new pool over the same memory has new content. Shared with a texture of another live pool, the image follows the newest one's)
@@ -1567,7 +1721,12 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
         if (im) big_share(im, t);   // (another texture object of the same storage and shape: DM_VK_BIGIMG_MB diagnostic)
         uint32_t vmin = 0, base = sparse_sampled(t, &f) ? sparse_base(t->pool, t->mem, &t->d, &t->L, &vmin) : 0;
         int mode = 0;
-        if (!im) { mode = first_mode(t, &f, cpuw_take(t->serial, 0)); g_zwant = mode == ST_ZERO; im = img_create(t, &f, base); g_zwant = 0; }
+        if (!im) {
+            vka_tex_prune_locked();
+            mode = first_mode(t, &f, cpuw_take(t->serial, 0));
+            g_zwant = mode == ST_ZERO && !(t->d.flags & NVN_TEXTURE_FLAGS_IMAGE);
+            im = img_create(t, &f, base); g_zwant = 0;
+        }
         if (im && !im->inited) {
             im->vmin = vmin;
             if (g_nlive == g_livecap) {
@@ -1598,18 +1757,28 @@ vka_img *vka_tex_get(const tex_t *t, VkCommandBuffer cb) {
             }
         }
     }
-    if (im) map_put(t->serial, im); // do not remember a failed allocation as a cached image
+    if (im) {
+        __atomic_store_n(&im->last_frame,vka_frame(),__ATOMIC_RELAXED);
+        __atomic_store_n(&im->last_fence,vka_fence_last(),__ATOMIC_RELAXED);
+        map_put(t->serial, im);
+    } // do not remember a failed allocation as a cached image
     pthread_mutex_unlock(&g_tmu);
     if (throttle) vka_up_throttle();
     return im;
 }
 vka_img *vka_tex_acquire(uint64_t serial) {
-    pthread_mutex_lock(&g_tmu); smap_ent *e = map_get(serial); vka_img *im = e ? e->im : NULL; if (im) { im->refs++; im->holds++; } pthread_mutex_unlock(&g_tmu); return im;
+    pthread_mutex_lock(&g_tmu); smap_ent *e = map_get(serial); vka_img *im = e ? e->im : NULL; if (im) { im->refs++; im->holds++;
+        __atomic_store_n(&im->last_frame,vka_frame(),__ATOMIC_RELAXED);
+        __atomic_store_n(&im->last_fence,vka_fence_last(),__ATOMIC_RELAXED);
+    } pthread_mutex_unlock(&g_tmu); return im;
 }
 // References to the live images (at most max), for the replayer's dumps; each dropped with vka_tex_drop. Returns how many were taken
 int vka_tex_live_refs(vka_img **out, int max) {
     pthread_mutex_lock(&g_tmu); int n = 0;
-    for (int i = 0; i < g_nlive && n < max; i++) { vka_img *im = g_live[i]; im->refs++; im->holds++; out[n++] = im; }
+    for (int i = 0; i < g_nlive && n < max; i++) { vka_img *im = g_live[i]; im->refs++; im->holds++;
+        __atomic_store_n(&im->last_frame,vka_frame(),__ATOMIC_RELAXED);
+        __atomic_store_n(&im->last_fence,vka_fence_last(),__ATOMIC_RELAXED);
+        out[n++] = im; }
     pthread_mutex_unlock(&g_tmu); return n;
 }
 // (an image made by its holder, frame generation's outputs, starts with a reference and no hold: its last drop finds holds at 0)
@@ -1621,7 +1790,10 @@ void vka_tex_drop(vka_img *im) {
     unref_locked(im);
     pthread_mutex_unlock(&g_tmu);
 }
-vka_img *vka_tex_ref(vka_img *im) { if (im) { pthread_mutex_lock(&g_tmu); im->refs++; im->holds++; pthread_mutex_unlock(&g_tmu); } return im; }
+vka_img *vka_tex_ref(vka_img *im) { if (im) { pthread_mutex_lock(&g_tmu); im->refs++; im->holds++;
+    __atomic_store_n(&im->last_frame,vka_frame(),__ATOMIC_RELAXED);
+    __atomic_store_n(&im->last_fence,vka_fence_last(),__ATOMIC_RELAXED);
+    pthread_mutex_unlock(&g_tmu); } return im; }
 
 VkImageView vka_view(vka_img *im, VkFormat fmt, VkImageViewType type, VkImageAspectFlags asp, uint32_t level, uint32_t nlevels, uint32_t layer, uint32_t nlayers, const VkComponentMapping *swz) {
     VkComponentMapping id = {0}; if (!swz) swz = &id;
@@ -2372,9 +2544,19 @@ VkImageView vka_tex_id_view_rec(int id, VkCommandBuffer cb, uint8_t dim, int sto
     if (layout) *layout = VK_IMAGE_LAYOUT_GENERAL;
     if (storage || id <= 0 || id >= (1 << 20) || !VKA_ENV("DM_VK_TEX_MEMO", 1)) return id_view(id, cb, dim, storage, NULL);
     vmemo *m = vm_slot(id, dim);
-    if (vm_hit(m, id, dim)) return m->v;
+    if (vm_hit(m, id, dim)) {
+        if (m->im) {
+            __atomic_store_n(&m->im->last_frame,vka_frame(),__ATOMIC_RELAXED);
+            __atomic_store_n(&m->im->last_fence,vka_fence_last(),__ATOMIC_RELAXED);
+        }
+        return m->v;
+    }
     uint32_t gen = atomic_load_explicit(&g_tgen, memory_order_acquire), ver = g_tver ? atomic_load_explicit(&g_tver[id], memory_order_acquire) : 0;
     vka_img *im = NULL; VkImageView v = id_view(id, cb, dim, 0, &im);
+    if (im) {
+        __atomic_store_n(&im->last_frame,vka_frame(),__ATOMIC_RELAXED);
+        __atomic_store_n(&im->last_fence,vka_fence_last(),__ATOMIC_RELAXED);
+    }
     if (v && im && g_tver && !in_fb(im)) *m = (vmemo){id, dim, ver, gen, im, v};
     return v;
 }
@@ -2625,6 +2807,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     bindless_init();
     nvn_pool_use(1);   // the re-uploads below read guest storage: no pool is finalized (and unmapped) under them. Taken before g_tmu, as write_tex does
     pthread_mutex_lock(&g_tmu);
+    vka_tex_prune_locked();
     read_watch();
     for (int i = 0; i < g_nredo; i++) {   // CPU writes to textures that already have an image (WriteTexels): from now on they follow their storage
         smap_ent *e = map_get(g_redo[i]); vka_img *im = e ? e->im : NULL;

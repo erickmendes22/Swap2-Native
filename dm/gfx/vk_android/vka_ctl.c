@@ -142,6 +142,7 @@ static void stats_line(uint64_t f) {
     { char ab[400]; vka_tex_alias_stats(ab, sizeof ab); VLOG("ctl: %s", ab); }
     { char im[600]; vka_imem_stats(im, sizeof im); VLOG("ctl: %s", im); }
     { char bs[1000]; vka_tex_big_stats(bs, sizeof bs); if (bs[0]) VLOG("ctl: %s", bs); }
+    { char cs[650]; vka_tex_cache_stats(cs, sizeof cs); VLOG("ctl: %s", cs); }
 }
 void vka_ctl_frame(uint64_t f) {   // mtl_set_frame: frame f begins
     snap(&g_rec[f % NREC], f);
