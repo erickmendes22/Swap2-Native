@@ -39,8 +39,8 @@ class MeshNativeHybrid(unittest.TestCase):
 #include "vka_vegetation_supplement.h"
 #define DM_GAME_ID "0400486024DEC000"
 static struct { int memu, mesh, task; } V = {1,1,1};
-static int vegetation_on = 1, native_base = 1;
-#define VKA_ENV(k, def) (!strcmp((k),"DM_VK_VEGETATION") ? vegetation_on : native_base)
+static int g_vegetation_enabled = 1, native_base = 1;
+#define VKA_ENV(k, def) (!strcmp((k),"DM_VK_VEGETATION") ? g_vegetation_enabled : native_base)
 typedef struct { uint64_t key; } vka_shader;
 typedef struct prog_t { vka_shader *ts, *ms; } prog_t;
 typedef struct { const prog_t *bst[8]; } vka_dstate;
@@ -56,9 +56,9 @@ int main(void) {
     vka_dstate d = {0}; d.bst[7] = &p;
     assert(!veg_supplement_stage(original_mesh.key));
     assert(vka_mesh_route(&d) == 0);                 // old native mesh restored
-    vegetation_on = 0;
+    g_vegetation_enabled = 0;
     assert(vka_mesh_route(&d) == 0);                 // no native->compute regression OFF
-    vegetation_on = 1;
+    g_vegetation_enabled = 1;
     for (unsigned i=0; i<sizeof vka_veg_entries / sizeof *vka_veg_entries; ++i) {
         assert(veg_supplement_stage(vka_veg_entries[i].key));
         if (i) assert(vka_veg_entries[i-1].key < vka_veg_entries[i].key);
@@ -70,9 +70,9 @@ int main(void) {
             p.ms->key = original_mesh.key;
         }
         assert(vka_mesh_route(&d) == 1);           // supplement compute
-        vegetation_on = 0;
+        g_vegetation_enabled = 0;
         assert(vka_mesh_route(&d) == -1);          // OFF skips work before batch
-        vegetation_on = 1;
+        g_vegetation_enabled = 1;
         p.ms->key = original_mesh.key;
         p.ts->key = original_task.key;
     }
@@ -82,7 +82,7 @@ int main(void) {
     V.mesh=1; native_base=0; assert(vka_mesh_route(&d) == 1); // rollback
     native_base=1; V.memu=0; assert(vka_mesh_route(&d) == 0); // native-only
     p.ms->key = vka_veg_entries[0].key;
-    vegetation_on=0; assert(vka_mesh_route(&d) == -1);  // OFF works with emu disabled
+    g_vegetation_enabled=0; assert(vka_mesh_route(&d) == -1);  // OFF works with emu disabled
     V.memu=1; V.task=0; assert(vka_mesh_route(&d) == -1); // OFF works without hardware task support
     return 0;
 }
