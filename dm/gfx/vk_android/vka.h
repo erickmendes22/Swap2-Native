@@ -406,6 +406,7 @@ VkPipeline vka_cs_pipeline(vka_shader *cs, const vka_layout *lay);
 VkPipeline vka_cs_pipeline_oot_retile(vka_shader *cs, const vka_layout *lay, int *changed); // separate optimized pipeline, NULL if SPIR-V safety check rejects
 VkPipeline vka_cs_pipeline_img(vka_shader *cs, const vka_layout *lay, const vka_imgrt *rt);   // with the images of rt retyped (NULL or all zero: the base module)
 void vka_pso_save(int force);         // the VkPipelineCache and the prewarm list to the app's files (DM_TEMP): due DM_VK_PCACHE_SAVE_S after the last save, on the saver thread; force = now, on the caller's
+void vka_pso_retire(uint64_t fence);  // replay commit, after encoder stop: retire replaced linked pipelines once this submission completes
 void vka_pso_waits(uint64_t *save_ns, uint64_t *pw_wait_ns);   // cumulative: time saving the cache (saver thread), the frame path's waits for a prewarm thread making the same pipeline
 double vka_gpu_span_ms(uint64_t f);   // frame f's submissions from first part's start to last part's end (vka_exec.c); -1 = not in yet
 

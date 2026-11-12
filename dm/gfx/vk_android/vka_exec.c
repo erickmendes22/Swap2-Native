@@ -806,12 +806,13 @@ uint64_t vka_rp_sub_commit(uint64_t reserved) {
     if (g_cb && g_stat_draws > g_sub_draws0) { int vka_floor_tail_add(void); tail = vka_floor_tail_add(); post((pop){3, 0, (uint32_t)tail, 0, g_job_frame_set ? g_job_frame : g_frame}); }   // the frame's span at the end of this submission with draws (post_run)
     pop *ops = g_npost ? malloc((size_t)g_npost * sizeof *ops) : NULL; if (ops) memcpy(ops, g_post, (size_t)g_npost * sizeof *ops);
     int n = g_npost; g_npost = 0;
-    if (!g_cb) { vka_fence_cpu(fence, ops, n, post_run); return fence; }
+    if (!g_cb) { vka_pso_retire(fence); vka_fence_cpu(fence, ops, n, post_run); return fence; }
     vka_rp_end();
     vka_tex_writeback(g_cb);   // linear textures the GPU wrote, back into their storage for the CPU
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT};
     vk.vkCmdPipelineBarrier(g_cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     vka_enc_stop();   // every call made: the command buffer is complete
+    vka_pso_retire(fence);
     unsigned k = (g_slot_i - 1) % NSLOT;
     if (g_slot_ts[k]) qf.write(g_cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, g_qp, k * QPS + 2 * (g_slot_parts[k] - 1) + 1);
     vka_gp_commit(g_cb, fence);

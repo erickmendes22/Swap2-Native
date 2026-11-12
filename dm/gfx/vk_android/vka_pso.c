@@ -2,7 +2,8 @@
 // would have made dynamic: attachment formats and sample count, blending and write masks per attachment, logic operation, polygon mode, depth clamp, alpha to coverage, the
 // topology class and the depth convention (SpecId 0 on the last pre-raster stage), with vertex input in the key only on a device without VK_EXT_vertex_input_dynamic_state.
 // Everything else is dynamic (EDS1 / EDS2): viewport and scissor (one of each), cull mode, front face, topology, depth and stencil tests, depth bias, rasterizer discard,
-// primitive restart, blend constants. Pipelines and set layouts live as long as the process; the VkPipelineCache goes to the app's files (DM_TEMP, the game's own temp folder)
+// primitive restart, blend constants. Active pipelines and set layouts live as long as the process; replaced linked pipelines retire after their last recording fence.
+// The VkPipelineCache goes to the app's files (DM_TEMP, the game's own temp folder)
 // so the next start builds from it. Layouts follow dmsh_abi_vk.h: set 0 the per-draw records of every stage (push descriptors when they fit), set 1 the pools (vka_tex.c)
 #if defined(__ANDROID__)
 #include "vka.h"
@@ -14,6 +15,7 @@
 #include <unistd.h>
 #include <sys/resource.h>
 #include <errno.h>
+#include "vka_texlimit.h"
 
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 // Suspend (mtl_drain, the app going to the background): the prewarm and optimizer threads stop between pipelines until the game submits again (vka_pso_pause(0) at the next
@@ -24,6 +26,7 @@ static void pause_point(void) { while (atomic_load_explicit(&g_pso_paused, memor
 // Number of gameplay threads waiting for an existing prewarm compilation.
 // New speculative builds yield while a demanded pipeline is finishing.
 static _Atomic int g_pw_demand_waiters;
+static int pw_memory_pressure(void);
 // The keys' hash, 8 bytes a step: the draw path hashes a pipeline key (about 1 KB) per draw, and FNV a byte at a time took 1 us of it on the Adreno 840 phone's cores
 static uint64_t fnv(const void *p, size_t n, uint64_t h) {
     const uint8_t *b = p; size_t i = 0;
@@ -762,9 +765,38 @@ static VkPipeline gpl_link(pstate *P, const vka_gkey *k) {
 }
 
 // The background thread that makes the optimized pipelines, one after another, oldest first; each takes its linked pipeline's place in its map entry
-typedef struct opt_job { struct opt_job *next; gval *g; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; } opt_job;
+typedef struct opt_job { struct opt_job *next; gval *g; vka_shader *sh[VKA_NSTAGE]; vka_layout lay; vka_gkey k; VkPipeline old; } opt_job;
 static opt_job *g_opt_head, **g_opt_tail = &g_opt_head; static pthread_mutex_t g_opt_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t g_opt_cv = PTHREAD_COND_INITIALIZER;
 static uint64_t g_opt_waiting;
+static opt_job *g_opt_retired;   // g_mu; reuse the completed job, no extra allocation under pressure
+static _Atomic uint64_t g_opt_retire_queued, g_opt_retire_freed;
+// Caller holds g_mu. Publishing the replacement does not end the old
+// pipeline's lifetime: a draw may already have loaded it for the encoder.
+static int opt_publish(opt_job *j, VkPipeline p) {
+    if (!p) return 0;
+    VkPipeline old = __atomic_exchange_n(&j->g->p, p, __ATOMIC_ACQ_REL);
+    __atomic_store_n(&j->g->linked, 0, __ATOMIC_RELEASE);
+    g_nopt++;
+    if (!old || old == p) return 0;
+    j->old = old; j->next = g_opt_retired; g_opt_retired = j;
+    atomic_fetch_add_explicit(&g_opt_retire_queued, 1, memory_order_relaxed);
+    return 1;
+}
+static void opt_destroy_old(void *arg) {
+    opt_job *j = arg;
+    vk.vkDestroyPipeline(V.dev, j->old, NULL);
+    atomic_fetch_add_explicit(&g_opt_retire_freed, 1, memory_order_relaxed);
+    free(j);
+}
+// Only the replay commit calls this, after stopping the command encoder.
+// Every CPU reference loaded before opt_publish is now in a command buffer
+// covered by this fence. Jobs published later wait for the next commit.
+void vka_pso_retire(uint64_t fence) {
+    pthread_mutex_lock(&g_mu);
+    opt_job *j = g_opt_retired; g_opt_retired = NULL;
+    pthread_mutex_unlock(&g_mu);
+    while (j) { opt_job *next = j->next; vka_after(fence, opt_destroy_old, j); j = next; }
+}
 static void *opt_main(void *a) {
     (void)a; pthread_setname_np(pthread_self(), "vk-psopt"); vka_host_fp("vk-psopt");
     for (;;) {
@@ -773,13 +805,18 @@ static void *opt_main(void *a) {
         while (!g_opt_head) pthread_cond_wait(&g_opt_cv, &g_opt_mu);
         opt_job *j = g_opt_head; g_opt_head = j->next; if (!g_opt_head) g_opt_tail = &g_opt_head;
         pthread_mutex_unlock(&g_opt_mu);
+        while (pw_memory_pressure()) {
+            static _Atomic int warned;
+            if (!atomic_exchange(&warned, 1)) VLOG("pipeline optimizer: paused optional compilations under RAM pressure; linked pipelines remain usable");
+            usleep(250000); pause_point();
+        }
         pstate *P = malloc(sizeof *P);
         VkPipeline p = P && pstate_fill(P, j->sh, &j->lay, &j->k) ? full_pipeline(P, j->sh, " in the background") : VK_NULL_HANDLE;
         pthread_mutex_lock(&g_mu);
-        if (p) { __atomic_store_n(&j->g->p, p, __ATOMIC_RELEASE); __atomic_store_n(&j->g->linked, 0, __ATOMIC_RELEASE); g_nopt++; }   // a failure keeps the linked pipeline (logged)
+        int retired = opt_publish(j, p);   // a failure keeps the linked pipeline (logged)
         g_opt_waiting--;
         pthread_mutex_unlock(&g_mu);
-        free(P); free(j);
+        free(P); if (!retired) free(j);
     }
     return NULL;
 }
@@ -795,10 +832,11 @@ static void opt_queue(gval *g, vka_shader *const sh[VKA_NSTAGE], const vka_layou
 void vka_gpl_line(char *out, size_t n) {
     pthread_mutex_lock(&g_mu);
     if (n) snprintf(out, n, "libraries %llu vertex input / %llu pre-rasterization / %llu fragment shader / %llu fragment output / %llu combined, %.0f ms; %llu linked (%.1f ms), %llu optimized in the background, %llu waiting; "
-                    "cache-only tries %llu hit / %llu missed (%.0f ms in the misses)%s",
+                    "cache-only tries %llu hit / %llu missed (%.0f ms in the misses); replaced linked pipelines retired %llu / %llu%s",
                     (unsigned long long)g_nlib[L_VI], (unsigned long long)g_nlib[L_PRE], (unsigned long long)g_nlib[L_FS], (unsigned long long)g_nlib[L_FO], (unsigned long long)g_nlib[L_PREFS], g_lib_ms,
                     (unsigned long long)g_nlinked, g_link_ms, (unsigned long long)g_nopt, (unsigned long long)g_opt_waiting, (unsigned long long)g_probe_hit, (unsigned long long)g_probe_miss,
-                    g_probe_miss_ns / 1e6, atomic_load(&g_gpl_off) ? "; OFF for this run (pre-rasterization refused)" : "");
+                    g_probe_miss_ns / 1e6, (unsigned long long)atomic_load(&g_opt_retire_freed),
+                    (unsigned long long)atomic_load(&g_opt_retire_queued), atomic_load(&g_gpl_off) ? "; OFF for this run (pre-rasterization refused)" : "");
     pthread_mutex_unlock(&g_mu);
 }
 
@@ -977,8 +1015,9 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_img
 // admission guard for speculative shader compilation, never for a demanded
 // pipeline; failure to read procfs leaves the old behaviour unchanged.
 static int pw_memory_pressure(void) {
-    int floor_mb = VKA_ENV("DM_VK_PREWARM_RAM_FLOOR_MB", 512);
-    if (floor_mb <= 0) return 0;
+    const char *override = getenv("DM_VK_PREWARM_RAM_FLOOR_MB");
+    int floor_mb = override ? atoi(override) : 0;
+    if (override && floor_mb <= 0) return 0;
     // Shared 250-ms sample: the prewarm threads must not reopen procfs on
     // every speculative pipeline. The old answer is safe for a short time;
     // only a hint controlling prewarm admission, never required gameplay.
@@ -992,12 +1031,15 @@ static int pw_memory_pressure(void) {
         return atomic_load_explicit(&low, memory_order_relaxed);
     FILE *f = fopen("/proc/meminfo", "r");
     if (!f) { atomic_store_explicit(&low, 0, memory_order_relaxed); return 0; }
-    char line[160]; unsigned long long kb = 0; int got = 0;
+    char line[160]; unsigned long long kb = 0, total_kb = 0; int got = 0;
     while (fgets(line, sizeof line, f)) {
-        if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) { got = 1; break; }
+        if (sscanf(line, "MemTotal: %llu kB", &total_kb) == 1) continue;
+        if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) got = 1;
+        if (got && total_kb) break;
     }
     fclose(f);
-    int pressure = got && kb < (unsigned long long)floor_mb * 1024u;
+    uint64_t reserve = override ? (uint64_t)floor_mb * VKTL_MIB : vktl_reserve((uint64_t)total_kb << 10);
+    int pressure = got && ((uint64_t)kb << 10) < reserve;
     atomic_store_explicit(&low, pressure, memory_order_relaxed);
     return pressure;
 }

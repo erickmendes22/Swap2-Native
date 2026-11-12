@@ -21,7 +21,19 @@ can exhaust all empty slots with tombstones despite zero live entries, then
 loop forever under the texture lock. The new host removes that tombstone
 table; see [CPU-written serial churn stalls texture destruction](../../../docs/reference/rendering.md#cpu-written-serial-churn-stalls-texture-destruction).
 The deterministic production-helper regression hung before the fix and passes
-205,056 texture lifetimes after it. Device validation remains open.
+205,056 texture lifetimes after it. The build 93 log `134035` passed the intro
+and reached frame 22,118 at 536.12 s, then ended abruptly under memory pressure.
+The next-start log `142527` records the most recent exit as SIGKILL, RSS
+4,669 MiB; its 14:25 timestamp does not identify the earlier 13:49 session.
+The user reports reopening passes the same point. Cold pipeline compilation
+is a working hypothesis, not a confirmed Android kill reason.
+Code review found that optimized GPL pipelines replaced linked handles without
+ever destroying them (537 optimizations in the long run). The follow-up host
+retires those handles after recording and GPU fences, applies the system RAM
+reserve to optional compilation, and permits reclaiming CPU images pinned only
+by finalized pool generations. See [Linked pipelines retained after optimization](../../../docs/reference/shaders.md#linked-pipelines-retained-after-optimization)
+and [Finalized pool descriptors pin CPU images](../../../docs/reference/rendering.md#finalized-pool-descriptors-pin-cpu-images).
+Device validation of these memory changes remains open.
 No gameplay FPS gain is claimed.
 
 | Setting | Where | Why |

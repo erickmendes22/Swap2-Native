@@ -1316,8 +1316,9 @@ static void sparse_bind(vka_img *im, VkCommandBuffer cb, int all) {
 }
 static void dirty(int **list, int *n, int *cap, uint8_t **flag, int nslots, int id);
 static int *g_tdirty, g_ntd, g_tdcap; static uint8_t *g_tdflag;
-typedef struct { tex_t t; view_t v; uint8_t has_v, img; uint64_t pgen; } treg_ent;   // pgen: the texture's pool's Initialize serial at registration (nvn_pool_live)
+typedef struct { tex_t t; view_t v; uint8_t has_v, img, retired; uint64_t pgen; } treg_ent;   // pgen: the texture's pool's Initialize serial at registration (nvn_pool_live)
 static treg_ent *g_treg; static int g_ntreg;   // indexed by host texture ID
+static uint64_t g_retired_registrations;
 static _Atomic uint64_t g_tpool_stamp = 1;
 // Exact active registration IDs, not the whole allocated 1M-slot table.
 // A texture ID is inserted once, with the first successful registration.
@@ -1533,7 +1534,8 @@ static void img_first_use(vka_img *im, const tex_t *t, VkCommandBuffer cb, int m
     if (cb) vka_barrier(cb);
 }
 
-// Evict only images reconstructible from still-live guest storage or known zeros.
+// Evict images reconstructible from still-live guest storage/known zeros, or
+// CPU-filled images of finalized pools whose registrations are already invalid.
 // Never evict GPU-written attachments: their content is NOT in guest memory.
 // All map references must be accounted for before any entry changes.
 static int img_evict_locked(vka_img *im) {
@@ -1613,6 +1615,24 @@ typedef struct { vka_img *im; uint64_t last; } prune_ent;
 static int prune_cmp(const void *a, const void *b) {
     const prune_ent *x = a, *y = b; return vktl_order(x->last, y->last);
 }
+// Called under nvn_pool_use and g_tmu. An old registration of a finalized
+// generation already resolves to the null view in write_tex. It must not
+// pin that generation's CPU-filled image indefinitely. Unknown generations
+// and valid aliases still pin their images, regardless of age or pressure.
+static int treg_pins_image(const treg_ent *e) {
+    return !e->retired && !(e->t.pool && e->pgen
+        && nvn_pool_live(e->t.pool, NULL, NULL) != e->pgen);
+}
+static int img_prune_candidate(vka_img *im, uint64_t frame, uint64_t done, int registered) {
+    if (registered) return 0;
+    uint64_t last = __atomic_load_n(&im->last_frame, __ATOMIC_RELAXED);
+    uint64_t fence = __atomic_load_n(&im->last_fence, __ATOMIC_RELAXED);
+    // A dead pool cannot be read again. For CPU-filled images no valid
+    // descriptor can require those bytes; GPU-written content stays protected.
+    int dead = img_pool_dead(im);
+    int can = dead || im->mode == ST_ZERO || (im->from_mem && im->mem && im->pool);
+    return vktl_evictable(frame, last, im->holds, im->gpu_owned, fence && done < fence, can);
+}
 static void vka_tex_prune_locked(void) {
     uint64_t frame = vka_frame(); if (!frame) return;
     img_limit_update(frame);
@@ -1625,6 +1645,17 @@ static void vka_tex_prune_locked(void) {
     if (!registered) return;
     unsigned bound_count = 0;
     for (int id = 1; id < g_ntreg; id++) if (g_treg[id].t.serial) {
+        if (!treg_pins_image(&g_treg[id])) {
+            if (!g_treg[id].retired) {
+                g_treg[id].retired = 1;
+                g_retired_registrations++;
+                // Replace the obsolete descriptor through the normal upload
+                // path, which already emits null for finalized generations.
+                dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
+                if (g_tver) atomic_fetch_add_explicit(&g_tver[id], 1, memory_order_release);
+            }
+            continue;
+        }
         smap_ent *e = map_get(g_treg[id].t.serial);
         if (!e || !e->im) continue;
         int ix = e->im->live_index;
@@ -1642,31 +1673,29 @@ static void vka_tex_prune_locked(void) {
     uint64_t done = vka_done();
     size_t nc = 0;
     for (int i=0;i<g_nlive;i++) {
-        if (registered[i]) continue;
         vka_img *im = g_live[i];
-        uint64_t last = __atomic_load_n(&im->last_frame, __ATOMIC_RELAXED);
-        uint64_t fence = __atomic_load_n(&im->last_fence, __ATOMIC_RELAXED);
-        // GPU-written or finalized-pool images cannot be reconstructed safely.
-        int can = im->mode == ST_ZERO || (im->from_mem && im->mem && im->pool && !img_pool_dead(im));
-        if (vktl_evictable(frame,last,im->holds,im->gpu_owned,fence && done < fence,can))
-            c[nc++] = (prune_ent){im,last};
+        if (img_prune_candidate(im,frame,done,registered[i]))
+            c[nc++] = (prune_ent){im,__atomic_load_n(&im->last_frame, __ATOMIC_RELAXED)};
     }
     free(registered);
     qsort(c,nc,sizeof *c,prune_cmp);
-    uint64_t target = vktl_target(g_img_limit), saved=0;
+    uint64_t target = vktl_target(g_img_limit), saved=0, dead_saved=0;
     int evicted=0;
     for(size_t k=0;k<nc && total>target;k++) {
         vka_img *im=c[k].im;
         uint64_t alloc=im->bytes, f=__atomic_load_n(&im->last_fence,__ATOMIC_RELAXED);
+        int dead = im->pdead;
         if (f && vka_done() < f) continue;
         if (!img_evict_locked(im)) continue;
-        saved+=alloc; evicted++;
+        saved+=alloc; if (dead) dead_saved+=alloc; evicted++;
         total=g_img_bytes+vka_imem_zbytes();
     }
     if (evicted) {
         g_img_pruned+=(uint64_t)evicted; g_img_pruned_bytes+=saved;
-        VLOG("RAM cache: evicted %d reconstructible images (%.0f MiB scheduled for release, %d remain); cache %.0f MiB / limit %.0f MiB, PSI %.2f%%",
+        VLOG("RAM cache: evicted %d reclaimable images (%.0f MiB scheduled for release, %d remain); cache %.0f MiB / limit %.0f MiB, PSI %.2f%%",
              evicted,saved/1048576.0,g_nlive,total/1048576.0,g_img_limit/1048576.0,g_img_psi/100.0);
+        if (dead_saved) VLOG("RAM cache: finalized-pool CPU images retired %.1f MiB; %llu obsolete registrations retired so far (live aliases and GPU-written content protected)",
+                            dead_saved/1048576.0, (unsigned long long)g_retired_registrations);
     }
     if (total>g_img_limit) {
         g_prune_dry=frame;
@@ -2177,7 +2206,7 @@ static void treg(int id, const tex_t *t, const view_t *v, int img) {
             VLOG("unchanged texture registrations: %llu of %llu (DM_VK_REG_DEDUP)",
                 (unsigned long long)identical, (unsigned long long)attempts);
     }
-    e->t = *t; e->has_v = v != NULL; if (v) e->v = *v; e->img = (uint8_t)img; e->pgen = pgen;
+    e->t = *t; e->has_v = v != NULL; if (v) e->v = *v; e->img = (uint8_t)img; e->pgen = pgen; e->retired = 0;
     if (t->serial && id > 0) pool_register_active(id);
     atomic_fetch_add_explicit(&g_tpool_stamp, 1, memory_order_release);
     dirty(&g_tdirty, &g_ntd, &g_tdcap, &g_tdflag, 1 << 20, id);
