@@ -287,3 +287,10 @@ Build Ocarina 0.1.6 — RAM memory management update (2026-11-12):
 - Integrates verified image allocation and zero-sharing guards, RAM pressure image cache policy, bindless-protected cache retention, and opt-in file-backed guest shader/texture pools sourced from AnkaNative.
 - Keep default RAM Saver OFF. On requires available private-cache storage; protects live GPU-written images and no shader recompilation requested.
 - Build full Android native app and APK from current branch; keep com.swap2native.ootv11ios package, signing gate and shader ABI unchanged. Verify artifact/signature before testing; no claim of hardware RAM or FPS gain without device data.
+
+
+Ocarina 0.1.6-fix · Snapdragon 8 Elite first-launch diagnostics (2026-11-12):
+- GameActivity creates a shareable <title>-timestamp.log before Native.load and Vulkan readiness so an early fatal native exit still leaves the last completed startup phase.
+- Persistent [prestart] markers identify NATIVE_LOAD_BEGIN/OK, GPU_READINESS_BEGIN/RETURNED, and HOST_START_BEGIN, with GPU/SoC and driver selection.
+- The normal host's first log open replaces the prestart trace when native startup succeeds. Game shader library remains intact, with no shader ABI or recompilation changes.
+- Build signed Android APK for a device-specific crash investigation on Snapdragon 8 Elite; do not claim root cause until the 8 Elite's prestart log is examined.
