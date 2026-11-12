@@ -40,6 +40,11 @@ on:
       - 'dm/host/tests/t_android_shlib.c'
       - 'dm/gfx/vk_android/vka_tex.c'
       - 'dm/gfx/vk_android/vka_texlimit.h'
+      - 'dm/gfx/vk_android/vka_mem.c'
+      - 'dm/gfx/vk_android/vka_fileback.h'
+      - 'dm/gfx/nvn/hle_nvn.c'
+      - 'dm/host/tests/t_android_fileback.c'
+      - 'android/app/src/main/java/dev/nxnative/android/GameActivity.java'
       - 'dm/gfx/vk_android/vka_zshare.h'
       - 'dm/gfx/vk_android/vka_dev.c'
       - 'dm/gfx/vk_android/vka_ctl.c'
@@ -108,6 +113,8 @@ jobs:
           "$RUNNER_TEMP/t_android_texlimit"
           cc -std=gnu11 -O2 -Wall -Werror -o "$RUNNER_TEMP/t_android_zshare" dm/host/tests/t_android_zshare.c
           "$RUNNER_TEMP/t_android_zshare"
+          cc -std=gnu11 -D_GNU_SOURCE -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -o "$RUNNER_TEMP/t_android_fileback" dm/host/tests/t_android_fileback.c -lpthread
+          TMPDIR="$RUNNER_TEMP" "$RUNNER_TEMP/t_android_fileback"
       - name: Syntax-check real Android Vulkan texture replay with NDK
         shell: bash
         run: |
@@ -119,6 +126,8 @@ jobs:
           INC=(-I "$RUNNER_TEMP" -I dm/gfx/nvn/include -I dm/third_party/vulkan-headers/include -I dm/third_party/libvpx -I dm/third_party/libvpx/config -I dm/third_party/stb_vorbis -I dm/host)
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_tex.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_dev.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_mem.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/nvn/hle_nvn.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_ctl.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_draw.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_exec.c

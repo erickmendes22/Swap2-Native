@@ -471,6 +471,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             env.add("DM_LANG=" + AppLanguage.gameCode(this));
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
+            if (Prefs.ramSaver(this, id)) {
+                // TMPDIR is the app's private cache; the native backend reserves storage before mapping.
+                env.add("TMPDIR=" + getCacheDir().getAbsolutePath());
+                env.add("DM_MEM_FILEBACK=1");
+                env.add("DM_MEM_FILEBACK_KINDS=shader,texture");
+            }
             // Ocarina 0.1.2: preserve an open render pass across a game barrier
             // only when no shader stores occurred and no following draw samples
             // or aliases its attachments. vka_draw.c bar_hazard closes on a

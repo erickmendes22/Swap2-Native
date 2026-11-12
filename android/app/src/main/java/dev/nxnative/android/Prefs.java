@@ -103,6 +103,9 @@ final class Prefs {
      * The game's scene resolution (its Game settings › Scene resolution; only for a game whose profile has scene_scale_palette, Profile.hasScene): false, the
      * default (the game's own palette), or true: 720p, the RomFS overlay SceneOverlay makes from the player's own files (DM_ROMFS_OVERLAY)
      */
+    /** RAM saver per game: large guest texture pools use files in the private cache. */
+    static boolean ramSaver(Context c, String titleId) { return of(c).getBoolean(gameKey("ram_saver", titleId), false); }
+    static void ramSaver(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("ram_saver", titleId), on).commit(); }
     static boolean scene720(Context c, String titleId) { return of(c).getBoolean(gameKey("scene_720p", titleId), false); }
     static void scene720(Context c, String titleId, boolean on) {
         if (on) of(c).edit().putBoolean(gameKey("scene_720p", titleId), true).commit();

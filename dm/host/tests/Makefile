@@ -381,3 +381,10 @@ $(B)/t_android_spvpatch: t_android_spvpatch.c t_android_spvpatch_img.h $(VKA)/vk
 $(B)/t_android_texlimit: t_android_texlimit.c ../../gfx/vk_android/vka_texlimit.h | $(B)
 	$(CLANG) -O1 -Wall -Werror -o $@ t_android_texlimit.c
 run: $(B)/t_android_texlimit
+
+# File-backed guest pools (port from AnkaNative, CPU test and sanitizers).
+fileback: $(B)/t_android_fileback
+	TMPDIR="$(abspath $(B))" $(B)/t_android_fileback
+
+$(B)/t_android_fileback: t_android_fileback.c $(VKA)/vka_fileback.h | $(B)
+	$(CLANG) -O1 -g -Wall -Werror -Wno-unused-function -fsanitize=address,undefined -I.. -o $@ t_android_fileback.c -lpthread

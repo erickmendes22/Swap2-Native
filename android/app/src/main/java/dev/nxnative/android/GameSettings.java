@@ -201,6 +201,12 @@ final class GameSettings {
                 .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
                 .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
+        Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip, "Economia de RAM (usa armazenamento)", null)
+                .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
+        ram.value("Guarda pools grandes de texturas no cache em armazenamento. Pode gravar ~2 GB "
+                + "a cada carregamento de area; precisa de espaco livre. Padrao: desligado. "
+                + "Reinicie o jogo para aplicar.");
+        box.addView(ram.view);
         // Selective HDR VRS, including driver-queried 4x2/4x4 modes.
         // The game retains all original shaders and output dimensions.
         if (Prefs.OCARINA_TITLE.equals(id)) {
