@@ -326,12 +326,12 @@
     <string name="s2_shaders_state">Shaders</string>
     <string name="s2_shaders_present">Present (%1$s)</string>
     <string name="s2_prepare_again">Prepare again</string>
-    <string name="s2_ocarina_repair">Repair captured shaders</string>
-    <string name="s2_ocarina_repair_note">Rebuild only captured missing and heavy shaders, not the 42,339 base shaders</string>
+    <string name="s2_ocarina_repair">Repair missing shaders</string>
+    <string name="s2_ocarina_repair_note">Prepare the missing vegetation shaders without rebuilding the full library</string>
     <string name="s2_ocarina_repair_none">No new valid captured shader sources were found. Play the areas where shaders are missing first, then use this option. The existing 42,339-shader library has not been changed.</string>
     <string name="s2_ocarina_repair_done">All currently captured shader keys are already in the installed overlay. The full library is unchanged.</string>
     <string name="s2_ocarina_repair_invalid">The existing Ocarina pack could not be verified. No shader compilation was started and the existing library was preserved.</string>
-    <string name="s2_ocarina_repair_confirm">Compile %1$d verified captured shaders into a small overlay? The original 42,339 shaders, saves and pipeline cache will be kept. No full shader split or retranslation will run.</string>
+    <string name="s2_ocarina_repair_confirm">Prepare %1$d verified shaders in a separate supplement? Vegetation shaders come directly from the game files. The original shader library, saves and pipeline cache will be kept. No full shader preparation will run.</string>
     <string name="s2_prepare_again_note">Remakes what does not fit, on the library</string>
     <string name="s2_pack_export">Export full pack…</string>
     <string name="s2_pack_export_note">Code and shaders in one .zip, for the same game version</string>

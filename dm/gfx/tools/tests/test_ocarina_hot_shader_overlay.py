@@ -23,7 +23,7 @@ BUILDER = (ROOT / "scripts/build_ocarina_hot_shaders.py").read_text()
 
 class HotShaderOverlay(unittest.TestCase):
     def test_host_retains_original_library_and_uses_override_by_key(self):
-        self.assertIn('static vka_shlib g_lib, g_hot;', HOST)
+        self.assertIn('static vka_shlib g_lib, g_hot, g_vegetation;', HOST)
         self.assertIn('shaders/hot/', HOST)
         self.assertIn('vka_shlib_open(&g_hot, hp, DMSH_CHAIN, DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI', HOST)
         self.assertIn('g_hot_loaded', HOST)

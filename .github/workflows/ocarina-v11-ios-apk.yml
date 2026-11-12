@@ -36,7 +36,9 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cpu_written_serials.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_retired_pool_images.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pipeline_retirement.py' -v
-          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_banana_runtime.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_banana_runtime.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_vegetation_supplement.py'
+          python3 dm/gfx/tools/ocarina_vegetation.py --check -v
           python3 dm/gfx/tools/mesh_vegetation_profile.py --check
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_isolated_readiness.py' -v
           mkdir -p /tmp/gpu-runtime-jvm

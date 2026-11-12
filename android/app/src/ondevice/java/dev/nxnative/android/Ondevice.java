@@ -861,8 +861,8 @@ final class Ondevice {
                 // Prioritize the explicitly scoped Ocarina repair even when
                 // Prepare again also detects code that needs rewriting.
                 // The code step may run, but the 42k shader split/build cannot.
-                if (again && !card && !shaders &&
-                        offerOcarinaHotRepair(r, pd, code, f.tools, true, true)) return;
+                if (!shaders &&
+                        offerOcarinaHotRepair(r, pd, code, f.tools, again && !card, again && !card)) return;
                 if (!code && !shaders) {
                     adopt(r, pd, false, false, 0, card);
                     return;

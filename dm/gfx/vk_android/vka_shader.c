@@ -13,6 +13,7 @@
 #include "game_profile.h"
 #include "vka_spvpatch.h"
 #include "vka_abi_compat.h"  // audited source-level ABI extension certificates
+#include "vka_vegetation_supplement.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +25,8 @@
 // Full imported shader library (up to 42k shaders) stays untouched. A newly
 // compiled small hot-shader library can override only its listed keys while
 // everything else keeps running from the stable full library.
-static vka_shlib g_lib, g_hot; static int g_lib_state, g_hot_loaded;   // 0 not tried, 1 loaded, -1 none
+static vka_shlib g_lib, g_hot, g_vegetation;
+static int g_lib_state, g_hot_loaded, g_vegetation_loaded;   // 0 not tried, 1 loaded, -1 none
 static char g_lib_path[1024];                       // the library loaded (vka_shader_lib_path)
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 
@@ -186,6 +188,26 @@ static int certified_abi_open(vka_shlib *lib, const char *path, char *err, size_
         vka_shlib_close(lib);
     }
     return 0;
+}
+
+// Additive static-profile supplement, independent of the experimental hot
+// overlay. A missing stage/dependency rejects the whole supplemental set.
+static int vegetation_complete(const vka_shlib *lib, const vka_shlib *base) {
+    if (lib->by_abi ||
+        memcmp(lib->h->abi, DMSH_VK_ABI, 12) ||
+        lib->h->entry_count != sizeof vka_veg_entries / sizeof *vka_veg_entries ||
+        memcmp(lib->h->inputs, base->h->inputs, sizeof lib->h->inputs) ||
+        lib->h->subgroup_size != base->h->subgroup_size ||
+        lib->h->ssbo_align != base->h->ssbo_align) return 0;
+    for (unsigned i = 0; i < sizeof vka_veg_entries / sizeof *vka_veg_entries; i++) {
+        const dmsh_vk_entry *en = vka_shlib_find(lib, vka_veg_entries[i].key);
+        if (!en || en->stage != vka_veg_entries[i].stage ||
+            !vka_shlib_module(lib, en, DMSH_VK_MOD_BASE)) return 0;
+    }
+    for (unsigned i = 0; i < sizeof vka_veg_dependencies / sizeof *vka_veg_dependencies; i++)
+        if (!vka_shlib_find(base, vka_veg_dependencies[i]) &&
+            !vka_shlib_find(lib, vka_veg_dependencies[i])) return 0;
+    return 1;
 }
 
 static int lib_load(void) {
@@ -406,6 +428,24 @@ static int lib_load(void) {
     }
     if (!(e && *e) && !VKA_ENV("DM_VK_OOT_HOT", 1))
         VLOG("Ocarina GPU hot-shader overlay disabled by DM_VK_OOT_HOT=0: using intact full library for an A/B render comparison");
+    if (!(e && *e) && !strcmp(DM_GAME_ID, "0400486024DEC000")) {
+        char vp[1024], ve[256];
+        snprintf(vp, sizeof vp, "%s/shaders/vegetation/" DMSH_VK_DIR_PREFIX
+                 "%s/" DMSH_VK_LIB_FILE, dir, DMSH_VK_CHAIN);
+        if (!access(vp, R_OK)) {
+            if (vka_shlib_open(&g_vegetation, vp, DMSH_CHAIN, DMSH_VK_CHAIN,
+                              DM_GAME_ID, DMSH_VK_ABI, ve, sizeof ve)) {
+                if (vegetation_complete(&g_vegetation, &g_lib)) {
+                    g_vegetation_loaded = 1;
+                    VLOG("vegetation supplement: %u verified original task/mesh shaders; all stage/pixel dependencies present, full base and hot replacements preserved",
+                         g_vegetation.h->entry_count);
+                } else {
+                    VRED("vegetation supplement rejected: stage set, base inputs or dependencies incomplete; full base preserved");
+                    vka_shlib_close(&g_vegetation);
+                }
+            } else VRED("vegetation supplement rejected: %s", ve);
+        } else VLOG("vegetation supplement missing: prepare the 508-stage static update; full base preserved");
+    }
     const char *ck = getenv("DM_VK_SHLIB_CHECK");
     if (ck && atoi(ck)) vka_shlib_check_all(&g_lib);
     return 1;
@@ -862,6 +902,8 @@ static int oot_hot_scene_fragment_compatible(const dmsh_vk_entry *old,
     return 1;
 }
 static const vka_shlib *library_for_key(uint64_t key) {
+    if (g_vegetation_loaded && !vka_shlib_find(&g_lib, key) &&
+        vka_shlib_find(&g_vegetation, key)) return &g_vegetation;
     if (!g_hot_loaded) return &g_lib;
     const dmsh_vk_entry *overlay = vka_shlib_find(&g_hot, key);
     if (!overlay) return &g_lib;
@@ -908,7 +950,7 @@ static const vka_shlib *library_for_key(uint64_t key) {
 }
 vka_shader *vka_shader_by_key(uint64_t key) {
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
-    if (ok && V.memu && !vka_shlib_find(&g_lib, key)) { vka_shader *d = vka_memu_by_key(key); if (d) return d; }   // a task / mesh shader's compute or vertex form (the prewarm list's)
+    if (ok && V.memu && !vka_shlib_find(library_for_key(key), key)) { vka_shader *d = vka_memu_by_key(key); if (d) return d; }   // a task / mesh shader's compute or vertex form (the prewarm list's)
     return ok ? vka_shader_make(library_for_key(key), key) : NULL;
 }
 
@@ -1121,7 +1163,7 @@ static int stage_in_program(const prog_t *p, int stage, uint64_t *key, unsigned 
         if (!prog_key(p, i, md)) continue;
         uint64_t k = vka_shlib_key(md);
         const dmsh_vk_entry *e = g_hot_loaded ? vka_shlib_find(&g_hot, k) : NULL;
-        if (!e) e = vka_shlib_find(&g_lib, k);
+        if (!e) e = vka_shlib_find(library_for_key(k), k);
         if (e && vka_nvn_stage(e->stage) == stage) {
             *key = k; *slot = i;
             return 1;
@@ -1202,13 +1244,13 @@ uint32_t *vka_shader_memu_words(vka_shader *s, size_t *nb, char *err, size_t err
     if (w && (s->e->flags & DMSH_VK_F_SUBGROUP)) single_lane(s->key, DMSH_VK_STAGE_CS, &w, nb);
     return w;
 }
-int vka_shader_lib_has(uint64_t key) { pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu); return ok && vka_shlib_find(&g_lib, key) != NULL; }
+int vka_shader_lib_has(uint64_t key) { pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu); return ok && vka_shlib_find(library_for_key(key), key) != NULL; }
 int vka_shader_memu_key(uint64_t key) {
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
-    if (!ok || vka_shlib_find(&g_lib, key)) return 0;
+    if (!ok || vka_shlib_find(library_for_key(key), key)) return 0;
     static const uint64_t tag[3] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS};
     for (int i = 0; i < 3; i++) {
-        const dmsh_vk_entry *e = vka_shlib_find(&g_lib, key ^ tag[i]);
+        const dmsh_vk_entry *e = vka_shlib_find(library_for_key(key ^ tag[i]), key ^ tag[i]);
         if (e && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS)) return 1;
     }
     return 0;

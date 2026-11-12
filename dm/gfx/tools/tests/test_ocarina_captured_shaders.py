@@ -430,8 +430,8 @@ class CapturedTests(unittest.TestCase):
         self.assertIn("&& !replaceFailedOcarinaRepair)", ui)
         self.assertIn("boolean done = OcarinaShaderDelta.alreadyRepaired(probe, selected);", ui)
         self.assertIn("done && !explicit && !retryRequested", ui)
-        self.assertIn("offerOcarinaHotRepair(r, pd, code, f.tools, true, true)", ui)
-        self.assertLess(ui.index("offerOcarinaHotRepair(r, pd, code, f.tools, true, true)"),
+        self.assertIn("offerOcarinaHotRepair(r, pd, code, f.tools, again && !card, again && !card)", ui)
+        self.assertLess(ui.index("offerOcarinaHotRepair(r, pd, code, f.tools, again && !card, again && !card)"),
                         ui.index("if (!code && !shaders)"))
         self.assertIn('j.hotKeys(selected);', ui)
         self.assertIn('j.stepState("split", "done")', ui)
@@ -476,7 +476,7 @@ class CapturedTests(unittest.TestCase):
         java=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
         self.assertIn('PackEngine.setenv("DMSH_VK_CAPTURE_DIR"',svc)
         self.assertIn('boolean capturedOnly = !hotKeys.isEmpty()',svc)
-        self.assertIn('if (!capturedOnly) {',svc)
+        self.assertIn('if (!capturedOnly && !vegetation) {',svc)
         self.assertIn('new File(od, "capture-pkg")',svc)
         self.assertIn('An old full 42k shader split can still be on disk.',svc)
         self.assertNotIn('&&\\n                        !new File(split, "pkg").isDirectory();',svc)
@@ -504,13 +504,13 @@ class CapturedTests(unittest.TestCase):
         self.assertIn('full 42,339-shader split or translation was started',svc)
         self.assertIn('a missing capture is NOT permission',svc)
         self.assertIn('full split is blocked.',svc)
-        self.assertIn('offerOcarinaHotRepair(r, pd, code, f.tools, true, true)',ui)
+        self.assertIn('offerOcarinaHotRepair(r, pd, code, f.tools, again && !card, again && !card)',ui)
         self.assertIn('static void repairCapturedShaders(MainActivity a, Game g)',ui)
         self.assertIn('panel.repairCapturedShaders(g);',ui)
         self.assertIn('R.string.s2_ocarina_repair_note',ui)
         self.assertIn('No new valid captured shader sources', (ROOT/'android/app/src/main/res/values/strings.xml').read_text())
-        self.assertIn('Reparar shaders capturados', (ROOT/'android/app/src/main/res/values-pt/strings.xml').read_text())
-        self.assertLess(ui.index('offerOcarinaHotRepair(r, pd, code, f.tools, true, true)'),
+        self.assertIn('Reparar shaders ausentes', (ROOT/'android/app/src/main/res/values-pt/strings.xml').read_text())
+        self.assertLess(ui.index('offerOcarinaHotRepair(r, pd, code, f.tools, again && !card, again && !card)'),
                         ui.index('if (!code && !shaders)'))
         self.assertIn('&& j.hotKeys().isEmpty()',svc)
         self.assertIn('List<String> hotKeys = j.hotKeys();',svc)

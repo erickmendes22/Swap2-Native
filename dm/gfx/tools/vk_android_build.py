@@ -42,7 +42,7 @@ except ImportError:
     try: from backports import zstd   # pyright: ignore[reportMissingImports]
     except ImportError: zstd = None
 ABI_VK = os.path.join(GFX, 'nvn', 'dmsh_abi_vk.h'); HEADER_VK = os.path.join(GFX, 'nvn', 'dmsh_chain_vk.h')
-VK_FILES = ['tools/vk_android_build.py', 'tools/vk_android_spv.py', 'tools/vk_android_delta.py', 'nvn/dmsh_abi_vk.h']
+VK_FILES = ['tools/vk_android_build.py', 'tools/vk_android_spv.py', 'tools/vk_android_delta.py', 'tools/ocarina_vegetation.py', '../games/0400486024DEC000/vegetation_shaders.tsv', 'nvn/dmsh_abi_vk.h']
 SAME_TSV = os.path.join(HERE, 'vk_android_same.tsv')
 vk_values = delta.vk_values
 
@@ -646,7 +646,24 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
           'compiling only these into a hot overlay, static 42k library and profile unchanged', flush=True)
     return len(keys)
 
-if want:
+VEGETATION = os.environ.get('DMSH_VK_OOT_VEGETATION') == '1'
+if VEGETATION:
+    import ocarina_vegetation as vegetation
+    veg_rows = vegetation.manifest()
+    if GAME.id != vegetation.TITLE or want != set(veg_rows):
+        sys.exit('[RED] vegetation update must contain the exact reviewed stage set')
+    base = delta.Library(os.environ['DMSH_VK_VEGETATION_BASE'])
+    try:
+        if base.game != GAME.id or base.inputs != dmsh_chain.inputs(GAME) or base.ne < 40000:
+            raise ValueError('Vegetation update requires the original compatible full library')
+        vegetation.validate_dependencies(veg_rows, base.index)
+    finally:
+        base.close()
+    loc.update(vegetation.extract(os.environ['DMSH_VK_VEGETATION_ROMFS'], dm_dir, veg_rows))
+    for key, (_, source, facts) in veg_rows.items():
+        pc_of[key] = source
+        FACTS[key] = facts
+elif want:
     captured_oot_records(want, loc, pc_of, dm_dir)
 PAIRS = NS['load_pairs'](GAME, dm_dir)
 _dw = GAME.table('dual_want.tsv')   # pixel shaders a pipeline blends with output 1 as the second source (dmsh_build.py DUAL_WANT, from the Mac host's DM_NVN_DUAL_WANT)
@@ -1302,7 +1319,7 @@ results = [read_result(k) for k in ORDER]
 _bad = [r for r in results if r[1] != 'ok']
 # Only the expressly requested Ocarina hot overlay may publish a verified
 # subset. Never weaken full-library or other-game REQUIRE_ALL semantics.
-if (want and GAME.id == '0400486024DEC000' and
+if (want and not VEGETATION and GAME.id == '0400486024DEC000' and
         os.environ.get('DMSH_VK_OOT_PARTIAL') == '1' and _bad):
     for key, status, error, _ in _bad:
         print(f'[YELLOW] Ocarina deferred failed shader {key}: {status}: '
@@ -1382,6 +1399,8 @@ if not want and GAME.id == '0400486024DEC000':
     print(f'Ocarina initial full shaders: {len(_hashes)} verified entries, '
           'no captured-only shader replacements, previous library untouched until publish',
           flush=True)
+if VEGETATION and set(_hashes) != set(veg_rows):
+    sys.exit('[RED] vegetation supplement incomplete: no new library published')
 if want:
     # Keep the selected list next to the validated library for the Android
     # package step. The old UI's requested 57 keys MUST NOT be confused with

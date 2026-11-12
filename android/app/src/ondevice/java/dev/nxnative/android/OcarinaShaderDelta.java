@@ -27,6 +27,38 @@ final class OcarinaShaderDelta {
 
     private static final String TITLE = "0400486024DEC000";
 
+    /** Static, additive NVN2 update. This file does not change base inputs. */
+    static List<String> vegetationKeys() {
+        try {
+            File manifest = new File(PackNative.repo(), "dm/games/" + TITLE + "/vegetation_shaders.tsv");
+            ArrayList<String> keys = new ArrayList<>();
+            for (String row : Files.readAllLines(manifest.toPath(), StandardCharsets.UTF_8)) {
+                if (row.isBlank() || row.startsWith("#")) continue;
+                String[] c = row.split("\t", -1);
+                if (c.length != 4 || !c[0].matches("[0-9a-f]{16}")
+                        || !(c[1].equals("task") || c[1].equals("mesh")) || keys.contains(c[0]))
+                    throw new IOException("Invalid vegetation manifest");
+                keys.add(c[0]);
+            }
+            if (keys.size() != 508) throw new IOException("Incomplete vegetation manifest");
+            java.util.Collections.sort(keys);
+            return List.copyOf(keys);
+        } catch (IOException | RuntimeException e) {
+            android.util.Log.w("OcarinaShaderDelta", "Vegetation manifest unavailable", e);
+            return List.of();
+        }
+    }
+
+    static boolean vegetationJob(Job job) {
+        if (job == null || !TITLE.equals(job.titleId()) || job.hotKeys().size() != 508) return false;
+        return new HashSet<>(job.hotKeys()).equals(new HashSet<>(vegetationKeys()));
+    }
+
+    static File overlay(Job job, boolean vegetation) {
+        return new File(job.pack(), "shaders/" + (vegetation ? "vegetation" : "hot")
+                + "/v-" + BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+    }
+
     /**
      * GPU bottlenecks confirmed by the 720p Ocarina logs. The full old SPIR-V
      * library predates the already-integrated V21 raw vector / V22 last-range
@@ -65,6 +97,11 @@ final class OcarinaShaderDelta {
                 || !(BuildConfig.NX_DMSH_VK_ABI.equals(header.abi)
                         || ShaderAbiCert.approved(TITLE, header.vkChain, header.abi, header.inputs))) return List.of();
 
+        // First finish the missing original stages from the game's own
+        // static containers, independent of captures or prior hot overlays.
+        List<String> vegetation = vegetationKeys();
+        if (!vegetation.isEmpty() && !alreadyRepaired(job, vegetation)) return vegetation;
+
         try {
             File manifest = new File(PackNative.repo(), "dm/games/" + TITLE + "/vk_hot_delta.tsv");
             if (manifest.isFile() && !BuildConfig.NX_DMSH_VK_CHAIN.equals(header.vkChain)) {
@@ -98,7 +135,7 @@ final class OcarinaShaderDelta {
         // and the old Vulkan pipeline cache undisturbed. Python validates
         // every content hash, stage and source size before any compilation.
         File captures = new File(job.dir().getParentFile(), "nvn_shdump");
-        File hot = new File(job.pack(), "shaders/hot/v-" + BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+        File hot = overlay(job, false);
         ShaderLibs.Header hotHeader = ShaderLibs.header(hot);
         boolean hotVerified = hotHeader != null && hotHeader.fits(hot.length())
                 && TITLE.equals(hotHeader.game)
@@ -149,10 +186,12 @@ final class OcarinaShaderDelta {
     /** The installed overlay already contains every missing captured key. */
     static boolean alreadyRepaired(Job job, List<String> keys) {
         if (job == null || keys.isEmpty()) return false;
-        File hot = new File(job.pack(), "shaders/hot/v-" + BuildConfig.NX_DMSH_VK_CHAIN + "/dmsh_vk.lib");
+        boolean vegetation = keys.size() == 508 && new HashSet<>(keys).equals(new HashSet<>(vegetationKeys()));
+        File hot = overlay(job, vegetation);
         ShaderLibs.Header h = ShaderLibs.header(hot);
         Profile p = Profile.of(TITLE);
         if (h == null || p == null || !h.fits(hot.length())
+                || vegetation && h.entries != 508
                 || !TITLE.equals(h.game) || !p.shaderInputs.equals(h.inputs)
                 || !BuildConfig.NX_DMSH_VK_CHAIN.equals(h.vkChain)
                 || !BuildConfig.NX_DMSH_VK_ABI.equals(h.abi)) return false;

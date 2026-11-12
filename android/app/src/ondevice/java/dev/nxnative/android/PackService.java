@@ -423,7 +423,7 @@ public final class PackService extends Service {
                     // Captured-only repairs have no reason to re-split the
                     // entire game when all selected control/code files exist.
                     File capture = new File(j.dir().getParentFile(), "nvn_shdump");
-                    if (!hot.stream().allMatch(k -> new File(capture, k + ".ctl").isFile()
+                    if (!OcarinaShaderDelta.vegetationJob(j) && !hot.stream().allMatch(k -> new File(capture, k + ".ctl").isFile()
                             && new File(capture, k + ".code").isFile())) {
                         j.fail(GameFlow.STEP, -1, -1,
                                 "One or more selected Ocarina shader capture pairs are missing. "
@@ -461,7 +461,7 @@ public final class PackService extends Service {
                     // In particular, a missing capture is NOT permission to
                     // restart the full 42,339-shader preparation.
                     File captures = new File(j.dir().getParentFile(), "nvn_shdump");
-                    if (!j.hotKeys().stream().allMatch(k ->
+                    if (!OcarinaShaderDelta.vegetationJob(j) && !j.hotKeys().stream().allMatch(k ->
                             new File(captures, k + ".ctl").isFile()
                                     && new File(captures, k + ".code").isFile())) {
                         j.fail(GameFlow.STEP, -1, -1,
@@ -701,6 +701,7 @@ public final class PackService extends Service {
         // AND the older same-ABI complete library in the game's pack.
         // With neither, the old full/manifest-delta update remains unchanged.
         List<String> hotKeys = j.hotKeys();  // fixed at job creation, NEVER discovered during pack finalization
+        boolean vegetation = OcarinaShaderDelta.vegetationJob(j);
         // The tools' arguments: the in-process forms (pack_android.py --in-process: the rewriter in the same Python; shader_split.py with J=1 below: no process pool;
         // vk_android_build.py with the translator and the validator as libraries, XLATE / SPIRV_VAL below; the app's process must not fork, ONDEVICE.md "No subprocesses").
         // The split is resumable by RomFS file: its scan results are kept in the app's own storage (Job.splitScan, DM_SPLIT_RESUME, shader_split.py ScanCache) and a rerun scans only the files
@@ -740,7 +741,7 @@ public final class PackService extends Service {
                 // required for every requested key, regardless of cached
                 // shader_map.tsv or the old 42k split/pkg directory.
                 if ("0400486024DEC000".equals(j.titleId())
-                        && !hotKeys.isEmpty() && !capturedOnly)
+                        && !hotKeys.isEmpty() && !capturedOnly && !vegetation)
                     return "Captured Ocarina shader source is missing for one or more selected keys; "
                             + "the old 42,339-shader library is unchanged and full split is blocked.";
                 // An old full 42k shader split can still be on disk. Prefer
@@ -749,28 +750,29 @@ public final class PackService extends Service {
                 // touching the historical split package again. The Python
                 // translator verifies each control/code digest and compiles
                 // ONLY the selected key list into the partial hot library.
-                if (!new File(split, "pkg").isDirectory() && !capturedOnly) {
+                if (!new File(split, "pkg").isDirectory() && !capturedOnly && !vegetation) {
                     // Normal shader preparation must still split the game's
                     // approved static shader map before translation.
                     j.stepState("split", "pending");
                     return "interrupted";
                 }
-                if (!capturedOnly) {
+                if (!capturedOnly && !vegetation) {
                     String bad = splitMatchesProfile(j, split);
                     if (bad != null) return bad;
                 }
                 // For captured-only repair, vk_android_build.py generates the
                 // tiny verified .bin package itself. Never re-scan or
                 // invalidate the already playable static 42k-shader library.
-                File sourcePkg = capturedOnly ? new File(od, "capture-pkg") : new File(split, "pkg");
-                if (capturedOnly) Files.createDirectories(sourcePkg.toPath());
+                File sourcePkg = vegetation ? new File(od, "vegetation-pkg") :
+                        capturedOnly ? new File(od, "capture-pkg") : new File(split, "pkg");
+                if (capturedOnly || vegetation) Files.createDirectories(sourcePkg.toPath());
                 tool = "dm/gfx/tools/vk_android_build.py";
                 if (!hotKeys.isEmpty()) {
                     argv = new String[4 + hotKeys.size()];
                     argv[0] = "--target";
                     argv[1] = "vulkan";
                     argv[2] = sourcePkg.getPath();
-                    argv[3] = new File(pack, "shaders/hot").getPath();
+                    argv[3] = new File(pack, vegetation ? "shaders/vegetation" : "shaders/hot").getPath();
                     for (int k = 0; k < hotKeys.size(); k++) argv[k + 4] = hotKeys.get(k);
                 } else {
                     argv = new String[] {"--target", "vulkan", new File(split, "pkg").getPath(), lib.getPath()};
@@ -778,6 +780,14 @@ public final class PackService extends Service {
                 break;
             }
             case "pack": {
+                if (vegetation) {
+                    // The translator validates and atomically publishes the
+                    // exact 508-entry library directly into its separate path.
+                    // Do not invoke --hot-keys: that would replace approved
+                    // earlier overrides or touch the complete base pack.
+                    return OcarinaShaderDelta.alreadyRepaired(j, hotKeys) ? null :
+                            "Vegetation shader update incomplete; full base and earlier overrides preserved.";
+                }
                 tool = "scripts/pack_android.py";
                 // The selected 57 captured sources may include unpaired mesh/task
                 // shaders. The translator now defers these individually and
@@ -853,7 +863,13 @@ public final class PackService extends Service {
         // Safe partial mode affects only explicitly selected Ocarina hot keys.
         // The full 42,339 library still requires all its normal source entries.
         PackEngine.setenv("DMSH_VK_OOT_PARTIAL",
-                ocarinaShaders && !hotKeys.isEmpty() ? "1" : "0");
+                ocarinaShaders && !hotKeys.isEmpty() && !vegetation ? "1" : "0");
+        PackEngine.setenv("DMSH_VK_OOT_VEGETATION", ocarinaShaders && vegetation ? "1" : "0");
+        PackEngine.setenv("DMSH_VK_VEGETATION_ROMFS", vegetation ? upRomfs : "");
+        File vegetationBase = vegetation ? ShaderLibs.originalOcarina(pack, j.titleId(),
+                BuildConfig.NX_DMSH_VK_ABI, Profile.of(j.titleId()).shaderInputs) : null;
+        if (vegetation && vegetationBase == null) return "Original Ocarina shader library unavailable; vegetation update stopped.";
+        PackEngine.setenv("DMSH_VK_VEGETATION_BASE", vegetationBase == null ? "" : vegetationBase.getPath());
         // Strict first-time full builds: retry only transient failed shader
         // translations individually, never silently publish partial libraries.
         PackEngine.setenv("DMSH_VK_OOT_COLD_RETRY",

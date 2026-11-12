@@ -320,12 +320,12 @@
     <string name="s2_shaders_state">Shaders</string>
     <string name="s2_shaders_present">Presentes (%1$s)</string>
     <string name="s2_prepare_again">Preparar de novo</string>
-    <string name="s2_ocarina_repair">Reparar shaders capturados</string>
-    <string name="s2_ocarina_repair_note">Recompila só shaders ausentes e pesados capturados, sem refazer os 42.339 da biblioteca</string>
+    <string name="s2_ocarina_repair">Reparar shaders ausentes</string>
+    <string name="s2_ocarina_repair_note">Prepara os shaders de vegetação ausentes sem refazer a biblioteca completa</string>
     <string name="s2_ocarina_repair_none">Não foram encontradas novas capturas válidas. Jogue nas áreas onde faltam shaders e volte a esta opção. A biblioteca original de 42.339 shaders foi preservada.</string>
     <string name="s2_ocarina_repair_done">Todas as chaves de shaders capturadas já estão no overlay instalado. A biblioteca completa não foi alterada.</string>
     <string name="s2_ocarina_repair_invalid">Não foi possível validar o pacote Ocarina existente. Nenhuma compilação começou e a biblioteca original foi preservada.</string>
-    <string name="s2_ocarina_repair_confirm">Compilar %1$d shaders capturados e verificados em um overlay pequeno? Os 42.339 shaders originais, saves e cache de pipelines serão preservados. Não haverá nova divisão ou compilação completa.</string>
+    <string name="s2_ocarina_repair_confirm">Preparar %1$d shaders verificados em um suplemento separado? Os shaders de vegetação serão extraídos dos arquivos do jogo. A biblioteca original, os saves e o cache de pipelines serão preservados. Não haverá preparação completa.</string>
     <string name="s2_prepare_again_note">Refaz o que não serve, na biblioteca</string>
     <string name="s2_pack_export">Exportar pacote completo…</string>
     <string name="s2_pack_export_note">Código e shaders num só .zip, para a mesma versão do jogo</string>
