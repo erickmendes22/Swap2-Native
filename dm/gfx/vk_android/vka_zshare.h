@@ -53,6 +53,9 @@ static inline void vkz_note_own(vkz_tab *t) { t->owned++; }
 static inline void vkz_stats(const vkz_tab *t, uint64_t *images, uint64_t *allocs, uint64_t *bytes, uint64_t *saved) {
     uint64_t im = 0, by = 0, sv = 0;
     for (int i = 0; i < t->n; i++) { im += (uint64_t)t->e[i].refs; by += t->e[i].size; sv += (uint64_t)(t->e[i].refs - 1) * t->e[i].size; }
-    if (images) *images = im; if (allocs) *allocs = (uint64_t)t->n; if (bytes) *bytes = by; if (saved) *saved = sv;
+    if (images) *images = im;
+    if (allocs) *allocs = (uint64_t)t->n;
+    if (bytes) *bytes = by;
+    if (saved) *saved = sv;
 }
 #endif
