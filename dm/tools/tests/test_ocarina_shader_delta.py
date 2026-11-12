@@ -1,9 +1,12 @@
 """Ocarina selected-key updates must not rebuild, relabel, or destroy 42k shaders."""
+import ast
 import importlib.util
 import pathlib
 import struct
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts/ocarina_shader_hot_delta.py"
@@ -126,6 +129,91 @@ class SelectedUpdateTests(unittest.TestCase):
         self.assertIn('!unique.add(k)', code)
         scope = (ROOT / "dm/games/0400486024DEC000/vk_hot_delta.tsv").read_text()
         self.assertFalse(any(l.strip() and not l.startswith("#") for l in scope.splitlines()))
+
+    def test_shaders_only_import_prepares_code_instead_of_blocking(self):
+        # Real screen regression: the user imported all 42,339 merged shaders,
+        # then Prepare incorrectly rejected the shader-only pack because
+        # pack.tsv did not exist yet. A valid library must be checked first.
+        source = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/Ondevice.java").read_text()
+        start = source.index("File target = packOverride != null ? packOverride : AppStorage.pack(a, r.titleId);")
+        end = source.index("long need = (imported ? DumpCheck.NEED_CODE", start)
+        gate = source[start:end]
+        self.assertLess(gate.index("boolean imported ="), gate.index("&& !Pack.libraryVersions(target).isEmpty() && !imported"))
+        self.assertIn("&& ShaderZip.ready(target, r.titleId)", gate)
+        self.assertIn("Job j = Job.create(r, AppStorage.pack(a, r.titleId));", source)
+        self.assertIn("ShaderZip.ready(j.pack(), r.titleId)) j.shadersInPack();", source)
+        job = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/Job.java").read_text()
+        self.assertIn('o.put("shader_cache", new File(pack(), "shaders").getPath());', job)
+        self.assertIn('o.put("shaders_imported", true);', job)
+
+    @staticmethod
+    def packer_functions():
+        # Execute the REAL packer functions in isolation, not an alternate
+        # copy of their logic or string-only assertions.
+        source = ROOT / "scripts/pack_android.py"
+        tree = ast.parse(source.read_text())
+        wanted = {"library_current", "compatible_ocarina_full_library"}
+        funcs = [node for node in tree.body
+                 if isinstance(node, ast.FunctionDef) and node.name in wanted]
+        assert {fn.name for fn in funcs} == wanted
+        namespace = {
+            "Path": pathlib.Path, "VK_LIB": "dmsh_vk.lib",
+            "dmsh_chain": types.SimpleNamespace(inputs=lambda g: INPUTS),
+            "lib_stamp": lambda d: {"game": GAME, "inputs": INPUTS}
+                if (d / "dmsh_vk.lib").is_file() else {},
+        }
+        exec(compile(ast.Module(body=funcs, type_ignores=[]), str(source), "exec"), namespace)
+        return namespace
+
+    def test_merged_full_42339_import_is_used_even_with_six_entry_current_library(self):
+        # An imported full v-b6b21f library and a six-shader current-chain
+        # result can both have a correct inputs stamp. The 6-entry file must
+        # NEVER be mistaken for the playable library used by pack_android.
+        funcs = self.packer_functions()
+        game = types.SimpleNamespace(id=GAME)
+        pinned = self.p / "shaders/v-b6b21fb5753a/dmsh_vk.lib"
+        write_lib(pinned, "b6b21fb5753a", 42339)
+        current = self.p / f"shaders/v-{NEWVK}/dmsh_vk.lib"
+        write_lib(current, NEWVK, 6)
+        with mock.patch.object(delta, "abi_digest", return_value=ABI):
+            self.assertFalse(funcs["library_current"](current.parent, game),
+                             "six-shader hot result must not pass as complete base")
+            self.assertTrue(funcs["library_current"](pinned.parent, game),
+                            "42,339-shader full original-chain library must be recognized")
+            self.assertEqual(
+                funcs["compatible_ocarina_full_library"](self.p, game, NEWVK),
+                pinned, "finalizing pack must use the actual imported full library")
+
+            # A different same-chain 42,339-shader file with six modified
+            # entry bytes is still valid; it must not be SHA-forced back to
+            # the pristine historical file during code-only preparation.
+            before = pinned.read_bytes()
+            with pinned.open("r+b") as o:
+                for key in [1, 111, 222, 333, 444, 555]:
+                    o.seek(delta.HEAD.size + key * delta.ENTRY.size + 32)
+                    o.write(b"R")
+            changed = pinned.read_bytes()
+            self.assertNotEqual(before, changed)
+            self.assertEqual(len(before), len(changed))
+            self.assertEqual(funcs["compatible_ocarina_full_library"](self.p, game, NEWVK), pinned)
+            self.assertEqual(pinned.read_bytes(), changed,
+                             "six updated records are not touched by pack recovery")
+
+    def test_ooc_current_library_must_have_all_exact_42339_entries(self):
+        funcs = self.packer_functions()
+        game = types.SimpleNamespace(id=GAME)
+        current = self.p / f"shaders/v-{NEWVK}/dmsh_vk.lib"
+        with mock.patch.object(delta, "abi_digest", return_value=ABI):
+            self.assertFalse(funcs["library_current"](current.parent, game),
+                             "selective 2-entry hot result is NOT a full library")
+            write_lib(current, NEWVK, 42338)
+            self.assertFalse(funcs["library_current"](current.parent, game),
+                             "42338 entries are incomplete")
+            write_lib(current, NEWVK, 42339)
+            self.assertTrue(funcs["library_current"](current.parent, game))
+            write_lib(current, NEWVK, 42339, abi="ffffffffffff")
+            self.assertFalse(funcs["library_current"](current.parent, game),
+                             "wrong ABI must be refused even with 42,339 entries")
 
     def test_full_pipeline_remains_when_no_scope(self):
         source = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
