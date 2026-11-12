@@ -17,7 +17,7 @@
 #include "vka_memu_order.h"
 enum { MEMU_MAX = VKA_MEMU_ORDER_MAX };
 typedef struct { int ok, rec, indexed, points; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; } memu_ent;
-static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap; } MB;
+static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws; } MB;
 static memu_ent *g_memu_cur;
 // The record being replayed: its entry (the next of its record from the batch's cursor, taken), NULL when the batch has none left for it
 void vka_memu_cur(const uint8_t *p) { int i = vka_memu_order_take(&MB.o, p); g_memu_cur = i < 0 ? NULL : &MB.e[i]; }
@@ -75,7 +75,7 @@ static void memu_phase_barrier(void) {
         vka_barrier(g_cb);
 }
 void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx) {
-    if (phase == MEMU_BEGIN) { vka_memu_order_reset(&MB.o); MB.live = 0; g_memu_cur = NULL; return; }
+    if (phase == MEMU_BEGIN) { vka_memu_order_reset(&MB.o); MB.live = 0; MB.task_draws = 0; g_memu_cur = NULL; return; }
     if (phase == MEMU_ADD) {
         if (MB.o.n == MEMU_MAX || !g_cb) return;
         if (!MB.live) {
@@ -109,13 +109,26 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
             VkBufferCopy c = {o, MB.rec.off + ((VkDeviceSize)E->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_COUNT) * 4, 8}; vk.vkCmdCopyBuffer(g_cb, b, MB.rec.buf, 1, &c);
         } else { r[VKA_MEMU_R_COUNT] = dw->count > 0 ? (uint32_t)dw->count : 0; r[VKA_MEMU_R_FIRST] = dw->first > 0 ? (uint32_t)dw->first : 0; }
         E->indexed = mi->L.indexed; E->points = mi->L.points; E->ok = 1;
+        if (E->tcs) MB.task_draws++;
         return;
     }
     if (MB.live <= 0 || !MB.o.n) return;
     switch (phase) {
     case MEMU_SETUP: vka_barrier(g_cb); memu_helper(0); memu_phase_barrier(); break;
     case MEMU_TASK: if (idx < MB.o.n && MB.e[idx].ok && MB.e[idx].tcs) memu_dispatch(d, 6, MB.e[idx].tcs, &MB.e[idx].tl, MB.e[idx].tp, idx, VKA_MEMU_R_TASK_X); break;
-    case MEMU_DIST: memu_phase_barrier(); memu_helper(1); memu_phase_barrier(); break;
+    case MEMU_DIST:
+        // The setup shader already calls place(R, count) for taskless mesh
+        // draws; distribution returns immediately for these records. With
+        // no valid task shader in the ENTIRE batch, skip its dispatch and
+        // the two associated dependencies. The setup->mesh barrier remains.
+        if (MB.task_draws) { memu_phase_barrier(); memu_helper(1); memu_phase_barrier(); }
+        else {
+            static uint64_t bypassed;
+            if (++bypassed == 1 || (bypassed & 4095) == 0)
+                VLOG("mesh compute: %llu taskless distribution passes bypassed",
+                     (unsigned long long)bypassed);
+        }
+        break;
     case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X); break;
     case MEMU_END: memu_phase_barrier(); vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
     }
