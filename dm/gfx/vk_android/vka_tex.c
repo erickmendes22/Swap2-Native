@@ -141,6 +141,21 @@ void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int l
         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
 }
+// A pass that truly did not write any colour/depth/stencil attachment or
+// shader memory still READS depth, shaders' descriptor buffers and sampled
+// textures. It must finish those reads before a later pass/transfer overwrites
+// them (WAR). Vulkan requires an execution dependency for this, but no cache
+// availability/visibility operation: there were no writes in this pass.
+// Retain the original ALL_COMMANDS destination to cover every next consumer
+// and the Ocarina =0 option to use the full attachment dependency instead.
+uint64_t vka_n_readonly_exec_bar;
+void vka_graphics_read_barrier_at(VkCommandBuffer cb, const char *file, int line) {
+    vka_n_readonly_exec_bar++;
+    vk.vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+                            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                            0, 0, NULL, 0, NULL, 0, NULL);
+    if (vka_gp_active) vka_gp_mark(cb, file, line);
+}
 // OP_UPDATE_UB copies inline data from a staging buffer
 // memory; it does not generate shader writes or image writes. The transfer
 // stage is therefore the only new writer after the previous pass already
