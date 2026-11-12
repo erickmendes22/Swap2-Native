@@ -62,6 +62,18 @@ static void memu_helper(int dist) {
     vk.vkCmdDispatch(g_cb, dist ? (uint32_t)MB.o.n : ((uint32_t)MB.o.n + 63) / 64, 1, 1);
 }
 enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_END };
+// Within a mesh-compute batch, after the initial ALL_COMMANDS dependency
+// that imports prior guest graphics/transfer writes, the only new producers
+// are compute shaders and copies. Keep full destination scope for later
+// fragment/vertex/indirect/transfer consumers; avoid stalling unrelated
+// graphics producers at every intermediate phase. A rollback env is retained
+// for driver testing without exposing an unnecessary user-facing toggle.
+static void memu_phase_barrier(void) {
+    if (VKA_ENV("DM_VK_MEMU_SCOPED_BAR", 1))
+        vka_compute_write_barrier(g_cb);
+    else
+        vka_barrier(g_cb);
+}
 void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx) {
     if (phase == MEMU_BEGIN) { vka_memu_order_reset(&MB.o); MB.live = 0; g_memu_cur = NULL; return; }
     if (phase == MEMU_ADD) {
@@ -101,10 +113,10 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
     }
     if (MB.live <= 0 || !MB.o.n) return;
     switch (phase) {
-    case MEMU_SETUP: vka_barrier(g_cb); memu_helper(0); vka_barrier(g_cb); break;
+    case MEMU_SETUP: vka_barrier(g_cb); memu_helper(0); memu_phase_barrier(); break;
     case MEMU_TASK: if (idx < MB.o.n && MB.e[idx].ok && MB.e[idx].tcs) memu_dispatch(d, 6, MB.e[idx].tcs, &MB.e[idx].tl, MB.e[idx].tp, idx, VKA_MEMU_R_TASK_X); break;
-    case MEMU_DIST: vka_barrier(g_cb); memu_helper(1); vka_barrier(g_cb); break;
+    case MEMU_DIST: memu_phase_barrier(); memu_helper(1); memu_phase_barrier(); break;
     case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X); break;
-    case MEMU_END: vka_barrier(g_cb); vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
+    case MEMU_END: memu_phase_barrier(); vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
     }
 }
