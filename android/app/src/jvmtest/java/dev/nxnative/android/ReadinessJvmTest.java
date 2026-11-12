@@ -55,6 +55,19 @@ public final class ReadinessJvmTest {
         check(f.get("driver.info").equals("v1 = one") && f.get("ram_gib").equals("14.7") && f.get("android.sdk").equals("36"), "facts: the first '=' splits; the launcher's own");
         List<Readiness.Check> l = Readiness.evaluate(f, rows);
         check(!Readiness.any(l, Readiness.Status.FAIL) && !Readiness.any(l, Readiness.Status.WARNING), "all present: " + l);
+        // Vulkan 1.4 promotes map_memory2 to core: optional KHR extension
+        // absence must not trigger a false startup failure on Adreno 830.
+        Map<String, String> core14 = Readiness.merge(all.replace("ext.VK_KHR_map_memory2=1\\n", ""), 14.66, 36);
+        List<Readiness.Check> promoted = Readiness.evaluate(core14, rows);
+        check(!Readiness.any(promoted, Readiness.Status.FAIL)
+                && find(promoted, "Memory map 2").status == Readiness.Status.PASS,
+                "Vulkan 1.4 core map-memory2 must pass: " + promoted);
+        Map<String, String> no13 = Readiness.merge(all.replace("ext.VK_KHR_map_memory2=1\\n", "")
+                .replace("vk.instance=1.4.0", "vk.instance=1.3.0")
+                .replace("vk.api=1.4.295", "vk.api=1.3.0"), 14.66, 36);
+        List<Readiness.Check> missing13 = Readiness.evaluate(no13, rows);
+        check(find(missing13, "Memory map 2").status == Readiness.Status.FAIL,
+                "Vulkan 1.3 without KHR map-memory2 must fail: " + missing13);
         check(Readiness.summary("0123456789ABCDEF", f, l).startsWith("[readiness] 0123456789ABCDEF: PASS; Test GPU, Vulkan 1.4.295; driver Test driver (v1 = one), driver ID 8"), "summary " + Readiness.summary("0123456789ABCDEF", f, l));
 
         // Missing: a required row fails, a degraded one warns, a degraded row of a failed fact is left out, a host need fails once per title

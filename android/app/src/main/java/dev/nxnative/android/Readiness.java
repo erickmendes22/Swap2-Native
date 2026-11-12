@@ -143,9 +143,15 @@ final class Readiness {
             String key = r.fact + " " + r.min + " " + r.title;
             if (seen.contains(key)) continue;   // the same requirement twice (the host's and a profile's)
             seen.add(key);
-            boolean ok = have != null && compare(have, r.min) >= 0;
-            String shown = have == null ? "not reported" : "reports " + have;
-            if (ok) out.add(new Check(r.title, Status.PASS, "Present (" + label(r.fact) + " " + have + ", needs " + r.min + ").", null));
+            // VK_KHR_map_memory2 is core in Vulkan 1.4, so a valid 1.4
+            // driver may omit the KHR extension from its extension list.
+            // The native replay also uses vkMapMemory2 core on Vulkan 1.4.
+            boolean map2Core = "ext.VK_KHR_map_memory2".equals(r.fact)
+                    && compare(facts.getOrDefault("vk.api", "0"), "1.4") >= 0
+                    && compare(facts.getOrDefault("vk.instance", "0"), "1.4") >= 0;
+            boolean ok = map2Core || have != null && compare(have, r.min) >= 0;
+            String shown = map2Core ? "Vulkan 1.4 core" : have == null ? "not reported" : "reports " + have;
+            if (ok) out.add(new Check(r.title, Status.PASS, "Present (" + label(r.fact) + " " + (map2Core ? "Vulkan 1.4 core" : have) + ", needs " + r.min + ").", null));
             else {
                 if (r.required) { failed.add(r.fact); failed.add("title " + r.title); }
                 String msg = (r.required ? "This device lacks it; this game needs it. " : "Missing: this game runs without it, with less. ")

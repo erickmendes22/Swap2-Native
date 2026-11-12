@@ -45,7 +45,10 @@ static int init_once(void) {
         for (uint32_t i = 0; i < nl; i++) if (!strcmp(lp[i].layerName, layer)) nlayer = 1;
         free(lp); VLOG("DM_VK_VALIDATE: validation layer %s", nlayer ? "on" : "not installed");
     }
-    VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "nxnative", .pEngineName = "nxnative", .apiVersion = VK_API_VERSION_1_3};
+    // Request Vulkan 1.4 when both the loader and device support it; 1.4 has core
+    // vkMapMemory2/vkUnmapMemory2, even when the KHR extension is not listed.
+    VkApplicationInfo ai = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "nxnative", .pEngineName = "nxnative",
+                            .apiVersion = api >= VK_API_VERSION_1_4 ? VK_API_VERSION_1_4 : VK_API_VERSION_1_3};
     VkInstanceCreateInfo ici = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &ai, .enabledExtensionCount = niext, .ppEnabledExtensionNames = iext,
                                 .enabledLayerCount = nlayer, .ppEnabledLayerNames = &layer};
     VkResult r = vk.vkCreateInstance(&ici, NULL, &V.inst);
@@ -79,11 +82,23 @@ static int init_once(void) {
     { char q[700]; size_t qn = 0; q[0] = 0;   // the vendor's own extensions (tile properties, render pass transforms ...): what a tiler-specific path could use
       for (uint32_t i = 0; i < nde && qn < sizeof q; i++) if (strstr(de[i].extensionName, "_QCOM_")) qn += (size_t)snprintf(q + qn, sizeof q - qn, " %s", de[i].extensionName + 3);
       if (qn) VLOG("device extensions of the vendor:%s", q); }
-    int swap = has_ext(de, nde, VK_KHR_SWAPCHAIN_EXTENSION_NAME), map2 = has_ext(de, nde, VK_KHR_MAP_MEMORY_2_EXTENSION_NAME), placed = map2 && has_ext(de, nde, VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME);
+    // VK_KHR_map_memory2 was promoted to Vulkan 1.4: advertising the
+    // extension is optional for a 1.4 implementation. Do not classify
+    // placed mapping as unavailable solely because that extension is absent.
+    // Only enable advertised extension names in VkDeviceCreateInfo; use core
+    // vkMapMemory2/vkUnmapMemory2 entry points when provided by 1.4.
+    int swap = has_ext(de, nde, VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    int map2_ext = has_ext(de, nde, VK_KHR_MAP_MEMORY_2_EXTENSION_NAME);
+    int map2_core = ai.apiVersion >= VK_API_VERSION_1_4 && V.props.apiVersion >= VK_API_VERSION_1_4;
+    int map2 = map2_ext || map2_core;
+    int placed = map2 && has_ext(de, nde, VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME);
+    VLOG("Vulkan memory map 2: %s (%s), placed mapping extension %s", map2 ? "available" : "unavailable",
+         map2_ext ? "advertised KHR extension" : map2_core ? "Vulkan 1.4 core" : "neither KHR extension nor Vulkan 1.4 core",
+         placed ? "available" : "unavailable");
     V.display_timing = swap && has_ext(de, nde, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
     V.mem_budget = has_ext(de, nde, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
     if (swap) dext[ndext++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
-    if (map2) dext[ndext++] = VK_KHR_MAP_MEMORY_2_EXTENSION_NAME;
+    if (map2_ext) dext[ndext++] = VK_KHR_MAP_MEMORY_2_EXTENSION_NAME;
     if (placed) dext[ndext++] = VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME;
     if (V.display_timing) dext[ndext++] = VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME;
     if (V.mem_budget) dext[ndext++] = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME;

@@ -381,6 +381,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         try { Files.write(new File(getExternalFilesDir(null), "readiness-" + id + ".txt").toPath(), report.getBytes(StandardCharsets.UTF_8)); } catch (IOException ignored) { /* the screen's report leaves it out */ }
         readinessDone = true;
         List<Readiness.Check> fails = Readiness.of(l, Readiness.Status.FAIL), warns = Readiness.of(l, Readiness.Status.WARNING);
+        for (Readiness.Check missing : fails)
+            prestart("GPU_REQUIRED_MISSING title=" + missing.title + " fact=" + missing.fact + " info=" + missing.message);
+        for (Readiness.Check warn : warns)
+            prestart("GPU_WARNING title=" + warn.title + " fact=" + warn.fact);
         String gpu = "GPU: " + Readiness.gpu(f) + "\nMemory: " + f.get("ram_gib") + " GiB as Android reports it.";
         // The notice is short (what is missing, by name); Details has each item's sentence, the GPU and Copy report
         if (!fails.isEmpty()) {
@@ -445,12 +449,13 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             b.setView(sv);
         }
         b.setPositiveButton(go, (d, w) -> {
+            prestart("GPU_READINESS_USER_PROCEED button=" + go);
             if (again != null && again.isChecked())
                 Prefs.of(this).edit().putString(Prefs.gameKey("readiness_seen", id), warnKey(rFacts, Readiness.of(rChecks, Readiness.Status.WARNING))).apply();
             triedAnyway = required;
             start();
         });
-        b.setNegativeButton("Back", (d, w) -> end());
+        b.setNegativeButton("Back", (d, w) -> { prestart("GPU_READINESS_USER_BACK"); end(); });
         AlertDialog d = b.create();
         // Details opens over the notice and keeps it open; Copy report there keeps Details open
         d.setOnShowListener(x -> d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
@@ -459,6 +464,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             dd.show();
         }));
         d.show();
+        prestart("GPU_READINESS_DIALOG_SHOWN title=" + title + " action=" + go);
     }
     private void noteOwnRate() {
         try {
@@ -472,6 +478,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
 
     private void start() {
         String id = getIntent().getStringExtra("title_id"), name = getIntent().getStringExtra("name");
+        prestart("GAME_START_ENTER readinessDone=" + readinessDone);
         File game = new File(getIntent().getStringExtra("game")), packDir = new File(getIntent().getStringExtra("pack"));
         File files = getExternalFilesDir(null);
         try {
@@ -484,7 +491,9 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             List<String> user = new ArrayList<>(guard(userEnv(new File(files, "env.txt")), "env.txt", false));   // diagnostic switches (every game: never DM_SAVE) (DM_SVC=1, DM_FS=1, ...), as the iPhone's Documents/env.txt
             user.addAll(guard(envLines(Prefs.gameEnv(this, id)), "the game's settings", false));   // the game's own lines (its Game settings): after env.txt, so they win for this game
             user.addAll(guard(userEnv(new File(files, "env-" + id + ".txt")), "env-" + id + ".txt", testApp()));   // and env-<title ID>.txt (adb), the same for one game
+            prestart("GAME_SAVE_PREPARE_BEGIN");
             File save = saveDir(files, game, id), temp = mkdirs(new File(files, "temp/" + id)), root = mkdirs(new File(files, "root"));
+            prestart("GAME_SAVE_PREPARE_OK");
             File aoc = aocLinks(mkdirs(new File(files, "aoc/" + id)), game, pack);
             // Keep the file created before Native.load and the Vulkan readiness check.
             // A crash before Native.start leaves its [prestart] trace shareable by the launcher.
@@ -622,6 +631,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      * this game's host (the next Play of another game would land in it, Native.load) and the save's lock
      */
     private void fail(String why) {
+        prestart("GAME_START_FAIL " + why);
         new AlertDialog.Builder(this).setTitle("Cannot start " + getIntent().getStringExtra("name")).setMessage(why)
                 .setPositiveButton("OK", (d, w) -> end()).setCancelable(false).show();
     }
@@ -642,6 +652,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
      * The game itself is left as it is: onStop has suspended it
      */
     @Override protected void onDestroy() {
+        if (!hostRunning) prestart("GAME_ACTIVITY_DESTROYED started=" + started + " finishing=" + isFinishing());
         TextInput.gone(this);
         ui.removeCallbacksAndMessages(null);
         if (inputManager != null) inputManager.unregisterInputDeviceListener(this);
