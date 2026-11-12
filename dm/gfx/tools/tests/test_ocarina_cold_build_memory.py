@@ -57,6 +57,10 @@ class ColdShaderBuild(unittest.TestCase):
         self.assertIn('vka_img **tmp = cap ? realloc(g_live',T)
         self.assertIn('if (!tmp)',T)
         self.assertIn('img_destroy(im);',T)
-        self.assertIn('if (im) map_put(t->serial, im);',T)
+        # The RAM cache now records last-use/fence values inside an im guard.
+        # Preserve the important invariant: failed realloc never publishes the image.
+        self.assertIn('if (im) {\n        __atomic_store_n(&im->last_frame',T)
+        self.assertIn('map_put(t->serial, im);',T)
+        self.assertIn('vka_tex_prune_locked();',T)
         self.assertNotIn('g_live = realloc(g_live, (size_t)g_livecap',T)
 if __name__=="__main__":unittest.main()
