@@ -10,7 +10,11 @@ only audio until the user stops it. Early AV1 release signalling is active.
 The host's asynchronous output receiver closes a separately reproduced
 late-output deadlock; device validation and the precise stalled thread in this
 run remain open. See [Platform output arriving after Submit returns](../../../docs/reference/movies.md#platform-output-arriving-after-submit-returns)
-for the mechanism and production-code regression. No gameplay FPS gain is claimed.
+for the mechanism and production-code regression. Build 91 still froze with
+the receiver active in logs `125440` and `125938`; the latter has RAM Saver
+disabled. The next host corrects [completed sync handles after buffer reuse](../../../docs/reference/movies.md#completed-decoder-sync-handles-after-buffer-reuse)
+and enables nonfatal stall-state capture. Device validation remains open.
+No gameplay FPS gain is claimed.
 
 | Setting | Where | Why |
 |---|---|---|

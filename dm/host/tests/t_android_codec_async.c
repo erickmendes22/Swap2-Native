@@ -62,6 +62,7 @@ static void await_event(void *e) {
 int main(void) {
     uint8_t decoder[0x400] = {0}, pool[0x40] = {0}, point[0x80] = {0}, memory[16 * 16 * 4];
     setenv("DM_MOVIE_RATE", "0", 1);
+    cv_sync previous = {0};
     for (int round = 0; round < 20; round++) {
         int codec = round & 1 ? CV_H264 : CV_AV1;
         g_cv_clk = codec == CV_AV1;   // cover AV1's pre-Acquire policy and H.264 without clock dropping
@@ -71,6 +72,7 @@ int main(void) {
         assert(!cv_dec_reg(decoder, 0, pool, 0));
         uint32_t idx; cv_sync sync; uint64_t id;
         assert(!cv_dec_acq(&idx, &sync, decoder));
+        if (previous.magic) { assert(sync.dec != previous.dec); assert(sync_reached(&previous)); }
         cv_dec_rel(decoder, idx, sync);
         assert(!cv_dec_acq(&idx, &sync, decoder));
         assert(!h_spt_create(point));
@@ -84,10 +86,15 @@ int main(void) {
         assert(!cv_dec_props(&w, &h, &cw, &ch, &ts, &eos, decoder, idx) && ts == 123000 && !eos);
         // Also receive while the output remains queued BEFORE Acquire.
         cv_dec_rel(decoder, idx, sync);
+        // Completion fences are monotonic: releasing a buffer for a NEW
+        // picture cannot make the previously completed generation unsignalled.
+        assert(sync_reached(&sync));
+        assert(!h_spt_request(point, &sync) && event_set(point));
         sync.gen++;
         assert(!h_spt_request(point, &sync));
         assert(!cv_dec_submit(&id, decoder, &packet, 1, 456000, false));
         await_event(point);
+        previous = sync;
         assert(!cv_dec_acq(&idx, &sync, decoder));
         assert(!cv_dec_props(&w, &h, &cw, &ch, &ts, &eos, decoder, idx) && ts == 456000);
         // Flush discards an unfinished packet; a fresh packet still wakes us.

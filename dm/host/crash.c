@@ -15,6 +15,7 @@ static _Atomic int g_watch_pregame = 1;
 static _Atomic int g_watch_stage_idx;
 static char g_watch_stage[2][256] = {"startup", "startup"};
 static unsigned g_watch_stall;
+static unsigned g_watch_report;   // nonfatal diagnostics, independent of the opt-in kill watchdog
 static void (*g_dump_hook)(void);
 static void (*g_wait_dump)(void);
 
@@ -47,6 +48,15 @@ static void *watchdog_main(void *arg) {
         uint64_t last = atomic_load(&g_watch_last_ns), now = watch_now_ns();
         if (last > now) continue;
         if (atomic_load(&g_watch_hold)) { atomic_store(&g_watch_last_ns, now); continue; }   // suspended: no stall (crash_watch_hold)
+        // A player log must retain the wait state of an intermittent freeze.
+        // Report at most twice per process and once per unchanged progress
+        // episode, after actual frames have started. Never terminate here.
+        { static unsigned reports; static uint64_t reported_for;
+          if (g_watch_report && reports < 2 && atomic_load(&g_watch_count) >= 30
+              && last != reported_for && now - last >= (uint64_t)g_watch_report * 1000000000ull) {
+              reports++; reported_for = last;
+              crash_dump_now("nonfatal presentation stall report");
+          } }
         // Second-scale stall (progress has stopped for more than 1 second but has not yet reached the kill threshold): do not exit, dump what each thread is waiting on. When hitting a case of "only one frame every 2 seconds", the 15-second threshold cannot catch it and the log has nothing on what it is waiting for.
         // Dump only after entering a run; at most 3 dumps per process, at least 10 seconds between two dumps (the loading screen and the pause menu also stop ticks, do not let them flood the log)
         { static int dumps; static uint64_t last_dump, dumped_for;
@@ -119,7 +129,8 @@ void crash_set_trap_hook(int (*fn)(ucontext_t *uc)) { g_trap_hook = fn; }
 void crash_set_dump_hook(void (*fn)(void)) { g_dump_hook = fn; }
 void crash_set_wait_dump(void (*fn)(void)) { g_wait_dump = fn; }
 // Dump the current state on demand (without exiting): the iOS app has no no-progress watchdog, so when the smoke test fails it sends dump through DM_LOG_PORT to trigger this -- what each guest thread is waiting on + the graphics-side wait points, the same thing the watchdog prints
-void crash_dump_now(const char *why) { fprintf(stderr, "[dm] state dump (%s): tick %u / stage %s\n", why, atomic_load(&g_watch_tick), g_watch_stage[atomic_load(&g_watch_stage_idx)]); if (g_dump_hook) g_dump_hook(); if (g_wait_dump) g_wait_dump(); }
+__attribute__((weak)) void dm_codec_stall_dump(void) {}
+void crash_dump_now(const char *why) { fprintf(stderr, "[dm] state dump (%s): tick %u / stage %s\n", why, atomic_load(&g_watch_tick), g_watch_stage[atomic_load(&g_watch_stage_idx)]); dm_codec_stall_dump(); if (g_dump_hook) g_dump_hook(); if (g_wait_dump) g_wait_dump(); }
 // Only the first crashing thread prints its state: when several threads crash at once (Unity's job threads often do), the dumps used to interleave and the process hung in the dump without exiting.
 // Later threads stop in pause() until the process exits; the first thread re-entering (crashing again while printing, or the SIGALRM of the 15 s safety below) exits at once.
 static _Atomic uintptr_t g_crash_owner;
@@ -213,10 +224,11 @@ void crash_install(void) {
     sigaction(SIGALRM, &sa, 0);
     // Both watchdogs are turned on only when a test explicitly sets DM_WATCH / DM_WATCH_STALL: the product (the player launches from the desktop, no environment variables) turns on neither.
     // Found by reading the code: iOS main.m did setenv DM_WATCH=30 by default → the player's launch was killed by SIGALRM at 30 s; the no-progress watchdog defaulted to 15 s → the pause menu (ticks stopped) was killed at 15 s
-    const char *watch = getenv("DM_WATCH"), *stall = getenv("DM_WATCH_STALL");
+    const char *watch = getenv("DM_WATCH"), *stall = getenv("DM_WATCH_STALL"), *report = getenv("DM_WATCH_REPORT");
+    g_watch_report = report && atoi(report) > 0 ? (unsigned)atoi(report) : 0;
     if (watch) alarm(atoi(watch));
-    if (watch || stall) {
-        g_watch_stall = stall && atoi(stall) > 0 ? (unsigned)atoi(stall) : 15;
+    if (watch || stall || g_watch_report) {
+        g_watch_stall = watch || stall ? (stall && atoi(stall) > 0 ? (unsigned)atoi(stall) : 15) : 0;
         atomic_store(&g_watch_last_ns, watch_now_ns());
         pthread_t th; if (pthread_create(&th, NULL, watchdog_main, NULL)) die("watchdog thread");
         pthread_detach(th);

@@ -43,7 +43,7 @@ static const char *const k_cv_name[] = {"VP8", "VP9", "H.264", "AV1"};
 #define CV_MC(d) ((d)->codec == CV_H264 || (d)->codec == CV_AV1)   // decoded through hle_movie_avc.h (VideoToolbox / AMediaCodec), not libvpx
 typedef struct { vpx_image_t *im; uint8_t *nv12; int64_t ts; uint8_t eos; } cv_pic;   // a decoded picture: libvpx's as I420, the platform decoder's as NV12 until delivered
 typedef struct {
-    uint32_t magic, id; pthread_mutex_t mu; vpx_codec_ctx_t vpx; int vpx_ok; void *event; uint64_t submits, pictures;
+    uint32_t magic, id, slot; pthread_mutex_t mu; vpx_codec_ctx_t vpx; int vpx_ok; void *event; uint64_t submits, pictures;
     int codec; uint16_t w, h; mavc *avc; uint8_t *csd; size_t csd_n;   // H.264: VideoToolbox and the parameter sets Initialize gave
     struct { cv_pool *pool; uint32_t pidx; int reg, filled, queued; uint32_t gen, filled_gen; uint16_t w, h; int64_t ts; uint8_t eos; } buf[CV_BUFS];   // queued: in fifo
     uint32_t fifo[8], fhead, fcount;          // acquirable indices
@@ -60,7 +60,26 @@ typedef struct {
 } cv_dec;
 
 static cv_dec *g_cv[16];
+static uint32_t g_cv_next_id;   // sync handles must never refer to a later decoder reusing the same registry slot
 static pthread_mutex_t g_cv_mu = PTHREAD_MUTEX_INITIALIZER;   // lock order: g_cv_mu, then a decoder's mu, then g_spt_mu
+
+// Called by nonfatal stall diagnostics. Never wait on a codec lock: a stuck
+// decoder mutex is itself useful evidence, not a reason to stall the reporter.
+void dm_codec_stall_dump(void) {
+    if (pthread_mutex_trylock(&g_cv_mu)) { LOG("[codec-state] registry busy"); return; }
+    for (int k = 0; k < 16; k++) {
+        cv_dec *d = g_cv[k]; if (!d) continue;
+        if (pthread_mutex_trylock(&d->mu)) { LOG("[codec-state] %s decoder %u mutex busy", k_cv_name[d->codec], d->id); continue; }
+        LOG("[codec-state] %s decoder %u: submits=%llu pictures=%llu held=%d released=%u acquirable=%u eos_pending=%d eos_drain=%d",
+            k_cv_name[d->codec], d->id, (unsigned long long)d->submits, (unsigned long long)d->pictures,
+            d->nheld, d->pcount, d->fcount, d->eos_pending, d->eos_drain);
+        for (int i = 0; i < CV_BUFS; i++) if (d->buf[i].reg)
+            LOG("[codec-state] buffer %d: queued=%d filled=%d generation=%u completed=%u pts=%lld eos=%u", i,
+                d->buf[i].queued, d->buf[i].filled, d->buf[i].gen, d->buf[i].filled_gen, (long long)d->buf[i].ts, d->buf[i].eos);
+        pthread_mutex_unlock(&d->mu);
+    }
+    pthread_mutex_unlock(&g_cv_mu);
+}
 
 static cv_dec *cv_of(void *t) { cv_dec *d = t ? *(cv_dec **)t : NULL; return d && d->magic == CV_MAGIC ? d : NULL; }
 static cv_pool *pool_of(const void *t) { cv_pool *p = t ? *(cv_pool *const *)t : NULL; return p && p->magic == CV_MAGIC ? p : NULL; }
@@ -192,6 +211,7 @@ static void drain(cv_dec *d) {
 // Reset and Release; Finalize joins this thread before freeing any of them.
 static void *cv_output_worker(void *ctx) {
     cv_dec *d = ctx;
+    pthread_setname_np(pthread_self(), "codec-output");
     pthread_mutex_lock(&d->mu);
     while (!d->output_stop) {
         if (!d->submits || !d->pcount) {
@@ -307,7 +327,7 @@ static Result cv_dec_init(void *t, int codec, uint16_t w, uint16_t h, uint32_t i
     }
 #endif
     pthread_mutex_lock(&g_cv_mu);
-    for (int i = 0; i < 16; i++) if (!g_cv[i]) { g_cv[i] = d; d->id = (uint32_t)i + 1; break; }
+    for (int i = 0; i < 16; i++) if (!g_cv[i]) { g_cv[i] = d; d->slot = (uint32_t)i; d->id = ++g_cv_next_id; break; }
     pthread_mutex_unlock(&g_cv_mu);
     if (!d->id) die("nn::codec: more than 16 video decoders");
     d->event = (uint8_t *)t + CV_EVENT_OFF; hle_bind_system_event(d->event, 0); hle_signal_system_event(d->event);
@@ -325,7 +345,7 @@ static Result cv_dec_fin(void *t) {
         pthread_cond_destroy(&d->output_wake);
     }
 #endif
-    pthread_mutex_lock(&g_cv_mu); g_cv[d->id - 1] = NULL; pthread_mutex_lock(&d->mu); pthread_mutex_unlock(&d->mu); pthread_mutex_unlock(&g_cv_mu);   // no sync handle lookup is still inside
+    pthread_mutex_lock(&g_cv_mu); g_cv[d->slot] = NULL; pthread_mutex_lock(&d->mu); pthread_mutex_unlock(&d->mu); pthread_mutex_unlock(&g_cv_mu);   // no sync handle lookup is still inside
     if (!CV_MC(d) && d->vpx_ok) vpx_codec_destroy(&d->vpx);
     if (d->avc) mavc_free(d->avc);
     for (int i = 0; i < d->nheld; i++) pic_free(&d->held[i]);
@@ -590,9 +610,12 @@ static bool sync_reached(const cv_sync *s) {
     if (s->magic != CV_SYNC) { static int once; if (!once++ && (s->magic || s->dec)) LOG("[RED] nn::codec: a sync handle the host did not make (%#x): signalled", s->magic); return true; }
     if (!s->gen) return true;
     pthread_mutex_lock(&g_cv_mu);   // held until the decoder's lock is: FinalizeVp9Decoder cannot free it in between
-    cv_dec *d = s->dec && s->dec <= 16 ? g_cv[s->dec - 1] : NULL;
+    cv_dec *d = NULL;
+    for (int i = 0; i < 16; i++) if (g_cv[i] && g_cv[i]->id == s->dec) { d = g_cv[i]; break; }
     bool r = true;
-    if (d && s->idx < CV_BUFS) { pthread_mutex_lock(&d->mu); r = d->buf[s->idx].filled && d->buf[s->idx].filled_gen >= s->gen; pthread_mutex_unlock(&d->mu); }
+    // filled describes the CURRENT image; completed generations stay reached
+    // after Release clears filled to wait for the NEXT image in this buffer.
+    if (d && s->idx < CV_BUFS) { pthread_mutex_lock(&d->mu); r = d->buf[s->idx].filled_gen >= s->gen; pthread_mutex_unlock(&d->mu); }
     pthread_mutex_unlock(&g_cv_mu);
     return r;
 }

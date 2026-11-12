@@ -41,9 +41,10 @@ class AndroidCodecAsync(unittest.TestCase):
             # tracer. ASan bounds/UAF and UBSan checks remain active.
             environment["ASAN_OPTIONS"] = "detect_leaks=0"
             result = subprocess.run(
-                [str(executable)], check=True, timeout=30, env=environment,
+                [str(executable)], timeout=30, env=environment,
                 capture_output=True, text=True,
             )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("20 delayed-output", result.stdout)
 
 

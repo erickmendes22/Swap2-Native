@@ -333,6 +333,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             List<String> env = new ArrayList<>(List.of(
                     "DM_ROMFS=" + romfs, "DM_SAVE=" + save, "DM_TEMP=" + temp, "DM_ROOT=" + root, "DM_AOC_DIR=" + aoc,
                     "HOME=" + files, "TMPDIR=" + getCacheDir(), "DM_BUILD_COMMIT=" + BuildConfig.NX_COMMIT,
+                    "DM_WATCH_REPORT=5",
                     "DM_CTL=" + new File(files, "ctl.txt")));   // live control lines (android/TESTING.md "Live control", android/tools/nxctl.sh); DM_CTL= in env.txt turns it off
             // Shaders the game binds that its library does not have are saved in the game's work folder (<Switch2>/Work/<title ID>/nvn_shdump, or an older
             // <title ID>-work beside the dump: Switch2Layout.workOf, as DumpCheck.workOf names it), where the next Prepare's split takes them in (PackService

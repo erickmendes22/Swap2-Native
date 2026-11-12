@@ -352,3 +352,10 @@ Ocarina 0.1.6 asynchronous platform output receiver (2026-11-12):
 - Same package, version, shader ABI, complete shader library and cached signing key. Device playback validation remains required; no FPS or confirmed on-device freeze-fix claim.
 
 CI follow-up: compile the vendored libvpx image/memory implementation for the asynchronous codec regression; VP8/VP9 decode entry points abort if accidentally reached. No system libvpx package or network install is required. The same 20 AV1/H.264 delayed-output cycles pass locally with ASan/UBSan.
+
+Ocarina 0.1.6 sync completion lifetime follow-up (2026-11-12):
+- Build91 receiver is active but logs 125440 and 125938 still stop frames while audio continues. 125938 has RAM Saver disabled: file backing is not required for the freeze.
+- Fix production NativeSync completion: Release of a buffer for a new image no longer makes an already-completed generation unsignalled. Give each decoder a distinct handle identity instead of recycling the registry slot ID for the next movie.
+- Regression first fails on the old filled-state check, then passes 20 AV1/H264 delayed-output/release/recreation cycles under ASan/UBSan with corrected completion and decoder IDs.
+- Enable DM_WATCH_REPORT=5: at most two nonfatal stall state dumps after presentation has started; paused/background holds are honored. Does not enable a timeout that closes the app. Dumps codec buffer generations/queues plus guest/native thread state for any remaining freeze.
+- Same shader ABI/library, package, app version, branch and cached signing key. Device freeze resolution remains unverified.
