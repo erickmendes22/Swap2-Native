@@ -151,23 +151,46 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Install Android NDK and CMake
+      - name: Install Android NDK and CMake (recover partial SDK downloads)
         shell: bash
         run: |
-          set -euxo pipefail
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
-            "ndk;28.2.13676358" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
+          set -euo pipefail
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           NDK="$ANDROID_HOME/ndk/28.2.13676358"
-          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
           SHADER_TOOLS="$NDK/shader-tools/linux-x86_64"
-          # The NDK ships glslc and SPIR-V tools. Keep the existing
-          # SGSR1 compilation/validation while removing Ubuntu apt DNS.
-          for tool in glslc spirv-val; do
-            if [ ! -x "$SHADER_TOOLS/$tool" ]; then
-              echo "::error::Android NDK missing $SHADER_TOOLS/$tool" >&2
+          # Install small SDK packages separately from the large NDK archive:
+          # a corrupt NDK ZIP must not leave the other packages uninstalled.
+          "$SDKMGR" --install "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
+          ndk_ready() {
+            [ -s "$NDK/source.properties" ] &&
+            [ -x "$SHADER_TOOLS/glslc" ] &&
+            [ -x "$SHADER_TOOLS/spirv-val" ] &&
+            [ -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]
+          }
+          for attempt in 1 2 3 4; do
+            if ndk_ready; then
+              echo "NDK already complete; no download needed."
+              break
+            fi
+            echo "NDK 28.2.13676358 install attempt $attempt/4"
+            # Failed sdkmanager ZIP extraction can leave a half-created NDK.
+            # This is an ephemeral runner; only touch this precise NDK path.
+            if [ -d "$NDK" ] && ! ndk_ready; then rm -rf -- "$NDK"; fi
+            if "$SDKMGR" --install "ndk;28.2.13676358" && ndk_ready; then
+              echo "NDK installation verified."
+              break
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "::error::NDK download/install failed after four verified attempts" >&2
               exit 1
             fi
+            sleep $((attempt * 10))
           done
+          if ! ndk_ready; then
+            echo "::error::NDK was not installed completely" >&2
+            exit 1
+          fi
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
           echo "$SHADER_TOOLS" >> "$GITHUB_PATH"
           echo "NDK shader tools: $SHADER_TOOLS"
       - name: Validate compute mesh and GPU texture feedback SPIR-V
