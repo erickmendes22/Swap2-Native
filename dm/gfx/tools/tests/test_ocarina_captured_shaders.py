@@ -450,7 +450,10 @@ class CapturedTests(unittest.TestCase):
         self.assertIn("Refusing a destructive 42,339-shader automatic rebuild",svc)
         self.assertIn("automatic retranslation of all 42,339 shaders is blocked.",svc)
         self.assertIn("Nenhuma recompilação foi iniciada",ui)
-        self.assertIn("Não serão preparados os 42.339 shaders novamente",ui)
+        # The import-first fix no longer rejects a compatible full 42k
+        # library simply because pack.tsv has not been written yet.
+        self.assertIn("&& !Pack.libraryVersions(target).isEmpty() && !imported",ui)
+        self.assertIn("Os shaders existentes não foram apagados nem recompilados",ui)
 
     def test_pack_96_percent_recovers_library_without_pack_tsv(self):
         svc=(ROOT/"android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
