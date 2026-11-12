@@ -57,12 +57,12 @@ public final class ReadinessJvmTest {
         check(!Readiness.any(l, Readiness.Status.FAIL) && !Readiness.any(l, Readiness.Status.WARNING), "all present: " + l);
         // Vulkan 1.4 promotes map_memory2 to core: optional KHR extension
         // absence must not trigger a false startup failure on Adreno 830.
-        Map<String, String> core14 = Readiness.merge(all.replace("ext.VK_KHR_map_memory2=1\\n", ""), 14.66, 36);
+        Map<String, String> core14 = Readiness.merge(all.replace("ext.VK_KHR_map_memory2=1\n", ""), 14.66, 36);
         List<Readiness.Check> promoted = Readiness.evaluate(core14, rows);
         check(!Readiness.any(promoted, Readiness.Status.FAIL)
                 && find(promoted, "Memory map 2").status == Readiness.Status.PASS,
                 "Vulkan 1.4 core map-memory2 must pass: " + promoted);
-        Map<String, String> no13 = Readiness.merge(all.replace("ext.VK_KHR_map_memory2=1\\n", "")
+        Map<String, String> no13 = Readiness.merge(all.replace("ext.VK_KHR_map_memory2=1\n", "")
                 .replace("vk.instance=1.4.0", "vk.instance=1.3.0")
                 .replace("vk.api=1.4.295", "vk.api=1.3.0"), 14.66, 36);
         List<Readiness.Check> missing13 = Readiness.evaluate(no13, rows);
