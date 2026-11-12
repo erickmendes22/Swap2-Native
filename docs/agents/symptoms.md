@@ -833,6 +833,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - compute-mesh batches execute without preparation errors, but parts of the scene remain absent and the log reports `is not in the shader library` for task/mesh keys. → [Extended NVN2 stages absent from the shader preparation](../reference/shaders.md#extended-nvn2-stages-absent-from-the-shader-preparation)
 - a cold Android Vulkan run has a memory peak while compiling many pipelines; reopening with the driver cache populated may pass the same scene. This symptom alone does not identify an Android kill reason. → [Linked pipelines retained after optimization](../reference/shaders.md#linked-pipelines-retained-after-optimization)
 - a static shader repair offers historical captures instead of the newly shipped stage set, and its task disappears because the original game remains playable. → [Launcher shader selection before the pack process starts](../reference/shaders.md#launcher-shader-selection-before-the-pack-process-starts)
+- a selected static shader update reports `a frame needs zstd dictionary 1` before translating any shader, although full splitting handled the game's containers. → [Compression dictionaries in bounded static shader extraction](../reference/shaders.md#compression-dictionaries-in-bounded-static-shader-extraction)
 
 ## Game state
 

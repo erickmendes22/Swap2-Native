@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Compression dictionaries in bounded static shader extraction](../../../docs/reference/shaders.md#compression-dictionaries-in-bounded-static-shader-extraction): build 101 selected the correct stages but bypassed dictionary initialization when opening their compressed source.
+
 - [Launcher shader selection before the pack process starts](../../../docs/reference/shaders.md#launcher-shader-selection-before-the-pack-process-starts): build 100 selected 56 captures instead of the 508 static stages because the launcher tried to initialize a service-owned native engine.
 
 - [Extended NVN2 stages absent from the shader preparation](../../../docs/reference/shaders.md#extended-nvn2-stages-absent-from-the-shader-preparation): build 98 executes compute-mesh batches but the foliage's original shaders are absent from the preserved full library. Open; an executor-only APK cannot supply them.
@@ -221,3 +223,12 @@ Fixed: `ocarina_vegetation.py --header` generates the immutable `OcarinaVegetati
 A second control-flow bug hid the pending or failed optional shader job whenever the existing base was playable. The launcher now keeps its task visible until the update is done, without revoking Play on the unchanged full base. Explicit repair opens the preparation screen and clears autoplay.
 
 Validation: `test_ocarina_vegetation_launcher.py` compiles the actual production selector and the actual visibility-control prefix on the JVM. With no native packer context and 56 old capture pairs, it requires exactly 508 static keys, zero native repo calls, the separate output path and visible pending/failed progress. Running the same test against build 100 reproduces `Expected 508 ... got 56`; independently restoring its old display prefix reproduces `Pending update hidden as playable base`. Both pass with the fix. Device translation and foliage rendering remain pending. See [launcher process isolation](../../../docs/reference/shaders.md#launcher-shader-selection-before-the-pack-process-starts).
+
+
+### Build 101 dictionary-compressed static extraction (2026-11-12)
+
+Phone log `shaders.log` at 19:16:13 and 19:16:25 (screenshot `1165618.jpg`) confirms the correct 508-stage `vegetation-pkg` job, then fails before translation on ApplicationPackage: `a frame needs zstd dictionary 1`. The partial extractor imported `shader_split` and called `unzs` directly, skipping the full splitter's worker initialization of `ZDICTS`. The error therefore did not establish that the user's dump lacked a dictionary.
+
+Fixed: the bounded extractor loads `Pack/ZsDic.pack.zs` through the same read-only RomFS/NUP adapter before opening compressed shader containers. For a selected update, it loads the base dictionaries first and overlays that update's dictionaries; this works for both a `.nup:update/131072/romfs` selector and the corresponding extracted `updates/131072/romfs` layout. Each extraction gets a fresh decoded-dictionary cache and restores the prior module state on success or failure, so ID 1 from another dump cannot be reused accidentally. Source hashes, static layouts, exact 508-stage completeness and the separate output library remain required. Dictionary and shader input streams now close immediately after reading.
+
+Validation: the production extractor processes an actual dictionary-compressed synthetic SARC/BNSH using a trained Zstandard dictionary with ID 1, first from an extracted update directory, then from an actual NUP with spaces in its filename and the dictionary only in its base package, and from the equivalent base/update directory layout. The records pass their original key checks. A subsequent dump with no dictionary fails instead of borrowing a previous ID. The build 101 extractor reproduces the same phone error even with a present dictionary pack; the updated code passes. CI installs the tested Zstandard backport for the host fixture; the phone already has the decompressor. No original game code or dictionary bytes are included in the test/repository. Device shader translation and rendering remain pending. See [compression dictionary initialization](../../../docs/reference/shaders.md#compression-dictionaries-in-bounded-static-shader-extraction).

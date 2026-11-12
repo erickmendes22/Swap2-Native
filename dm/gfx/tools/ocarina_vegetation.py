@@ -77,6 +77,36 @@ def extract(romfs, package, rows=None, reader=None):
     """
     if reader is None:
         import shader_split as reader
+    # The full splitter initializes these in its worker pool. This bounded
+    # extractor does not enter that pool, so importing shader_split alone
+    # leaves dictionary 1 unavailable even when it exists in the game dump.
+    # An update NUP may keep an unchanged dictionary pack in its base RomFS.
+    roots = [romfs]
+    nup_path = reader.nup.split(romfs)
+    base = None
+    if nup_path and nup_path[1].startswith('update/'):
+        base = nup_path[0] + ':base/romfs'
+    elif not nup_path:
+        version = reader.os.path.dirname(reader.os.path.normpath(romfs))
+        updates = reader.os.path.dirname(version)
+        if (reader.os.path.basename(romfs) == 'romfs'
+                and reader.os.path.basename(updates) == 'updates'
+                and reader.os.path.basename(version).isdigit()):
+            base = reader.os.path.join(reader.os.path.dirname(updates), 'base/romfs')
+    if base and reader.os.path.isdir(base): roots.insert(0, base)
+    dictionaries = {}
+    for root in roots: dictionaries.update(reader.zs_dicts(root))
+    previous = reader.ZDICTS, reader._ZD
+    reader.ZDICTS, reader._ZD = dictionaries, {}
+    print('vegetation zstd dictionaries: ' + ','.join(map(str, sorted(dictionaries)))
+          + ' (fresh base/update scope)', flush=True)
+    try:
+        return _extract(romfs, package, rows, reader)
+    finally:
+        reader.ZDICTS, reader._ZD = previous
+
+
+def _extract(romfs, package, rows, reader):
     rows = manifest() if rows is None else rows
     grouped = {}
     for key, (stage, source, facts) in rows.items():

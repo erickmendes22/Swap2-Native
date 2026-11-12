@@ -3,6 +3,7 @@ import contextlib
 import copy
 import io
 import os
+import random
 from pathlib import Path
 import shutil
 import struct
@@ -41,7 +42,83 @@ def fixture():
     return d, rows
 
 
+def sarc(members):
+    """Synthetic named SARC, using the same wire layout as the game containers."""
+    names = b''.join(n + b'\0' + bytes(-(len(n)+1) % 4) for n, _ in members)
+    sfat = b'SFAT' + struct.pack('<HHI', 12, len(members), 0x65)
+    data = b''; name_at = 0
+    for name, payload in members:
+        start = len(data); data += payload
+        sfat += struct.pack('<IIII', 0, 0x1000000 | name_at//4, start, len(data))
+        name_at += (len(name)+4)//4*4
+        data += bytes(-len(data) % 0x100)
+    end = 0x14 + len(sfat) + 8 + len(names); off = (end+255)//256*256
+    head = b'SARC' + struct.pack('<HHII', 0x14, 0xfeff, off+len(data), off) + bytes(4)
+    head += sfat + b'SFNT' + struct.pack('<HH', 8, 0) + names
+    return head + bytes(off-len(head)) + data
+
+
 class VegetationSupplement(unittest.TestCase):
+    def test_dictionary_compressed_sarc_from_update_nup_and_directory(self):
+        zstd = ss.zstd_mod()
+        # Genuine trained dictionary, with the same dictionary ID as the
+        # failing phone frame. No extracted game data is used.
+        raw = bytearray(zstd.train_dict([random.Random(i).randbytes(2048)
+                                       for i in range(100)], 1024).dict_content)
+        struct.pack_into('<I', raw, 4, 1)
+        dictionary = zstd.ZstdDict(bytes(raw))
+        dictionary_pack = zstd.compress(sarc([(b'shaders.zsdic', bytes(raw))]))
+        data, original = fixture()
+        label = '/Shader/ApplicationPackage.Nin_Ounce_NVN2.release.sarc.zs/Model.Nin_Ounce_NVN2.bfsha'
+        rows = {key: (stage, source.replace('/Shader/test.bfsha', label), facts)
+                for key, (stage, source, facts) in original.items()}
+        compressed = zstd.compress(sarc([(b'Model.Nin_Ounce_NVN2.bfsha', bytes(data))]), zstd_dict=dictionary)
+        self.assertEqual(ss.zs_dict_id(compressed), 1)
+        old_tables, old_cache = ss.ZDICTS, ss._ZD
+        with tempfile.TemporaryDirectory() as td, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(td); dump = root/'dump'
+            base = dump/'base/romfs'; update = dump/'updates/131072/romfs'
+            (base/'Pack').mkdir(parents=True); (update/'Shader').mkdir(parents=True)
+            shader = update/'Shader/ApplicationPackage.Nin_Ounce_NVN2.release.sarc.zs'
+            shader.write_bytes(compressed)
+            # Before the fix, even a present dictionary was never registered.
+            (update/'Pack').mkdir()
+            (update/'Pack/ZsDic.pack.zs').write_bytes(dictionary_pack)
+            ss.ZDICTS, ss._ZD = {}, {}
+            try:
+                result = veg.extract(str(update), root/'folder-pkg', rows, ss)
+                self.assertEqual(set(result), set(rows))
+                self.assertEqual(ss.ZDICTS, {})
+                self.assertEqual(ss._ZD, {})
+                # The NUP update has no dictionary pack of its own; resolve
+                # its unchanged base dictionary through the real NUP reader.
+                (update/'Pack/ZsDic.pack.zs').unlink()
+                (base/'Pack/ZsDic.pack.zs').write_bytes(dictionary_pack)
+                npdm = bytearray(0x100); npdm[0x80:0x84] = b'ACI0'
+                struct.pack_into('<Q', npdm, 0x90, int(veg.TITLE, 16))
+                exefs = dump/'base/exefs'; exefs.mkdir()
+                (exefs/'main.npdm').write_bytes(npdm)
+                nup = root/'Game With Spaces.nup'
+                subprocess.run([sys.executable, str(ROOT/'dm/tools/nup_pack.py'),
+                                str(dump), str(nup), '--raw'], check=True, capture_output=True)
+                result = veg.extract(str(nup)+':update/131072/romfs', root/'nup-pkg', rows, ss)
+                self.assertEqual(set(result), set(rows))
+                self.assertEqual(ss.ZDICTS, {})
+                self.assertEqual(ss._ZD, {})
+                # The equivalent extracted directory uses the same base
+                # fallback, without requiring the game to be repacked.
+                result = veg.extract(str(update), root/'base-folder-pkg', rows, ss)
+                self.assertEqual(set(result), set(rows))
+                # A new unrelated dump cannot reuse dictionary ID 1 from the
+                # preceding extraction. Missing dictionaries still fail.
+                (base/'Pack/ZsDic.pack.zs').unlink()
+                with self.assertRaisesRegex(SystemExit, 'needs zstd dictionary 1'):
+                    veg.extract(str(update), root/'missing', rows, ss)
+                self.assertEqual(ss.ZDICTS, {})
+                self.assertEqual(ss._ZD, {})
+            finally:
+                ss.ZDICTS, ss._ZD = old_tables, old_cache
+
     def test_extended_slots_are_extracted_and_hash_checked(self):
         data, rows = fixture()
         self.assertEqual({v[0] for v in rows.values()}, {'task', 'mesh'})

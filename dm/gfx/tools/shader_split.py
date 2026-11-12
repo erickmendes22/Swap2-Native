@@ -2338,7 +2338,7 @@ def zs_dicts(romfs):
     a SARC (itself plain zstd) of *.zsdic files, each a zstd dictionary (magic 0xEC30A437, then its ID). → {ID: dictionary}; {} without that file (Mario's .zs are plain zstd)"""
     p = os.path.join(romfs, 'Pack/ZsDic.pack.zs')
     if not os.path.exists(p): return {}
-    d = zstd_mod().decompress(open(p, 'rb').read())
+    with open(p, 'rb') as f: d = zstd_mod().decompress(f.read())
     return {struct.unpack_from('<I', m, 4)[0]: m for _, m in sarc_members(d, '/Pack/ZsDic.pack.zs') if m[:4] == bytes.fromhex('37a430ec')}
 
 def zs_dict_id(d):
@@ -2360,7 +2360,7 @@ _ZSTD_CMD = shutil.which('zstd')
 def unzs(path):
     """A zstd file decompressed: frames without a dictionary through the zstd command as before (fed the bytes: inside a RomFS image the path is not a file the command can open),
     frames that name one with that dictionary from ZDICTS"""
-    d = open(path, 'rb').read()
+    with open(path, 'rb') as f: d = f.read()
     did = zs_dict_id(d)
     if not did:
         if _ZSTD_CMD: return subprocess.run([_ZSTD_CMD, '-d', '-c', '-q'], input=d, capture_output=True, check=True).stdout
