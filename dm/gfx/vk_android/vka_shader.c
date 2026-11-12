@@ -675,6 +675,50 @@ VkShaderModule vka_shader_module(vka_shader *s, int variant) {
     pthread_mutex_unlock(&g_mu);
     return mod;
 }
+// In hybrid Ocarina mode the SAME base-library fragment shader can be
+// paired with (1) its original VK_EXT_mesh_shader output, where per-primitive
+// inputs are required, and (2) a supplemental mesh->compute vertex arena,
+// where the same inputs have to be flattened. The old all-compute route
+// flattened the base module at creation; rebuilding the raw original here
+// prevents interface mismatches on native mesh draws. Never change the
+// on-disk shader library or the DMSH chain/ABI.
+VkShaderModule vka_shader_native_mesh_fs_module(vka_shader *s, int variant) {
+    if (!s || !s->e || s->e->stage != DMSH_VK_STAGE_FS) return VK_NULL_HANDLE;
+    if (!V.memu || !(s->e->flags & DMSH_VK_F_MESH_PRIM))
+        return vka_shader_module(s, variant);
+    if (variant < 0 || variant > DMSH_VK_MOD_SHUFFLE_LDS)
+        return VK_NULL_HANDLE;
+    if (s->native_mesh_fs[variant]) return s->native_mesh_fs[variant];
+    const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, variant);
+    if (!m) return VK_NULL_HANDLE;
+    size_t nb = 0; char err[256] = "";
+    uint32_t *w = spv_override(s->key, m->variant, &nb);
+    if (!w) w = vka_shlib_spirv(s->lib, m, &nb, err, sizeof err);
+    if (!w) return VK_NULL_HANDLE;
+    if (s->e->flags & DMSH_VK_F_SUBGROUP) single_lane(s->key, DMSH_VK_STAGE_FS, &w, &nb);
+    VkShaderModule mod = VK_NULL_HANDLE;
+    VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                   .codeSize = nb, .pCode = w};
+    VkResult r = vk.vkCreateShaderModule(V.dev, &ci, NULL, &mod);
+    free(w);
+    if (r || !mod) {
+        static _Atomic int n;
+        if (atomic_fetch_add(&n, 1) < 8)
+            VRED("native mesh fragment %016llx: raw module variant %d refused (%d)",
+                 (unsigned long long)s->key, variant, (int)r);
+        return VK_NULL_HANDLE;
+    }
+    pthread_mutex_lock(&g_mu);
+    if (s->native_mesh_fs[variant]) {
+        VkShaderModule old = s->native_mesh_fs[variant];
+        pthread_mutex_unlock(&g_mu);
+        vk.vkDestroyShaderModule(V.dev, mod, NULL);
+        return old;
+    }
+    s->native_mesh_fs[variant] = mod;
+    pthread_mutex_unlock(&g_mu);
+    return mod;
+}
 // A geometry shader that writes memory, with those writes made by one run per primitive (vka_spv_gs_claim: the Adreno 840 runs a geometry shader several times for each
 // primitive, each run writing memory). out NULL: only counts them. Made from the base module after the one-invocation subgroup rewrite
 static int gs_words(vka_shader *s, uint32_t **out, size_t *on, char *err, size_t errn) {
@@ -750,6 +794,56 @@ VkShaderModule vka_shader_fout_module(vka_shader *s, uint32_t umask, uint32_t sm
         return had; }
     struct vka_vinmod *v = malloc(sizeof *v);
     if (v) { *v = (struct vka_vinmod){s->fout, umask, smask, mod}; s->fout = v; }
+    pthread_mutex_unlock(&g_mu);
+    return mod;
+}
+// Native mesh fragment with integer colour attachments: apply exactly the
+// existing output-format rewrite to RAW per-primitive SPIR-V, not to the
+// compute arena's flattened fragment. Cache separately from s->fout.
+VkShaderModule vka_shader_native_mesh_fout_module(vka_shader *s, uint32_t umask, uint32_t smask) {
+    if (!s || !s->e) return VK_NULL_HANDLE;
+    if (!V.memu || !(s->e->flags & DMSH_VK_F_MESH_PRIM))
+        return vka_shader_fout_module(s, umask, smask);
+    pthread_mutex_lock(&g_mu);
+    for (struct vka_vinmod *v = s->native_mesh_fout; v; v = v->next)
+        if (v->u == umask && v->s == smask) {
+            VkShaderModule mod = v->mod;
+            pthread_mutex_unlock(&g_mu);
+            return mod;
+        }
+    pthread_mutex_unlock(&g_mu);
+    VkShaderModule mod = VK_NULL_HANDLE;
+    const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, DMSH_VK_MOD_BASE);
+    size_t nb = 0; char err[256] = "";
+    uint32_t *w = m ? vka_shlib_spirv(s->lib, m, &nb, err, sizeof err) : NULL;
+    if (w && (s->e->flags & DMSH_VK_F_SUBGROUP))
+        single_lane(s->key, DMSH_VK_STAGE_FS, &w, &nb);
+    size_t on = 0;
+    uint32_t *o = w ? vka_spv_fout_retype(w, nb / 4, umask, smask, &on, err, sizeof err) : NULL;
+    free(w);
+    if (o) {
+        VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                       .codeSize = on * 4, .pCode = o};
+        if (vk.vkCreateShaderModule(V.dev, &ci, NULL, &mod)) mod = VK_NULL_HANDLE;
+    }
+    free(o);
+    // Fail closed to the native original, never substitute a flattened
+    // compute fragment for native mesh graphics on rewrite failure.
+    if (!mod) mod = vka_shader_native_mesh_fs_module(s, DMSH_VK_MOD_BASE);
+    pthread_mutex_lock(&g_mu);
+    for (struct vka_vinmod *v = s->native_mesh_fout; v; v = v->next)
+        if (v->u == umask && v->s == smask) {
+            VkShaderModule had = v->mod;
+            pthread_mutex_unlock(&g_mu);
+            if (mod != had && mod != s->native_mesh_fs[DMSH_VK_MOD_BASE])
+                vk.vkDestroyShaderModule(V.dev, mod, NULL);
+            return had;
+        }
+    struct vka_vinmod *v = malloc(sizeof *v);
+    if (v) {
+        *v = (struct vka_vinmod){s->native_mesh_fout, umask, smask, mod};
+        s->native_mesh_fout = v;
+    }
     pthread_mutex_unlock(&g_mu);
     return mod;
 }
