@@ -39,6 +39,11 @@ on:
       - 'dm/tools/tests/test_ndsr_standin.py'
       - 'dm/host/tests/t_android_shlib.c'
       - 'dm/gfx/vk_android/vka_tex.c'
+      - 'dm/gfx/vk_android/vka_texlimit.h'
+      - 'dm/gfx/vk_android/vka_dev.c'
+      - 'dm/gfx/vk_android/vka_ctl.c'
+      - 'dm/host/tests/t_android_texlimit.c'
+      - 'dm/host/tests/t_android_zshare.c'
       - 'dm/gfx/vk_android/vka.h'
       - 'dm/gfx/tools/tests/test_ocarina_live_memory_filter.py'
       - 'dm/gfx/tools/tests/test_ocarina_pool_descriptor_dedup.py'
@@ -94,6 +99,14 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_postpass_barrier_dedup.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_attachment_stage_dependencies.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c
+      - name: CPU-only RAM pressure and zero-sharing regressions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cc -std=gnu11 -O2 -Wall -Werror -o "$RUNNER_TEMP/t_android_texlimit" dm/host/tests/t_android_texlimit.c
+          "$RUNNER_TEMP/t_android_texlimit"
+          cc -std=gnu11 -O2 -Wall -Werror -o "$RUNNER_TEMP/t_android_zshare" dm/host/tests/t_android_zshare.c
+          "$RUNNER_TEMP/t_android_zshare"
       - name: Syntax-check real Android Vulkan texture replay with NDK
         shell: bash
         run: |
