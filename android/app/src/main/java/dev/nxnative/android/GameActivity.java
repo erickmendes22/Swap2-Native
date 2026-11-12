@@ -299,202 +299,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         } else Files.copy(from.toPath(), to.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
 
-    // ---- The readiness check before the host starts (Readiness.java, android/README.md "Readiness check"): the Vulkan facts of the driver this game starts with, against the
-    // host's needs and the game's readiness.tsv. Required items missing: a dialog names them with the GPU and driver, and the player goes back or tries anyway; degraded
-    // ones: a notice the player can turn off for this phone and driver. Its one line goes into the game's log after the start ([readiness] ...) ----
-    private boolean readinessDone, triedAnyway;
-    private String readinessLine;
-    private static final long READINESS_WAIT_MS = 8000;
+    // Play starts the native host directly on EVERY chipset and driver.
+    // No preflight Vulkan device probing, no compatibility prompt before Play.
+    // Manual GPU capability inspection remains under Settings > Readiness check.
 
-    /** true: the start waits for the check (it calls start() again when the player may go on) */
-    private boolean readinessHold(String id) {
-        if (readinessDone) return false;
-        // On Snapdragon 8 Elite (SM8750), we have confirmed a full host boot
-        // through frame 561 with the Qualcomm 891.14 driver, but separate
-        // attempts stop right after the isolated GPU readiness reply, before
-        // the UI decision callback runs.  The preflight is advisory and must
-        // never prevent launching a known-working native Vulkan host.
-        // Only this SoC bypasses the preflight. The manual GPU readiness
-        // screen remains available in Settings for explicit diagnostics.
-        if (Build.VERSION.SDK_INT >= 31
-                && "SM8750".equalsIgnoreCase(Build.SOC_MODEL)) {
-            readinessDone = true;
-            readinessLine = "[readiness] " + id
-                    + ": SKIPPED isolated Vulkan preflight on SM8750; game driver checked by native host";
-            prestart("GPU_READINESS_BYPASS_SM8750; running native host directly");
-            return false;
-        }
-        File files = getExternalFilesDir(null);
-        List<String> drv = new ArrayList<>();   // the driver as start() will set it: the launcher's pick, then the user's lines (which win)
-        GpuDriver.env(this, id, drv);
-        drv.addAll(quietEnv(new File(files, "env.txt")));
-        drv.addAll(envLines(Prefs.gameEnv(this, id)));
-        drv.addAll(quietEnv(new File(files, "env-" + id + ".txt")));
-        String[] denv = Readiness.driverEnv(drv);
-        overlay.setText(getIntent().getStringExtra("name") + ": checking this phone's GPU…");
-        final boolean[] answered = {false};
-        Runnable decide = () -> {   // on the UI thread, once: with the facts, or without them after READINESS_WAIT_MS
-            if (answered[0] || isFinishing()) return;
-            answered[0] = true;
-            prestart("GPU_READINESS_DECIDE_BEGIN");
-            try {
-                readinessDecide(id, probeFacts);
-                prestart("GPU_READINESS_DECIDE_COMPLETED");
-            } catch (RuntimeException | LinkageError ex) {
-                prestart("GPU_READINESS_DECIDE_EXCEPTION " + android.util.Log.getStackTraceString(ex));
-                android.util.Log.e("Swap2Native", "Vulkan readiness UI step", ex);
-                fail("GPU readiness failed before game startup: " + ex);
-            }
-        };
-        // Crucial: do not call the custom Vulkan driver in the :game process
-        // before the actual host boots. Drivers can leave process-global Vulkan
-        // dispatch/loader state behind after vkDestroyInstance. Some device and
-        // driver combinations fail immediately after a successful readiness call.
-        prestart("GPU_READINESS_BEGIN isolated=true driver=" + (GpuDriver.selected(this, id) == null ? "system" : "custom"));
-        new Thread(() -> {
-            try {
-                android.os.Bundle request = new android.os.Bundle();
-                request.putString("title_id", id);
-                request.putStringArray("env", denv);
-                android.os.Bundle response = getContentResolver().call(GpuProbeProvider.uri(this), "vulkan-readiness", null, request);
-                probeFacts = response == null ? "unchecked=isolated GPU readiness process returned no data" : response.getString("facts");
-                // A lingering provider from the previous game's driver
-                // cannot certify a different Vulkan implementation.
-                String requested = "system";
-                for (String kv : denv) if (kv.startsWith("DM_VK_DRIVER=")) {
-                    String path = kv.substring("DM_VK_DRIVER=".length());
-                    requested = path.isEmpty() || "system".equals(path) ? "system" : new File(path).getName();
-                }
-                String observed = Readiness.facts(probeFacts).getOrDefault("driver.custom", "");
-                if (!requested.equals("system") && !observed.equals(requested)
-                        || requested.equals("system") && !observed.isEmpty()) {
-                    prestart("GPU_READINESS_STALE_DRIVER requested=" + requested + " actual=" + observed);
-                    probeFacts = "unchecked=probe driver mismatch: requested " + requested + " but inspected "
-                            + (observed.isEmpty() ? "system" : observed) + " (probe process will restart)";
-                }
-                prestart("GPU_READINESS_RETURNED isolated " + (probeFacts == null ? "no-data" : "ok"));
-            } catch (RuntimeException | LinkageError ex) {
-                probeFacts = "unchecked=isolated Vulkan readiness unavailable (" + ex.getClass().getSimpleName() + ")";
-                prestart("GPU_READINESS_EXCEPTION isolated " + ex);
-            } finally {
-                probeDone = true;
-                ui.post(decide);
-            }
-        }, "nxreadiness").start();
-        ui.postDelayed(() -> { if (!probeDone) probeFacts = "unchecked=the GPU check did not answer in " + READINESS_WAIT_MS / 1000 + " s"; decide.run(); }, READINESS_WAIT_MS);
-        return true;
-    }
-    private volatile String probeFacts;
-    private volatile boolean probeDone;
-
-    private List<String> quietEnv(File f) {
-        try { return f.isFile() ? envLines(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8)) : new ArrayList<>(); }
-        catch (IOException | SecurityException e) { return new ArrayList<>(); }
-    }
-
-    private void readinessDecide(String id, String vulkan) {
-        Profile p = Profile.of(id);
-        Map<String, String> f = Readiness.merge(vulkan, ReadinessActivity.ramGib(this), Build.VERSION.SDK_INT);
-        List<Readiness.Check> l = new ArrayList<>();
-        Readiness.Check st = Readiness.status(p != null ? p.status : null);
-        if (st != null) l.add(st);
-        l.addAll(Readiness.evaluate(f, Readiness.parseReqs(p != null ? p.reqs : null)));
-        prestart("GPU_READINESS_EVALUATED gpu=" + f.getOrDefault("gpu.name", "not-reported")
-                + " failures=" + Readiness.of(l, Readiness.Status.FAIL).size()
-                + " warnings=" + Readiness.of(l, Readiness.Status.WARNING).size());
-        rFacts = f;
-        fps.gpu(f.get("gpu.name"), f.get("driver.name"));
-        rChecks = l;
-        readinessLine = Readiness.summary(id, f, l);
-        String report = Readiness.report(ReadinessActivity.header(this, (p != null ? p.name + " " : "") + id + " (start-up check)"), f, l);
-        try { Files.write(new File(getExternalFilesDir(null), "readiness-" + id + ".txt").toPath(), report.getBytes(StandardCharsets.UTF_8)); } catch (IOException ignored) { /* the screen's report leaves it out */ }
-        readinessDone = true;
-        List<Readiness.Check> fails = Readiness.of(l, Readiness.Status.FAIL), warns = Readiness.of(l, Readiness.Status.WARNING);
-        for (Readiness.Check missing : fails)
-            prestart("GPU_REQUIRED_MISSING title=" + missing.title + " fact=" + missing.fact + " info=" + missing.message);
-        for (Readiness.Check warn : warns)
-            prestart("GPU_WARNING title=" + warn.title + " fact=" + warn.fact);
-        String gpu = "GPU: " + Readiness.gpu(f) + "\nMemory: " + f.get("ram_gib") + " GiB as Android reports it.";
-        // The notice is short (what is missing, by name); Details has each item's sentence, the GPU and Copy report
-        if (!fails.isEmpty()) {
-            StringBuilder m = new StringBuilder("Missing: ");
-            for (Readiness.Check c : fails) m.append(c.title).append(", ");
-            m.setLength(m.length() - 2);
-            // Without placed memory maps the GPU sees none of the game's memory: draws are off (vka_draw.c), so the result is certain, not "may"
-            boolean placed = false;
-            for (Readiness.Check c : fails) placed |= "ext.VK_KHR_map_memory2".equals(c.fact) || "ext.VK_EXT_map_memory_placed".equals(c.fact) || "feature.memoryMapPlaced".equals(c.fact);
-            GpuDriver.Info drv = GpuDriver.selected(this, id);
-            if (placed) m.append(".\n\nWith this GPU driver (").append(drv == null ? "System" : drv.label()).append(") nothing is drawn: the screen stays black while the game runs. ")
-                    .append("Select a GPU driver that reports VK_EXT_map_memory_placed and feature.memoryMapPlaced; ")
-                    .append("the system driver is not guaranteed to support them. Change the driver in Settings › GPU driver or Game settings.");
-            else m.append(".\n\nThe game may stop or draw wrongly. A custom GPU driver (Settings › GPU driver) may help.");
-            readinessDialog("Not ready for this game", m.toString(), details(fails, warns, gpu), report, placed ? "Start anyway (black screen)" : "Try anyway", true);
-        } else if (!warns.isEmpty() && !Prefs.of(this).getString(Prefs.gameKey("readiness_seen", id), "").equals(warnKey(f, warns))) {
-            StringBuilder m = new StringBuilder("Runs with less: ");
-            for (Readiness.Check c : warns) m.append(c.title).append(", ");
-            m.setLength(m.length() - 2);
-            m.append('.');
-            readinessDialog("Ready, with limits", m.toString(), details(fails, warns, gpu), report, "Continue", false);
-        } else { prestart("GPU_READINESS_CHECKS_PASS_STARTING_GAME"); start(); }
-    }
-
-    /** The Details of the start-up notice: each failure and warning with its sentence, then the GPU and memory */
-    private static String details(List<Readiness.Check> fails, List<Readiness.Check> warns, String gpu) {
-        StringBuilder m = new StringBuilder();
-        for (Readiness.Check c : fails) m.append("✕ ").append(c.title).append(": ").append(c.message).append("\n\n");
-        for (Readiness.Check c : warns) m.append("! ").append(c.title).append(": ").append(c.message).append("\n\n");
-        return m.append(gpu).toString();
-    }
-
-    /** What the notice was about (the warnings, the GPU and driver): "Don't show again" holds until one of them changes */
-    private static String warnKey(Map<String, String> f, List<Readiness.Check> warns) {
-        StringBuilder s = new StringBuilder(Readiness.gpu(f));
-        for (Readiness.Check c : warns) s.append('|').append(c.title);
-        return Integer.toHexString(s.toString().hashCode());
-    }
-
-    /**
-     * The start-up notice. Required items missing: Try anyway, Back, Details. Only degraded items: Continue (one tap), with "Don't show this again" (until the GPU,
-     * the driver or the warnings change), Back and Details; Settings › Readiness check shows the details again at any time.
-     */
-    private void readinessDialog(String title, String msg, String details, String report, String go, boolean required) {
-        String id = titleId();
-        android.widget.CheckBox again = required ? null : new android.widget.CheckBox(this);
-        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle(title).setCancelable(false).setNeutralButton("Details", null);
-        if (again == null) b.setMessage(msg);
-        else {
-            int p = Math.round(20 * getResources().getDisplayMetrics().density);
-            android.widget.LinearLayout box = new android.widget.LinearLayout(this);
-            box.setOrientation(android.widget.LinearLayout.VERTICAL);
-            box.setPadding(p, p / 2, p, 0);
-            TextView t = new TextView(this);
-            t.setText(msg + "\n\nDetails are also in Settings › Readiness check.");
-            t.setTextSize(15);
-            box.addView(t);
-            again.setText("Don't show this again");
-            box.addView(again);
-            android.widget.ScrollView sv = new android.widget.ScrollView(this);   // a short screen with several warnings still reaches the box
-            sv.addView(box);
-            b.setView(sv);
-        }
-        b.setPositiveButton(go, (d, w) -> {
-            prestart("GPU_READINESS_USER_PROCEED button=" + go);
-            if (again != null && again.isChecked())
-                Prefs.of(this).edit().putString(Prefs.gameKey("readiness_seen", id), warnKey(rFacts, Readiness.of(rChecks, Readiness.Status.WARNING))).apply();
-            triedAnyway = required;
-            start();
-        });
-        b.setNegativeButton("Back", (d, w) -> { prestart("GPU_READINESS_USER_BACK"); end(); });
-        AlertDialog d = b.create();
-        // Details opens over the notice and keeps it open; Copy report there keeps Details open
-        d.setOnShowListener(x -> d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-            AlertDialog dd = new AlertDialog.Builder(this).setTitle("Readiness check").setMessage(details).setPositiveButton("Close", null).setNeutralButton("Copy report", null).create();
-            dd.setOnShowListener(y -> dd.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(u -> ReadinessActivity.copy(this, report)));
-            dd.show();
-        }));
-        d.show();
-        prestart("GPU_READINESS_DIALOG_SHOWN title=" + title + " action=" + go);
-    }
     private void noteOwnRate() {
         try {
             String[] f = Native.fpsCapStatus().split(" ");
@@ -502,20 +310,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         } catch (RuntimeException e) { /* no answer: left as it was */ }
     }
 
-    private Map<String, String> rFacts;
-    private List<Readiness.Check> rChecks;
-
     private void start() {
         String id = getIntent().getStringExtra("title_id"), name = getIntent().getStringExtra("name");
-        prestart("GAME_START_ENTER readinessDone=" + readinessDone);
+        prestart("GAME_START_ENTER without any automatic GPU preflight");
         File game = new File(getIntent().getStringExtra("game")), packDir = new File(getIntent().getStringExtra("pack"));
         File files = getExternalFilesDir(null);
         try {
             Pack pack = Pack.read(packDir);
             String romfs = pack.romfsPath(game);   // a folder's RomFS folder, or <file>.nup:<selector>/romfs (NUP.md)
             if (romfs == null) throw new IOException(Nup.isNup(game) ? game.getName() + " has no " + pack.romfsSelector() + " with a RomFS" : "no RomFS in " + game);
-            prestart("PACK_READ_OK; CHECK_READINESS");
-            if (readinessHold(id)) return;   // after the pack's own checks (a missing pack says so first), before the save is locked or anything is written
+            prestart("PACK_READ_OK; GPU_PREFLIGHT_DISABLED_ALL_DEVICES");   // after the pack's own checks (a missing pack says so first), before the save is locked or anything is written
             // The user's lines, read first: the paths the launcher sets cannot be changed by them (guard), but the test app's env-<id>.txt may name a test save folder (one game's file only: a global DM_SAVE would point every game at one save)
             List<String> user = new ArrayList<>(guard(userEnv(new File(files, "env.txt")), "env.txt", false));   // diagnostic switches (every game: never DM_SAVE) (DM_SVC=1, DM_FS=1, ...), as the iPhone's Documents/env.txt
             user.addAll(guard(envLines(Prefs.gameEnv(this, id)), "the game's settings", false));   // the game's own lines (its Game settings): after env.txt, so they win for this game
@@ -524,7 +328,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             File save = saveDir(files, game, id), temp = mkdirs(new File(files, "temp/" + id)), root = mkdirs(new File(files, "root"));
             prestart("GAME_SAVE_PREPARE_OK");
             File aoc = aocLinks(mkdirs(new File(files, "aoc/" + id)), game, pack);
-            // Keep the file created before Native.load and the Vulkan readiness check.
+            // Keep the file created before Native.load, before the real Vulkan host starts.
             // A crash before Native.start leaves its [prestart] trace shareable by the launcher.
             List<String> env = new ArrayList<>(List.of(
                     "DM_ROMFS=" + romfs, "DM_SAVE=" + save, "DM_TEMP=" + temp, "DM_ROOT=" + root, "DM_AOC_DIR=" + aoc,
@@ -590,7 +394,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // Read once the game has run a while (the host finds the game's limiter after it starts); the in-game panel updates it too
             ui.postDelayed(this::noteOwnRate, 30000);
             hostRunning = true;
-            if (readinessLine != null) Native.note(readinessLine + (triedAnyway ? "; the player chose Try anyway" : ""));   // the readiness check (readinessHold)
+            Native.note("[nxlaunch] automatic GPU readiness disabled on all devices; actual Vulkan errors are logged during host initialization");
             Native.note("[nxlaunch] game: " + game + (Nup.isNup(game) ? " (.nup)" : " (folder)") + ", DM_ROMFS " + romfs + ", pack " + packDir);
             Native.note("[nxlaunch] save: " + save + " (" + saveHow + ")" + (saveNote != null ? "; " + saveNote : ""));
             // Its size and the room beside it: the host's commit copies the whole save (clonefile is a full copy on the phone's storage), so a save of several GB (a

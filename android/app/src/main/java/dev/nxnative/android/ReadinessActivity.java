@@ -44,8 +44,8 @@ import java.util.Map;
  * GPU) to ask Vulkan what this phone has (Native.readiness), on the GPU driver picked for every game. Cards: the phone (Android, memory, files access, storage, battery
  * restrictions, the last game exit and memory kills of the last 7 days), the GPU and driver, then for each game of this APK the host's needs and the game's own (Readiness),
  * each pass / warning / fail with a fix button where there is one. Run again; Copy report and Share report hand the whole report on for a compatibility report.
- * The cards, Run again, the fix buttons, the last exit and the shareable report are adapted from the author's earlier readiness check. The same check runs before every
- * game starts (GameActivity), on that game's own driver, and stops a start that would fail with a sentence and Try anyway.
+ * Manual GPU diagnostic only: this check is never used to block Play.
+ * Games launch the host directly, and runtime Vulkan errors go into game logs.
  */
 public final class ReadinessActivity extends Activity {
     /** MainActivity's request: a result of FIX_DRIVER asks it to open the GPU driver dialog (it lives in the launcher's process) */
@@ -180,7 +180,7 @@ public final class ReadinessActivity extends Activity {
                 boolean same = g == null ? d == null : d != null && g.dir.equals(d.dir);
                 l.add(same ? new Readiness.Check("Its own GPU driver", Readiness.Status.INFO, gl + ", the one this screen checked.", "driver")
                         : new Readiness.Check("Its own GPU driver", Readiness.Status.WARNING, "This game uses its own GPU driver, " + gl + "; this screen checked " + ml
-                                + ". The check before the game starts uses the game's driver, and its result can differ from this one.", "driver"));
+                                + ". For another driver, inspect it manually; Play itself never requires a passing check.", "driver"));
             }
             String name = p.titleId;   // a game is named as the user's dump names it (its card), else by its title ID
             for (Game g : added) if (g.titleId.equals(p.titleId)) { name = g.name; break; }

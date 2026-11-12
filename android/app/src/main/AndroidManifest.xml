@@ -82,13 +82,6 @@
             android:screenOrientation="sensorLandscape"
             android:theme="@style/Theme.Banana"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
-        <!-- Keep Vulkan readiness out of the game process: some custom drivers
-             crash during instance teardown or reuse on older Adreno devices. -->
-        <provider
-            android:name=".GpuProbeProvider"
-            android:authorities="${applicationId}.gpu_probe"
-            android:exported="false"
-            android:process=":gpu_probe" />
         <provider
             android:name=".LogProvider"
             android:authorities="${applicationId}.logs"

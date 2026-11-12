@@ -13,8 +13,8 @@ import java.util.Map;
  * will not run, or will draw nothing, without it) or "degraded" (it runs, with something missing or at lower detail). The facts are "key=value" lines: the host's
  * nxhost_vk_readiness (vka_readiness.c, on the driver the game would load: whatever it reports, a custom driver's too) and the launcher's own (ram_gib, android.sdk).
  * Nothing here knows a vendor or a game: the numbers come from the driver and the profile. No Android classes: the JVM test runs it on the Mac.
- * The screen (ReadinessActivity) and the start-up check (GameActivity) show these; the screen's pass / warning / fail cards with a fix button, Run again and the shareable
- * report are adapted from the author's earlier readiness check.
+ * Only the manual ReadinessActivity shows these informational checks. They
+ * never block Play. Real errors come from the native Vulkan runtime log.
  */
 final class Readiness {
     enum Status { PASS, WARNING, FAIL, INFO }

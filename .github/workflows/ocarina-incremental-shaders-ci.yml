@@ -45,7 +45,6 @@ on:
       - 'dm/gfx/nvn/hle_nvn.c'
       - 'dm/host/tests/t_android_fileback.c'
       - 'android/app/src/main/java/dev/nxnative/android/GameActivity.java'
-      - 'android/app/src/main/java/dev/nxnative/android/GpuProbeProvider.java'
       - 'dm/host/hle_codec_video.c'
       - 'dm/host/hle_codec_backpressure.h'
       - 'dm/host/tests/t_android_codec_backpressure.c'
@@ -96,7 +95,7 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_codec_backpressure
       - name: Python source compile
         run: python3 -m py_compile scripts/ocarina_shader_hot_delta.py scripts/build_ocarina_hot_shaders.py scripts/pack_android.py dm/tools/tests/test_ocarina_shader_delta.py
-      - name: Android Vulkan isolated readiness regression
+      - name: Android universal Play without Vulkan preflight
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_isolated_readiness.py -v
       - name: Synthetic full-library and partial-overlay regression
         run: python3 -m unittest discover -s dm/tools/tests -p test_ocarina_shader_delta.py -v
