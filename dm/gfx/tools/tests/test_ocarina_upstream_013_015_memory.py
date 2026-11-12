@@ -92,7 +92,7 @@ class ImageBlockAndPrewarmTests(unittest.TestCase):
         self.assertLess(PSO.index('atomic_load_explicit(&g_pw_demand_waiters, memory_order_relaxed)', PSO.index("static void *pw_main")), before_claim)
 
     def test_low_memory_pauses_only_speculative_prewarms(self):
-        self.assertIn('VKA_ENV("DM_VK_PREWARM_RAM_FLOOR_MB", 512)', PSO)
+        self.assertIn('vktl_reserve((uint64_t)total_kb << 10)', PSO)
         self.assertIn('sscanf(line, "MemAvailable: %llu kB", &kb)', PSO)
         self.assertIn("if (pw_memory_pressure())", PSO)
         self.assertIn("if (g->busy) busy_wait(g);", PSO)

@@ -373,3 +373,5 @@ Ocarina 0.1.6 cold-run memory lifetime fixes (2026-11-12):
 - Optional optimizer and prewarm use the same cached memory admission guard, with existing system-reserve policy as default. Explicit prewarm RAM-floor override/disable preserved; demanded pipeline creation remains available.
 - Pressure pruning retires known-dead pool generation registrations and safely reclaims their old CPU-filled images. Live/unknown aliases, GPU-written content, host holds, pending fences and recent resources remain protected. Normal null-view descriptor updates and memo invalidation are used; re-registration reactivates the slot.
 - ASan/UBSan production-helper tests:1001 pipeline handles, publication/commit boundary, GPU completion, failed optimization, RAM thresholds/override, pool generations and alias protection. Shader ABI/library and 42k+6 import preserved. Same package/version/branch and cached update signing key; no on-device peak/FPS claim.
+
+Validate proportional optional-pipeline RAM reserve in the upstream regression.
