@@ -18,15 +18,21 @@ static int zbind(vkz_tab *t, const key *k, uint64_t size, uint64_t *next_h, uint
 
 int main(void) {
     // candidates: large, dense, one sample, 2D, uncompressed, not linear or a display texture
-    CHECK(vkz_candidate(341 * MIB, 4 * MIB, 0, 1, 0, 0, 0), "a 16384² R8 target is a candidate");
-    CHECK(!vkz_candidate(3 * MIB, 4 * MIB, 0, 1, 0, 0, 0), "under the size: not");
-    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 1, 1, 0, 0, 0), "a sparse residency image: not");
-    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 4, 0, 0, 0), "multisampled: not");
-    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 1, 1, 0, 0), "3D: not");
-    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 1, 0, 1, 0), "block-compressed: not");
-    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 1, 0, 0, 1), "linear or a window texture: not");
-    CHECK(!vkz_candidate(341 * MIB, 0, 0, 1, 0, 0, 0), "a size of 0 turns it off");
+    CHECK(vkz_candidate(341 * MIB, 4 * MIB, 0, 0, 1, 0, 0, 0), "a 16384² R8 target is a candidate");
+    CHECK(!vkz_candidate(3 * MIB, 4 * MIB, 0, 0, 1, 0, 0, 0), "under the size: not");
+    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 1, 1, 0, 0, 0), "a sparse residency image: not");
+    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 0, 4, 0, 0, 0), "multisampled: not");
+    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 0, 1, 1, 0, 0), "3D: not");
+    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 0, 1, 0, 1, 0), "block-compressed: not");
+    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, 0, 0, 1, 0, 0, 1), "linear or a window texture: not");
+    CHECK(!vkz_candidate(341 * MIB, 0, 0, 0, 1, 0, 0, 0), "a size of 0 turns it off");
 
+    CHECK(vkz_max(1, 1, 0) == VKZ_CAP, "depth is capped even on Turnip");
+    CHECK(vkz_max(0, 1, -1) == 0, "color on Turnip has no cap");
+    CHECK(vkz_max(0, 0, -1) == VKZ_CAP, "color on proprietary driver keeps safe cap");
+    CHECK(vkz_max(0, 0, 64) == 64 * MIB, "manual color override");
+    CHECK(!vkz_candidate(341 * MIB, 4 * MIB, VKZ_CAP, 0, 1, 0, 0, 0), "large depth-style image cannot alias");
+    CHECK(vkz_candidate(341 * MIB, 4 * MIB, 0, 0, 1, 0, 0, 0), "large Turnip color image can alias");
     vkz_tab t = {0}; uint64_t nh = 100, h[8];
     key r8 = {0x400, 9, 16384, 16384, 6, 0x17}, rg16 = {0x400, 77, 8192, 8192, 1, 0x17}, r8b = r8; r8b.levels = 5;
     // four R8 targets of one create info: one allocation
