@@ -38,7 +38,7 @@ class MeshCallerLookahead(unittest.TestCase):
 #define DM_GAME_ID "0400486024DEC000"
 #define VKA_ENV(key, def) (def)
 #define NVN_PRIM_MESH 5
-enum { OP_END=0, OP_CALL=1, OP_JUMP=2, OP_DRAW=3, OP_BIND_PROGRAM=4, OP_SET_RT=5 };
+enum { OP_END=0, OP_CALL=1, OP_JUMP=2, OP_DRAW=3, OP_BIND_PROGRAM=4, OP_SET_RT=5, OP_DRAW_IDX=6 };
 enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_END };
 typedef struct { uint32_t op, size; } op_hdr;
 typedef struct { uint32_t op, size; uint64_t arg; } record;
@@ -109,7 +109,7 @@ int main(void) {
             subprocess.run([str(exe)], check=True)
 
     def test_real_recursive_exec_captures_return_before_child_and_restores_depth(self):
-        exec_src = body(SRC, 'exec')
+        exec_src = body(SRC[SRC.index('static void exec(const uint8_t *p, int depth)'):], 'exec')
         self.assertIn('g_memu_depth = depth;', exec_src)
         self.assertIn('g_memu_caller[depth] = p + h.size;', exec_src)
         self.assertLess(exec_src.index('g_memu_caller[depth] = p + h.size;'),
