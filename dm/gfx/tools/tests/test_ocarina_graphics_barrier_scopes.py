@@ -55,9 +55,19 @@ class BarrierScopeTests(unittest.TestCase):
         self.assertLess(body.index('else if (R.swrite)'),
                         body.index('else if (!R.awrite'))
         self.assertIn('VKA_ENV("DM_VK_OOT_READONLY_PASS", 1)', body)
+        self.assertIn('!R.awrite && !R.bar_pending', body)
+        self.assertIn('vka_graphics_read_barrier(g_cb);', body)
         self.assertIn('g_rp_readonly_barriers_avoided++;', body)
+        # Execution dependency required: query/depth reads before later writes.
+        self.assertIn('void vka_graphics_read_barrier_at(', TEX)
+        read_bar = source_body(TEX, 'void vka_graphics_read_barrier_at(',
+                               '// OP_UPDATE_UB copies inline data')
+        self.assertIn('VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT', read_bar)
+        self.assertIn('VK_PIPELINE_STAGE_ALL_COMMANDS_BIT', read_bar)
+        self.assertIn('0, 0, NULL, 0, NULL, 0, NULL', read_bar)
+        self.assertNotIn('VK_ACCESS_MEMORY_WRITE_BIT', read_bar)
         self.assertIn('g_rp_scoped++; vka_attachment_write_barrier(g_cb);', body)
-        self.assertIn('read-only passes without attachment barrier', DRAW)
+        self.assertIn('read-only passes using execution-only dependency', DRAW)
 
     def test_delta_push_descriptor_updates_preserve_unchanged_bindings(self):
         # Same Vulkan pipeline layout, same ordered bindings, and descriptor
