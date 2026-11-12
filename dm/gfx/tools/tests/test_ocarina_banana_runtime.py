@@ -86,6 +86,69 @@ int main(void) {
 }
 ''')
 
+    def test_replay_draw_cases_prepare_mesh_before_rasterization(self):
+        source = (ROOT/'dm/gfx/vk_android/vka_exec.c').read_text()
+        start = source.index('        case OP_DRAW: if (!S.rc_skip && g_cb)')
+        end = source.index('        case OP_DISPATCH:', start)
+        cases = source[start:end]
+        self.run_c('''
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+enum { OP_DRAW=1, OP_DRAW_IDX=2 };
+typedef struct { int prim; } p_draw;
+typedef struct { int count; } p_draw_idx;
+static struct { int rc_skip,d,rt,has_rt,sc,has_sc; } S;
+static int g_cb=1,g_oq_count,g_oq_lost,g_oqs_skip,g_stat_draws;
+static int prepared,drawn,open_pass,expected_op,expected_calls,predictions;
+static const uint8_t *expected_record;
+static const void *expected_args;
+static const p_draw *draw_rec(const void *a,unsigned n,p_draw *t) { (void)n;(void)t;return a; }
+static const p_draw_idx *draw_idx_rec(const void *a,unsigned n,p_draw_idx *t) { (void)n;(void)t;return a; }
+static void memu_before_draw(const uint8_t *p,const p_draw *d) {
+    assert(p==expected_record && !prepared);
+    assert(expected_op==OP_DRAW ? d==expected_args : d==NULL);
+    prepared=1;open_pass=0;
+}
+static uint64_t oq_sk0(void) { assert(prepared);return 19; }
+static void oq_sk1(uint64_t before) { assert(before==19 && drawn==1); }
+static int vka_rp_is_open(void) { return open_pass; }
+static uint32_t immediate_discards(const uint8_t *p,int *d) {
+    assert(prepared && p==expected_record+16);*d=1;return 5;
+}
+static void vka_rp_predict_discard(uint32_t colors,int depth) {
+    if(!drawn) { assert(prepared && colors==5 && depth==1);predictions++; }
+    else { assert(colors==0 && depth==0);predictions++; }
+}
+static void vka_draw(void *d,void *rt,int has_rt,void *sc,int has_sc,const p_draw *dr,const p_draw_idx *di) {
+    (void)d;(void)rt;(void)has_rt;(void)sc;(void)has_sc;
+    assert(prepared && predictions==1 && !drawn);
+    assert(expected_op==OP_DRAW ? (dr==expected_args && !di) : (!dr && di==expected_args));
+    drawn=1;
+}
+static void replay(int op,const uint8_t *p,const void *a) {
+    struct { unsigned size; } h={16};
+    switch(op) {
+''' + cases + '''
+    }
+}
+int main(void) {
+    uint8_t record[32]={0};p_draw draw={1};p_draw_idx indexed={3};
+    for(int op=OP_DRAW;op<=OP_DRAW_IDX;op++)for(int initial_open=0;initial_open<=1;initial_open++) {
+        expected_op=op;expected_record=record;expected_args=op==OP_DRAW ? (const void*)&draw : (const void*)&indexed;
+        prepared=drawn=predictions=0;open_pass=initial_open;S.rc_skip=0;g_cb=1;
+        replay(op,record,expected_args);
+        assert(prepared && drawn && predictions==2);
+        prepared=drawn=predictions=0;S.rc_skip=1;
+        replay(op,record,expected_args);assert(!prepared && !drawn);
+        S.rc_skip=0;g_cb=0;replay(op,record,expected_args);assert(!prepared && !drawn);
+    }
+    assert(g_stat_draws==4);
+    return 0;
+}
+''')
+
     def test_gpu_feedback_demands_only_read_ids(self):
         tex = (ROOT/'dm/gfx/vk_android/vka_tex.c').read_text()
         self.run_c('''

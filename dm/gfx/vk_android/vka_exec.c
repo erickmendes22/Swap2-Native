@@ -1475,13 +1475,17 @@ static void exec(const uint8_t *p, int depth) {
         case OP_COPY_T2B: if (g_cb) copy_bt(a, 0); break;
         case OP_COPY_T2T: if (g_cb) copy_t2t(a); break;
         case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb); break;
-        case OP_DRAW: if (!S.rc_skip && g_cb) { p_draw t; g_stat_draws++; uint64_t sk = oq_sk0();
+        case OP_DRAW: if (!S.rc_skip && g_cb) { p_draw t; const p_draw *dr = draw_rec(a, h.size, &t);
+                          memu_before_draw(p, dr);   // prepare task/mesh compute before opening the raster pass
+                          g_stat_draws++; uint64_t sk = oq_sk0();
                           int d = 0; uint32_t colors = !vka_rp_is_open() && h.size >= 8 ? immediate_discards(p + h.size, &d) : 0;
                           vka_rp_predict_discard(colors, d);
-                          vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, draw_rec(a, h.size, &t), NULL);
+                          vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, dr, NULL);
                           vka_rp_predict_discard(0, 0); oq_sk1(sk); }
                       else if (!S.rc_skip && g_oq_count) { g_oq_lost++; g_oqs_skip++; } break;   // (dropped with no command buffer: counts 1, Occlusion queries)
-        case OP_DRAW_IDX: if (!S.rc_skip && g_cb) { p_draw_idx t; g_stat_draws++; uint64_t sk = oq_sk0();
+        case OP_DRAW_IDX: if (!S.rc_skip && g_cb) { p_draw_idx t;
+                              memu_before_draw(p, NULL);   // a vertex draw can open the pass containing later mesh draws
+                              g_stat_draws++; uint64_t sk = oq_sk0();
                               int d = 0; uint32_t colors = !vka_rp_is_open() && h.size >= 8 ? immediate_discards(p + h.size, &d) : 0;
                               vka_rp_predict_discard(colors, d);
                               vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, NULL, draw_idx_rec(a, h.size, &t));

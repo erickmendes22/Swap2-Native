@@ -650,6 +650,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - under RAM pressure the Vulkan image cache exceeds its limit while retaining thousands of registered descriptors, including registrations whose pool generation is no longer live. → [Finalized pool descriptors pin CPU images](../reference/rendering.md#finalized-pool-descriptors-pin-cpu-images)
 - Ocarina starts a new game, survives the movies, then Android reports exit reason 3 (low memory). Continuing the save after restart passes the same location. The 2026-11-12 16:05 log reaches 6,639 MiB of Vulkan resources, including 4,596 MiB of images and over 6,500 protected registrations. → [GPU-demand texture residency and compute vegetation on Android](../reference/rendering.md#gpu-demand-texture-residency-and-compute-vegetation-on-android)
 - foliage and grass are absent on Qualcomm or a driver without task/mesh support; a menu toggle alone cannot restore missing geometry. → [Vegetation through compute mesh emulation](../reference/rendering.md#vegetation-through-compute-mesh-emulation)
+- full vegetation is enabled and compute mesh is selected, but the log reports `mesh draw through compute that the look-ahead did not prepare: skipped` and no compute-mesh batch statistics. The forest trees remain bare. → [Compute-mesh enabled but every draw is unprepared](../reference/rendering.md#compute-mesh-enabled-but-every-draw-is-unprepared)
 
 ## Shaders
 

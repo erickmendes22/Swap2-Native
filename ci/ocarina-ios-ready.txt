@@ -379,3 +379,5 @@ Validate proportional optional-pipeline RAM reserve in the upstream regression.
 Banana Native GPU-demand texture residency and compute mesh vegetation, full-vegetation toggle ON by default; preserve shader library, ABI and signer.
 
 Retire zero-shared descriptor predecessors after the final temporary hold and GPU fence; 1000-cycle regression.
+
+Wire compute-mesh preparation into the actual OP_DRAW and OP_DRAW_IDX executor; replay-path regression catches unprepared/skipped geometry.

@@ -1371,3 +1371,10 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Cause:** NVN2 task and mesh stages require a working backend, including their indirect arguments, payloads, per-primitive fragment inputs and synchronization.
 - **Fix:** port Banana Native/Hokkaido runtime mesh-to-compute conversion, generated vertex stages, per-submission bounded arenas and pass look-ahead. Use compute on Qualcomm by default. Full vegetation defaults on and cuts no reviewed vegetation draws. Off skips only the profile's seven reviewed depth/color pairs, preserving transform feedback and shaders with writable, atomic or unresolved resources. The reviewed keys are generated from game.tsv so old installed packs need no preparation.
 - **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md). Production converter and toggle regressions pass; phone visual confirmation remains open.
+
+### Compute-mesh enabled but every draw is unprepared
+
+- **Symptom:** full vegetation is enabled and compute mesh is selected, but the log reports `mesh draw through compute that the look-ahead did not prepare: skipped` and no compute-mesh batch statistics. The forest trees remain bare.
+- **Cause:** the converter and look-ahead helpers were present, but the custom OP_DRAW and OP_DRAW_IDX executor cases did not call preparation. A successful shader-converter test could not detect this disconnected replay path.
+- **Fix:** call preparation before rasterization, discard prediction and occlusion accounting on both executor paths. Test the actual case bodies, including an indexed draw opening a pass, open and closed initial passes, disabled rendering and no command buffer. Negative control: the previous case bodies fail this regression at occlusion accounting because preparation never ran.
+- **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md), 2026-11-12 17:53:50 log of a4d1bfc. GPU texture feedback was independently active: 23,954 reported IDs, 70 demand-created images; the last image-memory sample was 2,060 MiB in 2,140 images. Vegetation after wiring remains pending a device check.
