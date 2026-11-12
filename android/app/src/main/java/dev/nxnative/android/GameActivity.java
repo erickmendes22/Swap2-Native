@@ -396,8 +396,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             for (Readiness.Check c : fails) placed |= "ext.VK_KHR_map_memory2".equals(c.fact) || "ext.VK_EXT_map_memory_placed".equals(c.fact) || "feature.memoryMapPlaced".equals(c.fact);
             GpuDriver.Info drv = GpuDriver.selected(this, id);
             if (placed) m.append(".\n\nWith this GPU driver (").append(drv == null ? "System" : drv.label()).append(") nothing is drawn: the screen stays black while the game runs. ")
-                    .append(drv == null ? "Pick a custom driver that has placed memory maps" : "Pick System (the phone's own driver)")
-                    .append(" in Settings › GPU driver, or in this game's Game settings.");
+                    .append("Select a GPU driver that reports VK_EXT_map_memory_placed and feature.memoryMapPlaced; ")
+                    .append("the system driver is not guaranteed to support them. Change the driver in Settings › GPU driver or Game settings.");
             else m.append(".\n\nThe game may stop or draw wrongly. A custom GPU driver (Settings › GPU driver) may help.");
             readinessDialog("Not ready for this game", m.toString(), details(fails, warns, gpu), report, placed ? "Start anyway (black screen)" : "Try anyway", true);
         } else if (!warns.isEmpty() && !Prefs.of(this).getString(Prefs.gameKey("readiness_seen", id), "").equals(warnKey(f, warns))) {
