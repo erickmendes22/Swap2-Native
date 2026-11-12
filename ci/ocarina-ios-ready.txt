@@ -310,3 +310,5 @@ Ocarina 0.1.6-fix Vulkan 1.4 / Snapdragon 8 Elite (2026-11-12):
 - GameActivity logs exact failed Vulkan facts, driver, user button actions and early start phases. Missing placed mapping reports a compatible-driver requirement rather than assuming the system GPU driver works.
 - Run real JVM readiness tests (including Vulkan1.4 core-vs-1.3 ext logic) in APK validation before building, retain exact existing shaders, ABI, version 0.1.6 and same signer.
 - Hardware validation on Adreno 830 remains necessary, and this fix must not be announced as proven until it boots.
+
+CI rerun: fix Java test fixture to remove actual VK_KHR_map_memory2 line; Vulkan 1.4 promoted core passes, Vulkan 1.3 without extension fails. Rebuild only after JVM + NDK and shader ABI validation pass.
