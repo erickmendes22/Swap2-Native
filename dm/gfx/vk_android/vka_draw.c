@@ -1626,6 +1626,17 @@ int vka_mesh_route(const vka_dstate *d) {
     int supplement = veg_supplement_stage(ms->key) ||
                      (ts && veg_supplement_stage(ts->key));
     if (supplement && !vegetation_on) return -1;
+    // Three same-driver A/B routes. No source shader or prepared pack
+    // change. Defaults to the existing proven hybrid (mode 0).
+    // 1: compute for both original and 508 supplemental stages; compare
+    // Banana Native v0.3.13's Qualcomm all-compute approach.
+    // 2: native task/mesh for both groups ONLY with enabled Vulkan
+    // meshShader + taskShader. Position Invariant is inserted at shader
+    // module creation to keep depth prepass and colour-pass compatible.
+    // Both experimental paths require restart and never change other games.
+    int test_route = VKA_ENV("DM_VK_OOT_MESH_ROUTE", 0);
+    if (test_route == 1 && V.memu) return 1;
+    if (test_route == 2 && V.mesh && V.task) return 0;
     return hybrid ? (supplement ? 1 : 0) : (V.memu ? 1 : 0);
 }
 static int vegetation_omittable(const vka_dstate *d, vka_shader *const *sh) {
