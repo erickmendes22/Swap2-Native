@@ -51,6 +51,16 @@ static int convert(const uint32_t *w, size_t nw, int gl, const char *tag, vka_me
     CHECK(o, "%s: converted (%s)", tag, err);
     if (o) {
         CHECK(model_of(o, on) == 5, "%s: GLCompute", tag);
+        // For taskless foliage meshes, default SPIR-V must contain the two
+        // task/no-task phi merges; with the rollback env it stays on the
+        // original always-search path. Both variants must pass spirv-val.
+        if (!L->task && !strcmp(tag, "mesh_tri")) {
+            const char *fast = getenv("DM_VK_MEMU_FAST_TASKLESS");
+            int quick = !fast || strcmp(fast, "0") != 0;
+            CHECK(quick ? count_op(o, on, 245) >= 2 : count_op(o, on, 245) < 2,
+                  "%s: uniform taskless search bypass %s (%d phi nodes)",
+                  tag, quick ? "ON" : "OFF", count_op(o, on, 245));
+        }
         CHECK(count_var(o, on, 3) == 0, "%s: no Output variable", tag);
         CHECK(count_var(o, on, 5402) == 0, "%s: no task payload variable", tag);
         CHECK(count_op(o, on, 5294) == 0 && count_op(o, on, 5295) == 0, "%s: no OpEmitMeshTasksEXT / OpSetMeshOutputsEXT", tag);
