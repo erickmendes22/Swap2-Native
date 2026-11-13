@@ -28,6 +28,9 @@ typedef struct {
 
 // Process-level developer A/B switch; off until paired device timings pass.
 int vka_memu_coalesced(void);
+// Startup-only mesh compute task-index search: eight offset reads for <=256
+// tasks, the historical seventeen reads above that. Separate shader cache ID.
+int vka_memu_short_task_search(void);
 // Bounds-checked direct plane scatter; 0 restores the original branch ladder.
 int vka_memu_plane_lut(void);
 
