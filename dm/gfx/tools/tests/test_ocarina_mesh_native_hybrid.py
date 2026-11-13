@@ -39,8 +39,8 @@ class MeshNativeHybrid(unittest.TestCase):
 #include "vka_vegetation_supplement.h"
 #define DM_GAME_ID "0400486024DEC000"
 static struct { int memu, mesh, task; } V = {1,1,1};
-static int g_vegetation_enabled = 1, native_base = 1;
-#define VKA_ENV(k, def) (!strcmp((k),"DM_VK_VEGETATION") ? g_vegetation_enabled : native_base)
+static int g_vegetation_enabled = 1, native_base = 1, route_mode = 0;
+#define VKA_ENV(k, def) (!strcmp((k),"DM_VK_VEGETATION") ? g_vegetation_enabled : !strcmp((k),"DM_VK_OOT_MESH_ROUTE") ? route_mode : native_base)
 typedef struct { uint64_t key; } vka_shader;
 typedef struct prog_t { vka_shader *ts, *ms; } prog_t;
 typedef struct { const prog_t *bst[8]; } vka_dstate;
@@ -86,6 +86,19 @@ int main(void) {
     p.ms->key = vka_veg_entries[0].key;
     g_vegetation_enabled=0; assert(vka_mesh_route(&d) == -1);  // OFF works with emu disabled
     V.memu=1; V.task=0; assert(vka_mesh_route(&d) == -1); // OFF works without hardware task support
+    // New experimental choices: verify both exact routes and native
+    // capability fallback, independently from vegetation OFF semantics.
+    g_vegetation_enabled=1; V.task=1; V.mesh=1;
+    p.ms->key=original_mesh_key;
+    route_mode=1; assert(vka_mesh_route(&d) == 1); // all compute
+    route_mode=2; assert(vka_mesh_route(&d) == 0); // all native
+    p.ms->key=vka_veg_entries[0].key;
+    route_mode=1; assert(vka_mesh_route(&d) == 1); // supplemental compute
+    route_mode=2; assert(vka_mesh_route(&d) == 0); // supplemental native
+    V.task=0; assert(vka_mesh_route(&d) == 1);     // feature fallback
+    V.task=1; g_vegetation_enabled=0;
+    assert(vka_mesh_route(&d) == -1);              // vegetation OFF always omits
+    route_mode=0;
     return 0;
 }
 """
