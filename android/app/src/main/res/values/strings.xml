@@ -735,5 +735,7 @@
     <string name="s2_compute_optimized_note">Tests smaller GPU workgroups while preserving the image. Disable to compare with the previous processing. Restart the game to apply.</string>
     <string name="s2_fragment_optimized">Optimize fragment (test)</string>
     <string name="s2_fragment_optimized_note">Uses the separately imported scene fragment patch. Disable to restore the original shader. Restart the game to apply.</string>
+    <string name="s2_texture_feedback_direct">Direct texture feedback (test)</string>
+    <string name="s2_texture_feedback_direct_note">Test GPU texture ID discovery directly in fence-protected readback slots. Off uses the proven copy/clear path. Preserves textures and image; restart the game to compare.</string>
     <string name="s2_fragment_imported">Scene fragment patch imported. The complete shader library and vegetation are preserved. Restart the game to apply.</string>
 </resources>
