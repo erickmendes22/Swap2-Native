@@ -170,6 +170,7 @@ final class GameSettings {
             Prefs.of(a).edit()
                     .remove(Prefs.gameKey("oot_mesh_route", id))
                     .remove(Prefs.gameKey("oot_short_task_search", id))
+                    .remove(Prefs.gameKey("oot_memu_rc_true_fuse", id))
                     .remove(Prefs.gameKey("oot_hidden_layers", id))
                     .remove(Prefs.gameKey("oot_skip_heavy_fs", id))
                     .remove(Prefs.gameKey("pause_return", id)).commit();
