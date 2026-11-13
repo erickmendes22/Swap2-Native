@@ -44,6 +44,27 @@ class FoliagePhaseProfile(unittest.TestCase):
         self.assertIn('vka_gp_active',s)
         self.assertIn('DM_VK_GPUPROF=0',s)
 
+    def test_mesh_key_attribution_uses_original_shader_not_generated_xor_key(self):
+        m = (VK / "vka_memu_draw.inc").read_text()
+        g = (VK / "vka_gprof.c").read_text()
+        h = (VK / "vka.h").read_text()
+        self.assertIn('uint64_t original_key) {',m)
+        self.assertIn('if (vka_gp_active) vka_gp_mesh_shader(g_cb, st == 6, original_key);',m)
+        self.assertIn('MB.e[idx].ms ? MB.e[idx].ms->key : 0',m)
+        self.assertIn('MB.e[idx].ts ? MB.e[idx].ts->key : 0',m)
+        self.assertIn('void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key)',g)
+        self.assertIn('void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key);',h)
+        self.assertIn('m->mesh_key = 0; m->mesh_stage = 0;',g)
+        self.assertIn('m->mesh_key = key;',g)
+        self.assertIn('m->mesh_stage = task ? 1 : 2;',g)
+        self.assertIn('gpu prof foliage key:',g)
+        self.assertIn('MEMU_MESH_SHADER',g)
+        self.assertIn('MEMU_TASK_SHADER',g)
+        # Reporting must aggregate timestamps, not CPU time.
+        self.assertIn('hot[j].ms += s[k].ms;',g)
+        self.assertIn('rank < 12',g)
+        self.assertIn('if (!vka_gp_active || cb != g_cb || g_n >= NQ) return;',g)
+
     def test_no_spirv_abi_or_render_scale_regression(self):
         shader = (VK / "vka_memu_spv.c").read_text()
         dev = (VK / "vka_dev.c").read_text()
