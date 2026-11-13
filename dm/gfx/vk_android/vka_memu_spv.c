@@ -716,6 +716,10 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                 INS(&O, OpSelectionMerge, merge_label, 0);
                 INS(&O, OpBranchConditional, istask, task_label, plain_label);
                 INS(&O, OpLabel, task_label);
+                // The nested optimized search ends in its own merge block;
+                // it, not the original task entry, is the predecessor for
+                // the outer task-vs-taskless OpPhi nodes.
+                uint32_t task_end_label = task_label;
                 uint32_t nt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_NTASK));
                 uint32_t cb = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_COUNTS));
                 uint32_t last = op2(&f, OpISub, B.t_u32,
@@ -759,6 +763,7 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                     INS(&O, OpStore, pv_taskidx, itl);
                     INS(&O, OpBranch, lm);
                     INS(&O, OpLabel, lm);
+                    task_end_label = lm;
                     // Merge through Private storage rather than asserting
                     // the branch entry labels are the phi's direct
                     // predecessors: SPIR-V validation forbids that if
@@ -783,9 +788,9 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                 INS(&O, OpBranch, merge_label);
                 INS(&O, OpLabel, merge_label);
                 own = B.next++;
-                INS(&O, OpPhi, B.t_u32, own, task_own, task_label, plain_own, plain_label);
+                INS(&O, OpPhi, B.t_u32, own, task_own, task_end_label, plain_own, plain_label);
                 t = B.next++;
-                INS(&O, OpPhi, B.t_u32, t, ti, task_label, c0, plain_label);
+                INS(&O, OpPhi, B.t_u32, t, ti, task_end_label, c0, plain_label);
             } else {
                 // Exact pre-optimization shader for driver A/B comparison.
                 uint32_t nt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_NTASK));
