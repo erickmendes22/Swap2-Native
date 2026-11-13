@@ -19,6 +19,7 @@
 #include <string.h>
 
 uint64_t vka_memu_n_batches, vka_memu_n_draws, vka_memu_n_splits, vka_memu_n_skip;
+uint64_t vka_memu_task_small, vka_memu_task_large, vka_memu_task_indirect;
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static const char *stage_name(int st) { return st == DMSH_VK_STAGE_TS ? "task" : "mesh"; }
 
@@ -229,15 +230,22 @@ int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layo
 // than issuing a new setup/mesh dispatch for each short called list.
 void vka_memu_caller_stats(uint64_t *resumes, uint64_t *nested);
 void vka_memu_stats(char *b, size_t n) {
-    static uint64_t b0, d0, s0, k0, c0, x0;
+    static uint64_t b0, d0, s0, k0, c0, x0, tsmall0, tlarge0, tind0;
+    uint64_t sm = vka_memu_task_small - tsmall0,
+             lg = vka_memu_task_large - tlarge0,
+             id = vka_memu_task_indirect - tind0;
+    tsmall0 = vka_memu_task_small; tlarge0 = vka_memu_task_large;
+    tind0 = vka_memu_task_indirect;
     uint64_t cr = 0, nx = 0;
     vka_memu_caller_stats(&cr, &nx);
     uint64_t nb = vka_memu_n_batches - b0, nd = vka_memu_n_draws - d0, ns = vka_memu_n_splits - s0, nk = vka_memu_n_skip - k0,
              crossings = cr - c0, nested = nx - x0;
     b0 = vka_memu_n_batches; d0 = vka_memu_n_draws; s0 = vka_memu_n_splits; k0 = vka_memu_n_skip; c0 = cr; x0 = nx;
     if (!nb && !nd) { if (n) b[0] = 0; return; }
-    snprintf(b, n, "mesh draws through compute: %llu draws in %llu batches (%.1f a batch), %llu render passes split for one, %llu not prepared; %llu parent-list resumes across %llu nested lookaheads", (unsigned long long)nd, (unsigned long long)nb,
+    snprintf(b, n, "mesh draws through compute: %llu draws in %llu batches (%.1f a batch), %llu render passes split for one, %llu not prepared; %llu parent-list resumes across %llu nested lookaheads; task mesh draws direct <=256: %llu, direct >256: %llu, indirect: %llu; short GPU task lookup %s", (unsigned long long)nd, (unsigned long long)nb,
              nb ? (double)nd / (double)nb : 0.0, (unsigned long long)ns, (unsigned long long)nk,
-             (unsigned long long)crossings, (unsigned long long)nested);
+             (unsigned long long)crossings, (unsigned long long)nested,
+             (unsigned long long)sm, (unsigned long long)lg,
+             (unsigned long long)id, vka_memu_short_task_search() ? "ON" : "OFF");
 }
 #endif
