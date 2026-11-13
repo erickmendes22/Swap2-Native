@@ -348,6 +348,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             env.addAll(OcarinaRenderProfile.environment(Prefs.renderProfile(this,id)));
             // Upscaler (Game settings): FSR 1 in place of agl's NDSR networks, with the profile's input encoding (Profile.ndsrEnv); nothing for a game without them
             if (prof != null) env.addAll(prof.ndsrEnv(Prefs.ndsr(this, id)));
+            // Direct 720p: retain the NDSR colour conversion, not its
+            // spatial EASU/SGSR reconstruction or final output upscale.
+            if (Prefs.OCARINA_TITLE.equals(id) &&
+                    OcarinaRenderProfile.direct720(Prefs.renderProfile(this, id)))
+                env.add("DM_VK_NDSR=bilinear");
             // Scene resolution 720p (Game settings): the RomFS overlay made on the phone from the player's files, while it matches this pack (SceneOverlay)
             String sceneNote = null;
             if (prof != null && prof.hasScene() && Prefs.scene720(this, id)) {
