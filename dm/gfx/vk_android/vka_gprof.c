@@ -141,6 +141,15 @@ static void report(void) {
     };
     for (int j = 0; j < ns; j++) {
         const gp_mark *m = &g_m[s[j].i];
+        // Per-dispatch timestamps now split the old MEMU_MESH batch
+        // interval. Add them back into its total so old/new profiler
+        // reports remain comparable; also print the hottest source keys.
+        if (m->mesh_stage) {
+            int phase = m->mesh_stage == 1 ? 3 : 5;
+            mesh_phase_ms[phase] += s[j].ms;
+            mesh_phase_n[phase]++;
+            continue;
+        }
         for (int k = 0; k < 7; k++) if (m->file && !strcmp(m->file, mesh_phase[k])) {
             mesh_phase_ms[k] += s[j].ms;
             mesh_phase_n[k]++;
