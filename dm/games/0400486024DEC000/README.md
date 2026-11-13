@@ -375,3 +375,46 @@ excluded. Repeating it with the actual uint32 output format passes all 12
 cases bit-for-bit. The generic negative control now also changes each UINT
 output by one least-significant bit, and must fail. This probe correction does
 not modify the production library, APK shader selector or packaged shader bytes.
+
+### Build 125 phone A/B: AST alternative has no demonstrated speedup (2026-11-13)
+
+The user's `085434` and `085545` logs are the same `ff379e5` APK and driver
+891.14. The only launcher environment difference is `DM_VK_OOT_FRAGMENT_AST`
+0 versus 1. OFF explicitly logs the original shader; ON logs both exact
+resource/IO compatibility and `fragment AST ACTIVE`. Import and runtime
+selection therefore worked. Do not attribute the negative result to a missing
+ZIP, inactive option, or require the same upload/preparation again.
+
+Use median-of-window-p50 values at frames 1500/1800/2100, excluding ON's
+1200-frame transition (1783 versus ~2450 draws/frame):
+
+| Metric | AST OFF | AST ON |
+| --- | ---: | ---: |
+| Frame p50 (ms) | 24.47 | 24.51 |
+| GPU p50 (ms) | 24.01 | 24.05 |
+| Frame p95 (ms) | 25.34 | 25.31 |
+| CPU recording per frame (ms) | 16.73 | 16.64 |
+| Sampled graphics intervals (ms) | 14.00 | 13.90 |
+| Dominated `1e4d` graphics groups (ms) | 3.249 | 3.267 |
+
+Stable windows contain ~2419–2422 OFF versus ~2451–2456 ON draws/frame;
+these are not identical recorded replays. The differences do not demonstrate
+a speedup or a meaningful regression. The IR reduction and synthetic timing
+improvement did not translate to a demonstrated phone gain. Keep the option
+reversible and do not enable/promote it as a proven performance improvement.
+These files are sufficient to close this A/B; do not ask for another identical
+pair without a concrete new question.
+
+Source inspection of the production `vka_spv_pool_fb` transform on BOTH real
+final `1e4d` modules finds seven injected feedback sites/conditional branches
+and seven atomic-OR instructions (conditional, not necessarily executed for
+every fragment). Both retain 18 texture sample instructions. Runtime injection
+adds 121 SPIR-V instructions in each case; `early=2` requires the existing
+pipeline alpha-test/coverage guard. The phone log confirms GPU pool feedback
+is active. The previous probe did not include this runtime rewrite, so it did
+not isolate its overhead. Feedback is required to discover and retain textures
+read through the bindless pool: switching it off is not a quality-preserving
+optimization. Its time is still unmeasured separately; neither texture latency,
+feedback nor attachment/vertex costs are proven to explain the whole 3.27 ms.
+A subsequent shader experiment must include the runtime-patched modules and
+separately validate their texture-ID reporting as well as pixel values.
