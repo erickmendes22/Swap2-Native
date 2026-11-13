@@ -24,7 +24,8 @@ class NativeFoliageDefault(unittest.TestCase):
         self.assertIsNotNone(m)
         default = m.group(1).strip()
         self.assertEqual(default, '(!V.task || qcom_ocarina || route == 1)')
-        self.assertIn('VKA_ENV("DM_VK_OOT_MESH_ROUTE", 0)', dev)
+        self.assertIn('VKA_ENV("DM_VK_OOT_MESH_ROUTE", -1)', dev)
+        self.assertIn('route < 0 ? (V.memu ? "all compute" : "hardware native")', dev)
         # A missing user override is still hybrid, and only explicit
         # all-compute mode 1 modifies the emulation default.
         self.assertIn('route == 1', default)
