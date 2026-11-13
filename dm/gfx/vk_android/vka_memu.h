@@ -48,3 +48,4 @@ void vka_memu_retire(uint64_t fence);                            // the arena us
 int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layout);   // the setup and distribution pipelines, their layout (push descriptors: records, control, arena)
 void vka_memu_stats(char *b, size_t n);                          // the replay's statistics line part
 extern uint64_t vka_memu_n_batches, vka_memu_n_draws, vka_memu_n_splits, vka_memu_n_skip;
+extern uint64_t vka_memu_task_small, vka_memu_task_large, vka_memu_task_indirect;
