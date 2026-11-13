@@ -16,7 +16,7 @@ uint32_t *vka_ndsr_words(int packed, uint16_t tex_b, uint16_t img_b, uint16_t ba
 // The module's specialization constants (constant_id 0, 1, 2, 3)
 enum { VKA_NDSR_ENC_LINEAR = 0, VKA_NDSR_ENC_SQRT = 1 };
 enum { VKA_NDSR_MAP_FULL = 0, VKA_NDSR_MAP_PUSH = 1 };
-enum { VKA_NDSR_KERNEL_EASU = 0, VKA_NDSR_KERNEL_BILINEAR = 1 };
+enum { VKA_NDSR_KERNEL_EASU = 0, VKA_NDSR_KERNEL_BILINEAR = 1, VKA_NDSR_KERNEL_SGSR = 2 };
 enum { VKA_NDSR_PACK_NONE = 0, VKA_NDSR_PACK_B10G11R11 = 1, VKA_NDSR_PACK_RGBA8 = 2 };   // PACK (the packed variant only): the output's format
 // The packed store for an output of VkFormat vkformat (VKA_NDSR_PACK_*): B10G11R11_UFLOAT_PACK32 (122) and R8G8B8A8_UNORM (37); NONE for any other
 int vka_ndsr_pack_of(int vkformat);
