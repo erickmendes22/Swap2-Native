@@ -143,6 +143,7 @@ static int init_once(void) {
     int want_boost = requested_rate > explicit_boost ? requested_rate : explicit_boost;
     int x_fsr_rate = want_boost > 0 && has_ext(de, nde, VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
     if (x_fsr_rate) dext[ndext++] = VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME;
+    const int nv_vrs_image_extension = has_ext(de, nde, "VK_NV_shading_rate_image");
     // Ocarina issues shading-rate image/palette commands. They are still
     // unsupported by the NVN frontend. Record extension availability before
     // attempting a translation: KHR fragment shading rate is not the same API
@@ -176,6 +177,15 @@ static int init_once(void) {
     f2.features.robustBufferAccess = VK_FALSE; f13.robustImageAccess = VK_FALSE;
     f12.bufferDeviceAddressCaptureReplay = VK_FALSE; f12.bufferDeviceAddressMultiDevice = VK_FALSE;
     frob.robustBufferAccess2 = VK_FALSE; frob.robustImageAccess2 = VK_FALSE;   // only nullDescriptor: unbound slots read a null descriptor
+    // Probe the exact prerequisites for the NVN shading-rate IMAGE
+    // translation before disabling unsupported host functionality.
+    // KHR pipeline-only 2x2 VRS is already active but does NOT implement
+    // the game's attachment-bound shading-rate image/palette operations.
+    if (!strcmp(DM_GAME_ID, "0400486024DEC000"))
+        VLOG("Ocarina NVN shading-rate IMAGE prerequisites: NV extension=%d, KHR extension enabled=%d, KHR attachment feature=%d, KHR pipeline feature=%d; attachment translation NOT implemented; no guest image/palette state changed",
+             nv_vrs_image_extension, x_fsr_rate,
+             x_fsr_rate ? frate.attachmentFragmentShadingRate : -1,
+             x_fsr_rate ? frate.pipelineFragmentShadingRate : -1);
     // Mesh shading: the task and mesh stages only (multiview, shading-rate and query support each need more of the device than the replay enables or uses)
     fmesh.multiviewMeshShader = VK_FALSE; fmesh.primitiveFragmentShadingRateMeshShader = VK_FALSE; fmesh.meshShaderQueries = VK_FALSE;
     frate.primitiveFragmentShadingRate = VK_FALSE; frate.attachmentFragmentShadingRate = VK_FALSE;
