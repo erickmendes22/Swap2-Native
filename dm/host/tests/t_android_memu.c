@@ -65,7 +65,7 @@ static int convert(const uint32_t *w, size_t nw, int gl, const char *tag, vka_me
             // The old shader remains byte-for-byte unchanged when OFF.
             if (quick) {
                 int short_search = vka_memu_short_task_search();
-                CHECK(short_search ? count_op(o, on, 250) >= 2 : count_op(o, on, 250) == 1,
+                CHECK(short_search ? count_op(o, on, 250) >= 4 : count_op(o, on, 250) == 3,
                       "%s: 8-step/17-step task branch %s (%d conditional branches)",
                       tag, short_search ? "ON" : "OFF", count_op(o, on, 250));
             }
