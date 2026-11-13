@@ -654,6 +654,30 @@ static VkShaderModule spv_module(const vka_shlib *L, const dmsh_vk_entry *e, con
     if (!w) w = lib_words(L, e, m, &nb, err, errn);
     if (!w) { *why = err; return VK_NULL_HANDLE; }
     if (e->flags & DMSH_VK_F_SUBGROUP) single_lane(key, e->stage, &w, &nb);
+    // Explicit Ocarina native-mesh A/B only. Both foliage prepass and
+    // colour-pass mesh modules get identical Invariant Position semantics;
+    // the original shader library, bindings and guest depth operations
+    // remain untouched. By default Qualcomm keeps the compute route.
+    if (e->stage == DMSH_VK_STAGE_MS && V.mesh && V.task &&
+        !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_MESH_ROUTE", 0) == 2) {
+        char patch_err[160] = ""; size_t pn = 0; int changed = 0;
+        uint32_t *patched = vka_spv_mesh_position_invariant(
+            w, nb / 4, &pn, &changed, patch_err, sizeof patch_err);
+        if (patched) {
+            free(w); w = patched; nb = pn * 4u;
+            static _Atomic uint32_t n;
+            uint32_t count = atomic_fetch_add(&n, 1) + 1;
+            if (count == 1 || !(count & 127u))
+                VLOG("Ocarina native mesh: Invariant Position applied to %u shader modules (latest %016llx); depth and colour prepasses retained",
+                     count, (unsigned long long)key);
+        } else if (patch_err[0]) {
+            static _Atomic int failed;
+            if (atomic_fetch_add(&failed, 1) < 8)
+                VRED("Ocarina native mesh shader %016llx: Position parity not proved (%s), original module retained; native foliage may be wrong",
+                     (unsigned long long)key, patch_err);
+        }
+    }
     VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = nb, .pCode = w};
     VkShaderModule mod = VK_NULL_HANDLE; VkResult r = vk.vkCreateShaderModule(V.dev, &ci, NULL, &mod);
     free(w);
