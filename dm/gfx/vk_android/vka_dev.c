@@ -298,7 +298,18 @@ static int init_once(void) {
     { const char *e = getenv("DM_VK_MESH_EMU"); V.cs_groups = V.props.limits.maxComputeWorkGroupCount[0];
       const int qcom_ocarina = V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
            !strcmp(DM_GAME_ID, "0400486024DEC000");
-      V.memu = e && *e ? strcmp(e, "0") != 0 : (!V.task || qcom_ocarina);
+      const int route = !strcmp(DM_GAME_ID, "0400486024DEC000") ?
+          VKA_ENV("DM_VK_OOT_MESH_ROUTE", 0) : 0;
+      V.memu = e && *e ? strcmp(e, "0") != 0 :
+               (!V.task || qcom_ocarina || route == 1);
+      if (route != 0)
+          VLOG("Ocarina mesh A/B requested=%d (%s), effective %s; mesh=%d task=%d compute_emulation=%d, driverID=%d",
+               route,
+               route == 1 ? "all compute" : route == 2 ? "native all" : "unknown",
+               route == 1 ? (V.memu ? "all compute" : "fallback") :
+               route == 2 ? (V.mesh && V.task ? "native with Invariant Position" : "fallback") :
+               "hybrid",
+               V.mesh, V.task, V.memu, V.driver_id);
       VLOG("mesh execution: %s (hardware mesh=%d task=%d, driver=%d; %s)",
            V.memu ? "hybrid original-native/supplement-compute" : "native VK_EXT_mesh_shader",
            V.mesh, V.task, (int)V.driver_id,
