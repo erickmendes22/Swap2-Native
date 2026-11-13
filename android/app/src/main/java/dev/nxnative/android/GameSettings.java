@@ -247,6 +247,14 @@ final class GameSettings {
                     .toggle(a, Prefs.vegetationContiguous(a, id), (b, on) -> Prefs.vegetationContiguous(a, id, on));
             contiguous.value(a.getString(R.string.s2_vegetation_contiguous_note));
             box.addView(contiguous.view);
+            Ui.Setting taskSearch = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Busca rápida de tasks na GPU (teste)", null)
+                    .toggle(a, Prefs.shortTaskSearch(a, id),
+                            (b, on) -> Prefs.shortTaskSearch(a, id, on));
+            taskSearch.value("Reduz de 17 para 8 consultas aos offsets de task quando existem até 256 tasks. "
+                    + "Mantém o algoritmo original para tarefas maiores; opção experimental desligada por padrão. "
+                    + "Reinicie o jogo para comparar FPS e tempo GPU.");
+            box.addView(taskSearch.view);
             Ui.Setting compute = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_compute_optimized), null)
                     .toggle(a, Prefs.computeOptimized(a, id), (b, on) -> Prefs.computeOptimized(a, id, on));
             compute.value(a.getString(R.string.s2_compute_optimized_note));
