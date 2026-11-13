@@ -12,6 +12,7 @@
 #include "vka_memu.h"
 #include "vka_memu_abi.h"
 #include "vka_memu_helpers_spv.h"
+#include "vka_memu_compact_spv.h"
 #include "vka_memu_coalesced_helpers_spv.h"
 #include "vka_spvpatch.h"
 #include <stdio.h>
@@ -21,6 +22,7 @@
 uint64_t vka_memu_n_batches, vka_memu_n_draws, vka_memu_n_splits, vka_memu_n_skip;
 uint64_t vka_memu_task_small, vka_memu_task_large, vka_memu_task_indirect;
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t g_compact_input, g_compact_output;
 static const char *stage_name(int st) { return st == DMSH_VK_STAGE_TS ? "task" : "mesh"; }
 
 // ---------- Shaders ----------
@@ -166,7 +168,7 @@ static int arena_make(arena *a, uint32_t words) {
         VkMemoryAllocateInfo ci2 = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = mr.size, .memoryTypeIndex = t}; void *p = NULL;
         if (t == UINT32_MAX || vk.vkAllocateMemory(V.dev, &ci2, NULL, &a->cmem) || vk.vkBindBufferMemory(V.dev, a->ctl, a->cmem, 0) || vk.vkMapMemory(V.dev, a->cmem, 0, VK_WHOLE_SIZE, 0, &p)) {
             if (a->cmem) vk.vkFreeMemory(V.dev, a->cmem, NULL); vk.vkDestroyBuffer(V.dev, a->ctl, NULL); a->ctl = VK_NULL_HANDLE; a->cmem = VK_NULL_HANDLE; arena_free(a); return 0; }
-        a->cp = p; a->cp[VKA_MEMU_CTL_COUNTER] = a->cp[VKA_MEMU_CTL_ASKED] = 0;
+        a->cp = p; memset(a->cp, 0, 64);
     }
     return 1;
 }
@@ -177,6 +179,12 @@ int vka_memu_arena(VkCommandBuffer cb, VkBuffer *buf, VkBuffer *ctl, uint32_t *c
         for (int i = 0; i < NARENA && k < 0; i++) if (!g_ar[i].buf) k = i;
         if (k < 0) { VRED_ONCE("mesh draws through compute: more than %d submissions in flight with them; the draws of this one are skipped", NARENA); return 0; }
         arena *a = &g_ar[k];
+        // Only completed submissions may be read; arena reuse already gates
+        // this on vka_done(). The existing 64-byte control allocation suffices.
+        if (a->cp && a->fence) {
+            g_compact_input += a->cp[VKA_MEMU_CTL_COMPACT_INPUT];
+            g_compact_output += a->cp[VKA_MEMU_CTL_COMPACT_OUTPUT];
+        }
         uint32_t maxw = (uint32_t)((uint64_t)VKA_ENV("DM_VK_MESH_EMU_MB", 256) << 18), want = 4u << 20;   // (words: 16 MiB to start)
         uint32_t rng = V.props.limits.maxStorageBufferRange / 4; if (rng && maxw > rng) maxw = rng;   // (bound whole as a storage buffer)
         if (maxw < want) want = maxw;
@@ -196,6 +204,51 @@ int vka_memu_arena(VkCommandBuffer cb, VkBuffer *buf, VkBuffer *ctl, uint32_t *c
 }
 void vka_memu_retire(uint64_t fence) { if (g_cur >= 0) { g_ar[g_cur].fence = fence; g_ar[g_cur].used = 0; g_cur = -1; } }
 
+// No speculative visibility decision: only duplicate-index, filled triangles
+// are removed. Other titles and devices lacking subgroup ballot stay unchanged.
+int vka_memu_compact_available(void) {
+    static int known;
+    if (!known) {
+        VkPhysicalDeviceSubgroupProperties sg = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
+        VkPhysicalDeviceProperties2 pr = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, .pNext = &sg};
+        if (strcmp(DM_GAME_ID, "0400486024DEC000") || !V.dev) return 0;
+        vk.vkGetPhysicalDeviceProperties2(V.pd, &pr);
+        unsigned need = VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_BALLOT_BIT;
+        known = (sg.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+                (sg.supportedOperations & need) == need ? 1 : -1;
+    }
+    return known > 0;
+}
+int vka_memu_compact_fs_safe(vka_shader *fs) {
+    if (!fs) return 1; // depth-only: there is no fragment PrimitiveId consumer
+    if (!fs->e || fs->e->stage != DMSH_VK_STAGE_FS) return 0;
+    int safe = __atomic_load_n(&fs->memu_compact_safe, __ATOMIC_ACQUIRE);
+    if (!safe) {
+        char err[128]; size_t nb = 0;
+        uint32_t *w = vka_shader_memu_words(fs, &nb, err, sizeof err);
+        safe = w && vka_memu_fs_compact_safe(w, nb / 4) ? 1 : -1;
+        free(w);
+        __atomic_store_n(&fs->memu_compact_safe, safe, __ATOMIC_RELEASE);
+    }
+    return safe > 0;
+}
+VkPipeline vka_memu_compact_pipeline(VkPipelineLayout layout) {
+    static VkPipeline pipeline; static int attempted;
+    if (attempted) return pipeline;
+    attempted = 1;
+    if (!vka_memu_compact_available()) return VK_NULL_HANDLE;
+    VkShaderModule m = make_module(SPV_MEMU_COMPACT, sizeof SPV_MEMU_COMPACT / 4);
+    if (!m) return VK_NULL_HANDLE;
+    VkComputePipelineCreateInfo ci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = layout,
+        .stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                  .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = m, .pName = "main"}};
+    VkResult result = vk.vkCreateComputePipelines(V.dev, VK_NULL_HANDLE, 1, &ci, NULL, &pipeline);
+    vk.vkDestroyShaderModule(V.dev, m, NULL);
+    if (result) pipeline = VK_NULL_HANDLE;
+    VLOG("mesh compute: stable in-place index compaction %s (indexed filled triangles, no PrimitiveId consumer)",
+         pipeline ? "ready" : "unavailable; original indices retained");
+    return pipeline;
+}
 // ---------- The helper passes ----------
 int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layout) {
     static int state; static VkPipeline ps, pd; static VkPipelineLayout pl;
@@ -231,6 +284,14 @@ int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layo
 void vka_memu_caller_stats(uint64_t *resumes, uint64_t *nested);
 void vka_memu_stats(char *b, size_t n) {
     static uint64_t b0, d0, s0, k0, c0, x0, tsmall0, tlarge0, tind0;
+    static uint64_t ci0, co0;
+    if (g_compact_input != ci0) {
+        VLOG("mesh index compaction completed: %llu input triangles -> %llu retained; %llu degenerate primitives removed; no vertex/texture changes",
+             (unsigned long long)(g_compact_input - ci0),
+             (unsigned long long)(g_compact_output - co0),
+             (unsigned long long)((g_compact_input - ci0) - (g_compact_output - co0)));
+        ci0 = g_compact_input; co0 = g_compact_output;
+    }
     uint64_t sm = vka_memu_task_small - tsmall0,
              lg = vka_memu_task_large - tlarge0,
              id = vka_memu_task_indirect - tind0;

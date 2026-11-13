@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Stable, in-place removal of duplicate-index triangles in private mesh arenas.
+// One workgroup owns one disjoint indexed record. No vertex data is changed.
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#include "memu_common.glsl"
+layout(local_size_x = 64) in;
+shared uint counts[64];
+shared uint sizes[64];
+void main() {
+    uint j = gl_WorkGroupID.x;
+    if (j >= pc.n) return;
+    uint R = (pc.first + j) * VKA_MEMU_REC_WORDS;
+    uint flags = r[R + VKA_MEMU_R_FLAGS];
+    if ((flags & (VKA_MEMU_F_INDEXED | VKA_MEMU_F_COMPACT)) !=
+                 (VKA_MEMU_F_INDEXED | VKA_MEMU_F_COMPACT)) return;
+    uint n = r[R + VKA_MEMU_R_DRAW], first = r[R + VKA_MEMU_R_PBASE];
+    if (n % 3u != 0u || first > pc.cap || n > pc.cap - first) return;
+    // Vulkan does NOT promise that subgroup lane order follows local IDs.
+    // Give each active invocation our own dense, subgroup-ordered index.
+    // This also handles subgroups containing inactive hardware lanes.
+    if (gl_NumSubgroups > 64u) return;
+    // Local IDs are used ONLY to initialize scratch, never to infer ballot
+    // order. Empty physical subgroup slots, if any, contribute zero.
+    sizes[gl_LocalInvocationID.x] = 0u;
+    counts[gl_LocalInvocationID.x] = 0u;
+    barrier();
+    uvec4 active_mask = subgroupBallot(true);
+    if (subgroupElect()) sizes[gl_SubgroupID] = subgroupBallotBitCount(active_mask);
+    barrier();
+    uint lane = subgroupBallotExclusiveBitCount(active_mask);
+    for (uint g = 0u; g < gl_SubgroupID; g++) lane += sizes[g];
+    uint ntri = n / 3u, run = 0u;
+    for (uint base = 0u; base < ntri; base += 64u) {
+        uint i = base + lane;
+        uvec3 t = uvec3(0u);
+        if (i < ntri) t = uvec3(a[first + i*3u], a[first + i*3u + 1u], a[first + i*3u + 2u]);
+        bool keep = i < ntri && t.x != t.y && t.x != t.z && t.y != t.z;
+        uvec4 mask = subgroupBallot(keep);
+        uint own = subgroupBallotExclusiveBitCount(mask);
+        if (subgroupElect()) counts[gl_SubgroupID] = subgroupBallotBitCount(mask);
+        // All source indices in this chunk must be read before any lane
+        // overwrites their compacted destinations. The next chunk starts
+        // strictly after every possible destination in the current chunk.
+        memoryBarrierBuffer(); barrier();
+        uint preceding = 0u, total = 0u;
+        for (uint g = 0u; g < gl_NumSubgroups; g++) {
+            uint c = counts[g];
+            if (g < gl_SubgroupID) preceding += c;
+            total += c;
+        }
+        if (keep) {
+            uint outword = first + (run + preceding + own) * 3u;
+            // A dense prefix is already in its final position. Avoid
+            // rewriting it or dirtying the index cache unnecessarily.
+            if (outword != first + i*3u) {
+                a[outword] = t.x; a[outword + 1u] = t.y; a[outword + 2u] = t.z;
+            }
+        }
+        run += total;
+        memoryBarrierBuffer(); barrier();
+    }
+    if (lane == 0u) {
+        r[R + VKA_MEMU_R_DRAW] = run * 3u;
+        atomicAdd(ctl[VKA_MEMU_CTL_COMPACT_INPUT], ntri);
+        atomicAdd(ctl[VKA_MEMU_CTL_COMPACT_OUTPUT], run);
+    }
+}

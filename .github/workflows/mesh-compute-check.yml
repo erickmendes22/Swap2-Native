@@ -8,6 +8,9 @@ on:
       - dm/gfx/tools/tests/test_memu_coalesced_readback.py
       - dm/gfx/tools/tests/test_oot_short_task_search.py
       - dm/gfx/tools/tests/test_oot_render_enable_boundaries.py
+      - dm/gfx/tools/tests/test_oot_compute_hdr_vrs.py
+      - dm/gfx/tools/tests/test_memu_index_compaction.py
+      - dm/gfx/vk_android/vka_pso.c
       - dm/gfx/tools/tests/test_memu_plane_lut.py
       - dm/gfx/tools/tests/test_banana_input_caches.py
       - dm/gfx/tools/tests/test_ocarina_mesh_native_hybrid.py
@@ -77,6 +80,8 @@ jobs:
           python3 -m venv /tmp/fragment-probe-venv
           /tmp/fragment-probe-venv/bin/pip install vulkan==1.3.275.1 numpy==2.3.5
           /tmp/fragment-probe-venv/bin/python -m unittest discover -s dm/tools/tests -p test_fragment_gpu_probe.py -v
+      - name: Verify in-place index compaction, blended raster and precise occlusion
+        run: /tmp/fragment-probe-venv/bin/python -m unittest discover -s dm/gfx/tools/tests -p test_memu_index_compaction.py -v
       - name: Compare actual GPU exports and generated vertex readers
         env:
           MEMU_TEST_VULKAN: '1'
@@ -117,6 +122,8 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 /tmp/mesh-invariant-check \
             /tmp/mesh-invariant.spv /tmp/mesh-invariant-patched.spv
           spirv-val --target-env vulkan1.3 /tmp/mesh-invariant-patched.spv
+      - name: Verify VRS eligibility survives compute mesh conversion
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_oot_compute_hdr_vrs.py -v
       - name: Test real NVN mesh lookahead render-enable boundaries
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_oot_render_enable_boundaries.py -v
       - name: Check hybrid routing and caller ordering

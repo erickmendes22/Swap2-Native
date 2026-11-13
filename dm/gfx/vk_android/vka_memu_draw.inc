@@ -17,7 +17,7 @@
 #include "vka_memu_order.h"
 enum { MEMU_MAX = VKA_MEMU_ORDER_MAX };
 typedef struct { int ok, rec, indexed, points; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; } memu_ent;
-static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws; } MB;
+static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws, compact_draws; } MB;
 static memu_ent *g_memu_cur;
 // The record being replayed: its entry (the next of its record from the batch's cursor, taken), NULL when the batch has none left for it
 void vka_memu_cur(const uint8_t *p) { int i = vka_memu_order_take(&MB.o, p); g_memu_cur = i < 0 ? NULL : &MB.e[i]; }
@@ -58,7 +58,9 @@ static void memu_helper(int dist) {
     VkDescriptorBufferInfo bi[3] = {{MB.rec.buf, MB.rec.off, (VkDeviceSize)MEMU_MAX * VKA_MEMU_REC_WORDS * 4}, {MB.ctl, 0, 64}, {MB.arena, 0, VK_WHOLE_SIZE}};
     VkWriteDescriptorSet w[3];
     for (uint32_t i = 0; i < 3; i++) w[i] = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = i, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[i]};
-    vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, dist ? pd : ps);
+    VkPipeline target = dist == 2 ? vka_memu_compact_pipeline(pl) : dist ? pd : ps;
+    if (!target) return; // failed optional helper never mutates the original list
+    vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, target);
     vk.vkCmdPushDescriptorSetKHR(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, pl, 0, 3, w);
     g_pd[1].n = 0;   // (another layout's push: the replay's last compute push is forgotten)
     uint32_t pc[4] = {0, (uint32_t)MB.o.n, MB.cap, 0};
@@ -78,8 +80,17 @@ static void memu_phase_barrier(void) {
     else
         vka_barrier(g_cb);
 }
+// Only filled indexed triangles have zero coverage when any two indices
+// coincide. PrimitiveId consumers, wireframe/points and expanded outputs keep
+// the original list; the generated arena VS has no guest storage side effects.
+static int memu_compact_eligible(const vka_dstate *d, const vka_memu_layout *L) {
+    if (!L->indexed || L->max_p < 16 || d->rast_discard || d->tf_on ||
+        d->poly.mode != NVN_POLYGON_MODE_FILL || !vka_memu_compact_available()) return 0;
+    vka_shader *fs = NULL; unsigned bad = 0;
+    return resolve(d->bst[1], 1, &fs, &bad) && !bad && vka_memu_compact_fs_safe(fs);
+}
 void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx) {
-    if (phase == MEMU_BEGIN) { vka_memu_order_reset(&MB.o); MB.live = 0; MB.task_draws = 0; g_memu_cur = NULL; return; }
+    if (phase == MEMU_BEGIN) { vka_memu_order_reset(&MB.o); MB.live = 0; MB.task_draws = 0; MB.compact_draws = 0; g_memu_cur = NULL; return; }
     if (phase == MEMU_ADD) {
         if (MB.o.n == MEMU_MAX || !g_cb) return;
         if (!MB.live) {
@@ -107,6 +118,10 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         vka_memu_rec_mesh(&mi->L, r);
         r[VKA_MEMU_R_FLAGS] |= ts ? VKA_MEMU_F_TASK : 0; r[VKA_MEMU_R_WT] = ts ? ti->L.payload_words : 0;
         r[VKA_MEMU_R_MAXG] = V.cs_groups < 65535 ? V.cs_groups : 65535;
+        if (memu_compact_eligible(d, &mi->L)) {
+            r[VKA_MEMU_R_FLAGS] |= VKA_MEMU_F_COMPACT;
+            MB.compact_draws++;
+        }
         if (dw->ind) {   // {count, first}, as the GPU holds it now
             VkBuffer b; VkDeviceSize o;
             if (!vka_addr(dw->ind, 8, &b, &o, NULL) || (o & 3)) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("indirect mesh draw record at %#llx not in placed guest RAM: skipped", (unsigned long long)dw->ind); return; }
@@ -141,6 +156,19 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         }
         break;
     case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X, MB.e[idx].ms ? MB.e[idx].ms->key : 0); break;
-    case MEMU_END: memu_phase_barrier(); vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
+    case MEMU_END:
+        if (MB.compact_draws) {
+            // The compact helper only consumes mesh-compute index stores.
+            // Keep the original broad consumer barrier AFTER the helper.
+            VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
+            vk.vkCmdPipelineBarrier(g_cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+            memu_helper(2);
+            if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_COMPACT", 0);
+        }
+        memu_phase_barrier();
+        vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
     }
 }

@@ -8,6 +8,7 @@
 #if defined(__ANDROID__)
 #include "vka.h"
 #include "vka_memu_abi.h"
+#include "vka_memu.h"
 #include "../nvn/nvn_mtl.h"
 #include <stdlib.h>
 #include <string.h>
@@ -293,6 +294,24 @@ static void fout_masks(const vka_shader *fs, const vka_gkey *k, uint32_t *um, ui
         if (c && (fs->e->fout_mask >> i & 1) && (fs->e->fout_types >> (2 * i) & 3) == DMSH_VK_TYPE_FLOAT) { if (c == 1) *um |= 1u << i; else *sm |= 1u << i; }
     }
 }
+// The captured two-target HDR pass must keep its chosen VRS rate after
+// draw_body replaces its native task/mesh stages with the arena vertex stage.
+// The derived VS key proves the original mesh identity for BOTH arena layouts;
+// ordinary vertex programs and unrelated R16 targets remain excluded. Task
+// dispatch changes geometry, not this fragment shader's shading-rate contract.
+static int oot_profiled_mesh_hdr(vka_shader *const sh[VKA_NSTAGE], const vka_gkey *k, int mesh) {
+    int targets = k->ncolor == 2 &&
+                  k->cfmt[0] == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                  k->cfmt[1] == VK_FORMAT_R16G16B16A16_SFLOAT;
+    if (!targets || !sh[1] || sh[1]->key != UINT64_C(0x5ad65c0eefd09c7f)) return 0;
+    int native = mesh && sh[6] && sh[7] &&
+                 sh[6]->key == UINT64_C(0xefaa4fa6a80ba719) &&
+                 sh[7]->key == UINT64_C(0x066f5daf12e43c71);
+    int emulated = !mesh && sh[0] && sh[0]->memu == 2 &&
+                   sh[0]->key == (UINT64_C(0x066f5daf12e43c71) ^
+                                  VKA_MEMU_KEY_VS ^ vka_memu_layout_tag());
+    return native || emulated;
+}
 // 0 = a stage's module is missing (logged by vka_shader_module)
 static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k) {
     memset(P, 0, sizeof *P);
@@ -416,16 +435,8 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     int hotpass_profile = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1);
     int game_oot = !strcmp(DM_GAME_ID, "0400486024DEC000");
     int balanced_hot = hotpass_profile > 0 && scene_hot && game_oot;
-    // The profiled 637x358 Mesh+Task pass is HDR R16G16B16A16_SFLOAT x2,
-    // NOT main-scene B10G11R11. It was incorrectly excluded from 2x1.
-    // Strict shader-triplet and attachment checks protect other R16 passes.
-    int profiled_mesh_hdr = mesh && sh[6] && sh[7] &&
-                           fs_hot == UINT64_C(0x5ad65c0eefd09c7f) &&
-                           sh[6]->key == UINT64_C(0xefaa4fa6a80ba719) &&
-                           sh[7]->key == UINT64_C(0x066f5daf12e43c71) &&
-                           k->ncolor == 2 &&
-                           k->cfmt[0] == VK_FORMAT_R16G16B16A16_SFLOAT &&
-                           k->cfmt[1] == VK_FORMAT_R16G16B16A16_SFLOAT;
+    // Same captured HDR pass in native mesh and integral-compute routing.
+    int profiled_mesh_hdr = oot_profiled_mesh_hdr(sh, k, mesh);
     // The expanded mode is restricted to the captured single-color HDR
     // scene with D32 depth; it is deliberately not used by UI, video,
     // postprocess, depth-only, multicolor or unverified Mesh/Task passes.

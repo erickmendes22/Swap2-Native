@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
     VK_OK(vkCreateDevice(physical, &dci, NULL, &device));
     VkQueue queue; vkGetDeviceQueue(device, family, 0, &queue);
     const char *initial_counter = getenv("MEMU_TEST_COUNTER");
-    uint32_t control[2] = {initial_counter ? (uint32_t)strtoul(initial_counter, NULL, 10) : 0, 0};
+    uint32_t control[16] = {initial_counter ? (uint32_t)strtoul(initial_counter, NULL, 10) : 0, 0};
     buffer buf[3] = {make_buffer(arena, na), make_buffer(records, nr), make_buffer(control, sizeof control)};
     VkDescriptorSetLayoutBinding bindings[3] = {0};
     for (int i = 0; i < (helper ? 3 : 2); i++) bindings[i] = (VkDescriptorSetLayoutBinding){
@@ -162,6 +162,8 @@ int main(int argc, char **argv) {
     }
     FILE *f = fopen(argv[4], "wb"); if (!f || fwrite(buf[0].map, 1, na, f) != na) return 1; fclose(f);
     if (helper) { f = fopen(argv[2], "wb"); if (!f || fwrite(buf[1].map, 1, nr, f) != nr) return 1; fclose(f); }
+    const char *ctl_out = getenv("MEMU_TEST_CTL_OUT");
+    if (ctl_out) { f = fopen(ctl_out, "wb"); if (!f || fwrite(buf[2].map, 1, 64, f) != 64) return 1; fclose(f); }
     vkDestroyCommandPool(device, command_pool, NULL); vkDestroyDescriptorPool(device, pool, NULL);
     vkDestroyPipeline(device, pipeline, NULL); vkDestroyShaderModule(device, shader, NULL);
     vkDestroyPipelineLayout(device, layout, NULL); vkDestroyDescriptorSetLayout(device, set_layout, NULL);

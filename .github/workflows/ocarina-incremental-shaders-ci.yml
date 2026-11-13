@@ -31,6 +31,8 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_postpass_barrier_dedup.py'
       - 'dm/gfx/tools/tests/test_ocarina_attachment_stage_dependencies.py'
       - 'dm/gfx/vk_android/vka_shader.c'
+      - 'dm/gfx/vk_android/vka_memu*'
+      - 'dm/gfx/vk_android/vka_pso.c'
       - 'dm/gfx/vk_android/vka_ndsr.c'
       - 'dm/gfx/vk_android/vka_present.c'
       - 'dm/gfx/tools/tests/test_ocarina_720p_upscale_real_gpu.py'
@@ -162,6 +164,8 @@ jobs:
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_shader.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_ndsr.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_pso.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_memu.c
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_memu_spv.c
           "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_enc.c
           # vka_present.c includes generated vka_present_sgsr.h; the signed
           # APK workflow generates it from SGSR1 and compiles the real source.

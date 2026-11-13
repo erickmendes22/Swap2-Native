@@ -375,6 +375,7 @@ typedef struct { uint32_t b[VKA_IMGRT_MAX]; } vka_imgrt;
 typedef struct vka_shader {
     struct vka_memu_sh *memu_d;
     uint8_t memu, fcomp[8];
+    int memu_compact_safe;              // cached fragment PrimitiveId audit: 0 unknown, 1 safe, -1 refused
     uint64_t chash;
     uint64_t key; const dmsh_vk_entry *e; const dmsh_vk_bind *b;
     const vka_shlib *lib;               // the library the entry is in (its header's translator answers; its other modules)

@@ -657,6 +657,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - internal SGSR1 is slower than the final-720p path, and its output differs from the public Banana/Qualcomm reference. → [Native SGSR1 reconstruction](../reference/rendering.md#native-sgsr1-reconstruction)
 - APK134 fails with classic passes and the command encoder enabled; its simple direct-driver GPU fixture passes. → [Cached Vulkan render passes](../reference/rendering.md#cached-vulkan-render-passes)
 - a true-only synthetic stream batches better, but a real → [Render-enable boundaries in compute mesh preparation](../reference/rendering.md#render-enable-boundaries-in-compute-mesh-preparation)
+- the configured VRS rate misses a known two-target HDR pass after → [Mesh padding indices and compute-route VRS](../reference/rendering.md#mesh-padding-indices-and-compute-route-vrs)
 
 ## Shaders
 

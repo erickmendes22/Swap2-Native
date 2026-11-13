@@ -65,3 +65,7 @@ uint64_t vka_memu_vs_locs(const vka_memu_layout *L);
 // The user input locations a pixel shader reads (bit L for location L; an array takes one location per element) into *mask: 1, or 0 when it cannot tell (a block of
 // inputs, a 64-bit or matrix input, a location past 63, not SPIR-V)
 int vka_memu_fs_input_locs(const uint32_t *w, size_t nw, uint64_t *mask);
+
+// 1 for a well-formed fragment entry without PrimitiveId (or member BuiltIn
+// PrimitiveId). Removing degenerate indexed triangles changes that numbering.
+int vka_memu_fs_compact_safe(const uint32_t *w, size_t nw);

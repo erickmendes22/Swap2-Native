@@ -561,3 +561,61 @@ attachment shading-rate support, but the current trace does not establish
 the guest palette ABI or image encoding. The inspected public Banana
 snapshot also stubs these calls, so it is not evidence of a working port.
 Removing this experiment is cleanup, not a claimed FPS optimization.
+
+### Compute-route VRS and private index compaction (2026-11-13)
+
+The `174854` log uses integral compute and VRS 2x2. The captured HDR pass
+`5ad65c0eefd09c7f` costs 0.55-0.71 ms at 480x270 with two RGBA16F targets,
+but never reports VRS ready for that key. `pstate_fill` recognized only the
+native `(task efaa4fa6a80ba719, mesh 066f5daf12e43c71, FS 5ad6...)` triple.
+`draw_body` replaces task/mesh with its generated VS before pipeline creation,
+so the format exception became unreachable. The observed VS
+`086551b608e12c6b` is exactly that mesh key XOR the generated-VS and coalesced
+layout tags. Recognize that generated VS with its `memu == 2` provenance and
+the same FS/two-target format guard. Both scalar and coalesced layouts work.
+The user's chosen rate, VRS-off path, driver support, single-sample guard and
+fallback remain intact. This makes existing VRS apply to a previously missed
+pass; coarse shading can change fine pixel detail as the existing VRS choice
+already permits. The complete pass cost is not a predicted saving.
+
+The mesh-compute setup also draws `total_groups * max_primitives * 3` indices.
+Unused output slots contain duplicate-index degenerate triangles. The new
+private helper stably compacts indexed filled-triangle lists in place after
+mesh generation, updating only their indirect indexCount. It preserves each
+retained index, vertex address, primitive order and provoking vertex. Dense
+prefixes already in position are not rewritten. There is no extra arena or
+index-buffer allocation. The unchanged generated vertex reader, input shader
+modules, prepared library, mesh output geometry and texture sampling remain.
+
+Eligibility is conservative: Ocarina, indexed layouts with at least 16 maximum
+primitives, filled polygons, no transform feedback/rasterizer discard, and a
+verified fragment without BuiltIn PrimitiveId (including member/group forms).
+Points, expanded per-primitive outputs, unknown fragments and wireframe keep
+the original list. Removing padding changes PrimitiveId numbering, so a
+consumer of that builtin MUST retain the original list. Vulkan subgroup ballot
+support and successful helper pipeline creation are required; failure leaves
+the original indirect record untouched. Repeated-index triangles have no
+filled coverage under this renderer's non-conservative rasterization.
+
+One workgroup owns one disjoint record. Source indices of every chunk are read
+before any output overwrite; compacted destinations never extend past that
+chunk. It uses a dense virtual index constructed from active subgroup ballots,
+not an assumed relationship between LocalInvocationIndex and subgroup lanes.
+A compute-to-compute dependency imports the mesh stores; the original broad
+consumer dependency follows compaction. Existing submission-end host visibility
+and completed-arena reuse gate the two counter readbacks. The log reports
+`mesh index compaction completed` and the sampled profiler labels its new
+work `MEMU_COMPACT`, allowing the helper cost to be counted honestly.
+
+Validation executes the production eligibility/fragment audit, both generated
+VS identities, actual checked-in compact SPIR-V and GPU indirect raster.
+Mixed zero/sparse/dense lists and boundary sizes retain exact ordered indices,
+all adjacent sentinels and original buffer sizes (15564 -> 6487 triangles in
+the synthetic matrix). A SAME-command-buffer compute->indexed indirect draw,
+with alpha blending and precise occlusion, matches every pixel and 473296
+covered samples while reducing 1025 triangles to 257. There is no CPU count
+substitution between compute and raster. The software fixture includes helper
+time and does not establish Adreno speed: its small raster case can regress
+from the extra dispatch. Dense lists can also pay overhead. Device whole-frame
+timing and the actual removed-triangle ratio remain necessary performance
+checks; do not translate synthetic counts into an FPS promise.

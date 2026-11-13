@@ -98,7 +98,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('"VRS 2×2"', OPTIONS)
         self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 5)', OPTIONS)
         self.assertIn('else if (want_boost >= 2 && has_2x2)', DEV)
-        self.assertIn('profiled_mesh_hdr = mesh && sh[6] && sh[7]', PSO)
+        self.assertIn('profiled_mesh_hdr = oot_profiled_mesh_hdr(sh, k, mesh)', PSO)
         self.assertIn('0xefaa4fa6a80ba719', PSO)
         self.assertIn('0x066f5daf12e43c71', PSO)
         self.assertIn('k->ncolor == 2', PSO)

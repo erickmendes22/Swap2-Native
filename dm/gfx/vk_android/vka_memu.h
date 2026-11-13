@@ -49,3 +49,9 @@ int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layo
 void vka_memu_stats(char *b, size_t n);                          // the replay's statistics line part
 extern uint64_t vka_memu_n_batches, vka_memu_n_draws, vka_memu_n_splits, vka_memu_n_skip;
 extern uint64_t vka_memu_task_small, vka_memu_task_large, vka_memu_task_indirect;
+
+// Optional private index-list compaction. Unsupported subgroup operations or
+// pipeline creation failure retain the original generated indices unchanged.
+int vka_memu_compact_available(void);
+int vka_memu_compact_fs_safe(struct vka_shader *fs);
+VkPipeline vka_memu_compact_pipeline(VkPipelineLayout layout);

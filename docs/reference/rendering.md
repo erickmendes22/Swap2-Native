@@ -1429,3 +1429,21 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
   Test the real C walker with all modes and nested lists.
 - **Found on:** [Ocarina, withdrawn fusion experiment](../../dm/games/0400486024DEC000/README.md#withdrawn-render-enable-fusion-experiment-2026-11-13).
   No device FPS increase is attributed to removing this experiment.
+
+### Mesh padding indices and compute-route VRS
+
+- **Symptom:** the configured VRS rate misses a known two-target HDR pass after
+  native mesh stages become an arena VS; unused mesh-capacity triangles also
+  reach the indexed raster front end.
+- **Cause:** the VRS exception checked only live native task/mesh stages. Mesh
+  setup allocates/draws maximum primitive capacity; unused triangle slots are
+  repeated indices, not useful geometry.
+- **Fix:** recognize the exact generated VS provenance for the existing HDR
+  exception. Stably compact private indexed filled-triangle lists in place,
+  preserving every retained index and its order. Exclude PrimitiveId consumers,
+  wireframe, transform feedback, expanded outputs and unsupported devices.
+  Keep compute->compute and final raster-consumer dependencies. Test actual
+  GPU compaction followed by an indexed indirect draw, with alpha blending,
+  exact occlusion samples, whole-arena guards and zero/dense/sparse lists.
+- **Found on:** [Ocarina compute-route VRS and index compaction](../../dm/games/0400486024DEC000/README.md#compute-route-vrs-and-private-index-compaction-2026-11-13).
+  Software index/pixel parity is established; physical Adreno speed is open.

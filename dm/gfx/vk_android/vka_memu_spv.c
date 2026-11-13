@@ -1012,3 +1012,22 @@ int vka_memu_fs_input_locs(const uint32_t *w, size_t nw, uint64_t *mask) {
     if (!ok) *mask = 0;
     return ok;
 }
+
+// Dense index lists preserve vertex indices and the order of every visible
+// primitive, but not the numeric PrimitiveId of primitives after a removed one.
+int vka_memu_fs_compact_safe(const uint32_t *w, size_t nw) {
+    if (!w || nw < 5 || w[0] != 0x07230203) return 0;
+    int fragment = 0;
+    for (size_t i = 5; i < nw;) {
+        uint32_t n = w[i] >> 16, op = w[i] & 65535;
+        if (!n || n > nw - i) return 0;
+        if (op == OpEntryPoint) {
+            if (n < 4 || w[i + 1] != 4) return 0;
+            fragment = 1;
+        }
+        if ((op == OpDecorate && n >= 4 && w[i + 2] == 11 && w[i + 3] == 7) ||
+            (op == OpMemberDecorate && n >= 5 && w[i + 3] == 11 && w[i + 4] == 7)) return 0;
+        i += n;
+    }
+    return fragment;
+}

@@ -46,6 +46,11 @@
 #define VKA_MEMU_F_INTERLEAVED 4  // one slot of VSTRIDE words per mesh workgroup (vertices, then primitives), its base a multiple of the slot: the vertex shader finds it from VertexIndex
 #define VKA_MEMU_F_COALESCED 8    // vertex component planes, each MAXV words; indexed VBASE aligned to VSTRIDE
 
+#define VKA_MEMU_F_COMPACT 16      // host-private indexed triangle list: duplicate-index primitives may be removed
+
+#define VKA_MEMU_CTL_COMPACT_INPUT 2  // completed submission statistics, source triangles
+#define VKA_MEMU_CTL_COMPACT_OUTPUT 3 // completed submission statistics, retained triangles
+
 #define VKA_MEMU_CTL_COUNTER 0    // control buffer words: the arena words handed out in this submission
 #define VKA_MEMU_CTL_ASKED 1      // the most the counter would have reached (the room asked for)
 
