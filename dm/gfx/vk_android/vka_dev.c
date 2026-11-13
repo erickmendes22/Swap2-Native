@@ -298,17 +298,23 @@ static int init_once(void) {
     { const char *e = getenv("DM_VK_MESH_EMU"); V.cs_groups = V.props.limits.maxComputeWorkGroupCount[0];
       const int qcom_ocarina = V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
            !strcmp(DM_GAME_ID, "0400486024DEC000");
+      // -1 = automatic: use compute throughout where the device already
+      // requires mesh emulation (notably Qualcomm proprietary on Ocarina),
+      // otherwise retain the device-native route. Explicit 0/1/2 choices
+      // remain reproducible. Qualcomm Adreno 840 891.14 A/B: ~0.4-0.6ms
+      // GPU p50/frame faster in all-compute versus old hybrid.
       const int route = !strcmp(DM_GAME_ID, "0400486024DEC000") ?
-          VKA_ENV("DM_VK_OOT_MESH_ROUTE", 0) : 0;
+          VKA_ENV("DM_VK_OOT_MESH_ROUTE", -1) : 0;
       V.memu = e && *e ? strcmp(e, "0") != 0 :
                (!V.task || qcom_ocarina || route == 1);
-      if (route != 0)
+      if (!strcmp(DM_GAME_ID, "0400486024DEC000"))
           VLOG("Ocarina mesh A/B requested=%d (%s), effective %s; mesh=%d task=%d compute_emulation=%d, driverID=%d",
                route,
-               route == 1 ? "all compute" : route == 2 ? "native all" : "unknown",
+               route < 0 ? "automatic" : route == 1 ? "all compute" : route == 2 ? "native all" : "old hybrid",
+               route < 0 ? (V.memu ? "all compute" : "hardware native") :
                route == 1 ? (V.memu ? "all compute" : "fallback") :
                route == 2 ? (V.mesh && V.task ? "native with Invariant Position" : "fallback") :
-               "hybrid",
+               "hybrid original-native/supplement-compute",
                V.mesh, V.task, V.memu, V.driver_id);
       VLOG("mesh execution: %s (hardware mesh=%d task=%d, driver=%d; %s)",
            V.memu ? "hybrid original-native/supplement-compute" : "native VK_EXT_mesh_shader",
