@@ -62,8 +62,8 @@ int main(void) {
         self.assertIn("if (ENC == 1) c *= c;", shader)
         self.assertIn('!strcmp(v, "sgsr")', host)
         self.assertIn("VKA_NDSR_KERNEL_SGSR", host)
-        self.assertIn('env.add("DM_VK_NDSR=sgsr")', profile)
-        self.assertIn("DM_VK_OOT_SGSR_CHAIN=0", options)
+        self.assertIn('env.add("DM_VK_NDSR=sgsr")', profile)\n        self.assertIn("NDSR_SGSR_COMPUTE.equals(choice)", profile)
+        self.assertIn("NDSR_SGSR_COMPUTE.equals(Prefs.ndsr(c, id))", options)\n        self.assertIn('out.add("DM_VK_OOT_SGSR_CHAIN=" +', options)
         self.assertIn("DM_VK_NDSR=fsr", profile)
 
     def test_risky_switches_default_off_and_exposed_in_ui(self):
