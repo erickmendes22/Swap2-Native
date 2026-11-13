@@ -214,11 +214,16 @@ final class GameSettings {
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));
             box.addView(vegetation.view);
-            String[] meshNames = {"Híbrido atual", "Compute integral", "Mesh nativo experimental"};
+            String[] meshNames = {
+                "Automático (compute no Qualcomm)",
+                "Híbrido anterior",
+                "Compute integral",
+                "Mesh nativo (renderização incorreta)"
+            };
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Execução da vegetação (GPU)", v -> meshRouteDialog(a, g, again))
-                    .value(meshNames[Prefs.ocarinaMeshRoute(a, id)] +
-                           " · teste A/B; reinicie o jogo").chevron(a).view);
+                    .value(meshNames[Prefs.ocarinaMeshRoute(a, id) + 1] +
+                           " · reinicie o jogo").chevron(a).view);
             // Both switches are deliberately experimental. The heavy
             // fragment option is a subset of Hidden layers off; users can
             // benchmark each independently without touching shader packs.
@@ -730,18 +735,19 @@ final class GameSettings {
     private static void meshRouteDialog(MainActivity a, Game g, Runnable done) {
         if (!Prefs.OCARINA_TITLE.equals(g.titleId)) return;
         String[] names = {
-            "Híbrido atual (padrão; mesh base nativo + vegetação em compute)",
-            "Compute integral (todos os mesh draws; comparar com Banana)",
-            "Mesh nativo integral (experimental; pode mostrar espinhos/falhas)"
+            "Automático (Qualcomm: compute integral, outros: caminho compatível)",
+            "Híbrido anterior (comparação; mais lento no Adreno 840)",
+            "Compute integral (melhor FPS medido; vegetação completa)",
+            "Mesh nativo (quebrado no Qualcomm 891.14; somente diagnóstico)"
         };
-        int selected = Prefs.ocarinaMeshRoute(a, g.titleId);
+        int selected = Prefs.ocarinaMeshRoute(a, g.titleId) + 1;
         new AlertDialog.Builder(a)
             .setTitle("Execução da vegetação · " + g.name)
             // Android AlertDialog does NOT display list items when a message
             // is also assigned: AlertController chooses the message view
             // instead of the list. Keep this dialog list-only.
             .setSingleChoiceItems(names, selected, (dialog, which) -> {
-                Prefs.ocarinaMeshRoute(a, g.titleId, which);
+                Prefs.ocarinaMeshRoute(a, g.titleId, which - 1);
                 dialog.dismiss();
                 done.run();
             })
