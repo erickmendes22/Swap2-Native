@@ -837,6 +837,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - a cold Android Vulkan run has a memory peak while compiling many pipelines; reopening with the driver cache populated may pass the same scene. This symptom alone does not identify an Android kill reason. → [Linked pipelines retained after optimization](../reference/shaders.md#linked-pipelines-retained-after-optimization)
 - a static shader repair offers historical captures instead of the newly shipped stage set, and its task disappears because the original game remains playable. → [Launcher shader selection before the pack process starts](../reference/shaders.md#launcher-shader-selection-before-the-pack-process-starts)
 - a selected static shader update reports `a frame needs zstd dictionary 1` before translating any shader, although full splitting handled the game's containers. → [Compression dictionaries in bounded static shader extraction](../reference/shaders.md#compression-dictionaries-in-bounded-static-shader-extraction)
+- a workgroup-virtualization pass reports `aliased/indirect builtin use`, even though the original shader only reads individual workgroup/local ID components. → [Constant component reads rejected by virtual compute retiling](../reference/shaders.md#constant-component-reads-rejected-by-virtual-compute-retiling)
 
 ## Game state
 

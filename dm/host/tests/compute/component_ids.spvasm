@@ -1,0 +1,85 @@
+; Independent full-grid oracle fixture for constant component pointers.
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main" %local %group %grid %output
+OpExecutionMode %main LocalSize 8 4 4
+OpDecorate %local BuiltIn LocalInvocationId
+OpDecorate %group BuiltIn WorkgroupId
+OpDecorate %grid BuiltIn NumWorkgroups
+OpDecorate %rows ArrayStride 16
+OpMemberDecorate %block 0 Offset 0
+OpDecorate %block Block
+OpDecorate %output DescriptorSet 0
+OpDecorate %output Binding 382
+%void = OpTypeVoid
+%fn = OpTypeFunction %void
+%u = OpTypeInt 32 0
+%v3 = OpTypeVector %u 3
+%v4 = OpTypeVector %u 4
+%input3 = OpTypePointer Input %v3
+%input1 = OpTypePointer Input %u
+%c0 = OpConstant %u 0
+%c1 = OpConstant %u 1
+%c2 = OpConstant %u 2
+%c4 = OpConstant %u 4
+%c8 = OpConstant %u 8
+%c36 = OpConstant %u 36
+%c64 = OpConstant %u 64
+%c256 = OpConstant %u 256
+%c65536 = OpConstant %u 65536
+%magic = OpConstant %u 305419896
+%rows = OpTypeRuntimeArray %v4
+%block = OpTypeStruct %rows
+%sb = OpTypePointer StorageBuffer %block
+%row = OpTypePointer StorageBuffer %v4
+%local = OpVariable %input3 Input
+%group = OpVariable %input3 Input
+%grid = OpVariable %input3 Input
+%output = OpVariable %sb StorageBuffer
+%main = OpFunction %void None %fn
+%start = OpLabel
+%lxp = OpAccessChain %input1 %local %c0
+%lx = OpLoad %u %lxp
+%lyp = OpAccessChain %input1 %local %c1
+%ly = OpLoad %u %lyp
+%lzp = OpAccessChain %input1 %local %c2
+%lz = OpLoad %u %lzp
+%gxp = OpAccessChain %input1 %group %c0
+%gx = OpLoad %u %gxp
+%gyp = OpAccessChain %input1 %group %c1
+%gy = OpLoad %u %gyp
+%gzp = OpAccessChain %input1 %group %c2
+%gz = OpLoad %u %gzp
+%nxp = OpAccessChain %input1 %grid %c0
+%nx = OpLoad %u %nxp
+%nyp = OpAccessChain %input1 %grid %c1
+%ny = OpLoad %u %nyp
+%nzp = OpAccessChain %input1 %grid %c2
+%nz = OpLoad %u %nzp
+%gx8 = OpIMul %u %gx %c8
+%x = OpIAdd %u %gx8 %lx
+%gy4 = OpIMul %u %gy %c4
+%y = OpIAdd %u %gy4 %ly
+%gz4 = OpIMul %u %gz %c4
+%z = OpIAdd %u %gz4 %lz
+%z36 = OpIMul %u %z %c36
+%zy = OpIAdd %u %z36 %y
+%zy64 = OpIMul %u %zy %c64
+%idx = OpIAdd %u %zy64 %x
+%gy256 = OpIMul %u %gy %c256
+%gz65536 = OpIMul %u %gz %c65536
+%gxy = OpIAdd %u %gx %gy256
+%packedg = OpIAdd %u %gxy %gz65536
+%ly256 = OpIMul %u %ly %c256
+%lz65536 = OpIMul %u %lz %c65536
+%lxy = OpIAdd %u %lx %ly256
+%packedl = OpIAdd %u %lxy %lz65536
+%ny256 = OpIMul %u %ny %c256
+%nz65536 = OpIMul %u %nz %c65536
+%nxy = OpIAdd %u %nx %ny256
+%packedn = OpIAdd %u %nxy %nz65536
+%value = OpCompositeConstruct %v4 %packedg %packedl %packedn %magic
+%dst = OpAccessChain %row %output %c0 %idx
+OpStore %dst %value
+OpReturn
+OpFunctionEnd

@@ -30,7 +30,8 @@ int vka_spv_oot_cs_retile(uint32_t *w, size_t nw, char *why, size_t whylen);
 /* Ocarina-specific virtualized 8x4x4 -> 8x4x2 compute retile.
  * Caller frees the returned SPIR-V words. All original workgroup builtins
  * are reconstructed from GlobalInvocationId at the exact 8x9x12 dispatch.
- * Refuse barriers/LDS/atomics/subgroups, unknown and aliased inputs. */
+ * Accept direct vectors and constant scalar components. Refuse barriers,
+ * LDS/atomics/subgroups, dynamic indices and escaped/unknown pointers. */
 uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
                                        size_t *out_nw, char *why, size_t whylen);
 

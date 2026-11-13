@@ -10,6 +10,9 @@ on:
       - dm/gfx/tools/tests/test_banana_input_caches.py
       - dm/gfx/vk_android/vka_draw.c
       - dm/gfx/vk_android/vka.h
+      - dm/gfx/vk_android/vka_spvpatch.c
+      - dm/gfx/tools/tests/test_ocarina_compute_virtual_retile.py
+      - dm/host/tests/compute/component_ids.spvasm
       - dm/gfx/tools/memu_plane_audit.py
       - dm/host/tests/memu/plane_fixture.py
       - dm/host/tests/t_android_memu*
@@ -37,6 +40,10 @@ jobs:
         env:
           MEMU_TEST_VULKAN: '1'
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_memu_*.py' -v
+      - name: Verify scalar component compute retile on the GPU
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_compute_virtual_retile.py -v
       - name: Validate scalar and coalesced task and mesh modules
         run: |
           cc -O1 -g -fsanitize=address,undefined \

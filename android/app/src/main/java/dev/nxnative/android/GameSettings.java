@@ -214,6 +214,10 @@ final class GameSettings {
                     .toggle(a, Prefs.vegetationContiguous(a, id), (b, on) -> Prefs.vegetationContiguous(a, id, on));
             contiguous.value(a.getString(R.string.s2_vegetation_contiguous_note));
             box.addView(contiguous.view);
+            Ui.Setting compute = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_compute_optimized), null)
+                    .toggle(a, Prefs.computeOptimized(a, id), (b, on) -> Prefs.computeOptimized(a, id, on));
+            compute.value(a.getString(R.string.s2_compute_optimized_note));
+            box.addView(compute.view);
         }
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip, "Economia de RAM (usa armazenamento)", null)
                 .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));

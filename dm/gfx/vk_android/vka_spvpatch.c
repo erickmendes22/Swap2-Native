@@ -857,13 +857,16 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
 #define VR_EMIT(...) do { const uint32_t words_[] = {__VA_ARGS__}; if (!put_n(&o, words_, sizeof words_ / sizeof *words_)) VR_NO("out of memory"); } while (0)
     vec_t o = {0};
     uint32_t *bi = NULL, *in = NULL;
+    uint8_t *component = NULL, *index = NULL, *ptr_u32 = NULL;
     if (out_nw) *out_nw = 0;
     if (!w || nw < 6 || w[0] != 0x07230203u || !w[3] || w[3] > (1u << 22))
         VR_NO("invalid SPIR-V header/bound");
     const uint32_t bound = w[3];
     bi = calloc(bound, sizeof *bi); in = calloc(bound, sizeof *in);
-    if (!bi || !in) VR_NO("out of memory");
-    uint32_t u32 = 0, vec3 = 0, vec_comp = 0, global_var = 0;
+    component = calloc(bound, sizeof *component); index = calloc(bound, sizeof *index);
+    ptr_u32 = calloc(bound, sizeof *ptr_u32);
+    if (!bi || !in || !component || !index || !ptr_u32) VR_NO("out of memory");
+    uint32_t u32 = 0, i32 = 0, vec3 = 0, vec_comp = 0, global_var = 0;
     uint32_t local_n = 0, group_n = 0, num_n = 0, compute = 0, localmode = 0;
     uint32_t local_var = 0, group_var = 0;
     size_t first_fn = nw, nload = 0;
@@ -890,8 +893,16 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
         }
         if (op == OpMemberDecorate && len >= 5 && w[i + 3] == 11)
             VR_NO("member-decorated builtin");
-        if (op == OpTypeInt && len == 4 && w[i + 2] == 32 && w[i + 3] == 0)
-            u32 = w[i + 1];
+        if (op == OpTypeInt && len == 4 && w[i + 2] == 32) {
+            if (w[i + 3] == 0) u32 = w[i + 1];
+            else if (w[i + 3] == 1) i32 = w[i + 1];
+        }
+        if (op == OpTypePointer && len == 4 && w[i + 1] < bound &&
+            w[i + 2] == SCInput && w[i + 3] == u32)
+            ptr_u32[w[i + 1]] = 1;
+        if (op == 43 && len == 4 && w[i + 2] < bound &&
+            (w[i + 1] == u32 || w[i + 1] == i32) && w[i + 3] < 3)
+            index[w[i + 2]] = w[i + 3] + 1;
         if (op == OpTypeVector && len == 4 && w[i + 3] == 3 &&
             // The final vec3 in a shader might be float3. Only keep
             // the actual unsigned three-component ID for bit operations.
@@ -925,12 +936,32 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
     // otherwise the translated shader must also declare WorkgroupId.
     if (local_var && !global_var && !group_var)
         VR_NO("local ID without global or workgroup ID");
+    // The real 9e6b capture loads each X/Y/Z through a constant component
+    // pointer, rather than loading an entire uvec3. These are direct reads,
+    // not arbitrary pointer aliases. Follow exactly one scalar access chain;
+    // dynamic indices, nested pointers and any pointer escape still fail.
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
+        if ((op == OpAccessChain || op == OpInBoundsAccessChain) && len >= 4 &&
+            w[i + 3] < bound && in[w[i + 3]] && bi[w[i + 3]] && bi[w[i + 3]] != 28) {
+            if (len != 5 || w[i + 1] >= bound || !ptr_u32[w[i + 1]] ||
+                w[i + 2] >= bound || w[i + 4] >= bound || !index[w[i + 4]])
+                VR_NO("nonconstant or nonscalar builtin component");
+            component[w[i + 2]] = index[w[i + 4]];
+            bi[w[i + 2]] = bi[w[i + 3]];
+        }
+        i += len;
+    }
     for (size_t i = 5; i < nw;) {
         uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
         if (op == OpLoad && len >= 4 && w[i + 3] < bound &&
             bi[w[i + 3]] && bi[w[i + 3]] != 28) {
-            if (len != 4 || w[i + 1] != vec3) VR_NO("qualified or non-uvec3 load");
+            if (len != 4 || w[i + 1] != (component[w[i + 3]] ? u32 : vec3))
+                VR_NO("qualified or incorrectly typed builtin load");
             nload++;
+        } else if ((op == OpAccessChain || op == OpInBoundsAccessChain) &&
+                   len == 5 && w[i + 2] < bound && component[w[i + 2]]) {
+            // Proven scalar component pointer; only direct loads may use it.
         } else if (op != OpDecorate && op != OpName &&
                    op != OpEntryPoint && op != OpVariable &&
                    op != OpLoad && op != OpMemberName &&
@@ -977,7 +1008,28 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
         } else if (op == OpLoad && len == 4 && w[i+3] < bound &&
                    bi[w[i+3]] && bi[w[i+3]] != 28) {
             uint32_t kind = bi[w[i+3]], result = w[i+2];
-            if (kind == 24) { // original dispatch grid
+            uint32_t part = component[w[i+3]];
+            if (part) {
+                uint32_t c = part - 1;
+                if (kind == 24) {
+                    VR_EMIT((5u<<16)|81u, u32, result, grid, c);
+                } else if (c < 2) {
+                    // Only Z changes when splitting the original workgroup.
+                    if (!put_n(&o, w+i, len)) VR_NO("out of memory");
+                } else if (kind == 26) {
+                    uint32_t raw = next++;
+                    VR_EMIT((4u<<16)|61u, u32, raw, w[i+3]);
+                    VR_EMIT((5u<<16)|134u, u32, result, raw, c2);
+                } else if (kind == 27 && group_var) {
+                    uint32_t raw=next++, group=next++, z=next++, parity=next++, offset=next++;
+                    VR_EMIT((4u<<16)|61u, u32, raw, w[i+3]);
+                    VR_EMIT((4u<<16)|61u, vec3, group, group_var);
+                    VR_EMIT((5u<<16)|81u, u32, z, group, 2);
+                    VR_EMIT((5u<<16)|137u, u32, parity, z, c2);
+                    VR_EMIT((5u<<16)|132u, u32, offset, parity, c2);
+                    VR_EMIT((5u<<16)|128u, u32, result, raw, offset);
+                } else VR_NO("missing group input for scalar local ID");
+            } else if (kind == 24) { // original dispatch grid
                 VR_EMIT((4u<<16)|83u, vec3, result, grid); // OpCopyObject
             } else if (global_var) {
                 uint32_t temp = next++;
@@ -1017,13 +1069,13 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
         i += len;
     }
     o.w[3] = next;
-    free(bi); free(in);
+    free(bi); free(in); free(component); free(index); free(ptr_u32);
     if (out_nw) *out_nw = o.n;
     if (why && whylen) snprintf(why, whylen,
         "virtualized %zu local/group builtin loads, original workgroup indices retained", nload);
     return o.w;
 bad:
-    free(bi); free(in); free(o.w);
+    free(bi); free(in); free(component); free(index); free(ptr_u32); free(o.w);
     return NULL;
 #undef VR_NO
 #undef VR_EMIT

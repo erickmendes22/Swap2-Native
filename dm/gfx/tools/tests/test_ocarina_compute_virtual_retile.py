@@ -1,5 +1,6 @@
 """Real native SPIR-V transform & semantics of Ocarina hot compute virtual retile."""
 import ctypes
+import os
 import shutil
 import struct
 import subprocess
@@ -41,6 +42,27 @@ def instructions(w):
         assert n>0 and i+n<=len(w)
         yield w[i]&0xffff,w[i+1:i+n]
         i+=n
+
+def component_sample():
+    """The actual capture's scalar pointer/load shape, without guest code."""
+    out = sample()[:5]
+    for opcode, args in instructions(sample()):
+        if opcode in (71, 59) and (args[0] if opcode == 71 else args[1]) == 7:
+            continue
+        if opcode == 15:
+            args = [x for x in args if x != 7]
+        if opcode == 54:
+            out += op(32,30,1,3)
+            for ident, value in ((31,0),(32,1),(33,2)):
+                out += op(43,3,ident,value)
+        if opcode == 61:
+            continue
+        if opcode == 253:
+            for n, (var, index) in enumerate((v,c) for v in (8,9,10) for c in (31,32,33)):
+                out += op(65,30,40+2*n,var,index)
+                out += op(61,3,41+2*n,40+2*n)
+        out += op(opcode,*args)
+    return out
 
 class VirtualRetile(unittest.TestCase):
     @classmethod
@@ -132,6 +154,74 @@ class VirtualRetile(unittest.TestCase):
                 ret,_=self.patch(sample(extra))
                 self.assertIsNone(ret)
         self.assertIsNone(self.patch([0,1,2])[0])
+
+    def test_constant_scalar_components_match_real_capture_shape(self):
+        patched, reason = self.patch(component_sample())
+        self.assertIsNotNone(patched, reason)
+        self.assertIn('9 local/group builtin loads', reason)
+        self.assertIn((16,[20,17,8,4,2]), list(instructions(patched)))
+        # X/Y are physically unchanged; NumWorkgroups uses the original
+        # literal grid, GroupZ halves, and LocalZ restores the half-group.
+        rows = list(instructions(patched))
+        self.assertIn((61,[3,41,40]), rows)
+        self.assertIn((61,[3,43,42]), rows)
+        self.assertTrue(any(code == 134 and args[1] == 45 for code,args in rows))
+        self.assertTrue(any(code == 128 and args[1] == 51 for code,args in rows))
+        for result in (53,55,57):
+            self.assertTrue(any(code == 81 and args[1] == result for code,args in rows))
+
+    def test_component_pointer_escape_and_dynamic_index_still_refused(self):
+        for extra in (op(83,30,58,40), op(62,40,31), op(65,30,58,40,31)):
+            src = component_sample()
+            src = src[:-2] + extra + src[-2:]
+            self.assertIsNone(self.patch(src)[0])
+        for index in (7,57):  # neither is a literal integer component
+            src = component_sample(); out = src[:5]
+            for code,args in instructions(src):
+                if code == 65 and args[1] == 40:
+                    args[-1] = index
+                out += op(code,*args)
+            self.assertIsNone(self.patch(out)[0])
+        for value in (3,0xffffffff):
+            src = component_sample(); out = src[:5]
+            for code,args in instructions(src):
+                if code == 43 and args[1] == 33:
+                    args[-1] = value
+                out += op(code,*args)
+            self.assertIsNone(self.patch(out)[0])
+
+    def test_inbounds_scalar_components_and_qualified_load_guard(self):
+        src = component_sample(); inbounds = src[:5]; qualified = src[:5]
+        for code,args in instructions(src):
+            inbounds += op(66 if code == 65 else code,*args)
+            qualified += op(code,*(args+[0] if code == 61 and args[1] == 41 else args))
+        self.assertIsNotNone(self.patch(inbounds)[0])
+        self.assertIsNone(self.patch(qualified)[0])
+
+    @unittest.skipUnless(os.environ.get('MEMU_TEST_VULKAN') == '1', 'requires Vulkan ICD and spirv-as')
+    def test_actual_gpu_all_component_ids_match_independent_oracle(self):
+        root = Path(self.temp.name)
+        before = root/'component-ids.spv'; after = root/'component-ids-retiled.spv'
+        subprocess.run(['spirv-as','--target-env','vulkan1.3',str(ROOT/'dm/host/tests/compute/component_ids.spvasm'),'-o',str(before)],check=True)
+        original = list(struct.unpack('<%dI'%(before.stat().st_size//4),before.read_bytes()))
+        patched, reason = self.patch(original)
+        self.assertIsNotNone(patched,reason)
+        after.write_bytes(struct.pack('<%dI'%len(patched),*patched))
+        for p in (before,after):
+            subprocess.run(['spirv-val','--target-env','vulkan1.3',str(p)],check=True)
+        runner = root/'dispatch'
+        subprocess.run(['cc','-O1','-I',str(ROOT/'dm/third_party/vulkan-headers/include'),str(ROOT/'dm/host/tests/t_android_memu_dispatch.c'),'-Wl,-l:libvulkan.so.1','-o',str(runner)],check=True)
+        record = root/'record.bin'; record.write_bytes(bytes(128))
+        arena = root/'arena.bin'; arena.write_bytes(bytes(64*36*48*16))
+        expected = bytearray()
+        for z in range(48):
+            for y in range(36):
+                for x in range(64):
+                    expected += struct.pack('<4I',(x//8)+(y//4)*256+(z//4)*65536,(x%8)+(y%4)*256+(z%4)*65536,8+9*256+12*65536,0x12345678)
+        for module, gz in ((before,12),(after,24)):
+            output = root/(module.stem+'.bin')
+            subprocess.run([str(runner),str(module),str(record),str(arena),str(output),'8','9',str(gz)],check=True,capture_output=True)
+            self.assertEqual(output.read_bytes(), expected)
 
     def test_runtime_scope_and_9ed48_limited_to_safe_barrier(self):
         self.assertIn("vka_spv_oot_cs_virtual_retile",SHADER)

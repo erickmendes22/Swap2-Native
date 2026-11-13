@@ -2098,8 +2098,8 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     // Indirect, image-retyped and any other-size dispatch keeps the original.
     // The GPU profiler measured this one compute dispatch at 0.5-1.4 ms
     // even with SGSR and NDSR retile already running. Its SPIR-V patcher
-    // proves that only GlobalInvocationId is used, and refuses barriers,
-    // shared/workgroup memory, atomics and workgroup-local builtins. The
+    // reconstructs original local/group IDs, and refuses barriers,
+    // shared/workgroup memory, atomics and escaping builtin pointers. The
     // 8x4x4*8x9x12 -> 8x4x2*8x9x24 mapping preserves the SAME 110,592
     // invocations, with no change to the game's library or output.
     // Enable automatically for the EXACT known size, independent of the
