@@ -41,31 +41,19 @@ class MeshRouteAB(unittest.TestCase):
         self.assertNotIn("mesh_cut(d, rt", draw)
         self.assertNotIn("vkpp_prepass(", draw)
 
-    def test_mesh_route_dialog_displays_radio_choices_not_message_only(self):
+    def test_removed_diagnostic_ui_cannot_override_compute_route(self):
         ui = (APP / "GameSettings.java").read_text()
-        start = ui.index("private static void meshRouteDialog(")
-        end = ui.index("private static void upscaler(", start)
-        dialog = ui[start:end]
-        # Android AlertController uses the message instead of the choice
-        # list when both Builder.setMessage and setSingleChoiceItems are set.
-        self.assertNotIn(".setMessage(", dialog)
-        self.assertIn(".setSingleChoiceItems(names, selected,", dialog)
-        self.assertIn("Prefs.ocarinaMeshRoute(a, g.titleId) + 1", dialog)
-        self.assertIn("Automático (Qualcomm: compute integral", dialog)
-        self.assertIn("Híbrido anterior (comparação;", dialog)
-        self.assertIn("Compute integral (melhor FPS medido;", dialog)
-        self.assertIn("Mesh nativo (quebrado no Qualcomm", dialog)
-        self.assertIn("Prefs.ocarinaMeshRoute(a, g.titleId, which - 1)", dialog)
-
-    def test_launcher_and_reset_are_connected(self):
         pref = (APP / "Prefs.java").read_text()
         game = (APP / "GameActivity.java").read_text()
-        ui = (APP / "GameSettings.java").read_text()
-        self.assertIn('gameKey("oot_mesh_route", titleId), -1', pref)
-        self.assertIn("DM_VK_OOT_MESH_ROUTE=", game)
-        self.assertIn("Prefs.ocarinaMeshRoute(a, id)", ui)
-        self.assertIn("meshRouteDialog(a, g, again)", ui)
-        self.assertIn('.remove(Prefs.gameKey("oot_mesh_route", id))', ui)
+        self.assertNotIn('private static void meshRouteDialog(', ui)
+        self.assertNotIn('"Execução da vegetação (GPU)"', ui)
+        self.assertNotIn('meshRouteDialog(a, g, again)', ui)
+        self.assertIn('return OCARINA_TITLE.equals(titleId) ? 1 : -1;', pref)
+        self.assertIn('static void ocarinaMeshRoute(Context c, String titleId, int mode) { /* retired */ }', pref)
+        self.assertIn('"DM_VK_OOT_MESH_ROUTE=" + Prefs.ocarinaMeshRoute(this, id)', game)
+        # Advanced env remains available for driver diagnosis, but old UI
+        # preferences can no longer select a broken native mesh mode.
+        self.assertIn('VKA_ENV("DM_VK_OOT_MESH_ROUTE", -1)', (VK / "vka_draw.c").read_text())
 
 if __name__ == "__main__":
     unittest.main()
