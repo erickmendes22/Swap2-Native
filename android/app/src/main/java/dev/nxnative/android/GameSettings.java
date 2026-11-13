@@ -169,6 +169,7 @@ final class GameSettings {
             // Experimental GPU skips must not survive Restore defaults.
             Prefs.of(a).edit()
                     .remove(Prefs.gameKey("oot_mesh_route", id))
+                    .remove(Prefs.gameKey("oot_short_task_search", id))
                     .remove(Prefs.gameKey("oot_hidden_layers", id))
                     .remove(Prefs.gameKey("oot_skip_heavy_fs", id))
                     .remove(Prefs.gameKey("pause_return", id)).commit();
