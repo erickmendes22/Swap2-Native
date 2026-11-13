@@ -49,7 +49,8 @@ class MeshRouteAB(unittest.TestCase):
         # Android AlertController uses the message instead of the choice
         # list when both Builder.setMessage and setSingleChoiceItems are set.
         self.assertNotIn(".setMessage(", dialog)
-        self.assertIn(".setSingleChoiceItems(names, selected,", dialog)\n        self.assertIn("Prefs.ocarinaMeshRoute(a, g.titleId) + 1", dialog)
+        self.assertIn(".setSingleChoiceItems(names, selected,", dialog)
+        self.assertIn("Prefs.ocarinaMeshRoute(a, g.titleId) + 1", dialog)
         self.assertIn("Automático (Qualcomm: compute integral", dialog)
         self.assertIn("Híbrido anterior (comparação;", dialog)
         self.assertIn("Compute integral (melhor FPS medido;", dialog)
