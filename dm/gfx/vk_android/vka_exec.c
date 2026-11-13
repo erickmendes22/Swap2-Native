@@ -26,6 +26,11 @@ VkCommandBuffer vka_rp_cb(void) { return g_cb; }
 typedef struct { int kind; uint32_t mode, v, type; uint64_t addr, q0, q1; } pop;   // kind 1 event, 2 counter report, 3 frame span, 4 counted samples-passed report, 5 occlusion queries given back unread (q0..q1: their sequence numbers)
 static pop *g_post; static int g_npost, g_postcap;
 static uint64_t g_frame, g_stat_ops, g_stat_draws, g_stat_skipped;
+// The first NVN opcode stopping a mesh->compute batch. Record only on the
+// MEMU_ADD walk (not once per task/mesh replay). Never relax the barrier;
+// report which guest dependency costs us additional GPU pass splits.
+static uint64_t g_memu_boundary_op[OP_COUNT_ + 1]; // last: native route
+static void memu_boundary_stats(char *out, size_t n);
 static int g_origin_ll = 1, g_queue_origin_ll = 1, g_depth_zero;
 _Atomic int vka_synclog_n;   // DM_VK_SYNCLOG: lines left (mtl_wait)
 #define g_synclog vka_synclog_n
@@ -265,7 +270,8 @@ void mtl_set_frame(uint64_t f) {
           rc_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb);
           { char ob[600]; oq_stats(ob, sizeof ob, n); if (ob[0]) VLOG("%s", ob); }
           { void vka_drv_memo_stats(char *b, size_t n); vka_drv_memo_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
-          vka_memu_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
+          vka_memu_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
+          memu_boundary_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
         f0 = f; d0 = g_stat_draws; rp0 = vka_n_rp; b0 = vka_n_bar; ub0 = g_n_ub; s0 = g_n_sub; r0 = g_rec_ns; o0 = g_stat_ops; pc0 = g_n_pclear; ch0 = g_n_chunks;
     }
 }
@@ -1320,6 +1326,46 @@ void vka_memu_caller_stats(uint64_t *resumes, uint64_t *nested) {
     if (resumes) *resumes = g_memu_parent_resumes;
     if (nested) *nested = g_memu_nested_batches;
 }
+static const char *memu_boundary_name(unsigned op) {
+    switch (op) {
+    case OP_END: return "END";
+    case OP_DISPATCH: return "DISPATCH";
+    case OP_BARRIER: return "BARRIER";
+    case OP_SET_RT: return "SET_RT";
+    case OP_COPY_B2B: return "COPY_B2B";
+    case OP_COPY_B2T: return "COPY_B2T";
+    case OP_COPY_T2B: return "COPY_T2B";
+    case OP_COPY_T2T: return "COPY_T2T";
+    case OP_CLEAR_TEX: return "CLEAR_TEX";
+    case OP_RENDER_COND: return "RENDER_COND";
+    case OP_UPDATE_UB: return "UPDATE_UB";
+    case OP_COUNT_: return "NATIVE_MESH_BOUNDARY";
+    default: return "OTHER";
+    }
+}
+static void memu_boundary_stats(char *out, size_t n) {
+    static uint64_t last[OP_COUNT_ + 1];
+    uint64_t delta[OP_COUNT_ + 1]; unsigned top[3] = {0}, nt = 0;
+    for (unsigned k = 0; k <= OP_COUNT_; k++) {
+        delta[k] = g_memu_boundary_op[k] - last[k];
+        last[k] = g_memu_boundary_op[k];
+        if (!delta[k]) continue;
+        unsigned j = nt < 3 ? nt++ : 3;
+        while (j && delta[k] > delta[top[j - 1]]) {
+            if (j < 3) top[j] = top[j - 1];
+            j--;
+        }
+        if (j < 3) top[j] = k;
+    }
+    if (!n) return;
+    if (!nt) { out[0] = 0; return; }
+    snprintf(out, n, "mesh batch boundaries (300-frame total): %s(%u)=%llu; %s(%u)=%llu; %s(%u)=%llu; no guest dependencies were removed",
+        memu_boundary_name(top[0]), top[0], (unsigned long long)delta[top[0]],
+        nt > 1 ? memu_boundary_name(top[1]) : "-", nt > 1 ? top[1] : 0u,
+        nt > 1 ? (unsigned long long)delta[top[1]] : 0ull,
+        nt > 2 ? memu_boundary_name(top[2]) : "-", nt > 2 ? top[2] : 0u,
+        nt > 2 ? (unsigned long long)delta[top[2]] : 0ull);
+}
 static int memu_allowed(uint32_t op) {
     switch (op) {
     case OP_END: case OP_JUMP: case OP_BEGIN: case OP_CALL: case OP_DRAW: case OP_DRAW_IDX: case OP_SCISSOR: case OP_COPY_STRIDE: case OP_CLEAR_COLOR: case OP_CLEAR_DS:
@@ -1356,12 +1402,19 @@ static int memu_walk(const uint8_t *p, int phase) {
         }
         if (h.op == OP_JUMP) { memcpy(&p, a, 8); continue; }
         if (h.op == OP_CALL) { if (nret == 17) break; ret[nret++] = p + h.size; memcpy(&p, a, 8); continue; }
-        if (!memu_allowed(h.op) || h.size < 8) break;
+        if (!memu_allowed(h.op) || h.size < 8) {
+            if (phase == MEMU_ADD && h.op < OP_COUNT_)
+                g_memu_boundary_op[h.op]++;
+            break;
+        }
         if (h.op == OP_DRAW) { p_draw t; const p_draw *d = draw_rec(a, h.size, &t);
             if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt) {
                 int route = (hybrid || vegetation_off) ?
                             vka_mesh_route(&g_memu_st) : 1;
-                if (route == 0) break; // native mesh is an ordering boundary
+                if (route == 0) {
+                    if (phase == MEMU_ADD) g_memu_boundary_op[OP_COUNT_]++;
+                    break; // native mesh is an ordering boundary
+                }
                 if (route == 1 &&
                     (!vegetation_off || !vka_vegetation_mesh_omit(&g_memu_st))) {
                     if (n == 128) break;
