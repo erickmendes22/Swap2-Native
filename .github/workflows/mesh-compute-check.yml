@@ -6,6 +6,7 @@ on:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
       - dm/gfx/tools/tests/test_memu_coalesced_readback.py
+      - dm/gfx/tools/tests/test_oot_short_task_search.py
       - dm/gfx/tools/tests/test_memu_plane_lut.py
       - dm/gfx/tools/tests/test_banana_input_caches.py
       - dm/gfx/tools/tests/test_ocarina_mesh_native_hybrid.py
@@ -87,6 +88,8 @@ jobs:
         env:
           MEMU_TEST_VULKAN: '1'
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_compute_virtual_retile.py -v
+      - name: Differential-test <=256 workgroup task lookup against 17-step reference
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_oot_short_task_search.py -v
       - name: Validate scalar and coalesced task and mesh modules
         run: |
           cc -O1 -g -fsanitize=address,undefined \
