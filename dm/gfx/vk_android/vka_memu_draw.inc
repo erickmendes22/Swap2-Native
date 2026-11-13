@@ -113,7 +113,14 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
             VkBufferCopy c = {o, MB.rec.off + ((VkDeviceSize)E->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_COUNT) * 4, 8}; vk.vkCmdCopyBuffer(g_cb, b, MB.rec.buf, 1, &c);
         } else { r[VKA_MEMU_R_COUNT] = dw->count > 0 ? (uint32_t)dw->count : 0; r[VKA_MEMU_R_FIRST] = dw->first > 0 ? (uint32_t)dw->first : 0; }
         E->indexed = mi->L.indexed; E->points = mi->L.points; E->ok = 1;
-        if (E->tcs) MB.task_draws++;
+        if (E->tcs) {
+            MB.task_draws++;
+            // Count the direct task draws eligible for the new 8-step
+            // GPU indexer; indirect counts are only known on the GPU.
+            if (dw->ind) vka_memu_task_indirect++;
+            else if ((uint32_t)dw->count <= 256u) vka_memu_task_small++;
+            else vka_memu_task_large++;
+        }
         return;
     }
     if (MB.live <= 0 || !MB.o.n) return;
