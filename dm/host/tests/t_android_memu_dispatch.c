@@ -62,6 +62,7 @@ int main(int argc, char **argv) {
     VkQueueFamilyProperties *families = calloc(count, sizeof *families);
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families);
     uint32_t family = 0; while (family < count && !(families[family].queueFlags & VK_QUEUE_COMPUTE_BIT)) family++;
+    uint32_t timestamp_bits = family < count ? families[family].timestampValidBits : 0;
     free(families); if (family == count) return 3;
     float priority = 1;
     VkDeviceQueueCreateInfo qci = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -116,13 +117,49 @@ int main(int argc, char **argv) {
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
     uint32_t push[4] = {0, (uint32_t)(nr / 128), (uint32_t)(na / 4), 0};
     vkCmdPushConstants(command, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, push);
-    vkCmdDispatch(command, (uint32_t)strtoul(argv[5], NULL, 10), (uint32_t)strtoul(argv[6], NULL, 10), (uint32_t)strtoul(argv[7], NULL, 10));
+    uint32_t groups[3]; for (int i = 0; i < 3; i++) groups[i] = (uint32_t)strtoul(argv[5+i], NULL, 10);
+    const char *repeat_env = getenv("MEMU_TEST_REPEATS");
+    uint32_t repeats = repeat_env ? (uint32_t)strtoul(repeat_env, NULL, 10) : 1;
+    if (!repeats || repeats > 256) return 2;
+    VkQueryPool query = VK_NULL_HANDLE;
+    VkMemoryBarrier between = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
+    if (repeat_env) {
+        if (!timestamp_bits) { fprintf(stderr, "queue has no timestamp support\n"); return 3; }
+        VkQueryPoolCreateInfo qp = {.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+            .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = 2};
+        VK_OK(vkCreateQueryPool(device, &qp, NULL, &query));
+        // Warm JIT/cache state before measuring. Repeated dispatches are
+        // ordered for their WAW/RAW hazards, including the arena readback.
+        vkCmdDispatch(command, groups[0], groups[1], groups[2]);
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &between, 0, NULL, 0, NULL);
+        vkCmdResetQueryPool(command, query, 0, 2);
+        vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, query, 0);
+    }
+    for (uint32_t i = 0; i < repeats; i++) {
+        if (i) vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &between, 0, NULL, 0, NULL);
+        vkCmdDispatch(command, groups[0], groups[1], groups[2]);
+    }
+    if (query) vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, query, 1);
     VkMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &barrier, 0, NULL, 0, NULL);
     VK_OK(vkEndCommandBuffer(command));
     VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &command};
     VK_OK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE)); VK_OK(vkQueueWaitIdle(queue));
+    if (query) {
+        uint64_t ticks[2];
+        VK_OK(vkGetQueryPoolResults(device, query, 0, 2, sizeof ticks, ticks, sizeof(uint64_t),
+            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT));
+        uint64_t elapsed = ticks[1] - ticks[0];
+        if (timestamp_bits < 64) elapsed &= (1ull << timestamp_bits) - 1;
+        printf("{\"gpu_ns_per_dispatch\":%.0f,\"repeats\":%u}\n",
+               elapsed * (double)props.limits.timestampPeriod / repeats, repeats);
+        vkDestroyQueryPool(device, query, NULL);
+    }
     FILE *f = fopen(argv[4], "wb"); if (!f || fwrite(buf[0].map, 1, na, f) != na) return 1; fclose(f);
     if (helper) { f = fopen(argv[2], "wb"); if (!f || fwrite(buf[1].map, 1, nr, f) != nr) return 1; fclose(f); }
     vkDestroyCommandPool(device, command_pool, NULL); vkDestroyDescriptorPool(device, pool, NULL);

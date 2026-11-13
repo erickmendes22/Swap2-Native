@@ -1342,11 +1342,12 @@ int vka_shader_lib_has(uint64_t key) { pthread_mutex_lock(&g_mu); int ok = lib_l
 int vka_shader_memu_key(uint64_t key) {
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
     if (!ok || vka_shlib_find(library_for_key(key), key)) return 0;
-    static const uint64_t tag[3] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS};
-    for (int i = 0; i < 3; i++) {
+    static const uint64_t tag[5] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL};
+    for (int i = 0; i < 5; i++) {
         uint64_t original = key ^ tag[i] ^ vka_memu_layout_tag();
         const dmsh_vk_entry *e = vka_shlib_find(library_for_key(original), original);
-        if (e && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS)) return 1;
+        if (e && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS) && (i < 3 || e->stage == DMSH_VK_STAGE_MS)) return 1;
     }
     return 0;
 }

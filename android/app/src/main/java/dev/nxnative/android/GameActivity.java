@@ -369,6 +369,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_VEGETATION=" + (Prefs.fullVegetation(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_PLANE_LUT=" + (Prefs.vegetationOptimized(this, id) ? "1" : "0"));
             if (Prefs.ramSaver(this, id)) {
                 // TMPDIR is the app's private cache; the native backend reserves storage before mapping.
                 env.add("TMPDIR=" + getCacheDir().getAbsolutePath());

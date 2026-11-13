@@ -25,11 +25,11 @@
 enum {
     OpNop = 0, OpUndef = 1, OpSource = 3, OpName = 5, OpMemberName = 6, OpString = 7, OpLine = 8, OpExtension = 10, OpExtInstImport = 11, OpExtInst = 12, OpMemoryModel = 14,
     OpEntryPoint = 15, OpExecutionMode = 16, OpCapability = 17, OpTypeVoid = 19, OpTypeBool = 20, OpTypeInt = 21, OpTypeFloat = 22, OpTypeVector = 23, OpTypeArray = 28,
-    OpTypeRuntimeArray = 29, OpTypeStruct = 30, OpTypePointer = 32, OpTypeFunction = 33, OpConstantTrue = 41, OpConstantFalse = 42, OpConstant = 43,
+    OpTypeRuntimeArray = 29, OpTypeStruct = 30, OpTypePointer = 32, OpTypeFunction = 33, OpConstantTrue = 41, OpConstantFalse = 42, OpConstant = 43, OpConstantComposite = 44,
     OpFunction = 54, OpFunctionParameter = 55, OpFunctionEnd = 56, OpFunctionCall = 57, OpVariable = 59, OpLoad = 61, OpStore = 62, OpCopyMemory = 63, OpCopyMemorySized = 64,
-    OpAccessChain = 65, OpInBoundsAccessChain = 66, OpPtrAccessChain = 67, OpDecorate = 71, OpMemberDecorate = 72, OpCompositeConstruct = 80, OpCompositeExtract = 81,
+    OpAccessChain = 65, OpInBoundsAccessChain = 66, OpPtrAccessChain = 67, OpDecorate = 71, OpMemberDecorate = 72, OpVectorExtractDynamic = 77, OpCompositeConstruct = 80, OpCompositeExtract = 81,
     OpImageWrite = 99, OpBitcast = 124, OpIAdd = 128, OpISub = 130, OpIMul = 132, OpUDiv = 134, OpUMod = 137, OpLogicalAnd = 167, OpSelect = 169, OpIEqual = 170,
-    OpINotEqual = 171, OpULessThan = 176, OpULessThanEqual = 178, OpShiftRightLogical = 194, OpBitwiseAnd = 199, OpControlBarrier = 224, OpMemoryBarrier = 225,
+    OpINotEqual = 171, OpULessThan = 176, OpULessThanEqual = 178, OpShiftRightLogical = 194, OpShiftLeftLogical = 196, OpBitwiseAnd = 199, OpControlBarrier = 224, OpMemoryBarrier = 225,
     OpAtomicStore = 228, OpPhi = 245, OpLoopMerge = 246, OpSelectionMerge = 247, OpLabel = 248, OpBranch = 249, OpBranchConditional = 250, OpSwitch = 251, OpKill = 252, OpReturn = 253,
     OpReturnValue = 254, OpUnreachable = 255, OpNoLine = 317, OpModuleProcessed = 330, OpExecutionModeId = 331, OpDecorateId = 332, OpTerminateInvocation = 4416,
     OpEmitMeshTasksEXT = 5294, OpSetMeshOutputsEXT = 5295, OpDemoteToHelperInvocation = 5380, OpDecorateString = 5632, OpMemberDecorateString = 5633,
@@ -152,6 +152,10 @@ static int cmp_u8(const void *a, const void *b) { return (int)*(const uint8_t *)
 int vka_memu_coalesced(void) {
     const char *value = getenv("DM_VK_MEMU_COALESCED");
     return value && !strcmp(value, "1");
+}
+int vka_memu_plane_lut(void) {
+    const char *value = getenv("DM_VK_MEMU_PLANE_LUT");
+    return !value || strcmp(value, "0");
 }
 static int layout_read(const mod_t *m, vka_memu_layout *L, outvar *ov, int *nov, uint32_t *payload, uint32_t *lidvar, uint32_t *wgvar, char *err, size_t errn) {
     memset(L, 0, sizeof *L); *nov = 0; if (payload) *payload = 0; if (lidvar) *lidvar = 0; if (wgvar) *wgvar = 0;
@@ -308,6 +312,160 @@ static uint32_t label(fn_t *f) { uint32_t id = f->B->next++; INS(f->F, OpLabel, 
 static uint32_t fn_if(fn_t *f, uint32_t c) { uint32_t t = f->B->next++, mg = f->B->next++; INS(f->F, OpSelectionMerge, mg, 0); INS(f->F, OpBranchConditional, c, t, mg); INS(f->F, OpLabel, t); return mg; }
 static void fn_endif(fn_t *f, uint32_t mg) { INS(f->F, OpBranch, mg); INS(f->F, OpLabel, mg); }
 
+// The translator's dynamic mesh-plane scatter has one guarded output store
+// per plane. In compute those stores all address the SAME word arena. Prove
+// the complete helper's shape before replacing its N-way branch ladder with
+// an eight-word constant lookup and one store. Never infer safety from a
+// shader key or function name; unfamiliar bodies retain the original path.
+typedef struct {
+    size_t prefix, tail, end, side[2], side_words[2];
+    uint32_t plane, vertex, value, count, map[32], side_plane[2];
+    int nsides;
+} plane_lut_t;
+static int plane_const(const mod_t *m, uint32_t id, uint32_t value) {
+    return id < m->bound && m->isc[id] && m->cval[id] == value;
+}
+static int plane_lut_match(const mod_t *m, size_t start, const vka_memu_layout *L,
+                           const outvar *ov, int nov, uint32_t tu, plane_lut_t *P) {
+    size_t at = start; const uint32_t *x;
+    memset(P, 0, sizeof *P);
+    #define TAKE(op, count_) do { if (at + (count_) > m->n || m->w[at] != ((uint32_t)(count_) << 16 | (op))) return 0; x = m->w + at; at += (count_); } while (0)
+    #define CONST(id, value) do { if (!plane_const(m, (id), (value))) return 0; } while (0)
+    TAKE(OpFunction, 5); uint32_t fn = x[2];
+    if (T_op(m, x[1]) != OpTypeVoid || x[3]) return 0;
+    int named = 0;
+    for (size_t i = 5; i < m->first_fn; i += m->w[i] >> 16) {
+        uint32_t n = m->w[i] >> 16;
+        if ((m->w[i] & 65535) == OpName && n > 2 && m->w[i + 1] == fn &&
+            memchr(m->w + i + 2, 0, (n - 2) * 4) && !strcmp((const char *)(m->w + i + 2), "mesh_plane_store")) named = 1;
+    }
+    if (!named || L->task || L->nploc) return 0;
+    TAKE(OpFunctionParameter, 3); if (x[1] != tu) return 0; uint32_t word = x[2];
+    TAKE(OpFunctionParameter, 3); if (x[1] != tu) return 0; P->value = x[2];
+    TAKE(OpLabel, 2);
+    TAKE(OpBitcast, 4); if (scalar_kind(m, x[1]) != 'f' || x[3] != P->value) return 0; uint32_t value_f = x[2];
+    TAKE(OpULessThan, 5); if (x[3] != word) return 0; uint32_t cond = x[2], limit = x[4];
+    TAKE(OpSelectionMerge, 3); uint32_t outer = x[1]; if (x[2]) return 0;
+    TAKE(OpBranchConditional, 4); if (x[1] != cond || x[3] != outer) return 0; uint32_t yes = x[2];
+    TAKE(OpLabel, 2); if (x[1] != yes) return 0;
+    TAKE(OpUMod, 5); if (x[1] != tu || x[3] != word || x[4] >= m->bound || !m->isc[x[4]]) return 0;
+    uint32_t rem = x[2], chunk_id = x[4], chunk = m->cval[chunk_id];
+    if (!chunk || chunk % 32 || chunk > 32 * 32) return 0;
+    P->count = chunk / 32;
+    CONST(limit, ((L->max_v + 31) / 32) * chunk);
+    TAKE(OpShiftRightLogical, 5); if (x[1] != tu || x[3] != rem) return 0; CONST(x[4], 5); P->plane = x[2];
+    TAKE(OpUDiv, 5); if (x[1] != tu || x[3] != word || x[4] != chunk_id) return 0; uint32_t group = x[2];
+    TAKE(OpIMul, 5); if (x[1] != tu || x[3] != group) return 0; CONST(x[4], 32); uint32_t first = x[2];
+    TAKE(OpBitwiseAnd, 5); if (x[1] != tu || x[3] != rem) return 0; CONST(x[4], 31); uint32_t lane = x[2];
+    TAKE(OpIAdd, 5); if (x[1] != tu || x[3] != first || x[4] != lane) return 0; P->vertex = x[2];
+    TAKE(OpULessThan, 5); if (x[3] != P->vertex) return 0; CONST(x[4], L->max_v); cond = x[2];
+    TAKE(OpSelectionMerge, 3); uint32_t inner = x[1]; if (x[2]) return 0;
+    TAKE(OpBranchConditional, 4); if (x[1] != cond || x[3] != inner) return 0; yes = x[2];
+    TAKE(OpLabel, 2); if (x[1] != yes) return 0; P->prefix = at;
+    for (uint32_t p = 0; p < P->count; p++) {
+        TAKE(OpIEqual, 5); if (x[3] != P->plane) return 0; CONST(x[4], p); cond = x[2];
+        TAKE(OpSelectionMerge, 3); uint32_t merge = x[1]; if (x[2]) return 0;
+        TAKE(OpBranchConditional, 4); if (x[1] != cond || x[3] != merge) return 0; yes = x[2];
+        TAKE(OpLabel, 2); if (x[1] != yes) return 0;
+        if (at >= m->n) return 0;
+        uint32_t n = m->w[at] >> 16;
+        if ((m->w[at] & 65535) != OpAccessChain || n < 5 || n > 7 || at + n > m->n) return 0;
+        x = m->w + at; at += n;
+        if (x[4] != P->vertex) return 0;
+        uint32_t target = x[2], component = 0; int pos = 0, found = 0;
+        for (int j = 0; j < nov; j++) if (ov[j].id == x[3]) {
+            const outvar *o = &ov[j]; found = 1;
+            if (o->kind == K_POS) {
+                if (n < 6 || x[5] >= m->bound || !m->isc[x[5]] || m->cval[x[5]] >= 8) return 0;
+                int32_t bi = o->mb[m->cval[x[5]]];
+                if (bi == BIPosition) {
+                    if (n != 7 || x[6] >= m->bound || !m->isc[x[6]] || m->cval[x[6]] >= 4) return 0;
+                    component = m->cval[x[6]]; pos = 1;
+                } else if (bi == BIPointSize && n == 6) component = 4;
+                else return 0;
+            } else if (o->kind == K_VLOC) {
+                if (n != 6 || x[5] >= m->bound || !m->isc[x[5]] || m->cval[x[5]] >= 4) return 0;
+                component = 4 + (uint32_t)L->point_size + 4 * (uint32_t)o->k + m->cval[x[5]];
+            } else return 0;
+        }
+        if (!found || component >= L->vw || component > 255) return 0;
+        P->map[p] = component;
+        TAKE(OpStore, 3); if (x[1] != target || x[2] != value_f) return 0;
+        if (at < m->n && (m->w[at] & 65535) != OpBranch) {
+            // Preserve the translator's only extra side effect: the raw
+            // z/w mirror used by the later GL-depth rewrite.
+            if (!pos || (component != 2 && component != 3) || P->nsides == 2) return 0;
+            int s = P->nsides++; P->side[s] = at; P->side_plane[s] = p;
+            TAKE(OpIMul, 5); if (x[1] != tu || x[3] != P->vertex) return 0; CONST(x[4], 2); uint32_t twice = x[2];
+            TAKE(OpIAdd, 5); if (x[1] != tu || x[3] != twice) return 0; CONST(x[4], component - 2); uint32_t index = x[2];
+            TAKE(OpAccessChain, 5); if (x[4] != index || x[3] >= m->bound || !m->def[x[3]]) return 0;
+            uint32_t ptrid = x[2]; const uint32_t *var = m->w + m->def[x[3]];
+            if ((var[0] & 65535) != OpVariable || var[3] != SCWorkgroup) return 0;
+            uint32_t elem, length = array_len(m, ptr_pointee(m, var[1], NULL), &elem);
+            if (length < 2 * L->max_v || scalar_kind(m, elem) != 'u') return 0;
+            TAKE(OpStore, 3); if (x[1] != ptrid || x[2] != P->value) return 0;
+            P->side_words[s] = at - P->side[s];
+        }
+        TAKE(OpBranch, 2); if (x[1] != merge) return 0;
+        TAKE(OpLabel, 2); if (x[1] != merge) return 0;
+    }
+    P->tail = at;
+    TAKE(OpBranch, 2); if (x[1] != inner) return 0;
+    TAKE(OpLabel, 2); if (x[1] != inner) return 0;
+    TAKE(OpBranch, 2); if (x[1] != outer) return 0;
+    TAKE(OpLabel, 2); if (x[1] != outer) return 0;
+    TAKE(OpReturn, 1); TAKE(OpFunctionEnd, 1); P->end = at;
+    #undef TAKE
+    #undef CONST
+    // Refuse decorated/named local results that would be removed. Their
+    // declarations cannot be left dangling, nor silently stripped.
+    uint8_t *dead = calloc(m->bound, 1); if (!dead) return 0;
+    for (size_t i = P->prefix; i < P->tail; i += m->w[i] >> 16) {
+        int side = 0; for (int s = 0; s < P->nsides; s++) side |= i >= P->side[s] && i < P->side[s] + P->side_words[s];
+        if (side) continue;
+        uint32_t op = m->w[i] & 65535, n = m->w[i] >> 16;
+        uint32_t id = op == OpLabel ? m->w[i + 1] : !no_result(op) && n >= 3 ? m->w[i + 2] : 0;
+        if (id < m->bound) dead[id] = 1;
+    }
+    int ok = 1;
+    for (size_t i = 5; i < m->first_fn; i += m->w[i] >> 16) {
+        uint32_t op = m->w[i] & 65535;
+        if ((op == OpName || op == OpDecorate || op == OpDecorateId || op == OpDecorateString) && m->w[i + 1] < m->bound && dead[m->w[i + 1]]) ok = 0;
+    }
+    free(dead); return ok;
+}
+static void plane_lut_emit(fn_t *f, const mod_t *m, const vka_memu_layout *L,
+                            const plane_lut_t *P, uint32_t arena, uint32_t p_sb_u32, uint32_t pv_a) {
+    bld_t *B = f->B;
+    uint32_t tv = ty(B, OpTypeVector, B->t_u32, 4, 0, 2), vectors[2] = {0};
+    for (uint32_t half = 0; half < (P->count + 15) / 16; half++) {
+        uint32_t packed[4] = {0};
+        for (uint32_t p = half * 16; p < P->count && p < (half + 1) * 16; p++) packed[(p % 16) / 4] |= P->map[p] << (8 * (p % 4));
+        uint32_t c[4]; for (int j = 0; j < 4; j++) c[j] = cu(B, packed[j]);
+        vectors[half] = B->next++;
+        INS(&B->T, OpConstantComposite, tv, vectors[half], c[0], c[1], c[2], c[3]);
+    }
+    uint32_t index = op2(f, OpShiftRightLogical, B->t_u32, P->plane, cu(B, 2));
+    if (P->count > 16) index = op2(f, OpBitwiseAnd, B->t_u32, index, cu(B, 3));
+    uint32_t packed = op2(f, OpVectorExtractDynamic, B->t_u32, vectors[0], index);
+    if (P->count > 16) {
+        uint32_t hi = op2(f, OpVectorExtractDynamic, B->t_u32, vectors[1], index);
+        packed = sel(f, B->t_u32, op2(f, OpULessThan, B->t_bool, P->plane, cu(B, 16)), packed, hi);
+    }
+    uint32_t shift = op2(f, OpShiftLeftLogical, B->t_u32, op2(f, OpBitwiseAnd, B->t_u32, P->plane, cu(B, 3)), cu(B, 3));
+    uint32_t offset = op2(f, OpBitwiseAnd, B->t_u32, op2(f, OpShiftRightLogical, B->t_u32, packed, shift), cu(B, 255));
+    uint32_t vertex = P->vertex;
+    if (L->coalesced) offset = op2(f, OpIMul, B->t_u32, offset, cu(B, L->max_v));
+    else vertex = op2(f, OpIMul, B->t_u32, vertex, cu(B, L->vw));
+    uint32_t address = op2(f, OpIAdd, B->t_u32, ld(f, B->t_u32, pv_a), op2(f, OpIAdd, B->t_u32, vertex, offset));
+    INS(f->F, OpStore, chain2(f, p_sb_u32, arena, cu(B, 0), address), P->value);
+    for (int s = 0; s < P->nsides; s++) {
+        uint32_t merge = fn_if(f, op2(f, OpIEqual, B->t_bool, P->plane, cu(B, P->side_plane[s])));
+        sb_raw(f->F, m->w + P->side[s], P->side_words[s]);
+        fn_endif(f, merge);
+    }
+}
+
 // ---------- Task / mesh as compute ----------
 typedef struct { uint32_t var; uint32_t idx[6]; int n; } chain_t;
 uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
@@ -407,6 +565,17 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
     for (size_t i = m.first_fn; i < m.n;) {
         uint32_t op = m.w[i] & 0xffff, len = m.w[i] >> 16; const uint32_t *x = m.w + i;
         i += len;
+        if (op == OpFunction) {
+            plane_lut_t P;
+            if (vka_memu_plane_lut() && plane_lut_match(&m, i - len, &L, ov, nov, B.t_u32, &P)) {
+                sb_raw(&O, x, P.prefix - (i - len));
+                fn_t f = {&B, &O};
+                plane_lut_emit(&f, &m, &L, &P, arena, p_sb_u32, pv_a);
+                sb_raw(&O, m.w + P.tail, P.end - P.tail);
+                i = P.end;
+                continue;
+            }
+        }
         if ((op == OpAccessChain || op == OpInBoundsAccessChain) && len >= 4) {
             uint32_t base = x[3], res = x[2];
             if (base < m.bound && oid[base]) {

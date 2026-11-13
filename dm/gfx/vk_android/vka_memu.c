@@ -42,7 +42,7 @@ vka_memu_sh *vka_memu_of(vka_shader *s) {
         d->nsb += 2;
         if (d->nsb > V.props.limits.maxPerStageDescriptorStorageBuffers) { snprintf(err, sizeof err, "%u storage buffers with the arena and the records, the device's compute stage takes %u", d->nsb, V.props.limits.maxPerStageDescriptorStorageBuffers); d->state = -1; }
         if (d->L.threads > V.props.limits.maxComputeWorkGroupInvocations) { snprintf(err, sizeof err, "a workgroup of %u invocations", d->L.threads); d->state = -1; }
-        d->ce = *s->e; d->ce.stage = DMSH_VK_STAGE_CS; d->ce.key = s->key ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag();
+        d->ce = *s->e; d->ce.stage = DMSH_VK_STAGE_CS; d->ce.key = s->key ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^ vka_memu_cs_tag(s->e->stage);
         memset(&d->ve, 0, sizeof d->ve); d->ve.key = s->key ^ VKA_MEMU_KEY_VS ^ vka_memu_layout_tag(); d->ve.stage = DMSH_VK_STAGE_VS;
     } else d->state = -1;
     free(w);
@@ -98,12 +98,17 @@ vka_shader *vka_memu_vs_of(vka_shader *s) {
     return v;
 }
 vka_shader *vka_memu_by_key(uint64_t key) {
-    static const uint64_t tag[3] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS};
-    for (int i = 0; i < 3; i++) {
+    // LUT changes code, not storage. Resolve both generations' prewarm
+    // records to the ACTIVE module/key, including on a rollback. Never
+    // accept the other (incompatible) coalesced storage layout.
+    static const uint64_t tag[5] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL};
+    for (int i = 0; i < 5; i++) {
         uint64_t k = key ^ tag[i] ^ vka_memu_layout_tag();
         if (!vka_shader_lib_has(k)) continue;
         vka_shader *s = vka_shader_by_key(k); if (!s || !s->e || s->e->stage < DMSH_VK_STAGE_TS) continue;
-        return i < 2 ? vka_memu_cs_of(s, i == 1) : vka_memu_vs_of(s);
+        if (i >= 3 && s->e->stage != DMSH_VK_STAGE_MS) continue;
+        return i == 2 ? vka_memu_vs_of(s) : vka_memu_cs_of(s, i == 1 || i == 4);
     }
     return NULL;
 }
@@ -189,6 +194,7 @@ int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layo
         VkPipelineLayoutCreateInfo pi = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &sl, .pushConstantRangeCount = 1, .pPushConstantRanges = &pr};
         if (vk.vkCreatePipelineLayout(V.dev, &pi, NULL, &pl)) return 0;
         const uint32_t *code[2] = {SPV_MEMU_SETUP, SPV_MEMU_DIST}; size_t len[2] = {sizeof SPV_MEMU_SETUP, sizeof SPV_MEMU_DIST}; VkPipeline *out[2] = {&ps, &pd};
+        VLOG("mesh compute: direct plane scatter %s (fully matched helpers only; imported shaders unchanged)", vka_memu_plane_lut() ? "on" : "off, original ladder");
         if (vka_memu_coalesced()) {
             code[0] = SPV_MEMU_SETUP_COALESCED; len[0] = sizeof SPV_MEMU_SETUP_COALESCED;
             code[1] = SPV_MEMU_DIST_COALESCED; len[1] = sizeof SPV_MEMU_DIST_COALESCED;

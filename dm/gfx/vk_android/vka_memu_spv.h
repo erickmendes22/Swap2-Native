@@ -28,6 +28,8 @@ typedef struct {
 
 // Process-level developer A/B switch; off until paired device timings pass.
 int vka_memu_coalesced(void);
+// Bounds-checked direct plane scatter; 0 restores the original branch ladder.
+int vka_memu_plane_lut(void);
 
 // The layout of a task or mesh module. 1 = known; 0 with the reason in err (a form the emulation does not take: lines, other built-in outputs, 16-bit outputs)
 int vka_memu_layout_of(const uint32_t *w, size_t nw, vka_memu_layout *L, char *err, size_t errn);

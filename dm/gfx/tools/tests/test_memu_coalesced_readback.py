@@ -183,10 +183,11 @@ class CoalescedReadback(unittest.TestCase):
 #include <assert.h>
 #include <pthread.h>
 #include "vka_memu.h"
-typedef struct vka_shader { const dmsh_vk_entry *e; } vka_shader;
+typedef struct vka_shader { const dmsh_vk_entry *e; uint64_t key; } vka_shader;
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
-static int enabled;
+static int enabled, lut_enabled;
 int vka_memu_coalesced(void) { return enabled; }
+int vka_memu_plane_lut(void) { return lut_enabled; }
 static const uint64_t base = 0x123456789abcdef0ull;
 static dmsh_vk_entry entry;
 static vka_shader original, cs[2], vs;
@@ -195,15 +196,23 @@ static void *library_for_key(uint64_t key) { (void)key; return NULL; }
 static const dmsh_vk_entry *vka_shlib_find(void *lib, uint64_t key) { (void)lib; return key == base ? &entry : NULL; }
 int vka_shader_lib_has(uint64_t key) { return key == base; }
 static vka_shader *vka_shader_by_key(uint64_t key) { return key == base ? &original : NULL; }
-vka_shader *vka_memu_cs_of(vka_shader *s, int gl) { assert(s == &original); return &cs[gl]; }
-vka_shader *vka_memu_vs_of(vka_shader *s) { assert(s == &original); return &vs; }
+vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
+    assert(s == &original);
+    cs[gl].key = base ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^ vka_memu_cs_tag(entry.stage) ^ (gl ? VKA_MEMU_KEY_GL : 0);
+    return &cs[gl];
+}
+vka_shader *vka_memu_vs_of(vka_shader *s) { assert(s == &original); vs.key = base ^ VKA_MEMU_KEY_VS ^ vka_memu_layout_tag(); return &vs; }
 ''' + decode + "\n" + classify + r'''
 int main(void) {
-    const uint64_t tags[3] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS};
+    const uint64_t tags[5] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL};
     entry.stage = DMSH_VK_STAGE_MS; original.e = &entry;
-    for (enabled = 0; enabled < 2; enabled++) for (int i = 0; i < 3; i++) {
+    for (lut_enabled = 0; lut_enabled < 2; lut_enabled++) for (enabled = 0; enabled < 2; enabled++) for (int i = 0; i < 5; i++) {
         uint64_t key = base ^ tags[i] ^ vka_memu_layout_tag();
-        assert(vka_memu_by_key(key) == (i < 2 ? &cs[i] : &vs));
+        assert(vka_memu_by_key(key) == (i == 2 ? &vs : &cs[i == 1 || i == 4]));
+        uint64_t active = base ^ (i == 2 ? VKA_MEMU_KEY_VS : VKA_MEMU_KEY_CS ^ vka_memu_cs_tag(entry.stage)) ^ vka_memu_layout_tag();
+        if (i == 1 || i == 4) active ^= VKA_MEMU_KEY_GL;
+        assert(vka_memu_by_key(key)->key == active);
         assert(vka_shader_memu_key(key));
         assert(!vka_memu_by_key(key ^ VKA_MEMU_KEY_COALESCED));
         assert(!vka_shader_memu_key(key ^ VKA_MEMU_KEY_COALESCED));
