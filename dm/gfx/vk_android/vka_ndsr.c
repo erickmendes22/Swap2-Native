@@ -6,7 +6,7 @@
 // cheap anti-aliasing passes before it (edge classification, blend weights, the blend that packs the input) stay as they are. An output format without storage
 // support (Zelda's B10G11R11_UFLOAT on Adreno, where a float storage view of it is refused and its stores go nowhere) takes the packed variant: each texel's 32-bit
 // word stored through an R32_UINT view, the binding entered in the dispatch's vka_imgrt so stage_writes asks for that view (vka_ndsr_pipeline).
-// Switches (live): DM_VK_NDSR = net (default: the network) | fsr (EASU) | bilinear; DM_VK_NDSR_INPUT = linear (default) | sqrt (the input holds sqrt(colour), the
+// Switches (live): DM_VK_NDSR = net (default: the network) | fsr (EASU) | sgsr (internal compute) | bilinear; DM_VK_NDSR_INPUT = linear (default) | sqrt (the input holds sqrt(colour), the
 // output the colour: agl's light upscaler, whose blend a335c1db6270c355 packs sqrt as RGB9E5); DM_VK_NDSR_MAP = full (default: the whole input onto the whole
 // output) | push (agl's push bank mapping, experimental); DM_VK_NDSR_LOG=1: the push bank once per input and output size
 #include "vka_ndsr.h"
@@ -85,7 +85,7 @@ uint32_t *vka_ndsr_words(int packed, uint16_t tex_b, uint16_t img_b, uint16_t ba
 #include <stdatomic.h>
 #include <stdio.h>
 
-static struct { int mode, enc, map, log; } g_sw;   // mode: 0 net, 1 fsr, 2 bilinear
+static struct { int mode, enc, map, log; } g_sw;   // mode: 0 net, 1 fsr, 2 bilinear, 3 SGSR1 compute
 static uint32_t g_sw_gen;
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static void switches(void) {   // read again after a live change (vka_env_gen), under g_mu
@@ -93,8 +93,11 @@ static void switches(void) {   // read again after a live change (vka_env_gen), 
     if (g == g_sw_gen) return;
     g_sw_gen = g;
     char v[64];
-    g_sw.mode = !vka_env_str("DM_VK_NDSR", v, sizeof v) || !strcmp(v, "net") || !strcmp(v, "0") ? 0 : !strcmp(v, "bilinear") ? 2 : !strcmp(v, "fsr") || !strcmp(v, "1") ? 1 : -1;
-    if (g_sw.mode < 0) { VRED("DM_VK_NDSR=%s: not net, fsr or bilinear; the network runs", v); g_sw.mode = 0; }
+    g_sw.mode = !vka_env_str("DM_VK_NDSR", v, sizeof v) || !strcmp(v, "net") || !strcmp(v, "0") ? 0 :
+        !strcmp(v, "bilinear") ? 2 :
+        !strcmp(v, "sgsr") || !strcmp(v, "3") ? 3 :
+        !strcmp(v, "fsr") || !strcmp(v, "1") ? 1 : -1;
+    if (g_sw.mode < 0) { VRED("DM_VK_NDSR=%s: not net, fsr, sgsr or bilinear; the network runs", v); g_sw.mode = 0; }
     g_sw.enc = vka_env_str("DM_VK_NDSR_INPUT", v, sizeof v) && !strcmp(v, "sqrt") ? VKA_NDSR_ENC_SQRT : VKA_NDSR_ENC_LINEAR;
     g_sw.map = vka_env_str("DM_VK_NDSR_MAP", v, sizeof v) && !strcmp(v, "push") ? VKA_NDSR_MAP_PUSH : VKA_NDSR_MAP_FULL;
     g_sw.log = vka_env_str("DM_VK_NDSR_LOG", v, sizeof v) && atoi(v) > 0;
@@ -148,7 +151,7 @@ static void log_sizes(const vka_dstate *d, uint64_t key, const vka_res *t, const
     if (i == g_nlog) {
         if (g_nlog == NLOG) return;
         g_log[g_nlog++] = (typeof(g_log[0])){key, iw, ih, ow, oh, enc, map, kernel, pack, 0};
-        VLOG("NDSR network %016llx replaced by %s (input %s, %s mapping, %ux%u -> %ux%u; texture IDs %d -> %d; output VkFormat %d %s)", (unsigned long long)key, kernel ? "bilinear" : "FSR 1 EASU",
+        VLOG("NDSR network %016llx replaced by %s (input %s, %s mapping, %ux%u -> %ux%u; texture IDs %d -> %d; output VkFormat %d %s)", (unsigned long long)key, kernel == VKA_NDSR_KERNEL_SGSR ? "SGSR1 compute" : kernel == VKA_NDSR_KERNEL_BILINEAR ? "bilinear" : "FSR 1 EASU",
              enc ? "sqrt" : "linear", map ? "push bank" : "full-image", iw, ih, ow, oh, t->tid, o->tid, b ? (int)b->f.vk : 0,
              pack ? "without storage support: packed words through an R32_UINT view" : "stored as floats");
     }
@@ -267,9 +270,23 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
         (uint64_t)oi->w * oi->h > 1280ull * 720;
     // At 0.25 the chain's scene-linear input is a separate, validated
     // bypass; it still writes the exact original full-size destination.
-    int kernel = (g_sw.mode == 2 || large_oot || source_is_scene_linear ||
-                  sgsr_network_light)
+    // Full internal SGSR1: this is a compute replacement inside the
+    // game's NDSR network (not the presentation shader). Keep its real
+    // output image dimensions, descriptors, packed format and UI consumers.
+    // Non-Ocarina games retain EASU until their own NDSR mapping is proved.
+    int sgsr_internal = g_sw.mode == 3 &&
+        !strcmp(DM_GAME_ID, "0400486024DEC000");
+    int kernel = sgsr_internal ? VKA_NDSR_KERNEL_SGSR :
+                (g_sw.mode == 2 || large_oot || source_is_scene_linear ||
+                 sgsr_network_light)
                ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
+    if (sgsr_internal) {
+        static _Atomic int once;
+        if (!atomic_exchange(&once, 1))
+            VLOG("Ocarina SGSR1 NDSR compute: full 12-neighbour reconstruction "
+                 "at the existing game image dimensions; original colour encoding "
+                 "and packed-store support retained, no game shader pack rebuild");
+    }
     if (sgsr_network_light) {
         static _Atomic int noted_regular, noted_360;
         if (oot_360_network) {
