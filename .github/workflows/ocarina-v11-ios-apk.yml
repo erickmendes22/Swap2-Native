@@ -98,6 +98,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_occlusion_fast.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_dispatch_overlap.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_720p_upscale_real_gpu.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_hidden_layers.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_mesh_prewarm.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_hot_shader_overlay.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_captured_shaders.py'
@@ -219,6 +220,14 @@ jobs:
             dm/host/tests/t_android_pool_feedback.c dm/gfx/vk_android/vka_spvpatch.c \
             -o /tmp/t_android_pool_feedback
           ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_pool_feedback
+      - name: Compile and validate internal SGSR1 NDSR compute (float and packed Vulkan variants)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Rebuild the embedded NDSR SPIR-V before compiling libnxhost.
+          # Shader translator ABI and user-prepared library are unchanged.
+          python3 dm/gfx/vk_android/fsr/ndsr_spv.py
+          python3 dm/gfx/vk_android/fsr/ndsr_spv.py --check
       - name: Compile and verify SGSR1 720p shader from Qualcomm source
         shell: bash
         run: |
