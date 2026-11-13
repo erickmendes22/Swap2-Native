@@ -95,8 +95,8 @@ class ComputeOverlap(unittest.TestCase):
         self.assertIn('VKA_ENV("DM_VK_OOT_CS_RETILE", 1)', mode)
         self.assertNotIn('DM_VK_OOT_FPS_BOOST', mode)
         self.assertIn('!rt.b[0] && !dp->ind && !spill_bytes(sh[5])', mode)
-        self.assertIn('dp->x == 8 && dp->y == 9 && dp->z == 12', mode)
-        self.assertIn('maxComputeWorkGroupCount[2] >= 24', mode)
+        self.assertIn('dp->x > 0 && dp->y > 0 && dp->z > 0', mode)
+        self.assertIn('maxComputeWorkGroupCount[2] / 2u', mode)
         self.assertIn('vka_cs_pipeline_oot_retile(', mode)
         self.assertIn('if (!p) p = rt.b[0]', DRAW[end:])
 
