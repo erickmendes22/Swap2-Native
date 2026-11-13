@@ -24,6 +24,70 @@ static int put(vec_t *v, uint32_t x) {
 }
 static int put_n(vec_t *v, const uint32_t *x, size_t n) { for (size_t i = 0; i < n; i++) if (!put(v, x[i])) return 0; return 1; }
 
+// Position from two separately compiled NVN2 foliage mesh passes must
+// produce bit-identical depth for the colour pass's EQUAL depth test.
+// The Qualcomm native path used to show white spikes / black foliage;
+// add Invariant to the member holding BuiltIn Position (member decoration
+// 11, builtin 0).  Do not remove or relax ANY depth prepass: the resulting
+// depth is consumed again by fog and shadows. No shader/pack rebuild.
+uint32_t *vka_spv_mesh_position_invariant(const uint32_t *w, size_t nw,
+                                          size_t *out_nw, int *changed,
+                                          char *err, size_t errn) {
+    enum { DecBuiltin = 11, DecInvariant = 18, BuiltinPosition = 0 };
+    if (changed) *changed = 0;
+    if (out_nw) *out_nw = 0;
+    if (err && errn) err[0] = 0;
+    if (!w || !out_nw || !changed || !err || !errn ||
+        nw < 5 || w[0] != 0x07230203u) {
+        if (err && errn) snprintf(err, errn, "invalid mesh SPIR-V");
+        return NULL;
+    }
+    uint32_t sid = 0, member = 0;
+    size_t at = 0;
+    for (size_t i = 5; i < nw;) {
+        uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
+        if (!len || i + len > nw) {
+            snprintf(err, errn, "invalid SPIR-V instruction at %zu", i);
+            return NULL;
+        }
+        if (op == OpMemberDecorate && len == 5 &&
+            w[i + 3] == DecBuiltin && w[i + 4] == BuiltinPosition) {
+            if (sid && (sid != w[i + 1] || member != w[i + 2])) {
+                snprintf(err, errn, "multiple mesh Position members");
+                return NULL;
+            }
+            sid = w[i + 1]; member = w[i + 2]; at = i + len;
+        }
+        i += len;
+    }
+    if (!sid) {
+        snprintf(err, errn, "mesh Position builtin missing");
+        return NULL;
+    }
+    for (size_t i = 5; i < nw;) {
+        uint32_t len = w[i] >> 16, op = w[i] & 0xffffu;
+        if (op == OpMemberDecorate && len == 4 && w[i + 1] == sid &&
+            w[i + 2] == member && w[i + 3] == DecInvariant)
+            return NULL;   // already Invariant; the module is unchanged
+        i += len;
+    }
+    if (nw > SIZE_MAX / sizeof(uint32_t) - 4u) {
+        snprintf(err, errn, "mesh SPIR-V too large");
+        return NULL;
+    }
+    uint32_t *o = malloc((nw + 4u) * sizeof(uint32_t));
+    if (!o) { snprintf(err, errn, "out of memory"); return NULL; }
+    memcpy(o, w, at * 4u);
+    o[at] = (4u << 16) | OpMemberDecorate;
+    o[at + 1] = sid;
+    o[at + 2] = member;
+    o[at + 3] = DecInvariant;
+    memcpy(o + at + 4, w + at, (nw - at) * 4u);
+    *out_nw = nw + 4u;
+    *changed = 1;
+    return o;
+}
+
 uint32_t *vka_spv_vin_retype(const uint32_t *w, size_t nw, uint32_t umask, uint32_t smask, size_t *out_nw, char *err, size_t errn) {
 #define FAIL(...) do { snprintf(err, errn, __VA_ARGS__); goto fail; } while (0)
     uint32_t *cls = NULL; vec_t o = {0};   // cls[id]: 0 untouched, 1 a retyped input or a chain into one, as uint, 2 as int (bit 4: the id is a pointer to a vec4)
