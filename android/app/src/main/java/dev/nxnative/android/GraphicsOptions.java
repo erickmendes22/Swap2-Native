@@ -122,11 +122,12 @@ final class GraphicsOptions {
      * Existing user env.txt remains last and takes precedence. */
     static void env(Context c, String id, List<String> out) {
         int m = clamp(mode(c, id), 0, 4);
-        // SGSR scene reconstruction intentionally couples fast internal
-        // conversion to the actual SGSR1 output; do not silently leave
-        // bilinear/FSR presentation selected from an older setting.
+        // SGSR1 now replaces the game's NDSR compute itself.
+        // Keep only a cheap final display scaling pass: the game's full
+        // size NDSR result is still needed by post-processing and UI.
+        // The FSR mode keeps its prior independent output configuration.
         if (Prefs.OCARINA_TITLE.equals(id) &&
-                Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))) m = 4;
+                Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))) m = 2;
         out.add("DM_VK_PRESENT_FILTER=" + m);
         out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));
         out.add("DM_VK_FSR_SHARP=" + sharp(c, id));
@@ -157,8 +158,9 @@ final class GraphicsOptions {
             // Experimental iOS V19 0.25 chain bypass, but SGSR1 must have
             // ACTUALLY drawn a frame and the direct HDR source must validate.
             // OFF by default so existing shaders/playable graphics are safe.
-            out.add("DM_VK_OOT_SGSR_CHAIN=" +
-                    (Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id)) ? 1 : 0));
+            // The 0.25 legacy chain bypass is validated only with a final
+            // SGSR presentation, not when SGSR runs inside NDSR.
+            out.add("DM_VK_OOT_SGSR_CHAIN=0");
             // Backported from iOS: independent consecutive NVN compute dispatches
             // no longer force individual GPU barriers. Does not rebuild shaders.
             out.add("DM_VK_OOT_DISPATCH_OVERLAP=1");
