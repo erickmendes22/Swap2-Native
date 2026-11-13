@@ -44,7 +44,9 @@ static int g_vegetation_enabled = 1, native_base = 1, route_mode = 0;
 typedef struct { uint64_t key; } vka_shader;
 typedef struct prog_t { vka_shader *ts, *ms; } prog_t;
 typedef struct { const prog_t *bst[8]; } vka_dstate;
+static unsigned shader_resolves;
 static int resolve(const prog_t *p,int stage,vka_shader **out,unsigned *bad) {
+    ++shader_resolves;
     (void)bad; *out = p ? (stage == 6 ? p->ts : stage == 7 ? p->ms : NULL) : NULL;
     return 1;
 }
@@ -98,6 +100,22 @@ int main(void) {
     V.task=0; assert(vka_mesh_route(&d) == 1);     // feature fallback
     V.task=1; g_vegetation_enabled=0;
     assert(vka_mesh_route(&d) == -1);              // vegetation OFF always omits
+    // Measured Qualcomm all-compute fast path must NOT repeatedly resolve
+    // two shaders per draw merely to reselect the known compute route.
+    // Vegetation OFF still resolves them, or supplement foliage would leak.
+    route_mode = 1; g_vegetation_enabled = 1; V.memu = 1;
+    shader_resolves = 0;
+    for (unsigned i = 0; i < 10000; ++i)
+        assert(vka_mesh_route(&d) == 1);
+    assert(shader_resolves == 0);
+    route_mode = -1;   // automatic compute on a device requiring emulation
+    shader_resolves = 0;
+    for (unsigned i = 0; i < 10000; ++i)
+        assert(vka_mesh_route(&d) == 1);
+    assert(shader_resolves == 0);
+    route_mode = 0; g_vegetation_enabled = 0;
+    shader_resolves = 0;
+    assert(vka_mesh_route(&d) == -1 && shader_resolves > 0);
     route_mode=0;
     return 0;
 }
