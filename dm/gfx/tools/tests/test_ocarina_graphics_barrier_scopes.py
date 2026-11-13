@@ -138,7 +138,9 @@ class BarrierScopeTests(unittest.TestCase):
         self.assertIn('case OP_CLEAR_BUF:', EXEC)
         self.assertIn('case OP_COPY_B2B:', EXEC)
         for line in EXEC.splitlines():
-            if 'case OP_CLEAR_BUF:' in line or 'case OP_COPY_B2B:' in line:
+            # Ignore opcode->name mapping inside the mesh batch profiler:
+            # this test applies to executable NVN replay switch cases only.
+            if ('case OP_CLEAR_BUF:' in line or 'case OP_COPY_B2B:' in line) and 'return "' not in line:
                 self.assertIn('boost_transfer_barrier(g_cb)', line)
                 self.assertNotIn('vka_barrier(g_cb)', line)
 
