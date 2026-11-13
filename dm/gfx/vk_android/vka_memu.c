@@ -102,15 +102,26 @@ vka_shader *vka_memu_by_key(uint64_t key) {
     // Resolve both historical layouts to the ACTIVE producer/consumer
     // modules. Their active keys still differ, so incompatible compiled
     // pipelines are never reused; the prewarm recipe itself stays useful.
-    static const uint64_t tag[5] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
-        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL};
-    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 5; i++) {
+    // Preserve historical prewarm recipes even if the user switches the
+    // experimental task-search mode. The actual Vulkan pipeline key includes
+    // the active code tag; no incompatible cached SPIR-V is reused.
+    static const uint64_t tag[9] = {
+        VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_TASK_SHORT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_GL,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_GL
+    };
+    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 9; i++) {
         uint64_t layout = vka_memu_layout_tag() ^ (old_layout ? VKA_MEMU_KEY_COALESCED : 0);
         uint64_t k = key ^ tag[i] ^ layout;
         if (!vka_shader_lib_has(k)) continue;
         vka_shader *s = vka_shader_by_key(k); if (!s || !s->e || s->e->stage < DMSH_VK_STAGE_TS) continue;
         if (i >= 3 && s->e->stage != DMSH_VK_STAGE_MS) continue;
-        return i == 2 ? vka_memu_vs_of(s) : vka_memu_cs_of(s, i == 1 || i == 4);
+        return i == 2 ? vka_memu_vs_of(s) :
+               vka_memu_cs_of(s, i == 1 || i == 4 || i == 6 || i == 8);
     }
     return NULL;
 }
