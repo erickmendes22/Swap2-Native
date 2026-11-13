@@ -38,7 +38,7 @@ class MeshCallerLookahead(unittest.TestCase):
 #define DM_GAME_ID "0400486024DEC000"
 #define VKA_ENV(key, def) (def)
 #define NVN_PRIM_MESH 5
-enum { OP_END=0, OP_CALL=1, OP_JUMP=2, OP_DRAW=3, OP_BIND_PROGRAM=4, OP_SET_RT=5, OP_DRAW_IDX=6, OP_COUNT_=7 };
+enum { OP_END=0, OP_CALL=1, OP_JUMP=2, OP_DRAW=3, OP_BIND_PROGRAM=4, OP_SET_RT=5, OP_DRAW_IDX=6, OP_RENDER_COND=7, OP_COUNT_=8 };
 enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_END };
 typedef struct { uint32_t op, size; } op_hdr;
 typedef struct { uint32_t op, size; uint64_t arg; } record;
