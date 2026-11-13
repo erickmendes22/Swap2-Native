@@ -2187,18 +2187,18 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     const int gp_ndsr_replaced = p != VK_NULL_HANDLE;
     uint32_t ndsr_ow=ndsr_launch.width,ndsr_oh=ndsr_launch.height,ndsr_tile=ndsr_launch.tile;
     int oot_cs_retiled = 0;
-    // The hot 9e6b kernel uses an 8x9x12 direct grid and 8x4x4 local size
-    // (110,592 invocations). Try a *different* pipeline with 8x4x2 local
-    // size and 8x9x24 grid, keeping every GlobalInvocationId unchanged.
-    // Only if the SPIR-V safety scan confirms no local/group-dependent ops.
+    // The hot 9e6b kernel uses 8x4x4 local size. Its alternate 8x4x2
+    // pipeline doubles dispatch Z for any positive direct grid while
+    // preserving GlobalInvocationId and guest group/local IDs. Only the
+    // SPIR-V safety-scanned shader can use this variant.
     // Indirect, image-retyped and any other-size dispatch keeps the original.
     // The GPU profiler measured this one compute dispatch at 0.5-1.4 ms
     // even with SGSR and NDSR retile already running. Its SPIR-V patcher
     // reconstructs original local/group IDs, and refuses barriers,
     // shared/workgroup memory, atomics and escaping builtin pointers. The
-    // 8x4x4*8x9x12 -> 8x4x2*8x9x24 mapping preserves the SAME 110,592
-    // invocations, with no change to the game's library or output.
-    // Enable automatically for the EXACT known size, independent of the
+    // 8x4x4*(x,y,z) -> 8x4x2*(x,y,2z) preserves every invocation,
+    // including when the current 540p profile changes the dispatch grid.
+    // Enable for safe direct grids, independent of the
     // quality-reducing FPS Boost/VRS option. DM_VK_OOT_CS_RETILE=0 restores
     // the original pipeline. If the original shader fails the safety scan
     // or Vulkan rejects the variant, keep the original compute unmodified.
@@ -2206,12 +2206,12 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         && !strcmp(DM_GAME_ID, "0400486024DEC000")
         && VKA_ENV("DM_VK_OOT_CS_RETILE", 1)
         && !rt.b[0] && !dp->ind && !spill_bytes(sh[5])
-        && dp->x == 8 && dp->y == 9 && dp->z == 12
-        && V.props.limits.maxComputeWorkGroupCount[2] >= 24) {
+        && dp->x > 0 && dp->y > 0 && dp->z > 0
+        && (uint32_t)dp->z <= V.props.limits.maxComputeWorkGroupCount[2] / 2u) {
         p = vka_cs_pipeline_oot_retile(sh[5], &lay, &oot_cs_retiled);
         if (oot_cs_retiled) { static _Atomic int logged;
             if (!atomic_exchange(&logged, 1))
-                VLOG("Ocarina GPU profiled compute 9e6b: 8x4x4*8x9x12 -> 8x4x2*8x9x24, equal global invocations; original pipeline preserved; DM_VK_OOT_CS_RETILE=0 disables");
+                VLOG("Ocarina GPU profiled compute 9e6b: local 8x4x4 -> 8x4x2, dispatch Z doubled for safe direct grids; original IDs/pipeline preserved; DM_VK_OOT_CS_RETILE=0 disables");
         }
     }
     if (!p) p = rt.b[0] ? vka_cs_pipeline_img(sh[5], &lay, &rt) : vka_cs_pipeline(sh[5], &lay);
