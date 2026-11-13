@@ -529,7 +529,7 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
             size_t sw = strlen((const char *)(x + 3)) / 4 + 1;
             uint32_t ifc[256]; uint32_t ni = 0;
             for (size_t k = 3 + sw; k < len; k++) if (!(x[k] < m.bound && oid[x[k]]) && x[k] != wgvar && ni < 240) ifc[ni++] = x[k];
-            uint32_t add[] = {arena, recs, pc, in_wg, in_nwg, pv_a, pv_b, pv_c, new_wgvar, lidvar};
+            uint32_t add[] = {arena, recs, pc, in_wg, in_nwg, pv_a, pv_b, pv_c, pv_taskidx, new_wgvar, lidvar};
             for (size_t k = 0; k < sizeof add / 4; k++) if (add[k]) { int dup = 0; for (uint32_t j = 0; j < ni; j++) dup |= ifc[j] == add[k]; if (!dup) ifc[ni++] = add[k]; }
             uint32_t pre[2] = {EMGLCompute, emu_main};
             sb_str_ins(&O, OpEntryPoint, pre, 2, (const char *)(x + 3), ifc, ni);
