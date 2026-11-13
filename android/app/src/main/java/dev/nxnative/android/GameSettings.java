@@ -206,6 +206,21 @@ final class GameSettings {
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));
             box.addView(vegetation.view);
+            // Both switches are deliberately experimental. The heavy
+            // fragment option is a subset of Hidden layers off; users can
+            // benchmark each independently without touching shader packs.
+            Ui.Setting hiddenLayers = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Ocultar camadas (teste)", null)
+                    .toggle(a, Prefs.hiddenLayersOff(a, id),
+                            (b, on) -> Prefs.hiddenLayersOff(a, id, on));
+            hiddenLayers.value("Omite os shaders 5684f5e6 e 47eb514f. Pode faltar ceu, neblina ou objetos. Desligado por padrao; reinicie o jogo.");
+            box.addView(hiddenLayers.view);
+            Ui.Setting heavyFragment = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Descartar fragment shader pesado (teste)", null)
+                    .toggle(a, Prefs.skipHeavyFragment(a, id),
+                            (b, on) -> Prefs.skipHeavyFragment(a, id, on));
+            heavyFragment.value("Omite apenas 5684f5e658eda176. Ja incluido em Ocultar camadas; nao soma o ganho. Pode faltar imagem. Desligado por padrao; reinicie.");
+            box.addView(heavyFragment.view);
             Ui.Setting vegetationOptimization = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_vegetation_optimized), null)
                     .toggle(a, Prefs.vegetationOptimized(a, id), (b, on) -> Prefs.vegetationOptimized(a, id, on));
             vegetationOptimization.value(a.getString(R.string.s2_vegetation_optimized_note));
