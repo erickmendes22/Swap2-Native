@@ -320,6 +320,10 @@ void vka_rp_end(void) {
     int full = g_rp_force_full || had_clears || vka_nan_on();
     int pending_attachment = R.bar_pending && !full && !R.swrite;
     vka_oq_pass_end();   // an occlusion query active in the pass ends inside it
+    // The sparse 683x384 scene profiler closes its final <16-draw interval
+    // while this dynamic rendering pass is still active. It emits NO GPU
+    // commands on ordinary frames and preserves all attachment contents.
+    if (vka_gp_active) vka_gp_gfx_flush();
     vk.vkCmdEndRendering(g_cb);
     // vkCmdCopyBuffer is forbidden inside rendering. Flush any deferred
     // uniform writes after ending the pass, with a read->transfer dependency.
