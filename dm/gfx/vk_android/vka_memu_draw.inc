@@ -32,7 +32,7 @@ static void memu_write(uint32_t binding, VkBuffer b, VkDeviceSize off, VkDeviceS
 }
 static void memu_bind_arena(void) { memu_write(VKA_MEMU_ARENA_BINDING, MB.arena, 0, VK_WHOLE_SIZE); }
 // A compute form's dispatch: its stage's bindings walked with the replay state of its draw, the arena and the records, its record's index, its indirect arguments
-static void memu_dispatch(const vka_dstate *d, int st, vka_shader *cs, const vka_layout *lay, VkPipeline p, int idx, uint32_t argw) {
+static void memu_dispatch(const vka_dstate *d, int st, vka_shader *cs, const vka_layout *lay, VkPipeline p, int idx, uint32_t argw, uint64_t original_key) {
     vka_res *r = g_wk.r[5]; int pool = 0; char why[200];
     int n = vka_walk(&d->b, st, cs->e, cs->b, cs->lib->h->ssbo_align, V.sb_align, rd_cb, NULL, r, 512, &pool, why, sizeof why);
     if (n < 0) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 8) VRED("%s shader through compute %016llx: %s; skipped", st == 6 ? "task" : "mesh", (unsigned long long)cs->key, why); return; }
@@ -47,6 +47,10 @@ static void memu_dispatch(const vka_dstate *d, int st, vka_shader *cs, const vka
     vk.vkCmdPushConstants(g_cb, lay->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, VKA_MEMU_PUSH_BYTES, pc);
     vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, p);
     vk.vkCmdDispatchIndirect(g_cb, MB.rec.buf, MB.rec.off + ((VkDeviceSize)idx * VKA_MEMU_REC_WORDS + argw) * 4);
+    // The GL/depth converted shader key is XOR-tagged. Log the ORIGINAL
+    // NVN2 library source key so the precise GPU hotspot maps to its
+    // captured .ctl/.code without ever changing shader compilation.
+    if (vka_gp_active) vka_gp_mesh_shader(g_cb, st == 6, original_key);
 }
 // A helper pass over the batch's records (setup: one invocation each; distribution: one workgroup each)
 static void memu_helper(int dist) {
@@ -115,7 +119,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
     if (MB.live <= 0 || !MB.o.n) return;
     switch (phase) {
     case MEMU_SETUP: vka_barrier(g_cb); memu_helper(0); memu_phase_barrier(); break;
-    case MEMU_TASK: if (idx < MB.o.n && MB.e[idx].ok && MB.e[idx].tcs) memu_dispatch(d, 6, MB.e[idx].tcs, &MB.e[idx].tl, MB.e[idx].tp, idx, VKA_MEMU_R_TASK_X); break;
+    case MEMU_TASK: if (idx < MB.o.n && MB.e[idx].ok && MB.e[idx].tcs) memu_dispatch(d, 6, MB.e[idx].tcs, &MB.e[idx].tl, MB.e[idx].tp, idx, VKA_MEMU_R_TASK_X, MB.e[idx].ts ? MB.e[idx].ts->key : 0); break;
     case MEMU_DIST:
         // The setup shader already calls place(R, count) for taskless mesh
         // draws; distribution returns immediately for these records. With
@@ -129,7 +133,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
                      (unsigned long long)bypassed);
         }
         break;
-    case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X); break;
+    case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X, MB.e[idx].ms ? MB.e[idx].ms->key : 0); break;
     case MEMU_END: memu_phase_barrier(); vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
     }
 }
