@@ -466,11 +466,13 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
             // and all addresses/indices unchanged: just remove 3 redundant
             // OpBitcast instructions per vec4 (2 per vec3).
             // No per-fragment, per-primitive, precision or ABI changes.
-            // DM_VK_MEMU_VEC_BITCAST=0 restores original bytecode for A/B.
+            // Previous Build117 worsened frame time: ORIGINAL per-component bytecode
+            // is restored by default. DM_VK_MEMU_VEC_BITCAST=1 explicitly
+            // enables the experimental vector form for controlled A/B only.
             uint32_t uv = 0;
             const char *fast_vec_env = getenv("DM_VK_MEMU_VEC_BITCAST");
             if (nc > 1 && (sk == 'f' || sk == 'i') &&
-                (!fast_vec_env || strcmp(fast_vec_env, "0"))) {
+                (fast_vec_env && !strcmp(fast_vec_env, "1"))) {
                 uint32_t uv_type = ty(&B, OpTypeVector, B.t_u32, nc, 0, 2);
                 uv = op1(&f, OpBitcast, uv_type, x[2]);
             }
