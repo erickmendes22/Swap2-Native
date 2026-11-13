@@ -10,7 +10,7 @@
 #include <string.h>
 
 enum { NQ = 2048, DESC = 256, SHADERS = 64 };
-typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint8_t mesh_stage; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
+typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint64_t gfx_key; uint8_t mesh_stage, gfx_block, gfx_draws, gfx_top; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
 static gp_mark g_m[NQ]; static int g_n;
 static VkQueryPool g_qp; static int g_ok = -1; static double g_tick_ns;
 static PFN_vkCmdWriteTimestamp g_write; static PFN_vkCmdResetQueryPool g_reset; static PFN_vkGetQueryPoolResults g_get;
@@ -26,6 +26,37 @@ static uint64_t g_first_vs, g_first_mesh, g_first_task;
 static uint32_t g_first_units, g_first_instances, g_first_indirect;
 static char g_compute[DESC];
 static int g_compute_new;
+// Timestamp 16 consecutive graphics draws inside the pass, on sampled frames
+// ONLY, without changing resolution, blending, depth, shader, attachments or
+// the normal draw sequence. The old GPU profiler knew only pass totals and
+// could not distinguish a costly fragment shader from attachment load/store.
+// Only the 683x384 scene passes are sampled; no extra GPU commands on 299/300
+// frames. Attribution to a key requires >=12 of 16 draws using it.
+enum { GFX_CHUNK = 16 };
+static uint64_t g_gfx_keys[GFX_CHUNK];
+static unsigned g_gfx_n;
+static int g_gfx_enabled;
+static void mark(VkCommandBuffer cb, int kind, const char *file, int line);
+static void gfx_chunk_flush(void) {
+    if (!g_gfx_enabled || !g_gfx_n || !vka_gp_active || !g_cb || g_n >= NQ - 16) {
+        g_gfx_n = 0;
+        return;
+    }
+    uint64_t top = 0; unsigned best = 0;
+    for (unsigned i = 0; i < g_gfx_n; i++) {
+        unsigned n = 0;
+        for (unsigned j = 0; j < g_gfx_n; j++) n += g_gfx_keys[j] == g_gfx_keys[i];
+        if (n > best) { best = n; top = g_gfx_keys[i]; }
+    }
+    mark(g_cb, 0, "GFX_CHUNK", 0);
+    gp_mark *m = &g_m[g_n - 1];
+    m->gfx_block = 1; m->gfx_key = top; m->gfx_draws = (uint8_t)g_gfx_n;
+    m->gfx_top = (uint8_t)best;
+    snprintf(m->desc, sizeof m->desc, "gfx chunk %u draws topfs=%016llx:%u",
+             g_gfx_n, (unsigned long long)top, best);
+    g_gfx_n = 0;
+}
+void vka_gp_gfx_flush(void) { if (vka_gp_active) gfx_chunk_flush(); }
 
 void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh, uint64_t task,
                  uint32_t units, uint32_t instances, int indirect) {
@@ -35,6 +66,10 @@ void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh, uint64_t tas
         g_first_units = units; g_first_instances = instances; g_first_indirect = indirect != 0;
     }
     g_pass_draws++;
+    if (g_gfx_enabled && vka_gp_active && g_gfx_n < GFX_CHUNK) {
+        g_gfx_keys[g_gfx_n++] = fragment;
+        if (g_gfx_n == GFX_CHUNK) gfx_chunk_flush();
+    }
     for (int i = 0; i < g_nfs; i++) if (g_fs[i].key == fragment) { g_fs[i].count++; return; }
     if (g_nfs < SHADERS) { g_fs[g_nfs].key = fragment; g_fs[g_nfs++].count = 1; }
     else g_fs_over++;
@@ -62,10 +97,16 @@ static int init(void) {
 static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
     if (g_n >= NQ) return;
     gp_mark *m = &g_m[g_n]; m->file = file; m->line = line; m->kind = kind;
-    m->mesh_key = 0; m->mesh_stage = 0; // profiler ring is reused on later sampled frames
+    m->mesh_key = 0; m->mesh_stage = 0;
+    m->gfx_key = 0; m->gfx_block = m->gfx_draws = m->gfx_top = 0;
+    // profiler query slots are reused on later sampled frames
     uint64_t sk, di, pi; vka_draw_stats(&m->draws, &sk, &di, &pi); (void)sk; (void)di; (void)pi;
     extern uint64_t vka_n_rp; m->passes = vka_n_rp; uint64_t subs, rec; vka_exec_counts(&m->ops, &subs, &rec);
-    if (g_pass_new) {
+    if (file && !strcmp(file, "GFX_CHUNK")) {
+        // Leave g_pass_new and the complete fragment histogram untouched:
+        // the final pass-end timestamp still describes the ENTIRE pass.
+        m->desc[0] = 0;
+    } else if (g_pass_new) {
         snprintf(m->desc, DESC, "%s", g_pass);
         size_t used = strlen(m->desc);
         if (g_pass_draws && used < DESC) {
@@ -109,7 +150,18 @@ void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key) {
     m->mesh_key = key;
     m->mesh_stage = task ? 1 : 2;
 }
-void vka_gp_pass(const char *desc) { if (vka_gp_active) { snprintf(g_pass, DESC, "%s", desc); g_pass_new = 1; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0; } }
+void vka_gp_pass(const char *desc) {
+    if (vka_gp_active) {
+        // A draw may be outside the chosen scene pass: never carry its
+        // timestamp group into the next render target.
+        g_gfx_n = 0;
+        g_gfx_enabled = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+            VKA_ENV("DM_VK_OOT_GFX_CHUNKS", 1) &&
+            !strncmp(desc, "683x384x1", sizeof("683x384x1") - 1);
+        snprintf(g_pass, DESC, "%s", desc);
+        g_pass_new = 1; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
+    }
+}
 void vka_gp_part(VkCommandBuffer cb) { if (!vka_gp_active) return; g_cb = cb; mark(cb, 2, "part", 0); }
 
 typedef struct { int i; double ms; } step;
@@ -122,7 +174,10 @@ static void report(void) {
         if (g_m[i].kind == 1 || g_m[i].kind == 2) continue;   // the gap before a submission or part: the GPU waited for recording
         double ms = t[i] > t[i - 1] ? (t[i] - t[i - 1]) * g_tick_ns / 1e6 : 0;
         tot += ms; s[ns++] = (step){i, ms};
-        if (g_m[i].passes > g_m[i - 1].passes) { pass += ms; npass++; } else if (!strncmp(g_m[i].desc, "compute ", 8)) { compute += ms; ncompute++; } else if (g_m[i].ops > g_m[i - 1].ops || g_m[i].draws > g_m[i - 1].draws) xfer += ms; else bare += ms;
+        if (g_m[i].gfx_block || g_m[i].passes > g_m[i - 1].passes) {
+            pass += ms;
+            if (g_m[i].passes > g_m[i - 1].passes) npass++;
+        } else if (!strncmp(g_m[i].desc, "compute ", 8)) { compute += ms; ncompute++; } else if (g_m[i].ops > g_m[i - 1].ops || g_m[i].draws > g_m[i - 1].draws) xfer += ms; else bare += ms;
         if (g_m[i - 1].kind == 1) first += ms;
     }
     VLOG("gpu prof: frame %llu: %d timestamps, %.2f ms GPU: passes %.2f ms (%d), clears / copies / dispatches %.2f ms, steps with nothing recorded (barriers, uploads, writebacks) %.2f ms",
@@ -197,6 +252,47 @@ static void report(void) {
              (unsigned long long)g_frame, hot[best].task ? "task" : "mesh",
              (unsigned long long)hot[best].key, hot[best].ms, hot[best].n);
     }
+    // Source-key estimate for the big scene passes. A mixed block is NOT
+    // assigned to a shader; unknown GPU work is kept visible instead of
+    // falsely treating all of the pass's time as fragment instruction cost.
+    struct { uint64_t key; double ms; unsigned groups, draws; } gh[64] = {0};
+    unsigned ngh = 0; double mixed_ms = 0, sampled_ms = 0;
+    unsigned groups = 0, mixed_groups = 0;
+    for (int i = 0; i < ns; i++) {
+        const gp_mark *m = &g_m[s[i].i];
+        if (!m->gfx_block) continue;
+        groups++; sampled_ms += s[i].ms;
+        if (m->gfx_top * 4 < m->gfx_draws * 3) {
+            mixed_ms += s[i].ms; mixed_groups++;
+            continue;
+        }
+        unsigned j = 0;
+        while (j < ngh && gh[j].key != m->gfx_key) j++;
+        if (j == ngh) {
+            if (ngh == sizeof(gh) / sizeof(gh[0])) {
+                mixed_ms += s[i].ms; mixed_groups++; continue;
+            }
+            gh[j].key = m->gfx_key; ngh++;
+        }
+        gh[j].ms += s[i].ms;
+        gh[j].groups++;
+        gh[j].draws += m->gfx_top;
+    }
+    if (groups) {
+        VLOG("gpu prof scene chunks: frame %llu %u groups %.3fms, mixed %u groups %.3fms; blocks measure graphics time including VS/depth/ROP, NOT fragment shader-only time",
+             (unsigned long long)g_frame, groups, sampled_ms, mixed_groups, mixed_ms);
+        unsigned char chosen[64] = {0};
+        for (unsigned rank = 0; rank < ngh && rank < 12; rank++) {
+            int best = -1;
+            for (unsigned k = 0; k < ngh; k++)
+                if (!chosen[k] && (best < 0 || gh[k].ms > gh[best].ms)) best = (int)k;
+            if (best < 0) break;
+            chosen[best] = 1;
+            VLOG("gpu prof scene chunk key: frame %llu fs %016llx %.3fms across %u dominated blocks (%u matching draws); includes fixed graphics stages",
+                 (unsigned long long)g_frame, (unsigned long long)gh[best].key,
+                 gh[best].ms, gh[best].groups, gh[best].draws);
+        }
+    }
     if (VKA_ENV("DM_VK_GPUPROF_LIST", 0))   // every step in order
         for (int k = 0; k < ns; k++) { const gp_mark *a = &g_m[s[k].i - 1], *b = &g_m[s[k].i];
             VLOG("gpu prof: step #%d %.3f ms: %s:%d, %llu draws, %llu ops%s%s", s[k].i, s[k].ms, b->file, b->line, (unsigned long long)(b->draws - a->draws),
@@ -233,6 +329,7 @@ void vka_gp_sub_begin(VkCommandBuffer cb, uint64_t frame) {
             VKA_ENV("DM_VK_VEGETATION", 1) ? 300 : 0);
         if (every <= 0 || frame == g_frame || (g_last_frame && frame < g_last_frame + (uint64_t)every) || !init()) return;
         g_state = 1; g_frame = g_last_frame = frame; g_n = 0; vka_gp_active = 1; g_pass_new = 0; g_compute_new = 0; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
+        g_gfx_n = 0; g_gfx_enabled = 0;
         g_reset(cb, g_qp, 0, NQ);
     }
     if (g_state == 1) { g_cb = cb; mark(cb, 1, "submission", 0); }
