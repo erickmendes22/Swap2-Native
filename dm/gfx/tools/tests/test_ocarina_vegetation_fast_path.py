@@ -77,7 +77,9 @@ class VegetationGpuFastPath(unittest.TestCase):
         self.assertIn('VKA_MEMU_F_TASK', dist)
         self.assertIn('return;', dist)
         self.assertIn('MB.task_draws = 0', batch)
-        self.assertIn('if (E->tcs) MB.task_draws++', batch)
+        self.assertIn('if (E->tcs) {', batch)
+        self.assertIn('MB.task_draws++;', batch)
+        self.assertIn('vka_memu_task_small++', batch)
         self.assertIn('if (MB.task_draws)', batch)
 
 
