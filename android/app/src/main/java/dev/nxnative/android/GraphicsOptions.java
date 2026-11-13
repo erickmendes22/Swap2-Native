@@ -122,12 +122,14 @@ final class GraphicsOptions {
      * Existing user env.txt remains last and takes precedence. */
     static void env(Context c, String id, List<String> out) {
         int m = clamp(mode(c, id), 0, 4);
-        // SGSR1 now replaces the game's NDSR compute itself.
-        // Keep only a cheap final display scaling pass: the game's full
-        // size NDSR result is still needed by post-processing and UI.
-        // The FSR mode keeps its prior independent output configuration.
+        // A/B: the old 720p SGSR output route remains the default for
+        // already-saved SGSR preferences. Only the explicit SGSR compute
+        // choice reconstructs at the network's real output dimensions,
+        // keeping a cheap final display scale. No silent migration.
         if (Prefs.OCARINA_TITLE.equals(id) &&
-                Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))) m = 2;
+                Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))) m = 4;
+        if (Prefs.OCARINA_TITLE.equals(id) &&
+                Prefs.NDSR_SGSR_COMPUTE.equals(Prefs.ndsr(c, id))) m = 2;
         out.add("DM_VK_PRESENT_FILTER=" + m);
         out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));
         out.add("DM_VK_FSR_SHARP=" + sharp(c, id));
@@ -160,7 +162,8 @@ final class GraphicsOptions {
             // OFF by default so existing shaders/playable graphics are safe.
             // The 0.25 legacy chain bypass is validated only with a final
             // SGSR presentation, not when SGSR runs inside NDSR.
-            out.add("DM_VK_OOT_SGSR_CHAIN=0");
+            out.add("DM_VK_OOT_SGSR_CHAIN=" +
+                    (Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id)) ? 1 : 0));
             // Backported from iOS: independent consecutive NVN compute dispatches
             // no longer force individual GPU barriers. Does not rebuild shaders.
             out.add("DM_VK_OOT_DISPATCH_OVERLAP=1");
@@ -210,7 +213,11 @@ final class GraphicsOptions {
     static String modeLabel(Context c, String id) {
         return Prefs.OCARINA_TITLE.equals(id) &&
                 Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))
-            ? "SGSR 1 (reconstrução da cena + saída)" : label(MODES, mode(c, id));
+            ? "SGSR 1 anterior (saída 720p)"
+            : Prefs.OCARINA_TITLE.equals(id) &&
+                Prefs.NDSR_SGSR_COMPUTE.equals(Prefs.ndsr(c, id))
+              ? "SGSR 1 interno (NDSR completo; saída bilinear)"
+              : label(MODES, mode(c, id));
     }
     static int vrsVisibleIndex(int storedMode) {
         int mode = clamp(storedMode, 0, 5);
