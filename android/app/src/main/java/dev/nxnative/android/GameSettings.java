@@ -192,7 +192,7 @@ final class GameSettings {
             box.addView(fixed.view);
         } else box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_frame_cap), v -> cap(a, g, again)).value(a.getString(R.string.s2_frame_cap_note))
                 .override(a, Prefs.ownFpsCap(a, id), MainActivity.capLabel(Prefs.fpsCap(a, id))).chevron(a).view);
-        if (prof != null && prof.hasNdsr()) {   // only where agl's NDSR networks are in the game's shaders (Profile.ndsrEnv)
+        if (prof != null && prof.hasNdsr() && !Prefs.OCARINA_TITLE.equals(id)) { // Ocarina reconstruction is fixed per profile
             String choice = Prefs.ndsr(a, id);
             String cur = Prefs.NDSR_SGSR_COMPUTE.equals(choice) ? "SGSR 1 · NDSR interno (teste)"
                     : Prefs.NDSR_SGSR.equals(choice) ? "SGSR 1 · saída 720p (anterior)"
@@ -202,10 +202,12 @@ final class GameSettings {
         }
         // The 0.1.2 output controls are independent of the game's shader library:
         // nearest/bilinear/FSR scale the final image, not the GMEM shaders.
-        box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Filtro da tela (não reduz render)", v -> GraphicsOptions.choice(a, id, "present_filter", again))
-                .value(GraphicsOptions.modeLabel(a, id)).chevron(a).view);
-        box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Nitidez FSR (saída)", v -> GraphicsOptions.choice(a, id, "fsr_sharp", again))
-                .value(GraphicsOptions.sharpLabel(GraphicsOptions.sharp(a, id))).chevron(a).view);
+        if (!Prefs.OCARINA_TITLE.equals(id))
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Filtro da tela (não reduz render)", v -> GraphicsOptions.choice(a, id, "present_filter", again))
+                    .value(GraphicsOptions.modeLabel(a, id)).chevron(a).view);
+        if (!Prefs.OCARINA_TITLE.equals(id) || Prefs.renderProfile(a, id) != 3)
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Nitidez FSR (saída)", v -> GraphicsOptions.choice(a, id, "fsr_sharp", again))
+                    .value(GraphicsOptions.sharpLabel(GraphicsOptions.sharp(a, id))).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_display, "Proporção da tela", v -> GraphicsOptions.choice(a, id, "picture_stretch", again))
                 .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
@@ -215,16 +217,6 @@ final class GameSettings {
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));
             box.addView(vegetation.view);
-            String[] meshNames = {
-                "Automático (compute no Qualcomm)",
-                "Híbrido anterior",
-                "Compute integral",
-                "Mesh nativo (renderização incorreta)"
-            };
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Execução da vegetação (GPU)", v -> meshRouteDialog(a, g, again))
-                    .value(meshNames[Prefs.ocarinaMeshRoute(a, id) + 1] +
-                           " · reinicie o jogo").chevron(a).view);
             // Both switches are deliberately experimental. The heavy
             // fragment option is a subset of Hidden layers off; users can
             // benchmark each independently without touching shader packs.
@@ -234,12 +226,6 @@ final class GameSettings {
                             (b, on) -> Prefs.hiddenLayersOff(a, id, on));
             hiddenLayers.value("Omite os shaders 5684f5e6 e 47eb514f. Pode faltar ceu, neblina ou objetos. Desligado por padrao; reinicie o jogo.");
             box.addView(hiddenLayers.view);
-            Ui.Setting heavyFragment = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Descartar fragment shader pesado (teste)", null)
-                    .toggle(a, Prefs.skipHeavyFragment(a, id),
-                            (b, on) -> Prefs.skipHeavyFragment(a, id, on));
-            heavyFragment.value("Omite apenas 5684f5e658eda176. Ja incluido em Ocultar camadas; nao soma o ganho. Pode faltar imagem. Desligado por padrao; reinicie.");
-            box.addView(heavyFragment.view);
             Ui.Setting vegetationOptimization = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_vegetation_optimized), null)
                     .toggle(a, Prefs.vegetationOptimized(a, id), (b, on) -> Prefs.vegetationOptimized(a, id, on));
             vegetationOptimization.value(a.getString(R.string.s2_vegetation_optimized_note));
@@ -740,30 +726,6 @@ final class GameSettings {
     }
 
     /** Upscaler: the game's NDSR network or FSR 1 in its place (Prefs.ndsr, the profile's ndsr_default without a choice; the host's lines at the next start, Profile.ndsrEnv) */
-    /** Ocarina-only mesh route experiment: do not change a running Vulkan device. */
-    private static void meshRouteDialog(MainActivity a, Game g, Runnable done) {
-        if (!Prefs.OCARINA_TITLE.equals(g.titleId)) return;
-        String[] names = {
-            "Automático (Qualcomm: compute integral, outros: caminho compatível)",
-            "Híbrido anterior (comparação; mais lento no Adreno 840)",
-            "Compute integral (melhor FPS medido; vegetação completa)",
-            "Mesh nativo (quebrado no Qualcomm 891.14; somente diagnóstico)"
-        };
-        int selected = Prefs.ocarinaMeshRoute(a, g.titleId) + 1;
-        new AlertDialog.Builder(a)
-            .setTitle("Execução da vegetação · " + g.name)
-            // Android AlertDialog does NOT display list items when a message
-            // is also assigned: AlertController chooses the message view
-            // instead of the list. Keep this dialog list-only.
-            .setSingleChoiceItems(names, selected, (dialog, which) -> {
-                Prefs.ocarinaMeshRoute(a, g.titleId, which - 1);
-                dialog.dismiss();
-                done.run();
-            })
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
-    }
-
     private static void upscaler(MainActivity a, Game g, Runnable done) {
         // A/B requires the old 720p presentation route to stay available:
         // full internal SGSR1 currently works at the game's 2048x1152 NDSR
@@ -856,7 +818,8 @@ final class GameSettings {
     }
     private static String[] renderProfileNames(MainActivity a) {
         return new String[]{a.getString(R.string.s2_oot_render_profile_current),
-            a.getString(R.string.s2_oot_render_profile_360),a.getString(R.string.s2_oot_render_profile_540)};
+            a.getString(R.string.s2_oot_render_profile_360),a.getString(R.string.s2_oot_render_profile_540),
+            a.getString(R.string.s2_oot_render_profile_720_direct)};
     }
     private static void renderProfile(MainActivity a, Game g, Runnable done) {
         Profile prof=Profile.of(g.titleId);if(prof==null || !prof.hasScene())return;
