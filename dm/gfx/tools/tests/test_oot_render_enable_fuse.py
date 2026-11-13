@@ -18,7 +18,7 @@ SRC = (ROOT / "dm/gfx/vk_android/vka_exec.c").read_text()
 
 
 def body(source, name):
-    m = re.search(r"\\b" + re.escape(name) + r"\\s*\\([^;]*?\\)\\s*\\{", source, re.S)
+    m = re.search(r"\b" + re.escape(name) + r"\s*\([^;]*?\)\s*\{", source, re.S)
     assert m, name
     depth = 1
     for i in range(m.end(), len(source)):
