@@ -55,7 +55,7 @@ typedef struct {VkBuffer buf; uint8_t *ptr; VkDeviceSize off;} vka_span;
 static struct {uint64_t fence;uint32_t n;int busy;} g_pfb_r[PFB_RING];
 static pthread_mutex_t g_tmu = PTHREAD_MUTEX_INITIALIZER;
 static _Atomic int g_pfb=1, g_pfb_any=0;
-static int g_pfb_direct_cur=-1, g_pfb_direct_on=1;
+static int g_pfb_direct_cur=-1, g_pfb_direct_on=1, g_pfb_direct_cleared=0;
 static uint64_t g_pfb_direct_zeros, g_pfb_direct_full, g_pfb_direct_subs;
 static uint64_t g_pfb_skip;
 static uint32_t g_ntreg=4096;
@@ -82,7 +82,7 @@ static struct {
     void (*vkCmdCopyBuffer)(VkCommandBuffer,VkBuffer,VkBuffer,uint32_t,const VkBufferCopy*);
     void (*vkCmdFillBuffer)(VkCommandBuffer,VkBuffer,uint64_t,uint64_t,uint32_t);
 } vk={mock_bar,mock_copy,mock_fill};
-""" + function("vka_tex_pfb_begin") + "\n" + function("vka_tex_pfb_commit") + r"""
+""" + function("vka_tex_pfb_draw") + "\n" + function("vka_tex_pfb_begin") + "\n" + function("vka_tex_pfb_commit") + r"""
 static void bit(uint8_t *p,int id) {((uint32_t*)p)[id/32] |= 1u<<(id%32);}
 static int got(const uint8_t *p,int id){return !!(((const uint32_t*)p)[id/32]&(1u<<(id%32)));}
 static int used[4096];
@@ -99,8 +99,13 @@ int main(void){
     for(int i=0;i<PFB_RING;i++){
         vka_tex_pfb_begin(); assert(g_pfb_direct_cur==i);
         uint8_t *p=ring+i*PFB_BYTES; int id=33+i*47;
+        // Reservation alone must not clear 128KiB of host memory.
+        assert(g_pfb_direct_zeros==(uint64_t)i);
+        vka_tex_pfb_draw(); // clears once BEFORE this first GPU write
         assert(!got(p,id)); bit(p,id);bit(p,id);bit(p,1023);
-        atomic_store(&g_pfb_any,1);vka_tex_pfb_commit(1,100+i);
+        vka_tex_pfb_draw(); // second draw must not clear earlier IDs
+        assert(g_pfb_direct_zeros==(uint64_t)i+1);
+        vka_tex_pfb_commit(1,100+i);
         assert(g_pfb_direct_cur==-1 && g_pfb_r[i].busy);
         assert(g_pfb_r[i].fence==100u+i);
         assert(!nbar && !ncopy && !nfill);
@@ -108,12 +113,14 @@ int main(void){
     assert(!consume(99));assert(consume(100)==2);
     assert(used[33]==1 && used[1023]==1);
     vka_tex_pfb_begin(); assert(g_pfb_direct_cur==0);
+    vka_tex_pfb_draw();
     assert(!got(ring,33) && !got(ring,1023));
-    bit(ring,2047);atomic_store(&g_pfb_any,1);
+    bit(ring,2047);
     vka_tex_pfb_commit(1,200);
     vka_tex_pfb_begin();assert(g_pfb_direct_cur==-1);
     assert(g_pfb_direct_full==1);
-    bit(bitmap,2201);bit(bitmap,17);atomic_store(&g_pfb_any,1);
+    vka_tex_pfb_draw();
+    bit(bitmap,2201);bit(bitmap,17);
     vka_tex_pfb_commit(1,201);
     assert(g_pfb_skip==1 && atomic_load(&g_pfb_any)==1);
     assert(!nbar && !ncopy && !nfill);
@@ -126,7 +133,9 @@ int main(void){
     assert(used[17]==1 && used[2201]==1 && used[2047]==1);
     assert(used[33]==1 && used[80]==1);
     vka_tex_pfb_begin();assert(g_pfb_direct_cur>=0);
+    assert(g_pfb_direct_zeros==9); // no write => no CPU slot clearing
     int k=g_pfb_direct_cur;vka_tex_pfb_commit(1,300);
+    assert(g_pfb_direct_zeros==9);
     assert(!g_pfb_r[k].busy);
     assert(ncopy==1 && nfill==1 && nbar==3);
     assert(g_pfb_direct_subs==9);
@@ -151,7 +160,9 @@ int main(void){
         self.assertIn("g_pfb_direct_cur >= 0 ? g_pfb_direct_set[g_pfb_direct_cur] : g_pfb_set;", TEX)
         self.assertIn("g_pfb_r[slot].fence = UINT64_MAX;", TEX)
         self.assertIn("g_pfb_r[slot].fence = fence;", TEX)
-        self.assertIn("memset(g_pfb_ring.ptr + (size_t)slot * PFB_BYTES, 0, PFB_BYTES);", TEX)
+        self.assertIn("memset(g_pfb_ring.ptr + (size_t)g_pfb_direct_cur * PFB_BYTES, 0, PFB_BYTES);", TEX)
+        self.assertIn("if (g_pfb_direct_cur >= 0 && !g_pfb_direct_cleared)", TEX)
+        self.assertLess(TEX.index("void vka_tex_pfb_draw(void)"), TEX.index("void vka_tex_pfb_begin(void)"))
         self.assertIn("if (!g_pfb_r[k].busy || g_pfb_r[k].fence > done) continue;", TEX)
         a = EXEC.index("vka_tex_prepare(g_cb);")
         b = EXEC.index("vka_tex_pfb_begin();", a)
