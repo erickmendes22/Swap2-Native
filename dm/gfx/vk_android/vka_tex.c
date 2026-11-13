@@ -2165,7 +2165,7 @@ static VkDescriptorSetLayout g_pfb_dsl; static VkDescriptorPool g_pfb_dpool; sta
 // each host-visible ring slot. Never update a descriptor after it was bound
 // by an in-flight command buffer (especially important on Adreno).
 static VkDescriptorSet g_pfb_direct_set[PFB_RING];
-static int g_pfb_direct_on, g_pfb_direct_cur = -1;
+static int g_pfb_direct_on, g_pfb_direct_cur = -1, g_pfb_direct_cleared;
 static uint64_t g_pfb_direct_subs, g_pfb_direct_full, g_pfb_direct_zeros;
 static struct { uint64_t fence; uint32_t n; int busy; } g_pfb_r[PFB_RING];   // (under g_tmu)
 static _Atomic int g_pfb_any;   // the submission being recorded has a draw or dispatch that reads the pool
@@ -2254,15 +2254,29 @@ unsigned vka_tex_pfb_flags(void) {
     if (!pfb_avail()) return 0;
     return (V.vstores ? VKA_PFB_VTX_STORES : 0u) | (VKA_ENV("DM_VK_POOL_FB_EARLY", 1) ? VKA_PFB_EARLY : 0u);
 }
-void vka_tex_pfb_draw(void) { if (atomic_load_explicit(&g_pfb, memory_order_relaxed) > 0) atomic_store_explicit(&g_pfb_any, 1, memory_order_relaxed); }
+void vka_tex_pfb_draw(void) {
+    if (atomic_load_explicit(&g_pfb, memory_order_relaxed) <= 0) return;
+    // Called by sets_push BEFORE binding the fixed feedback descriptor.
+    // Most submissions do not use the pool: clear the 128 KiB host slot
+    // only on the FIRST actual pool-reading draw, not every reservation.
+    // No shader can write this slot earlier in this submission.
+    if (g_pfb_direct_cur >= 0 && !g_pfb_direct_cleared) {
+        memset(g_pfb_ring.ptr + (size_t)g_pfb_direct_cur * PFB_BYTES, 0, PFB_BYTES);
+        g_pfb_direct_cleared = 1;
+        g_pfb_direct_zeros++;
+    }
+    atomic_store_explicit(&g_pfb_any, 1, memory_order_relaxed);
+}
 // Called AFTER vka_tex_prepare consumed all completed readbacks, BEFORE
 // command recording binds its first pool-using shader. One slot belongs
 // exclusively to this submission. The previous GPU fence must have completed
-// before the CPU can clear/reuse it. The buffer allocation is HOST_COHERENT;
-// the later vkQueueSubmit makes these preceding host writes visible to GPU.
+// before the CPU can clear/reuse it on the first pool draw. The buffer
+// allocation is HOST_COHERENT; vkQueueSubmit makes these earlier writes
+// visible to GPU.
 // All fragmented command buffers of this submission use the SAME slot.
 void vka_tex_pfb_begin(void) {
     g_pfb_direct_cur = -1;
+    g_pfb_direct_cleared = 0;
     if (!g_pfb_direct_on || atomic_load(&g_pfb) <= 0 ||
         atomic_load_explicit(&g_pfb_any, memory_order_relaxed)) return;
     pthread_mutex_lock(&g_tmu);
@@ -2274,9 +2288,9 @@ void vka_tex_pfb_begin(void) {
         g_pfb_r[slot].busy = 1;
         g_pfb_r[slot].fence = UINT64_MAX;
         g_pfb_r[slot].n = 0;
-        memset(g_pfb_ring.ptr + (size_t)slot * PFB_BYTES, 0, PFB_BYTES);
+        // Do not touch the host buffer yet. The first pool-reading draw
+        // clears it immediately before binding its immutable descriptor.
         g_pfb_direct_cur = slot;
-        g_pfb_direct_zeros++;
     } else g_pfb_direct_full++;
     pthread_mutex_unlock(&g_tmu);
 }
