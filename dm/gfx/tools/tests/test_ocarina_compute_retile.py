@@ -99,9 +99,11 @@ class RetileTests(unittest.TestCase):
                 self.assertEqual(ok, 0)
                 self.assertEqual(after, raw)
 
-    def test_original_indirect_and_other_sizes_kept(self):
+    def test_indirect_and_unsafe_sizes_keep_original(self):
         self.assertIn("!rt.b[0] && !dp->ind && !spill_bytes(sh[5])", DRAW)
-        self.assertIn("dp->x == 8 && dp->y == 9 && dp->z == 12", DRAW)
+        self.assertIn("dp->x > 0 && dp->y > 0 && dp->z > 0", DRAW)
+        self.assertIn("maxComputeWorkGroupCount[2] / 2u", DRAW)
+        self.assertNotIn("dp->x == 8 && dp->y == 9 && dp->z == 12", DRAW)
         self.assertIn("vka_cs_pipeline_oot_retile(sh[5], &lay, &oot_cs_retiled)", DRAW)
         self.assertIn("(oot_cs_retiled ? 2u : 1u)", DRAW)
         self.assertIn("if (!p) p = rt.b[0] ?", DRAW)
