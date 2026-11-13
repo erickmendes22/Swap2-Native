@@ -1620,7 +1620,11 @@ static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
 // option skips A only. If both are on, A is still skipped just once.
 // NEVER enable by default: some scenes may need the shader's depth/colour.
 static int oot_skip_hidden_fs(const vka_shader *fs) {
-    if (!fs || strcmp(DM_GAME_ID, "0400486024DEC000")) return 0;
+    // The common case must do no getenv or title lookup: almost all
+    // of Ocarina's many thousands of draws use other fragment programs.
+    if (!fs || (fs->key != VKA_OOT_FS_HEAVY &&
+                fs->key != VKA_OOT_FS_LAYER2) ||
+        strcmp(DM_GAME_ID, "0400486024DEC000")) return 0;
     int layers = VKA_ENV("DM_VK_OOT_HIDDEN_LAYERS", 0) != 0;
     int heavy = VKA_ENV("DM_VK_OOT_SKIP_HEAVY_FS", 0) != 0;
     if (!vka_oot_skip_fs_key(fs->key, layers, heavy)) return 0;
