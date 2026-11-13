@@ -303,6 +303,7 @@ VkDescriptorSetLayout vka_pfb_layout(void);   // the bitmap's set layout (set VK
 VkDescriptorSet vka_pfb_set(void);            // the bitmap's set, bound with the pool's set (vka_draw.c sets_push)
 unsigned vka_tex_pfb_flags(void);              // 0: off; else the VKA_PFB_* flags of vka_spv_pool_fb for every module made (vka_shader.c's vkCreateShaderModule hook)
 void vka_tex_pfb_draw(void);                   // the draw or dispatch being recorded reads the pool (vka_draw.c): this submission copies the bitmap out
+void vka_tex_pfb_begin(void);                  // experimental direct ring: reserve and zero a fence-released readback slot BEFORE the next pool draw
 void vka_tex_pfb_commit(VkCommandBuffer cb, uint64_t fence);   // the submission's end (vka_exec.c): the bitmap copied to a host slot and cleared
 VkImageView vka_view(vka_img *im, VkFormat fmt, VkImageViewType type, VkImageAspectFlags aspect, uint32_t level, uint32_t nlevels, uint32_t layer, uint32_t nlayers, const VkComponentMapping *swz);
 void vka_tex_prepare(VkCommandBuffer cb);           // at submit begin: dirty CPU textures re-uploaded, registered descriptors written
