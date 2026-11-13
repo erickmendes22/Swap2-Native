@@ -287,23 +287,25 @@ static int init_once(void) {
     if (V.mesh) { V.mesh_inv = pmesh.maxMeshWorkGroupInvocations; V.task_inv = pmesh.maxTaskWorkGroupInvocations; V.mesh_out_v = pmesh.maxMeshOutputVertices;
                   V.mesh_out_p = pmesh.maxMeshOutputPrimitives; V.task_payload = pmesh.maxTaskPayloadSize;
                   V.task_groups = pmesh.maxTaskWorkGroupCount[0]; V.mesh_groups = pmesh.maxMeshWorkGroupCount[0]; }
-    // Ocarina foliage regression, Nov 12: forcing Qualcomm's mesh+task
-    // hardware down the compute-emulation path created ~20k converted draws
-    // and 8k-14k compute batches per 300 frames, costing ~20 FPS relative
-    // to foliage OFF. The reference Banana Native uses !V.task here, NOT a
-    // Qualcomm-wide override. Adreno 891.14 advertises BOTH mesh and task.
-    // Restore hardware VK_EXT_mesh_shader for the original 42k and the 508
-    // validated native vegetation additions. Keep emulation available on
-    // devices without taskShader and as DM_VK_MESH_EMU=1 rollback; shaders
-    // themselves and the existing ABI/packs are unchanged.
+    // Adreno's VK_EXT_mesh_shader advertises task+mesh on 891.14 but
+    // its compiled mesh output corrupts Ocarina foliage (white geometry).
+    // Banana Native 0.3.14 explicitly disables native mesh for Qualcomm.
+    // Preserve the existing Ocarina HYBRID route: original-library stages
+    // still use their proven Vulkan-native path; the 508 supplementary
+    // vegetation stages use mesh->compute, which draws them correctly.
+    // The explicit DM_VK_MESH_EMU override remains available for diagnosis.
     { const char *e = getenv("DM_VK_MESH_EMU"); V.cs_groups = V.props.limits.maxComputeWorkGroupCount[0];
-      V.memu = e && *e ? strcmp(e, "0") != 0 : !V.task;
-      VLOG("mesh execution: %s (hardware mesh=%d task=%d, driver=%d, %s)",
-           V.memu ? "compute emulation" : "native VK_EXT_mesh_shader",
-           V.mesh, V.task, (int)V.driver_id, e && *e ? "DM_VK_MESH_EMU override" : "Banana Native hardware-capability default");
+      const int qcom_ocarina = V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
+           !strcmp(DM_GAME_ID, "0400486024DEC000");
+      V.memu = e && *e ? strcmp(e, "0") != 0 : (!V.task || qcom_ocarina);
+      VLOG("mesh execution: %s (hardware mesh=%d task=%d, driver=%d; %s)",
+           V.memu ? "hybrid original-native/supplement-compute" : "native VK_EXT_mesh_shader",
+           V.mesh, V.task, (int)V.driver_id,
+           e && *e ? "DM_VK_MESH_EMU override" : qcom_ocarina ?
+              "Qualcomm Ocarina vegetation geometry safety" : "hardware capability default");
       if (V.memu) VLOG("mesh draws through compute (vka_memu.c): %s",
-            e && *e ? "DM_VK_MESH_EMU=1" : V.mesh ?
-            "the device lacks taskShader" : "the device lacks meshShader"); }
+          qcom_ocarina ? "508 supplemental vegetation meshes use compute; original mesh stays native" :
+          !V.task ? "no taskShader" : "DM_VK_MESH_EMU=1"); }
     VLOG("mesh shading (NVN2 task and mesh programs): %s", V.task ? "on" : V.mesh ? "mesh shaders only (no taskShader)" : !mesh_ext ? "not on this device" : !x_mesh ? "off (DM_VK_MESH=0)" : "extension without the mesh stage");
     if (V.mesh) VLOG("mesh shading limits: workgroups mesh %u / task %u invocations, mesh output %u vertices / %u primitives / %u components / %u bytes, task payload %u bytes, mesh shared %u bytes",
                      V.mesh_inv, V.task_inv, V.mesh_out_v, V.mesh_out_p, pmesh.maxMeshOutputComponents, pmesh.maxMeshOutputMemorySize, V.task_payload, pmesh.maxMeshSharedMemorySize);
