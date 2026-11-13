@@ -164,6 +164,18 @@ int main(void) {
             CHECK(validate(fast, fast_n, "vecbitcast_optimized"),
                   "optimized mesh output shader remains legal Vulkan SPIR-V");
         }
+        // Build117 was slower in the real Ocarina log: the DEFAULT must
+        // produce BYTE-FOR-BYTE the original scalar SPIR-V, not merely a
+        // shader that passes SPIR-V validation. This guard prevents an
+        // accidental return of the previous optimization on Qualcomm.
+        unsetenv("DM_VK_MEMU_VEC_BITCAST");
+        size_t baseline_n = 0;
+        uint32_t *baseline = vka_memu_cs(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4,
+                                        &baseline_n, err, sizeof err);
+        CHECK(old && baseline && old_n == baseline_n &&
+              !memcmp(old, baseline, old_n * sizeof(uint32_t)),
+              "default mesh SPIR-V matches original scalar byte-for-byte");
+        free(baseline);
         free(old); free(fast);
         if (saved) { setenv("DM_VK_MEMU_VEC_BITCAST", saved, 1); free(saved); }
         else unsetenv("DM_VK_MEMU_VEC_BITCAST");
