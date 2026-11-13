@@ -103,6 +103,20 @@ final class Prefs {
      * The game's scene resolution (its Game settings › Scene resolution; only for a game whose profile has scene_scale_palette, Profile.hasScene): false, the
      * default (the game's own palette), or true: 720p, the RomFS overlay SceneOverlay makes from the player's own files (DM_ROMFS_OVERLAY)
      */
+    // Unsafe scene-layer speedhacks: never inherited from another game;
+    // the second switch is a strict subset of the first and both start OFF.
+    static boolean hiddenLayersOff(Context c, String titleId) {
+        return of(c).getBoolean(gameKey("oot_hidden_layers", titleId), false);
+    }
+    static void hiddenLayersOff(Context c, String titleId, boolean on) {
+        of(c).edit().putBoolean(gameKey("oot_hidden_layers", titleId), on).commit();
+    }
+    static boolean skipHeavyFragment(Context c, String titleId) {
+        return of(c).getBoolean(gameKey("oot_skip_heavy_fs", titleId), false);
+    }
+    static void skipHeavyFragment(Context c, String titleId, boolean on) {
+        of(c).edit().putBoolean(gameKey("oot_skip_heavy_fs", titleId), on).commit();
+    }
     static boolean fullVegetation(Context c, String titleId) { return of(c).getBoolean(gameKey("full_vegetation", titleId), true); }
     static void fullVegetation(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on).commit(); }
     static boolean vegetationOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_optimized", titleId), true); }
