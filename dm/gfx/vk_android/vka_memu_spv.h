@@ -7,6 +7,8 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 // What a task or mesh module of the library is, read from the module itself (the translator's SpirvMeshEntry.cs forms). Words: what one vertex or primitive takes in
 // the arena. A vertex: position x, y, z, w, then the point size (points), then 4 words per per-vertex location in vloc order. A primitive: its indices (3, or 1 for
@@ -30,7 +32,12 @@ typedef struct {
 int vka_memu_coalesced(void);
 // Startup-only mesh compute task-index search: eight offset reads for <=256
 // tasks, the historical seventeen reads above that. Separate shader cache ID.
-int vka_memu_short_task_search(void);
+static inline int vka_memu_short_task_search(void) {
+    // Startup-only: shader and cache keys must agree. Accessible by the
+    // cache-only C harness without linking the SPIR-V translator.
+    const char *v = getenv("DM_VK_MEMU_SHORT_TASK_SEARCH");
+    return v && !strcmp(v, "1");
+}
 // Bounds-checked direct plane scatter; 0 restores the original branch ladder.
 int vka_memu_plane_lut(void);
 
