@@ -13,7 +13,14 @@ public final class OcarinaRenderProfileJvmTest {
             check(1280*scale==(mode==1?640:960));
             check(720*scale==(mode==1?360:540));
         }
-        for(int mode:new int[]{-1,3,Integer.MAX_VALUE}) {
+        check(OcarinaRenderProfile.checked(3)==3);
+        check(OcarinaRenderProfile.direct720(3));
+        check(!OcarinaRenderProfile.direct720(2));
+        check(OcarinaRenderProfile.scale(3,"unused").equals("1.0"));
+        check(OcarinaRenderProfile.environment(3).equals(Arrays.asList("DM_OPMODE=0","DM_GRAPHICS_SCALE=2")));
+        check(1280*Double.parseDouble(OcarinaRenderProfile.scale(3,"unused"))==1280);
+        check(720*Double.parseDouble(OcarinaRenderProfile.scale(3,"unused"))==720);
+        for(int mode:new int[]{-1,4,Integer.MAX_VALUE}) {
             check(OcarinaRenderProfile.checked(mode)==0);
             check(OcarinaRenderProfile.environment(mode).isEmpty());
             check(OcarinaRenderProfile.scale(mode,"legacy").equals("legacy"));
