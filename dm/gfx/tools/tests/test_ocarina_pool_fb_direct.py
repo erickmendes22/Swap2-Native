@@ -40,6 +40,7 @@ class DirectFeedback(unittest.TestCase):
 #include <pthread.h>
 #include <stdatomic.h>
 #include <assert.h>
+#define VLOG(...) ((void)0) /* Android logging is not part of the isolated policy */
 typedef uint64_t VkDeviceSize;
 typedef int VkCommandBuffer, VkBuffer;
 enum { PFB_RING = 8, PFB_BYTES = 1<<17 };
