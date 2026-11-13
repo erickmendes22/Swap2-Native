@@ -908,10 +908,11 @@ int vka_spv_oot_cs_retile(uint32_t *w, size_t nw, char *why, size_t whylen) {
 // The second path does NOT require GlobalInvocationId to be declared.
 // Some translated NVN compute shaders only read the separate group and
 // thread builtins, which made Build59's variant unconditionally refuse.
-//   NumWorkgroups = (8,9,12), the original dispatch grid.
-// The caller only launches 8x9x24 (instead of 8x9x12), still exactly
-// 110592 total invocations. Each global index, original group and local
-// index is identical before/after the retile. Refuse any shader with
+//   NumWorkgroups = (newCountX, newCountY, newCountZ / 2).
+// Reconstruct it dynamically from the SPIR-V builtin instead of
+// hardcoding 8x9x12, so every positive direct grid preserves the guest
+// global/group/local IDs. The caller doubles Z, checking driver limits.
+// Refuse any shader with
 // workgroup storage, barriers, atomics, subgroup operations, unknown
 // builtins or aliased/indirect builtin pointers. No guest shader ABI or
 // disk library is changed. The caller creates an alternate VkShaderModule.
@@ -1048,8 +1049,8 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
     if (!nload || (uint64_t)bound + 9ull + 8ull*nload >= UINT32_MAX)
         VR_NO("no direct local/group reads or insufficient IDs");
     uint32_t next = bound;
-    uint32_t c2=next++, c3=next++, c7=next++, c8=next++, c9=next++, c12=next++;
-    uint32_t shift=next++, mask=next++, grid=next++;
+    uint32_t c2=next++, c3=next++, c7=next++;
+    uint32_t shift=next++, mask=next++;
     if (!put_n(&o, w, 5)) VR_NO("out of memory");
     for (size_t i = 5; i < nw;) {
         uint32_t op = w[i] & 0xffffu, len = w[i] >> 16;
@@ -1059,12 +1060,8 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
             VR_EMIT((4u<<16)|43u,u32,c2,2);
             VR_EMIT((4u<<16)|43u,u32,c3,3);
             VR_EMIT((4u<<16)|43u,u32,c7,7);
-            VR_EMIT((4u<<16)|43u,u32,c8,8);
-            VR_EMIT((4u<<16)|43u,u32,c9,9);
-            VR_EMIT((4u<<16)|43u,u32,c12,12);
             VR_EMIT((6u<<16)|44u,vec3,shift,c3,c2,c2);
             VR_EMIT((6u<<16)|44u,vec3,mask,c7,c3,c3);
-            VR_EMIT((6u<<16)|44u,vec3,grid,c8,c9,c12);
         }
         if (op == 16 && len == 6 && w[i+2] == 17) {
             uint32_t l[6]; memcpy(l, w+i, sizeof l); l[5] = 2;
@@ -1076,7 +1073,15 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
             if (part) {
                 uint32_t c = part - 1;
                 if (kind == 24) {
-                    VR_EMIT((5u<<16)|81u, u32, result, grid, c);
+                    if (c < 2) {
+                        // Physical X/Y group counts equal the guest's.
+                        if (!put_n(&o, w+i, len)) VR_NO("out of memory");
+                    } else {
+                        // Z was doubled at dispatch; recover guest count.
+                        uint32_t physical=next++;
+                        VR_EMIT((4u<<16)|61u, u32, physical, w[i+3]);
+                        VR_EMIT((5u<<16)|134u, u32, result, physical, c2);
+                    }
                 } else if (c < 2) {
                     // Only Z changes when splitting the original workgroup.
                     if (!put_n(&o, w+i, len)) VR_NO("out of memory");
@@ -1093,8 +1098,12 @@ uint32_t *vka_spv_oot_cs_virtual_retile(const uint32_t *w, size_t nw,
                     VR_EMIT((5u<<16)|132u, u32, offset, parity, c2);
                     VR_EMIT((5u<<16)|128u, u32, result, raw, offset);
                 } else VR_NO("missing group input for scalar local ID");
-            } else if (kind == 24) { // original dispatch grid
-                VR_EMIT((4u<<16)|83u, vec3, result, grid); // OpCopyObject
+            } else if (kind == 24) { // physical NumWorkgroups read live
+                uint32_t physical=next++, z=next++, oldz=next++;
+                VR_EMIT((4u<<16)|61u, vec3, physical, w[i+3]);
+                VR_EMIT((5u<<16)|81u, u32, z, physical, 2);
+                VR_EMIT((5u<<16)|134u, u32, oldz, z, c2);
+                VR_EMIT((6u<<16)|82u, vec3, result, oldz, physical, 2);
             } else if (global_var) {
                 uint32_t temp = next++;
                 VR_EMIT((4u<<16)|61u, vec3, temp, global_var);
