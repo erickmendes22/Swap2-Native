@@ -5,6 +5,14 @@
 // The vertex module w (nw words) with the vec4 float Input variables at the locations of umask retyped as uvec4 and those of smask as ivec4, every load of them bit-cast back
 // to float: the shader then sees the integer register bits Maxwell's fetch gives an integer format. A malloc'd copy (*out_nw words), or NULL with the reason in err
 uint32_t *vka_spv_vin_retype(const uint32_t *w, size_t nw, uint32_t umask, uint32_t smask, size_t *out_nw, char *err, size_t errn);
+// Experimental mesh pipeline prepass consistency on Qualcomm: add SPIR-V
+// Invariant to the struct member decorated BuiltIn Position, if missing.
+// It preserves both depth and colour draws (no prepass skip / depth change).
+// Returns malloc'd patched words with *changed=1, NULL with empty err if
+// already invariant, NULL with a reason on malformed/unrecognized modules.
+uint32_t *vka_spv_mesh_position_invariant(const uint32_t *w, size_t nw,
+                                          size_t *out_nw, int *changed,
+                                          char *err, size_t errn);
 // Subgroup operations and built-ins rewritten as subgroups of one invocation, for a stage the device runs none in (vka_spvpatch.c). A malloc'd copy (*out_nw words,
 // *changed = 1), NULL with err empty when the module has none, NULL with the reason in err when it cannot be rewritten
 uint32_t *vka_spv_subgroup_single(const uint32_t *w, size_t nw, size_t *out_nw, int *changed, char *err, size_t errn);
