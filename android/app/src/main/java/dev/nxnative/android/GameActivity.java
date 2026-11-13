@@ -370,6 +370,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_VEGETATION=" + (Prefs.fullVegetation(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_MESH_ROUTE=" + Prefs.ocarinaMeshRoute(this, id));
             // Independent, OFF-by-default draw omissions. Evaluate only
             // for Ocarina; restore defaults by disabling each switch.
             if (Prefs.OCARINA_TITLE.equals(id)) {
