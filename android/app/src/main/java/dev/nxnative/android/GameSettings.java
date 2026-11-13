@@ -737,9 +737,9 @@ final class GameSettings {
         int selected = Prefs.ocarinaMeshRoute(a, g.titleId);
         new AlertDialog.Builder(a)
             .setTitle("Execução da vegetação · " + g.name)
-            .setMessage("O Qualcomm 891.14 anuncia mesh/task shaders, mas os programas de vegetação podem apresentar geometria incorreta. "
-                + "No modo nativo, as posições de profundidade e cor recebem Invariant sem cortar o pré-pass. "
-                + "O modo compute preserva todos os passes. Compare na mesma cena; reinicie para aplicar.")
+            // Android AlertDialog does NOT display list items when a message
+            // is also assigned: AlertController chooses the message view
+            // instead of the list. Keep this dialog list-only.
             .setSingleChoiceItems(names, selected, (dialog, which) -> {
                 Prefs.ocarinaMeshRoute(a, g.titleId, which);
                 dialog.dismiss();
