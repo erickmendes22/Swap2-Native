@@ -2,7 +2,7 @@
 
 The pass duration (~14ms) is not all avoidable: shaders, vertex work, depth
 and the 720p presentation must remain untouched. This source guard checks
-that timestamps divide 683x384 graphics passes only on sampled frames and
+that timestamps divide known scene-size graphics passes only on sampled frames and
 that mixed-fragment batches are not attributed to a single shader.
 """
 from pathlib import Path
@@ -19,10 +19,31 @@ class SceneChunkProfile(unittest.TestCase):
         self.assertIn('if (g_gfx_enabled && vka_gp_active', code)
         self.assertIn('VKA_ENV("DM_VK_OOT_GFX_CHUNKS", 1)', code)
         self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")', code)
-        self.assertIn('!strncmp(desc, "683x384x1"', code)
+        self.assertIn('vka_scene_profile_size(desc)', code)
         self.assertIn('g_n >= NQ - 16', code)
         self.assertIn('VKA_ENV("DM_VK_GPUPROF",', code)
         self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000") ? 300 : 0', code)
+
+    def test_current_profiles_use_actual_c_shape_match(self):
+        import subprocess
+        import tempfile
+        source = r'''
+#include "vka_scene_profile.h"
+#include <assert.h>
+int main(void) {
+ assert(vka_scene_profile_size("960x540x1 c0:122 d:126"));
+ assert(vka_scene_profile_size("640x360x1"));
+ assert(vka_scene_profile_size("683x384x1 d:126"));
+ assert(!vka_scene_profile_size("960x540x10"));
+ assert(!vka_scene_profile_size("480x270x1 c0:97"));
+ assert(!vka_scene_profile_size("1280x720x1"));
+ assert(!vka_scene_profile_size(""));assert(!vka_scene_profile_size(0));
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            p=Path(directory)/'shape.c';p.write_text(source);exe=Path(directory)/'shape'
+            subprocess.run(['cc','-std=c11','-Wall','-Werror','-I',str(VK),str(p),'-o',str(exe)],check=True)
+            subprocess.run([str(exe)],check=True)
 
     def test_stamps_after_draws_and_before_rendering_end(self):
         profiler = (VK / "vka_gprof.c").read_text()

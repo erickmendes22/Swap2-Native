@@ -6,6 +6,7 @@
 // It costs a stall per profiled frame (timestamps), nothing when off (one cached switch read per submission)
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_scene_profile.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,7 +31,7 @@ static int g_compute_new;
 // ONLY, without changing resolution, blending, depth, shader, attachments or
 // the normal draw sequence. The old GPU profiler knew only pass totals and
 // could not distinguish a costly fragment shader from attachment load/store.
-// Only the 683x384 scene passes are sampled; no extra GPU commands on 299/300
+// Only the legacy 683x384 and handheld 640x360 / 960x540 scene passes are sampled; no extra GPU commands on 299/300
 // frames. Attribution to a key requires >=12 of 16 draws using it.
 enum { GFX_CHUNK = 16 };
 static uint64_t g_gfx_keys[GFX_CHUNK];
@@ -157,7 +158,7 @@ void vka_gp_pass(const char *desc) {
         g_gfx_n = 0;
         g_gfx_enabled = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
             VKA_ENV("DM_VK_OOT_GFX_CHUNKS", 1) &&
-            !strncmp(desc, "683x384x1", sizeof("683x384x1") - 1);
+            vka_scene_profile_size(desc);
         snprintf(g_pass, DESC, "%s", desc);
         g_pass_new = 1; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
     }

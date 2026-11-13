@@ -519,3 +519,9 @@ of roughly 13 us per dynamic begin/end pair versus 1.5 us classic; that is a
 different GPU/driver, not a measurement of this RedMagic. The remaining GPU
 frame-time gap to 16.67 ms is open, and this change alone does not establish
 60 FPS. See [Cached Vulkan render passes](../../../docs/reference/rendering.md#cached-vulkan-render-passes).
+
+The existing scene-chunk profiler selected only the old 683x384 shape, so the
+new 360p/540p logs omitted those records. This build also recognizes exact
+640x360x1 and 960x540x1 scene descriptions, only during the already sampled
+frames; unrelated targets/layers are excluded and ordinary frames gain no GPU
+commands. Its shape matcher is tested as the actual production C function.
