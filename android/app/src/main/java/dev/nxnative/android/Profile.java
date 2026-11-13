@@ -50,10 +50,12 @@ final class Profile {
         List<String> env = new ArrayList<>();
         if (!hasNdsr()) return env;
         env.add("DM_VK_NDSR_INPUT=" + ndsr);
-        // SGSR scene option is a verified coupled path: EASU handles the
-        // internal NDSR replacement, SGSR1 reconstructs the final image.
-        // The Vulkan host has no standalone DM_VK_NDSR=sgsr.
-        if ("fsr".equals(choice) || "sgsr".equals(choice))
+        // The SGSR choice now selects the real 12-tap NDSR COMPUTE
+        // replacement instead of applying an additional SGSR presentation
+        // filter after the game's own high-resolution network.
+        if ("sgsr".equals(choice) && Prefs.OCARINA_TITLE.equals(titleId))
+            env.add("DM_VK_NDSR=sgsr");
+        else if ("fsr".equals(choice) || "sgsr".equals(choice))
             env.add("DM_VK_NDSR=fsr");
         return env;
     }
