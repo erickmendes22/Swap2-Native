@@ -1611,6 +1611,14 @@ int vka_mesh_route(const vka_dstate *d) {
     const int hybrid = V.memu && V.mesh && V.task &&
                        VKA_ENV("DM_VK_OOT_NATIVE_BASE_MESH", 1);
     const int vegetation_on = VKA_ENV("DM_VK_VEGETATION", 1);
+    const int test_route = VKA_ENV("DM_VK_OOT_MESH_ROUTE", -1);
+    // In a full-vegetation all-compute run, every mesh draw is routed to
+    // compute irrespective of its 508-key supplement membership. Avoid
+    // resolving task/mesh programs and searching their keys on each
+    // lookahead/replay. Vegetation OFF MUST continue the guarded lookup:
+    // additional foliage programs still need to be omitted before dispatch.
+    if (vegetation_on && V.memu && (test_route == -1 || test_route == 1))
+        return 1;
     // The no-foliage option must omit newly added mesh stages even on
     // devices lacking native mesh support and on the all-compute rollback.
     if (!hybrid && vegetation_on) return V.memu ? 1 : 0;
@@ -1632,7 +1640,6 @@ int vka_mesh_route(const vka_dstate *d) {
     // the previous hybrid. Mode 1 all-compute; mode 2 unsafe all-native.
     // IMPORTANT: the full-vegetation-OFF skip check above still runs first,
     // regardless of route, before any GPU work.
-    int test_route = VKA_ENV("DM_VK_OOT_MESH_ROUTE", -1);
     if (test_route == -1) return V.memu ? 1 : 0;
     if (test_route == 1 && V.memu) return 1;
     if (test_route == 2 && V.mesh && V.task) return 0;
