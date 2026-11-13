@@ -149,6 +149,11 @@ static void member_builtins(const mod_t *m, uint32_t st, int32_t out[8]) {
 enum { K_POS = 1, K_VLOC, K_PLOC, K_IDX, K_CULL };
 typedef struct { uint32_t id; int kind, k; uint32_t elem; int32_t mb[8]; } outvar;   // k: the location's arena order; mb: the block's member BuiltIns (K_POS)
 static int cmp_u8(const void *a, const void *b) { return (int)*(const uint8_t *)a - (int)*(const uint8_t *)b; }
+int vka_memu_short_task_search(void) {
+    // Restart-only SPIR-V compile choice, never modified on a live pipeline.
+    const char *v = getenv("DM_VK_MEMU_SHORT_TASK_SEARCH");
+    return v && !strcmp(v, "1");
+}
 int vka_memu_coalesced(void) {
     const char *value = getenv("DM_VK_MEMU_COALESCED");
     return value && !strcmp(value, "1");
@@ -715,14 +720,55 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                 uint32_t cb = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_COUNTS));
                 uint32_t last = op2(&f, OpISub, B.t_u32,
                     sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, nt, c1), c1, nt), c1);
-                uint32_t ti = c0, rem = nt;
-                for (int s = 0; s < 17; s++) {
-                    uint32_t half = op2(&f, OpShiftRightLogical, B.t_u32, rem, c1);
-                    uint32_t mid = op2(&f, OpIAdd, B.t_u32, ti, half);
-                    mid = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, mid, last), mid, last);
-                    uint32_t o = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, mid)));
-                    ti = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, ti);
-                    rem = op2(&f, OpISub, B.t_u32, rem, half);
+                // Task offset binary search: the former shader performed
+                // seventeen arena reads for EVERY task-associated workgroup.
+                // When nt <= 256, eight steps yield exactly the same upper
+                // offset, including empty tasks with repeated offsets.
+                // Execute the original 17-step search for larger task lists.
+                // The two paths merge their SSA index via OpPhi.
+                // DM_VK_MEMU_SHORT_TASK_SEARCH=0 is the exact old fallback.
+                uint32_t ti;
+                if (vka_memu_short_task_search()) {
+                    uint32_t small = op2(&f, OpULessThanEqual, B.t_bool,
+                                         nt, cu(&B, 256));
+                    uint32_t ls = B.next++, ll = B.next++, lm = B.next++;
+                    INS(&O, OpSelectionMerge, lm, 0);
+                    INS(&O, OpBranchConditional, small, ls, ll);
+                    INS(&O, OpLabel, ls);
+                    uint32_t its = c0, rems = nt;
+                    for (int j = 0; j < 8; ++j) {
+                        uint32_t half = op2(&f, OpShiftRightLogical, B.t_u32, rems, c1);
+                        uint32_t mid = op2(&f, OpIAdd, B.t_u32, its, half);
+                        mid = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, mid, last), mid, last);
+                        uint32_t o = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, mid)));
+                        its = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, its);
+                        rems = op2(&f, OpISub, B.t_u32, rems, half);
+                    }
+                    INS(&O, OpBranch, lm);
+                    INS(&O, OpLabel, ll);
+                    uint32_t itl = c0, reml = nt;
+                    for (int j = 0; j < 17; ++j) {
+                        uint32_t half = op2(&f, OpShiftRightLogical, B.t_u32, reml, c1);
+                        uint32_t mid = op2(&f, OpIAdd, B.t_u32, itl, half);
+                        mid = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, mid, last), mid, last);
+                        uint32_t o = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, mid)));
+                        itl = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, itl);
+                        reml = op2(&f, OpISub, B.t_u32, reml, half);
+                    }
+                    INS(&O, OpBranch, lm);
+                    INS(&O, OpLabel, lm);
+                    ti = B.next++;
+                    INS(&O, OpPhi, B.t_u32, ti, its, ls, itl, ll);
+                } else {
+                    uint32_t rem = nt; ti = c0;
+                    for (int j = 0; j < 17; ++j) {
+                        uint32_t half = op2(&f, OpShiftRightLogical, B.t_u32, rem, c1);
+                        uint32_t mid = op2(&f, OpIAdd, B.t_u32, ti, half);
+                        mid = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, mid, last), mid, last);
+                        uint32_t o = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, mid)));
+                        ti = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, ti);
+                        rem = op2(&f, OpISub, B.t_u32, rem, half);
+                    }
                 }
                 uint32_t ot = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, ti)));
                 uint32_t task_own = op2(&f, OpISub, B.t_u32, flat, ot);
