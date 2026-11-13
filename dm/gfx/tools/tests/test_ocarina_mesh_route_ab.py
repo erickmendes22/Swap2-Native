@@ -21,7 +21,8 @@ class MeshRouteAB(unittest.TestCase):
 
     def test_all_three_routes_without_default_regression(self):
         draw = (VK / "vka_draw.c").read_text()
-        self.assertIn('VKA_ENV("DM_VK_OOT_MESH_ROUTE", 0)', draw)
+        self.assertIn('VKA_ENV("DM_VK_OOT_MESH_ROUTE", -1)', draw)
+        self.assertIn("if (test_route == -1) return V.memu ? 1 : 0;", draw)
         self.assertIn("if (test_route == 1 && V.memu) return 1;", draw)
         self.assertIn("if (test_route == 2 && V.mesh && V.task) return 0;", draw)
         self.assertIn("if (supplement && !vegetation_on) return -1;", draw)
@@ -48,17 +49,18 @@ class MeshRouteAB(unittest.TestCase):
         # Android AlertController uses the message instead of the choice
         # list when both Builder.setMessage and setSingleChoiceItems are set.
         self.assertNotIn(".setMessage(", dialog)
-        self.assertIn(".setSingleChoiceItems(names, selected,", dialog)
-        self.assertIn("Híbrido atual (padrão;", dialog)
-        self.assertIn("Compute integral (todos os mesh draws;", dialog)
-        self.assertIn("Mesh nativo integral (experimental;", dialog)
-        self.assertIn("Prefs.ocarinaMeshRoute(a, g.titleId, which)", dialog)
+        self.assertIn(".setSingleChoiceItems(names, selected,", dialog)\n        self.assertIn("Prefs.ocarinaMeshRoute(a, g.titleId) + 1", dialog)
+        self.assertIn("Automático (Qualcomm: compute integral", dialog)
+        self.assertIn("Híbrido anterior (comparação;", dialog)
+        self.assertIn("Compute integral (melhor FPS medido;", dialog)
+        self.assertIn("Mesh nativo (quebrado no Qualcomm", dialog)
+        self.assertIn("Prefs.ocarinaMeshRoute(a, g.titleId, which - 1)", dialog)
 
     def test_launcher_and_reset_are_connected(self):
         pref = (APP / "Prefs.java").read_text()
         game = (APP / "GameActivity.java").read_text()
         ui = (APP / "GameSettings.java").read_text()
-        self.assertIn('gameKey("oot_mesh_route", titleId), 0', pref)
+        self.assertIn('gameKey("oot_mesh_route", titleId), -1', pref)
         self.assertIn("DM_VK_OOT_MESH_ROUTE=", game)
         self.assertIn("Prefs.ocarinaMeshRoute(a, id)", ui)
         self.assertIn("meshRouteDialog(a, g, again)", ui)
