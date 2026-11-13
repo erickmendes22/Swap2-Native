@@ -117,6 +117,33 @@ static void report(void) {
     VLOG("gpu prof: frame %llu: %d timestamps, %.2f ms GPU: passes %.2f ms (%d), clears / copies / dispatches %.2f ms, steps with nothing recorded (barriers, uploads, writebacks) %.2f ms",
          (unsigned long long)g_frame, g_n, tot, pass, npass, xfer, bare);
     VLOG("gpu prof: identified compute %.2f ms (%d dispatch intervals), other transfers %.2f ms", compute, ncompute, xfer);
+    // Ocarina foliage: identify what the converted task/mesh GPU actually
+    // costs. Every mark is after the corresponding phase, so a step's
+    // destination name identifies the producer that finished. No per-frame
+    // aggregation on ordinary frames and no assumption that a CPU replay
+    // duration equals GPU compute time.
+    double mesh_phase_ms[7] = {0};
+    unsigned mesh_phase_n[7] = {0};
+    static const char *const mesh_phase[7] = {
+        "MEMU_START", "MEMU_ADD", "MEMU_SETUP", "MEMU_TASK",
+        "MEMU_DIST", "MEMU_MESH", "MEMU_END"
+    };
+    for (int j = 0; j < ns; j++) {
+        const gp_mark *m = &g_m[s[j].i];
+        for (int k = 0; k < 7; k++) if (m->file && !strcmp(m->file, mesh_phase[k])) {
+            mesh_phase_ms[k] += s[j].ms;
+            mesh_phase_n[k]++;
+            break;
+        }
+    }
+    if (mesh_phase_n[0] || mesh_phase_n[1] || mesh_phase_n[2] ||
+        mesh_phase_n[3] || mesh_phase_n[4] || mesh_phase_n[5] || mesh_phase_n[6])
+        VLOG("gpu prof foliage phases: frame %llu mesh start %.3fms/%u, record upload %.3fms/%u, setup %.3fms/%u, task %.3fms/%u, distribution %.3fms/%u, mesh compute %.3fms/%u, final barrier %.3fms/%u; timestamp intervals on ONE sampled frame (not representative CPU replay or ordinary-frame FPS)",
+             (unsigned long long)g_frame,
+             mesh_phase_ms[0], mesh_phase_n[0], mesh_phase_ms[1], mesh_phase_n[1],
+             mesh_phase_ms[2], mesh_phase_n[2], mesh_phase_ms[3], mesh_phase_n[3],
+             mesh_phase_ms[4], mesh_phase_n[4], mesh_phase_ms[5], mesh_phase_n[5],
+             mesh_phase_ms[6], mesh_phase_n[6]);
     if (VKA_ENV("DM_VK_GPUPROF_LIST", 0))   // every step in order
         for (int k = 0; k < ns; k++) { const gp_mark *a = &g_m[s[k].i - 1], *b = &g_m[s[k].i];
             VLOG("gpu prof: step #%d %.3f ms: %s:%d, %llu draws, %llu ops%s%s", s[k].i, s[k].ms, b->file, b->line, (unsigned long long)(b->draws - a->draws),
@@ -144,7 +171,13 @@ void vka_gp_sub_begin(VkCommandBuffer cb, uint64_t frame) {
     if (g_state == 1 && frame != g_frame) { g_state = 2; vka_gp_active = 0; g_cb = VK_NULL_HANDLE; }
     if (g_state == 2 && vka_done() >= g_fence) { report(); g_state = 0; }
     if (g_state == 0) {
-        int every = VKA_ENV("DM_VK_GPUPROF", 0);
+        // Sparse opt-in-by-game diagnostics only for the unresolved Ocarina
+        // vegetation bottleneck: one timestamped frame in every 300.
+        // No tracing or altered GPU commands in the other 299 frames.
+        // Explicit DM_VK_GPUPROF=0 disables it entirely, if desired.
+        int every = VKA_ENV("DM_VK_GPUPROF",
+            !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+            VKA_ENV("DM_VK_VEGETATION", 1) ? 300 : 0);
         if (every <= 0 || frame == g_frame || (g_last_frame && frame < g_last_frame + (uint64_t)every) || !init()) return;
         g_state = 1; g_frame = g_last_frame = frame; g_n = 0; vka_gp_active = 1; g_pass_new = 0; g_compute_new = 0; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
         g_reset(cb, g_qp, 0, NQ);
