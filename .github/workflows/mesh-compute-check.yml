@@ -1,7 +1,7 @@
 name: Mesh compute correctness (no APK)
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101]
+    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113]
     paths:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
@@ -83,6 +83,19 @@ jobs:
             dm/third_party/zstd/zstddeclib.c -lm -o /tmp/memu-check
           ASAN_OPTIONS=detect_leaks=1 DM_VK_MEMU_COALESCED=0 /tmp/memu-check
           ASAN_OPTIONS=detect_leaks=1 DM_VK_MEMU_COALESCED=1 /tmp/memu-check
+      - name: Validate experimental Qualcomm native mesh depth/colour parity without depth discard
+        run: |
+          set -euxo pipefail
+          cc -std=c11 -O1 -g -fsanitize=address,undefined \
+            dm/host/tests/t_android_mesh_invariant.c dm/gfx/vk_android/vka_spvpatch.c \
+            -o /tmp/mesh-invariant-check
+          ASAN_OPTIONS=detect_leaks=1 /tmp/mesh-invariant-check
+          glslc -O -fshader-stage=mesh --target-env=vulkan1.3 \
+            dm/gfx/vk_android/selftest/mesh_invariant.mesh -o /tmp/mesh-invariant.spv
+          spirv-val --target-env vulkan1.3 /tmp/mesh-invariant.spv
+          ASAN_OPTIONS=detect_leaks=1 /tmp/mesh-invariant-check \
+            /tmp/mesh-invariant.spv /tmp/mesh-invariant-patched.spv
+          spirv-val --target-env vulkan1.3 /tmp/mesh-invariant-patched.spv
       - name: Check hybrid routing and caller ordering
         run: |
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_banana_input_caches.py -v
