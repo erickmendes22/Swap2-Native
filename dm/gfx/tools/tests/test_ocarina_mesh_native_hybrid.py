@@ -133,7 +133,7 @@ int main(void) {
     def test_hybrid_lookahead_does_not_overtake_native_mesh(self):
         src = (VK / 'vka_exec.c').read_text()
         walk = function(src, 'memu_walk')
-        self.assertLess(walk.index('if (route == 0) break;'),
+        self.assertLess(walk.index('if (route == 0) {'),
                         walk.index('vka_memu_batch(phase'))
         self.assertIn('phase >= 0 || vegetation_off || hybrid', walk)
         self.assertIn('vka_mesh_route(&g_memu_st)', walk)
