@@ -62,6 +62,7 @@ static int init(void) {
 static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
     if (g_n >= NQ) return;
     gp_mark *m = &g_m[g_n]; m->file = file; m->line = line; m->kind = kind;
+    m->mesh_key = 0; m->mesh_stage = 0; // profiler ring is reused on later sampled frames
     uint64_t sk, di, pi; vka_draw_stats(&m->draws, &sk, &di, &pi); (void)sk; (void)di; (void)pi;
     extern uint64_t vka_n_rp; m->passes = vka_n_rp; uint64_t subs, rec; vka_exec_counts(&m->ops, &subs, &rec);
     if (g_pass_new) {
