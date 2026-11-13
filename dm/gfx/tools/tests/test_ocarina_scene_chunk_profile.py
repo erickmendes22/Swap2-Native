@@ -22,7 +22,7 @@ class SceneChunkProfile(unittest.TestCase):
         self.assertIn('!strncmp(desc, "683x384x1"', code)
         self.assertIn('g_n >= NQ - 16', code)
         self.assertIn('VKA_ENV("DM_VK_GPUPROF",', code)
-        self.assertIn('VKA_ENV("DM_VK_VEGETATION", 1) ? 300 : 0', code)
+        self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000") ? 300 : 0', code)
 
     def test_stamps_after_draws_and_before_rendering_end(self):
         profiler = (VK / "vka_gprof.c").read_text()
