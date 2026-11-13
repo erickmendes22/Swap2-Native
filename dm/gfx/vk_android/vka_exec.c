@@ -1555,7 +1555,20 @@ static void exec(const uint8_t *p, int depth) {
             vka_rp_end();
         if (h.op != OP_DISPATCH && !overlap_state_record(h.op)) vka_dispatch_overlap_flush(); // preserve guest GPU ordering but let consecutive state/binding records pass
         const void *a = p + 8;
-        if (g_memu_cover && !memu_allowed(h.op)) g_memu_cover = 0;
+        // Keep coverage across the exact pure-true condition that
+        // memu_walk can now cross. Otherwise the next vertex draw would
+        // launch an unnecessary second mesh scan, and potentially record
+        // duplicate helper passes before a graphics pass starts.
+        int mesh_rc_true = h.op == OP_RENDER_COND &&
+                           h.size >= 8u + sizeof(p_render_cond) &&
+                           !S.rc_skip &&
+                           VKA_ENV("DM_VK_MEMU_RC_TRUE_FUSE", 0);
+        if (mesh_rc_true) {
+            int32_t mode; memcpy(&mode, a, sizeof mode);
+            mesh_rc_true = mode == 2;
+        }
+        if (g_memu_cover && !memu_allowed(h.op) && !mesh_rc_true)
+            g_memu_cover = 0;
         int bar_kept = 0, bar_covered = 0;   // bar_covered: this pass ended with the same full GPU memory barrier that OP_BARRIER needs
         if (h.op == OP_DRAW || h.op == OP_DRAW_IDX) chunk_check();   // before a draw that opens a new pass
         switch (h.op) {   // a render pass a draw opened stays open across draws and state; anything else closes it first
