@@ -53,11 +53,11 @@ final class Profile {
         // Preserve previous SGSR1 presentation as a reproducible baseline.
         // Only the new explicit sg sr-compute choice runs the 12-tap SGSR1
         // in the NDSR compute operation at the game's existing output size.
-        if (Prefs.NDSR_SGSR_COMPUTE.equals(choice) &&
+        if ("sgsr-compute".equals(choice) &&
                 Prefs.OCARINA_TITLE.equals(titleId))
             env.add("DM_VK_NDSR=sgsr");
         else if ("fsr".equals(choice) || "sgsr".equals(choice) ||
-                 Prefs.NDSR_SGSR_COMPUTE.equals(choice))
+                 "sgsr-compute".equals(choice))
             env.add("DM_VK_NDSR=fsr");
         return env;
     }
