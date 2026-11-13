@@ -62,6 +62,8 @@ class FoliagePhaseProfile(unittest.TestCase):
         self.assertIn('MEMU_TASK_SHADER',g)
         # Reporting must aggregate timestamps, not CPU time.
         self.assertIn('hot[j].ms += s[k].ms;',g)
+        self.assertIn('int phase = m->mesh_stage == 1 ? 3 : 5;',g)
+        self.assertIn('mesh_phase_ms[phase] += s[j].ms;',g)
         self.assertIn('rank < 12',g)
         self.assertIn('if (!vka_gp_active || cb != g_cb || g_n >= NQ) return;',g)
 
