@@ -164,7 +164,11 @@ final class GameSettings {
             sceneWant(id, null);
             Prefs.scene720(a, id, false);
             Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
-            Prefs.of(a).edit().remove(Prefs.gameKey("pause_return", id)).commit();
+            // Experimental GPU skips must not survive Restore defaults.
+            Prefs.of(a).edit()
+                    .remove(Prefs.gameKey("oot_hidden_layers", id))
+                    .remove(Prefs.gameKey("oot_skip_heavy_fs", id))
+                    .remove(Prefs.gameKey("pause_return", id)).commit();
             again.run();
         });
     }
@@ -186,7 +190,8 @@ final class GameSettings {
                 .override(a, Prefs.ownFpsCap(a, id), MainActivity.capLabel(Prefs.fpsCap(a, id))).chevron(a).view);
         if (prof != null && prof.hasNdsr()) {   // only where agl's NDSR networks are in the game's shaders (Profile.ndsrEnv)
             String choice = Prefs.ndsr(a, id);
-            String cur = Prefs.NDSR_SGSR.equals(choice) ? "SGSR 1 · NDSR interno (GPU)"
+            String cur = Prefs.NDSR_SGSR_COMPUTE.equals(choice) ? "SGSR 1 · NDSR interno (teste)"
+                    : Prefs.NDSR_SGSR.equals(choice) ? "SGSR 1 · saída 720p (anterior)"
                     : Prefs.NDSR_FSR.equals(choice) ? "Rápida (EASU, menos GPU)" : "Rede original NDSR";
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Reconstrução da cena (GPU)", v -> upscaler(a, g, again))
                     .value(cur + " · depois do render interno, antes da imagem final").chevron(a).view);
@@ -705,21 +710,23 @@ final class GameSettings {
 
     /** Upscaler: the game's NDSR network or FSR 1 in its place (Prefs.ndsr, the profile's ndsr_default without a choice; the host's lines at the next start, Profile.ndsrEnv) */
     private static void upscaler(MainActivity a, Game g, Runnable done) {
-        // The new SGSR1 NDSR kernel reconstructs in the game's compute
-        // stage, preserving its native output for post-processing and UI.
-        // Output only needs an inexpensive final bilinear scaling.
+        // A/B requires the old 720p presentation route to stay available:
+        // full internal SGSR1 currently works at the game's 2048x1152 NDSR
+        // target and may cost more GPU. No automatic migration of settings.
         String[] labels = {"Rede original NDSR (mais pesada)",
                 "Modo rápido EASU (menos GPU)",
-                "SGSR 1 · reconstrução NDSR interna (Snapdragon)"};
+                "SGSR 1 anterior · reconstrução na saída 720p",
+                "SGSR 1 interno · NDSR completo (teste de performance)"};
         String selected = Prefs.ndsr(a, g.titleId);
-        int checked = Prefs.NDSR_SGSR.equals(selected) ? 2
+        int checked = Prefs.NDSR_SGSR_COMPUTE.equals(selected) ? 3
+                    : Prefs.NDSR_SGSR.equals(selected) ? 2
                     : Prefs.NDSR_FSR.equals(selected) ? 1 : 0;
         new AlertDialog.Builder(a).setTitle("Reconstrução da cena · " + g.name).setSingleChoiceItems(labels, checked, (x, w) -> {
-            Prefs.ndsr(a, g.titleId, w == 2 ? Prefs.NDSR_SGSR
+            Prefs.ndsr(a, g.titleId, w == 3 ? Prefs.NDSR_SGSR_COMPUTE
+                    : w == 2 ? Prefs.NDSR_SGSR
                     : w == 1 ? Prefs.NDSR_FSR : Prefs.NDSR_NET);
-            if (w == 2) {
-                GraphicsOptions.setMode(a, g.titleId, 2, false);
-            }
+            if (w == 2) GraphicsOptions.setMode(a, g.titleId, 4, false);
+            if (w == 3) GraphicsOptions.setMode(a, g.titleId, 2, false);
             x.dismiss();
             done.run();
         }).setNegativeButton(android.R.string.cancel, null).show();
