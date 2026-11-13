@@ -222,6 +222,15 @@ final class GameSettings {
                     .toggle(a, Prefs.fragmentOptimized(a, id), (b, on) -> Prefs.fragmentOptimized(a, id, on));
             fragment.value(a.getString(R.string.s2_fragment_optimized_note));
             box.addView(fragment.view);
+            // Internal A/B: same APK/driver/scene, compare original GPU
+            // bitmap copy+fill against direct writing into fenced ring slots.
+            // Does NOT remove texture ID discovery or downscale the image.
+            Ui.Setting feedback = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    a.getString(R.string.s2_texture_feedback_direct), null)
+                    .toggle(a, Prefs.poolFeedbackDirect(a, id),
+                            (b, on) -> Prefs.poolFeedbackDirect(a, id, on));
+            feedback.value(a.getString(R.string.s2_texture_feedback_direct_note));
+            box.addView(feedback.view);
         }
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip, "Economia de RAM (usa armazenamento)", null)
                 .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
