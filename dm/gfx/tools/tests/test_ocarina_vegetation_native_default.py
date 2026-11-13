@@ -23,7 +23,11 @@ class NativeFoliageDefault(unittest.TestCase):
         m = re.search(r'V\.memu\s*=\s*e\s*&&\s*\*e\s*\?\s*strcmp\(e,\s*"0"\)\s*!=\s*0\s*:\s*([^;]+);', dev)
         self.assertIsNotNone(m)
         default = m.group(1).strip()
-        self.assertEqual(default, '(!V.task || qcom_ocarina)')
+        self.assertEqual(default, '(!V.task || qcom_ocarina || route == 1)')
+        self.assertIn('VKA_ENV("DM_VK_OOT_MESH_ROUTE", 0)', dev)
+        # A missing user override is still hybrid, and only explicit
+        # all-compute mode 1 modifies the emulation default.
+        self.assertIn('route == 1', default)
         self.assertIn('const int qcom_ocarina = V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY', dev)
         self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")', dev)
         self.assertIn('getenv("DM_VK_MESH_EMU")', dev)
@@ -41,7 +45,8 @@ class NativeFoliageDefault(unittest.TestCase):
 
     def test_legacy_compute_remains_explicit_rollback(self):
         dev = (VK / "vka_dev.c").read_text()
-        self.assertIn('strcmp(e, "0") != 0 : (!V.task || qcom_ocarina);', dev)
+        self.assertIn('V.memu = e && *e ? strcmp(e, "0") != 0 :', dev)
+        self.assertIn('(!V.task || qcom_ocarina || route == 1)', dev)
         memu = (VK / "vka_memu_draw.inc").read_text()
         self.assertIn('vka_memu_batch(int phase', memu)
         self.assertIn('case MEMU_MESH:', memu)
