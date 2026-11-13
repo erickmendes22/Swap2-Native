@@ -74,16 +74,18 @@ int main(void) {
         self.assertIn('out.add("DM_VK_OOT_SGSR_CHAIN=" +', options)
         self.assertIn("DM_VK_NDSR=fsr", profile)
 
-    def test_risky_switches_default_off_and_exposed_in_ui(self):
+    def test_hidden_layers_remains_opt_in_but_heavy_fragment_beta_retired(self):
         pref = (JAVA / "Prefs.java").read_text()
         launch = (JAVA / "GameActivity.java").read_text()
         ui = (JAVA / "GameSettings.java").read_text()
         self.assertIn('gameKey("oot_hidden_layers", titleId), false', pref)
-        self.assertIn('gameKey("oot_skip_heavy_fs", titleId), false', pref)
+        self.assertIn('static boolean skipHeavyFragment(Context c, String titleId) { return false; }', pref)
+        self.assertNotIn('gameKey("oot_skip_heavy_fs", titleId), false', pref)
         for key in ("DM_VK_OOT_HIDDEN_LAYERS", "DM_VK_OOT_SKIP_HEAVY_FS"):
             self.assertIn(key, launch)
         self.assertIn("Prefs.hiddenLayersOff(a, id)", ui)
-        self.assertIn("Prefs.skipHeavyFragment(a, id)", ui)
+        self.assertNotIn("Prefs.skipHeavyFragment(a, id)", ui)
+        self.assertNotIn('"Descartar fragment shader pesado (teste)"', ui)
 
 
 if __name__ == "__main__":
