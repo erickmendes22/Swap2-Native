@@ -60,15 +60,14 @@ static int convert(const uint32_t *w, size_t nw, int gl, const char *tag, vka_me
             CHECK(quick ? count_op(o, on, 245) >= 2 : count_op(o, on, 245) < 2,
                   "%s: uniform taskless search bypass %s (%d phi nodes)",
                   tag, quick ? "ON" : "OFF", count_op(o, on, 245));
-            // With short task search ON, the mesh compute shader must
-            // contain an additional OpPhi merging 8- and 17-step indexes.
-            // The SPIR-V validator checks both branches' dominance and
-            // structured control flow; test with this env both ON and OFF.
+            // With short search ON, the generated shader adds a structured
+            // choice for <=256 or >256 tasks and a Private index merge.
+            // The old shader remains byte-for-byte unchanged when OFF.
             if (quick) {
                 int short_search = vka_memu_short_task_search();
-                CHECK(short_search ? count_op(o, on, 245) >= 3 : count_op(o, on, 245) == 2,
-                      "%s: task index 8-step/17-step SSA merge %s (%d phi nodes)",
-                      tag, short_search ? "ON" : "OFF", count_op(o, on, 245));
+                CHECK(short_search ? count_op(o, on, 250) >= 2 : count_op(o, on, 250) == 1,
+                      "%s: 8-step/17-step task branch %s (%d conditional branches)",
+                      tag, short_search ? "ON" : "OFF", count_op(o, on, 250));
             }
         }
         CHECK(count_var(o, on, 3) == 0, "%s: no Output variable", tag);
