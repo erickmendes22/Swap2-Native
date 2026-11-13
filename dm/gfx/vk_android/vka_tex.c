@@ -743,6 +743,8 @@ static vka_img *img_create_(const tex_t *t, const vka_fmt *f, uint32_t base, int
     im->usage = u;
     VkImageCreateInfo ci = {VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = (alt || im->nx) && ubwc ? &fli : NULL, .flags = fl, .imageType = it, .format = f->vk, .extent = {im->w, im->h, im->depth}, .mipLevels = im->levels,
         .arrayLayers = im->layers, .samples = (VkSampleCountFlagBits)im->samples, .tiling = VK_IMAGE_TILING_OPTIMAL, .usage = u, .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
+    im->cflags=ci.flags;im->nvf=ci.pNext ? fli.viewFormatCount : 0;
+    if(im->nvf)memcpy(im->vf,fls,im->nvf*sizeof *fls);
     VkResult r = vk.vkCreateImage(V.dev, &ci, NULL, &im->img);
     if (r && res) { VRED_ONCE("sparse residency image of serial %llu: vkCreateImage %d: dense images instead", (unsigned long long)t->serial, r); *why = 2; free(im); return NULL; }
     if (r) { VRED("texture serial %llu %ux%ux%u format %#x (VkFormat %d) levels %u layers %u samples %u: vkCreateImage %d", (unsigned long long)t->serial, im->w, im->h, im->depth, d->format, f->vk, im->levels, im->layers, im->samples, r); free(im); return NULL; }

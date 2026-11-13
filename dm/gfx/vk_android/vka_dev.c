@@ -227,6 +227,7 @@ static int init_once(void) {
              has_2x1, has_2x2, has_4x2, has_4x4,
              V.fps_boost_vrs, V.fps_boost_width, V.fps_boost_height);
     if (x_mesh && !fmesh.meshShader) fmesh.taskShader = VK_FALSE;   // (task shading is of no use without mesh shading)
+    V.imageless = f12.imagelessFramebuffer;
     V.indirect_count = f12.drawIndirectCount && f2.features.multiDrawIndirect;
     V.push_desc = x_push; V.vin_dyn = x_vin && fvin.vertexInputDynamicState; V.null_desc = x_rob && frob.nullDescriptor; V.ext_storage = f2.features.shaderStorageImageExtendedFormats; V.idx8 = x_i8 && fi8.indexTypeUint8;
     V.divisor = x_div && fdiv.vertexAttributeInstanceRateDivisor; V.logic_op = f2.features.logicOp; V.dual_src = f2.features.dualSrcBlend; V.geom = f2.features.geometryShader;

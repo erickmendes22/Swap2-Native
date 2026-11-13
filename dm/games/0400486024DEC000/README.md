@@ -479,59 +479,49 @@ attributed to these backend differences.
 
 ## Cached classic render passes (2026-11-13, current)
 
-**REVERTED after APK 134:** device log `140709` reports a previous native
-SIGSEGV (status 11) and confirms classic passes enabled. It does not contain
-the faulting crash stack, so the exact driver/pipeline failure is unresolved.
-The synthetic test did not establish correctness of the complete game/driver
-path. The following records the reverted attempt, not the active backend.
-All renderer and frontend files changed by that attempt are restored byte for
-byte from working APK 132 commit `13f12f2`. The 540p scene/output profiles and
-SGSR changes stay intact. Only the independently tested profiler shape fix
-remains. The cache switch is removed rather than leaving an inactive control.
+**APK134 defect found and corrected:** log `140709` confirms the encoder
+thread and classic passes both enabled, and reports a preceding native SIGSEGV
+without its faulting stack. The classic begin/end calls had been added to the
+renderer but omitted from `vka_enc.c`. Thus `vkCmdBeginRenderPass` and
+`vkCmdEndRenderPass` reached the driver directly on the producer while binds,
+draws and barriers stayed queued on the worker. Vulkan command-buffer recording
+was unordered and concurrently accessed. The earlier GPU fixture called the
+driver directly and could not expose this missing integration.
 
-The 13f12f2 device logs `134012` and `134102` confirm handheld graphics scale 2,
-respectively 640x360 -> 1280x720 and 960x540 -> 1280x720. Both used EASU NDSR
-plus final SGSR1, not the new internal SGSR1 kernel. Both kept the heavy-fragment
-skip enabled and hidden-layers skip disabled. Preserve those choices when
-comparing backend changes. At frame 1500, 540p reports p50 frame 21.60 ms,
-GPU 20.97 ms and recording 18.61 ms (149 passes/frame); 360p reports 19.89 ms,
-19.42 ms and 15.76 ms. Recording includes driver/backpressure time, not just
-independent CPU work. GPU-profiled frames include timing overhead. The 540p
-profile has about 14 ms of graphics plus about 2.9 ms mesh compute, 0.47 ms
-task compute and several other computes. These categories overlap with the
-profiler's formerly unnamed steps and must not be summed twice.
+`vka_enc.c` now copies classic begin/end records into the same ring as every
+other command, including clear values and imageless attachment view arrays.
+At dispatch the inline pNext record is rebased before the driver call. Unknown
+pNext chains drain the queue before a direct call, preserving the existing
+fallback rule. The ARM wait primitive is unchanged; a host atomic-load fallback
+enables production-code Linux tests. Encoder installation logs
+`classic render-pass begin/end serialization installed`.
 
-The next backend ports the public Banana snapshot's cached classic render
-passes and imageless framebuffers. It preserves this fork's per-aspect clear,
-load/store discard operations, formats, views, layers, samples and barriers.
-All graphics pipelines, including fast GPL links and optimized replacements,
-use a compatible render pass; shader-part cache keys include it. Framebuffer
-cache keys contain shapes and format lists rather than guest image/view
-handles, so replacing a texture does not leave a framebuffer holding its view.
-A failed classic framebuffer never draws with an incompatible dynamic pipeline.
+The recovery-only candidate was superseded at the user's request. The corrected
+cache is available in the same **Cached passes (Qualcomm)** control, now OFF
+by default and on Restore defaults. ON explicitly sets `DM_VK_CLASSIC_RP=1`;
+OFF sets zero. Restart after changing it. No resolution, vegetation, fragment
+skip, filter, or prepared shader library is changed by this fix.
 
-The default is enabled only for Qualcomm proprietary + Ocarina when imageless
-framebuffers are supported. **Cached passes (Qualcomm)** OFF plus restart
-sets `DM_VK_CLASSIC_RP=0` and restores dynamic rendering in the same APK.
-Other drivers retain the old path by default; an explicit environment override
-can opt in. No shader rebuild, resolution change, vegetation cut or layer
-skip is part of this backend change.
+**Regression:** `test_classic_encoder_order.py` executes the actual producer,
+worker, ring, serialization and dispatcher (only its Android header is adapted
+for a Linux host). 50,000 passes / 200,000 commands exceed one full ring. Caller
+arrays are poisoned immediately; order, worker ownership and copied values all
+pass under ASan/UBSan. Its negative control bypasses the begin/end wrappers just
+as APK134 did and fails the same checks. The GPU fixture now additionally
+records every Vulkan command through that actual worker and compares dynamic
+and classic MRT output at 67x41 and 960x540, including scissored LOAD/CLEAR,
+partial clears and independent depth/stencil readback. Both direct and threaded
+paths match exactly; CI enables Khronos validation. Software timings are not
+Adreno FPS guarantees; threaded CPU-recording timing can regress on software.
 
-Validation: `test_renderpass_cache_gpu.py` exercises the actual cache with
-150 passes, MRT draws, clear/load/discard, final partial clears, separate
-depth/stencil readback, cache reuse and five alternate-order runs. All output
-bytes match dynamic rendering at 67x41 and 960x540. One local SwiftShader
-median at 960x540 was 0.298 ms dynamic versus 0.216 ms classic for recording
-150 passes; tiny-pass results were slower (0.053 versus 0.168 ms). These
-software-driver numbers are an indicator with a clear platform limit, not an
-Adreno FPS guarantee. Banana's source also documents its Adreno 740 benchmark
-of roughly 13 us per dynamic begin/end pair versus 1.5 us classic; that is a
-different GPU/driver, not a measurement of this RedMagic. The remaining GPU
-frame-time gap to 16.67 ms is open, and this change alone does not establish
-60 FPS. See [Cached Vulkan render passes](../../../docs/reference/rendering.md#cached-vulkan-render-passes).
+The backend retains the public Banana snapshot's compatible whole/GPL pipelines
+and imageless shape caches, preserving this fork's per-aspect load/store
+semantics. See [Cached Vulkan render passes](../../../docs/reference/rendering.md#cached-vulkan-render-passes).
 
-The existing scene-chunk profiler selected only the old 683x384 shape, so the
-new 360p/540p logs omitted those records. This build also recognizes exact
-640x360x1 and 960x540x1 scene descriptions, only during the already sampled
-frames; unrelated targets/layers are excluded and ordinary frames gain no GPU
-commands. Its shape matcher is tested as the actual production C function.
+The earlier 540p log `134102` used EASU NDSR plus final SGSR1, heavy-fragment
+skip ON and hidden layers OFF: p50 at frame1500 was 21.60 ms frame, 20.97 ms
+GPU and 18.61 ms recording (149 passes). These timings overlap and must not be
+added. The remaining gap to 16.67 ms and the fixed option's actual performance
+on driver891.14 remain device-validation work, not a reason to claim 60 FPS.
+The existing sampled scene profiler now recognizes 640x360 and 960x540 as well
+as legacy683x384, with no ordinary-frame GPU commands.

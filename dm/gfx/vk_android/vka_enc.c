@@ -23,7 +23,7 @@
 #define ENC_FNS(X) \
     X(vkCmdPipelineBarrier) X(vkCmdCopyBuffer) X(vkCmdUpdateBuffer) X(vkCmdFillBuffer) X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) \
     X(vkCmdCopyImage) X(vkCmdBlitImage) X(vkCmdResolveImage) X(vkCmdClearColorImage) X(vkCmdClearDepthStencilImage) X(vkCmdClearAttachments) \
-    X(vkCmdBeginRendering) X(vkCmdEndRendering) \
+    X(vkCmdBeginRendering) X(vkCmdEndRendering) X(vkCmdBeginRenderPass) X(vkCmdEndRenderPass) \
     X(vkCmdBindPipeline) X(vkCmdBindDescriptorSets) X(vkCmdBindVertexBuffers2) X(vkCmdBindIndexBuffer) \
     X(vkCmdDraw) X(vkCmdDrawIndexed) X(vkCmdDrawIndirect) X(vkCmdDrawIndexedIndirect) X(vkCmdDrawIndirectCount) X(vkCmdDrawIndexedIndirectCount) X(vkCmdDispatch) X(vkCmdDispatchIndirect) X(vkCmdDispatchBase) \
     X(vkCmdSetViewport) X(vkCmdSetScissor) X(vkCmdSetCullMode) X(vkCmdSetFrontFace) X(vkCmdSetPrimitiveTopology) \
@@ -57,9 +57,13 @@ static long fwait(_Atomic uint32_t *a, uint32_t v) { struct timespec t = {1, 0};
 static void fwake(_Atomic uint32_t *a) { syscall(SYS_futex, (uint32_t *)a, FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0); }
 // Waits (low power) until *a may have changed from old: the exclusive monitor on its cache line wakes WFE when another core writes it (the event stream bounds the wait)
 static inline uint64_t wait_change(_Atomic uint64_t *a, uint64_t old) {
+#if defined(__aarch64__)
     uint64_t v; __asm__ volatile("ldaxr %0, [%1]" : "=r"(v) : "r"(a) : "memory");
     if (v == old) __asm__ volatile("wfe" ::: "memory");
     return v;
+#else
+    (void)old;return atomic_load_explicit(a,memory_order_acquire);
+#endif
 }
 static uint64_t mono_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (uint64_t)t.tv_sec * 1000000000ull + (uint64_t)t.tv_nsec; }
 
@@ -127,6 +131,7 @@ typedef struct { CB_FIELD VkImage s, d; VkImageLayout sl, dl; uint32_t n; const 
 typedef struct { CB_FIELD VkImage im; VkImageLayout l; VkClearValue v; uint32_t n; const VkImageSubresourceRange *r; } r_clr;
 typedef struct { CB_FIELD uint32_t na, nr; const VkClearAttachment *a; const VkClearRect *r; } r_clra;
 typedef struct { CB_FIELD VkRenderingInfo ri; } r_rend;
+typedef struct { CB_FIELD VkRenderPassBeginInfo rb; VkRenderPassAttachmentBeginInfo ab; VkSubpassContents sc; } r_rpb;
 typedef struct { CB_FIELD VkPipelineBindPoint bp; VkPipeline p; } r_pipe;
 typedef struct { CB_FIELD VkPipelineBindPoint bp; VkPipelineLayout l; uint32_t first, n, nd; const VkDescriptorSet *s; const uint32_t *d; } r_sets;
 typedef struct { CB_FIELD uint32_t first, n; const VkBuffer *b; const VkDeviceSize *o, *sz, *st; } r_vb;
@@ -218,6 +223,19 @@ static void VKAPI_CALL e_vkCmdBeginRendering(VkCommandBuffer cb, const VkRenderi
     r->ri.pStencilAttachment = ri->pStencilAttachment ? (void *)cpy(&at, ri->pStencilAttachment, one) : NULL;
     END();
 }
+static void VKAPI_CALL e_vkCmdBeginRenderPass(VkCommandBuffer cb, const VkRenderPassBeginInfo *rb, VkSubpassContents sc) {   // (with or without one VkRenderPassAttachmentBeginInfo)
+    DIRECT(vkCmdBeginRenderPass, cb, rb, sc);
+    const VkRenderPassAttachmentBeginInfo *ab = rb->pNext;
+    if (ab && (ab->sType != VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO || ab->pNext)) FALLBACK(vkCmdBeginRenderPass, cb, rb, sc);
+    size_t nv = ab ? ab->attachmentCount * sizeof(VkImageView) : 0, nc = rb->clearValueCount * sizeof(VkClearValue);
+    BEGIN(r_rpb, E_vkCmdBeginRenderPass, A8(nv) + A8(nc));
+    r->rb = *rb; r->sc = sc;
+    r->rb.pClearValues = nc ? (void *)cpy(&at, rb->pClearValues, nc) : NULL;
+    if (ab) { r->ab = *ab; r->ab.pAttachments = (void *)cpy(&at, ab->pAttachments, nv); r->rb.pNext = NULL; }   // (pNext set at the replay: the record moves)
+    else r->ab.sType = 0;
+    END();
+}
+static void VKAPI_CALL e_vkCmdEndRenderPass(VkCommandBuffer cb) { DIRECT(vkCmdEndRenderPass, cb); BEGIN(r_val, E_vkCmdEndRenderPass, 0); END(); }
 static void VKAPI_CALL e_vkCmdEndRendering(VkCommandBuffer cb) { DIRECT(vkCmdEndRendering, cb); BEGIN(r_val, E_vkCmdEndRendering, 0); END(); }
 static void VKAPI_CALL e_vkCmdBindPipeline(VkCommandBuffer cb, VkPipelineBindPoint bp, VkPipeline p) {
     DIRECT(vkCmdBindPipeline, cb, bp, p); BEGIN(r_pipe, E_vkCmdBindPipeline, 0); r->bp = bp; r->p = p; END();
@@ -349,6 +367,8 @@ static void run(const hdr *h) {
     case E_vkCmdClearAttachments: { C(r_clra); R.vkCmdClearAttachments(r->cb, r->na, r->a, r->nr, r->r); break; }
     case E_vkCmdBeginRendering: { C(r_rend); R.vkCmdBeginRendering(r->cb, &r->ri); break; }
     case E_vkCmdEndRendering: { C(r_val); R.vkCmdEndRendering(r->cb); break; }
+    case E_vkCmdBeginRenderPass: { C(r_rpb); VkRenderPassBeginInfo rb = r->rb; if (r->ab.sType) rb.pNext = &r->ab; R.vkCmdBeginRenderPass(r->cb, &rb, r->sc); break; }
+    case E_vkCmdEndRenderPass: { C(r_val); R.vkCmdEndRenderPass(r->cb); break; }
     case E_vkCmdBindPipeline: { C(r_pipe); R.vkCmdBindPipeline(r->cb, r->bp, r->p); break; }
     case E_vkCmdBindDescriptorSets: { C(r_sets); R.vkCmdBindDescriptorSets(r->cb, r->bp, r->l, r->first, r->n, r->s, r->nd, r->d); break; }
     case E_vkCmdBindVertexBuffers2: { C(r_vb); R.vkCmdBindVertexBuffers2(r->cb, r->first, r->n, r->b, r->o, r->sz, r->st); break; }
@@ -447,6 +467,7 @@ static void *enc_main(void *arg) {
 void vka_enc_install(void) {   // vka_dev.c, once the device's entry points are loaded
     static int done; if (done) return; done = 1;
     ENC_FNS(ENC_HOOK)
+    VLOG("command encoder: classic render-pass begin/end serialization installed");
 }
 static int up(void) {
     if (g_up) return g_up > 0;

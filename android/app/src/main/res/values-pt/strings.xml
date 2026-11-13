@@ -737,4 +737,6 @@
     <string name="s2_oot_render_profile_360">Perfil Banana: 360p → 720p</string>
     <string name="s2_oot_render_profile_540">Perfil Banana: 540p → 720p</string>
     <string name="s2_oot_render_profile_note">Opcional: prepara a cena escolhida e usa a saída de 720p do modo portátil do jogo. A biblioteca de shaders é preservada. Reinicie o jogo para aplicar.</string>
+    <string name="s2_oot_classic_passes">Passes em cache (Qualcomm)</string>
+    <string name="s2_oot_classic_passes_note">Usa o cache de passes do Banana quando suportado. Reinicie para aplicar. Desative para comparar com o caminho anterior.</string>
 </resources>

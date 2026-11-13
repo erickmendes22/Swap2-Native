@@ -655,7 +655,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - full vegetation is enabled and compute mesh is selected, but the log reports `mesh draw through compute that the look-ahead did not prepare: skipped` and no compute-mesh batch statistics. The forest trees remain bare. → [Compute-mesh enabled but every draw is unprepared](../reference/rendering.md#compute-mesh-enabled-but-every-draw-is-unprepared)
 - descriptor memo hit rates are high, but command recording repeatedly fills and compares large unchanged driver banks; vertex descriptions and placed-memory lookups are also rebuilt. → [Unchanged driver inputs rebuilt per draw](../reference/rendering.md#unchanged-driver-inputs-rebuilt-per-draw)
 - internal SGSR1 is slower than the final-720p path, and its output differs from the public Banana/Qualcomm reference. → [Native SGSR1 reconstruction](../reference/rendering.md#native-sgsr1-reconstruction)
-- heavy scenes record around 150 dynamic-rendering begin/end pairs per frame; driver CPU cost remains material after reducing the reconstruction output. → [Cached Vulkan render passes](../reference/rendering.md#cached-vulkan-render-passes)
+- APK134 fails with classic passes and the command encoder enabled; its simple direct-driver GPU fixture passes. → [Cached Vulkan render passes](../reference/rendering.md#cached-vulkan-render-passes)
 
 ## Shaders
 

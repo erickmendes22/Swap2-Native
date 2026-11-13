@@ -1410,13 +1410,7 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 
 ### Cached Vulkan render passes
 
-**Reverted after Android APK 134:** the real Qualcomm 891.14 run reported a
-native SIGSEGV without its faulting stack. Synthetic parity did not cover the
-full game/driver combination. The complete backend/frontend integration was
-removed, restoring the corresponding APK 132 files byte for byte; source and
-measurements below describe the historical attempt. Root cause remains open.
-
-- **Symptom:** heavy scenes record around 150 dynamic-rendering begin/end pairs per frame; driver CPU cost remains material after reducing the reconstruction output.
-- **Cause:** this fork lacked Banana's classic render-pass and imageless-framebuffer caches. Qualcomm drivers may spend much more CPU time in dynamic begin/end than classic begin/end. CPU and GPU waits overlap, so reducing recording time alone does not promise the same whole-frame gain.
-- **Fix:** `vka_renderpass_cache.h` ports the source snapshot's shape caches, retaining each aspect's LOAD/CLEAR/DONT_CARE and STORE/DONT_CARE, sample counts, mutable image flags and view format lists. `vka_draw.c` begins/ends the matching pass type; `vka_pso.c` uses compatible classic render passes in whole pipelines and every GPL shader/output/link stage, including the cache keys. Framebuffers are imageless and do not retain live texture views. The choice is fixed for the process; capability refusal or the frontend OFF choice selects dynamic rendering before pipelines are built. A later allocation failure refuses the draw rather than mixing incompatible pipelines. The independent synthetic graphics fixture compares real output bytes and reports CPU-recording indicators without projecting software results into phone FPS.
-- **Found on:** [Ocarina, cached classic render passes](../../dm/games/0400486024DEC000/README.md#cached-classic-render-passes-2026-11-13-current). RedMagic performance and graphics validation remain open until device testing.
+- **Symptom:** APK134 fails with classic passes and the command encoder enabled; its simple direct-driver GPU fixture passes.
+- **Cause:** classic begin/end entry points were omitted from `ENC_FNS`. They called the driver immediately on the producer while draws and barriers remained queued on another thread, violating both call order and Vulkan command-buffer external synchronization. The device log lacks the previous crash's faulting stack, but the ordering defect is independently reproduced by bypassing those wrappers in the production-encoder regression.
+- **Fix:** port Banana's classic pass records, argument deep copies, pNext rebasing and worker dispatch into `vka_enc.c`. Unsupported pNext chains use the existing drain-before-direct fallback. The cache remains explicitly optional, OFF by default and after restoring defaults. Compatible whole/GPL pipelines and cached imageless framebuffers preserve load/clear/discard/store, format lists, layers and samples. Test the real encoder across ring wrap with poisoned caller arguments, a bypassed-wrapper negative control, and actual GPU parity with the encoder both off and on; direct GPU validation alone misses this bug. Linux uses an atomic load in place of the unchanged ARM exclusive-monitor wait instruction for the host test.
+- **Found on:** [Ocarina, cached classic render passes](../../dm/games/0400486024DEC000/README.md#cached-classic-render-passes-2026-11-13-current). RedMagic performance and whole-game validation of the corrected option remain open.

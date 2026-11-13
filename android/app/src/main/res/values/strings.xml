@@ -743,4 +743,6 @@
     <string name="s2_oot_render_profile_360">Banana profile: 360p → 720p</string>
     <string name="s2_oot_render_profile_540">Banana profile: 540p → 720p</string>
     <string name="s2_oot_render_profile_note">Optional: prepares the selected scene size and uses the game handheld 720p output. The shader library is preserved. Restart the game to apply.</string>
+    <string name="s2_oot_classic_passes">Cached passes (Qualcomm)</string>
+    <string name="s2_oot_classic_passes_note">Uses the Banana render-pass cache when supported. Restart to apply. Disable to compare with the previous rendering path.</string>
 </resources>
