@@ -2293,6 +2293,11 @@ void vka_tex_pfb_commit(VkCommandBuffer cb, uint64_t fence) {
             g_pfb_r[slot].fence = fence;
             g_pfb_r[slot].n = n;
             g_pfb_direct_subs++;
+            if (g_pfb_direct_subs % 300 == 0)
+                VLOG("texture pool feedback direct: %llu GPU submissions written to dedicated ring slots (no per-submission GPU copy, fill or feedback barriers); %llu full-ring fallbacks, %llu host slot clears of %u bytes; original fallback still available",
+                     (unsigned long long)g_pfb_direct_subs,
+                     (unsigned long long)g_pfb_direct_full,
+                     (unsigned long long)g_pfb_direct_zeros, PFB_BYTES);
         } else {
             // No shader read: the reservation was never used on the GPU.
             g_pfb_r[slot].busy = 0;
