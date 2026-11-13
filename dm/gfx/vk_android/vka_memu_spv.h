@@ -10,7 +10,8 @@
 
 // What a task or mesh module of the library is, read from the module itself (the translator's SpirvMeshEntry.cs forms). Words: what one vertex or primitive takes in
 // the arena. A vertex: position x, y, z, w, then the point size (points), then 4 words per per-vertex location in vloc order. A primitive: its indices (3, or 1 for
-// a point), then the cull word (points), then 4 words per per-primitive location in ploc order; an indexed draw's primitive is its 3 indices only
+// a point), then the cull word (points), then 4 words per per-primitive location in ploc order; an indexed draw's primitive is its 3 indices only.
+// Coalesced (experimental): the same vertex components form MAXV-word planes within each workgroup; primitive storage is unchanged.
 typedef struct {
     int task;                       // 1 task (TaskEXT), 0 mesh (MeshEXT)
     uint32_t local[3], threads;     // the workgroup
@@ -22,7 +23,11 @@ typedef struct {
     int nvloc, nploc;
     uint32_t vw, pw;                // mesh: words per vertex, words per primitive (the expanded form's)
     int indexed;                    // mesh: drawn as indexed triangles (triangles without per-primitive values); else expanded (each corner a vertex of its own)
+    int coalesced;                  // experimental: component planes within each mesh workgroup (same words, no precision change)
 } vka_memu_layout;
+
+// Process-level developer A/B switch; off until paired device timings pass.
+int vka_memu_coalesced(void);
 
 // The layout of a task or mesh module. 1 = known; 0 with the reason in err (a form the emulation does not take: lines, other built-in outputs, 16-bit outputs)
 int vka_memu_layout_of(const uint32_t *w, size_t nw, vka_memu_layout *L, char *err, size_t errn);

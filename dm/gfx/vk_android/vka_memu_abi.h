@@ -37,13 +37,14 @@
 #define VKA_MEMU_R_PAYLOAD 22     // out: arena word of the task payloads (WT words each)
 #define VKA_MEMU_R_COUNTS 23      // out: arena word of the tasks' mesh workgroup counts, which the distribution pass turns into exclusive offsets
 #define VKA_MEMU_R_TOTAL 24       // out: mesh workgroups dispatched
-#define VKA_MEMU_R_VBASE 25       // out: arena word of the vertex region (a multiple of VW; of VSTRIDE for an interleaved draw)
+#define VKA_MEMU_R_VBASE 25       // out: arena word of the vertex region (a multiple of VW; of VSTRIDE for interleaved or coalesced draws)
 #define VKA_MEMU_R_PBASE 26       // out: arena word of the primitive region (an indexed draw's index buffer: firstIndex)
 #define VKA_MEMU_R_WANT 27        // out: mesh workgroups asked for, before the arena's room cut them
 
 #define VKA_MEMU_F_TASK 1         // a task program runs first (its mesh workgroups found by the distribution pass)
 #define VKA_MEMU_F_INDEXED 2      // indexed triangles: the vertex and index regions apart, the indices the arena's vertex numbers (VBASE / VW + workgroup x MAXV + v)
 #define VKA_MEMU_F_INTERLEAVED 4  // one slot of VSTRIDE words per mesh workgroup (vertices, then primitives), its base a multiple of the slot: the vertex shader finds it from VertexIndex
+#define VKA_MEMU_F_COALESCED 8    // vertex component planes, each MAXV words; indexed VBASE aligned to VSTRIDE
 
 #define VKA_MEMU_CTL_COUNTER 0    // control buffer words: the arena words handed out in this submission
 #define VKA_MEMU_CTL_ASKED 1      // the most the counter would have reached (the room asked for)

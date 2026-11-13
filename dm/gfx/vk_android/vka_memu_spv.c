@@ -149,6 +149,10 @@ static void member_builtins(const mod_t *m, uint32_t st, int32_t out[8]) {
 enum { K_POS = 1, K_VLOC, K_PLOC, K_IDX, K_CULL };
 typedef struct { uint32_t id; int kind, k; uint32_t elem; int32_t mb[8]; } outvar;   // k: the location's arena order; mb: the block's member BuiltIns (K_POS)
 static int cmp_u8(const void *a, const void *b) { return (int)*(const uint8_t *)a - (int)*(const uint8_t *)b; }
+int vka_memu_coalesced(void) {
+    const char *value = getenv("DM_VK_MEMU_COALESCED");
+    return value && !strcmp(value, "1");
+}
 static int layout_read(const mod_t *m, vka_memu_layout *L, outvar *ov, int *nov, uint32_t *payload, uint32_t *lidvar, uint32_t *wgvar, char *err, size_t errn) {
     memset(L, 0, sizeof *L); *nov = 0; if (payload) *payload = 0; if (lidvar) *lidvar = 0; if (wgvar) *wgvar = 0;
     if (m->model != EMTask && m->model != EMMesh) FAIL("not a task or mesh module (execution model %u)", m->model);
@@ -214,6 +218,10 @@ static int layout_read(const mod_t *m, vka_memu_layout *L, outvar *ov, int *nov,
         L->vw = 4 + (uint32_t)L->point_size + 4 * (uint32_t)L->nvloc;
         L->pw = (L->points ? 1u : 3u) + (uint32_t)L->cull + 4 * (uint32_t)L->nploc;
         L->indexed = !L->points && !L->nploc && !L->cull;
+        // Keep the measured stable path as the default until a paired
+        // device run establishes a frame-time improvement. This changes
+        // runtime-derived modules, never the imported shader library.
+        L->coalesced = vka_memu_coalesced();
     }
     return 1;
 fail:
@@ -226,6 +234,7 @@ int vka_memu_layout_of(const uint32_t *w, size_t nw, vka_memu_layout *L, char *e
     return ok;
 }
 void vka_memu_rec_mesh(const vka_memu_layout *L, uint32_t rec[32]) {
+    if (L->coalesced) rec[VKA_MEMU_R_FLAGS] |= VKA_MEMU_F_COALESCED;
     if (L->indexed) {
         rec[VKA_MEMU_R_VSTRIDE] = L->max_v * L->vw; rec[VKA_MEMU_R_PSTRIDE] = L->max_p * 3; rec[VKA_MEMU_R_DRAWV] = L->max_p * 3;
         rec[VKA_MEMU_R_FLAGS] |= VKA_MEMU_F_INDEXED;
@@ -429,6 +438,8 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
             fn_t f = {&B, &O};
             int prim = o->kind == K_PLOC || o->kind == K_IDX || o->kind == K_CULL;
             uint32_t stride = prim ? (L.indexed ? 3 : L.pw) : L.vw, off = 0;
+            int planes = L.coalesced && !prim;
+            if (planes) stride = 1;
             uint32_t pidx = c.idx[0];
             int isg = scalar_kind(&m, m.rtype[pidx]) == 'i';
             if (isg) pidx = op1(&f, OpBitcast, B.t_u32, pidx);
@@ -451,8 +462,9 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
             }
             uint32_t basev = ld(&f, B.t_u32, prim ? pv_b : pv_a);
             uint32_t a = op2(&f, OpIAdd, B.t_u32, basev, op2(&f, OpIMul, B.t_u32, pidx, cu(&B, stride)));
-            if (off) a = op2(&f, OpIAdd, B.t_u32, a, cu(&B, off));
-            if (dyn) a = op2(&f, OpIAdd, B.t_u32, a, dyn);
+            if (off) a = op2(&f, OpIAdd, B.t_u32, a, cu(&B, off * (planes ? L.max_v : 1)));
+            if (dyn) a = op2(&f, OpIAdd, B.t_u32, a,
+                planes ? op2(&f, OpIMul, B.t_u32, dyn, cu(&B, L.max_v)) : dyn);
             uint32_t bias = o->kind == K_IDX && L.indexed ? ld(&f, B.t_u32, pv_c) : 0;
             uint32_t nc = 1, ct = t;
             if (T_op(&m, t) == OpTypeVector) { nc = T_w(&m, t)[3]; ct = T_w(&m, t)[2]; }
@@ -483,7 +495,7 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                              sk == 'b' ? sel(&f, B.t_u32, v, c1, c0) :
                                          op1(&f, OpBitcast, B.t_u32, v);
                 if (bias) u = op2(&f, OpIAdd, B.t_u32, u, bias);
-                uint32_t aj = j ? op2(&f, OpIAdd, B.t_u32, a, cu(&B, j)) : a;
+                uint32_t aj = j ? op2(&f, OpIAdd, B.t_u32, a, cu(&B, j * (planes ? L.max_v : 1))) : a;
                 INS(&O, OpStore, chain2(&f, p_sb_u32, arena, c0, aj), u);
             }
             continue;
@@ -661,7 +673,16 @@ uint32_t *vka_memu_vs(const vka_memu_layout *L, size_t *out_nw, char *err, size_
     #define FWORD(a) op1(&f, OpBitcast, B.t_f32, WORD(a))
     uint32_t n = op1(&f, OpBitcast, B.t_u32, ld(&f, t_i32, vid));
     uint32_t vb, pb = 0, culled = 0;
-    if (L->indexed) vb = op2(&f, OpIMul, B.t_u32, n, cu(&B, L->vw));
+    if (L->indexed) {
+        if (L->coalesced) {
+            // Indexed VBASE is aligned to MAXV*VW, so the unchanged
+            // global vertex indices identify both the group and vertex.
+            uint32_t group = op2(&f, OpUDiv, B.t_u32, n, cu(&B, L->max_v));
+            uint32_t vertex = op2(&f, OpUMod, B.t_u32, n, cu(&B, L->max_v));
+            vb = op2(&f, OpIAdd, B.t_u32,
+                op2(&f, OpIMul, B.t_u32, group, cu(&B, L->max_v * L->vw)), vertex);
+        } else vb = op2(&f, OpIMul, B.t_u32, n, cu(&B, L->vw));
+    }
     else {
         uint32_t vpp = L->points ? 1 : 3, dv = L->max_p * vpp, sw = L->max_v * L->vw + L->max_p * L->pw;
         uint32_t slot = op2(&f, OpUDiv, B.t_u32, n, cu(&B, dv)), r = op2(&f, OpUMod, B.t_u32, n, cu(&B, dv));
@@ -670,20 +691,21 @@ uint32_t *vka_memu_vs(const vka_memu_layout *L, size_t *out_nw, char *err, size_
         pb = op2(&f, OpIAdd, B.t_u32, op2(&f, OpIAdd, B.t_u32, sb, cu(&B, L->max_v * L->vw)), op2(&f, OpIMul, B.t_u32, p, cu(&B, L->pw)));
         uint32_t vi = WORD(op2(&f, OpIAdd, B.t_u32, pb, corner)), lastv = cu(&B, L->max_v - 1);
         vi = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, vi, lastv), vi, lastv);
-        vb = op2(&f, OpIAdd, B.t_u32, sb, op2(&f, OpIMul, B.t_u32, vi, cu(&B, L->vw)));
+        vb = op2(&f, OpIAdd, B.t_u32, sb,
+            L->coalesced ? vi : op2(&f, OpIMul, B.t_u32, vi, cu(&B, L->vw)));
         if (L->cull) culled = op2(&f, OpINotEqual, B.t_bool, WORD(op2(&f, OpIAdd, B.t_u32, pb, cu(&B, L->points ? 1 : 3))), c0);
     }
     uint32_t pc_[4];
-    for (uint32_t c = 0; c < 4; c++) pc_[c] = FWORD(c ? op2(&f, OpIAdd, B.t_u32, vb, cu(&B, c)) : vb);
+    for (uint32_t c = 0; c < 4; c++) pc_[c] = FWORD(c ? op2(&f, OpIAdd, B.t_u32, vb, cu(&B, c * (L->coalesced ? L->max_v : 1))) : vb);
     if (culled) {   // a culled point: outside the clip volume (x = y = 2w), which drops it
         pc_[0] = sel(&f, B.t_f32, culled, f2, pc_[0]); pc_[1] = sel(&f, B.t_f32, culled, f2, pc_[1]);
         pc_[2] = sel(&f, B.t_f32, culled, fh, pc_[2]); pc_[3] = sel(&f, B.t_f32, culled, f1, pc_[3]);
     }
     { uint32_t v = B.next++; INS(&F, OpCompositeConstruct, B.t_v4f, v, pc_[0], pc_[1], pc_[2], pc_[3]); INS(&F, OpStore, pos, v); }
-    if (psz) INS(&F, OpStore, psz, L->point_size ? FWORD(op2(&f, OpIAdd, B.t_u32, vb, cu(&B, 4))) : f1);
+    if (psz) INS(&F, OpStore, psz, L->point_size ? FWORD(op2(&f, OpIAdd, B.t_u32, vb, cu(&B, 4 * (L->coalesced ? L->max_v : 1)))) : f1);
     for (int k = 0; k < L->nvloc + L->nploc; k++) {
         int prim = k >= L->nvloc; uint32_t base = prim ? pb : vb, o = prim ? (L->points ? 1u : 3u) + (uint32_t)L->cull + 4u * (uint32_t)(k - L->nvloc) : 4u + (uint32_t)L->point_size + 4u * (uint32_t)k;
-        uint32_t c4[4]; for (uint32_t c = 0; c < 4; c++) c4[c] = FWORD(op2(&f, OpIAdd, B.t_u32, base, cu(&B, o + c)));
+        uint32_t c4[4]; for (uint32_t c = 0; c < 4; c++) c4[c] = FWORD(op2(&f, OpIAdd, B.t_u32, base, cu(&B, (o + c) * (L->coalesced && !prim ? L->max_v : 1))));
         uint32_t v = B.next++; INS(&F, OpCompositeConstruct, B.t_v4f, v, c4[0], c4[1], c4[2], c4[3]); INS(&F, OpStore, prim ? po[k - L->nvloc] : vo[k], v);
     }
     #undef WORD

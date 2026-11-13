@@ -1344,7 +1344,8 @@ int vka_shader_memu_key(uint64_t key) {
     if (!ok || vka_shlib_find(library_for_key(key), key)) return 0;
     static const uint64_t tag[3] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS};
     for (int i = 0; i < 3; i++) {
-        const dmsh_vk_entry *e = vka_shlib_find(library_for_key(key ^ tag[i]), key ^ tag[i]);
+        uint64_t original = key ^ tag[i] ^ vka_memu_layout_tag();
+        const dmsh_vk_entry *e = vka_shlib_find(library_for_key(original), original);
         if (e && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS)) return 1;
     }
     return 0;

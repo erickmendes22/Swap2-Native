@@ -1,0 +1,46 @@
+name: Mesh compute correctness (no APK)
+on:
+  push:
+    branches: [ocarina-v11-ios-perf-from-v101]
+    paths:
+      - dm/gfx/vk_android/vka_memu*
+      - dm/gfx/vk_android/memu/**
+      - dm/gfx/tools/tests/test_memu_coalesced_readback.py
+      - dm/host/tests/t_android_memu*
+      - .github/workflows/mesh-compute-check.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readback:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vulkan software driver and validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers libvulkan-dev spirv-tools glslang-tools
+          python3 - <<'PY'
+          import glob, os
+          paths = glob.glob('/usr/share/vulkan/icd.d/lvp*.json')
+          assert len(paths) == 1, paths
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write('VK_ICD_FILENAMES=' + paths[0] + '\n')
+          PY
+      - name: Compare actual GPU exports and generated vertex readers
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_memu_coalesced_readback.py -v
+      - name: Validate scalar and coalesced task and mesh modules
+        run: |
+          cc -O1 -g -fsanitize=address,undefined \
+            dm/host/tests/t_android_memu.c dm/gfx/vk_android/vka_memu_spv.c \
+            dm/gfx/vk_android/vka_spvpatch.c dm/gfx/vk_android/vka_shlib.c \
+            dm/third_party/zstd/zstddeclib.c -lm -o /tmp/memu-check
+          ASAN_OPTIONS=detect_leaks=1 DM_VK_MEMU_COALESCED=0 /tmp/memu-check
+          ASAN_OPTIONS=detect_leaks=1 DM_VK_MEMU_COALESCED=1 /tmp/memu-check
+      - name: Check hybrid routing and caller ordering
+        run: |
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_mesh_*.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_vegetation_fast_path.py -v
+          python3 -m unittest discover -s dm/tools/tests -p test_android_perf_compare.py -v

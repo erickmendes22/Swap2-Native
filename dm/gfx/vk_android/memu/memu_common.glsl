@@ -27,7 +27,12 @@ void place(uint R, uint want) {
         pb = vb + r[R + VKA_MEMU_R_MAXV] * vw;
         if (vb == 0xffffffffu) { total = 0u; vb = pb = 0u; }
     } else {
+#ifdef VKA_MEMU_ENABLE_COALESCED
+        uint alignment = (flags & VKA_MEMU_F_COALESCED) != 0u ? vs : vw;
+        vb = total != 0u ? alloc(total * vs, alignment) : 0u;
+#else
         vb = total != 0u ? alloc(total * vs, vw) : 0u;
+#endif
         pb = total != 0u ? alloc(total * ps, 1u) : 0u;
         if (vb == 0xffffffffu || pb == 0xffffffffu) { total = 0u; vb = pb = 0u; }
     }

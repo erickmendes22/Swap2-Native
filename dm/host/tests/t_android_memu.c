@@ -113,6 +113,7 @@ static void t_feeds(void) {
 
 int main(void) {
     g_val = system("spirv-val --version >/dev/null 2>&1") == 0;
+    g_out = getenv("DM_VK_MEMU_OUT");
     t_order();
     t_feeds();
     char err[256]; vka_memu_layout L; size_t on;

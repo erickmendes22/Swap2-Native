@@ -12,6 +12,7 @@
 #include "vka_memu.h"
 #include "vka_memu_abi.h"
 #include "vka_memu_helpers_spv.h"
+#include "vka_memu_coalesced_helpers_spv.h"
 #include "vka_spvpatch.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,8 +42,8 @@ vka_memu_sh *vka_memu_of(vka_shader *s) {
         d->nsb += 2;
         if (d->nsb > V.props.limits.maxPerStageDescriptorStorageBuffers) { snprintf(err, sizeof err, "%u storage buffers with the arena and the records, the device's compute stage takes %u", d->nsb, V.props.limits.maxPerStageDescriptorStorageBuffers); d->state = -1; }
         if (d->L.threads > V.props.limits.maxComputeWorkGroupInvocations) { snprintf(err, sizeof err, "a workgroup of %u invocations", d->L.threads); d->state = -1; }
-        d->ce = *s->e; d->ce.stage = DMSH_VK_STAGE_CS; d->ce.key = s->key ^ VKA_MEMU_KEY_CS;
-        memset(&d->ve, 0, sizeof d->ve); d->ve.key = s->key ^ VKA_MEMU_KEY_VS; d->ve.stage = DMSH_VK_STAGE_VS;
+        d->ce = *s->e; d->ce.stage = DMSH_VK_STAGE_CS; d->ce.key = s->key ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag();
+        memset(&d->ve, 0, sizeof d->ve); d->ve.key = s->key ^ VKA_MEMU_KEY_VS ^ vka_memu_layout_tag(); d->ve.stage = DMSH_VK_STAGE_VS;
     } else d->state = -1;
     free(w);
     if (d->state < 0) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("%s shader %016llx is not drawn through compute: %s; its draws are skipped", stage_name(s->e->stage), (unsigned long long)s->key, err); }
@@ -73,7 +74,7 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
     VkShaderModule mod = o ? make_module(o, on) : VK_NULL_HANDLE;
     free(w); free(fz); free(o);
     if (!mod) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("%s shader %016llx: its compute form not made (%s); its draws are skipped", stage_name(s->e->stage), (unsigned long long)s->key, err[0] ? err : "vkCreateShaderModule failed"); return NULL; }
-    dmsh_vk_entry *e = malloc(sizeof *e); *e = d->ce; e->key = s->key ^ VKA_MEMU_KEY_CS ^ (gl ? VKA_MEMU_KEY_GL : 0);
+    dmsh_vk_entry *e = malloc(sizeof *e); *e = d->ce; e->key ^= gl ? VKA_MEMU_KEY_GL : 0;
     e->flags &= (uint16_t)~DMSH_VK_F_GL_DEPTH;   // (the depth convention is in the module)
     vka_shader *v = derive(s, e, mod, 1);
     pthread_mutex_lock(&g_mu);
@@ -99,7 +100,7 @@ vka_shader *vka_memu_vs_of(vka_shader *s) {
 vka_shader *vka_memu_by_key(uint64_t key) {
     static const uint64_t tag[3] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS};
     for (int i = 0; i < 3; i++) {
-        uint64_t k = key ^ tag[i];
+        uint64_t k = key ^ tag[i] ^ vka_memu_layout_tag();
         if (!vka_shader_lib_has(k)) continue;
         vka_shader *s = vka_shader_by_key(k); if (!s || !s->e || s->e->stage < DMSH_VK_STAGE_TS) continue;
         return i < 2 ? vka_memu_cs_of(s, i == 1) : vka_memu_vs_of(s);
@@ -109,7 +110,7 @@ vka_shader *vka_memu_by_key(uint64_t key) {
 
 int vka_memu_vs_feeds(vka_shader *vs, vka_shader *fs) {
     if (!vs || vs->memu != 2 || !fs || !fs->e || fs->e->stage != DMSH_VK_STAGE_FS) return 1;
-    vka_shader *ms = vka_shader_by_key(vs->key ^ VKA_MEMU_KEY_VS); vka_memu_sh *d = ms ? vka_memu_of(ms) : NULL;
+    vka_shader *ms = vka_shader_by_key(vs->key ^ VKA_MEMU_KEY_VS ^ vka_memu_layout_tag()); vka_memu_sh *d = ms ? vka_memu_of(ms) : NULL;
     if (!d) return 1;
     char err[128]; size_t nb = 0; uint64_t in = 0;
     uint32_t *w = vka_shader_memu_words(fs, &nb, err, sizeof err);   // (the pixel shader's base words; their inputs are every module's)
@@ -188,6 +189,11 @@ int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layo
         VkPipelineLayoutCreateInfo pi = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &sl, .pushConstantRangeCount = 1, .pPushConstantRanges = &pr};
         if (vk.vkCreatePipelineLayout(V.dev, &pi, NULL, &pl)) return 0;
         const uint32_t *code[2] = {SPV_MEMU_SETUP, SPV_MEMU_DIST}; size_t len[2] = {sizeof SPV_MEMU_SETUP, sizeof SPV_MEMU_DIST}; VkPipeline *out[2] = {&ps, &pd};
+        if (vka_memu_coalesced()) {
+            code[0] = SPV_MEMU_SETUP_COALESCED; len[0] = sizeof SPV_MEMU_SETUP_COALESCED;
+            code[1] = SPV_MEMU_DIST_COALESCED; len[1] = sizeof SPV_MEMU_DIST_COALESCED;
+            VLOG("mesh compute: experimental coalesced vertex planes enabled; device frame-time validation pending");
+        }
         for (int i = 0; i < 2; i++) {
             VkShaderModule m = make_module(code[i], len[i] / 4); if (!m) return 0;
             VkComputePipelineCreateInfo ci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .layout = pl, .stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = m, .pName = "main"}};
