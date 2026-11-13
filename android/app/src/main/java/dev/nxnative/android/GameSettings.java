@@ -186,7 +186,7 @@ final class GameSettings {
                 .override(a, Prefs.ownFpsCap(a, id), MainActivity.capLabel(Prefs.fpsCap(a, id))).chevron(a).view);
         if (prof != null && prof.hasNdsr()) {   // only where agl's NDSR networks are in the game's shaders (Profile.ndsrEnv)
             String choice = Prefs.ndsr(a, id);
-            String cur = Prefs.NDSR_SGSR.equals(choice) ? "SGSR 1 · reconstrução combinada"
+            String cur = Prefs.NDSR_SGSR.equals(choice) ? "SGSR 1 · NDSR interno (GPU)"
                     : Prefs.NDSR_FSR.equals(choice) ? "Rápida (EASU, menos GPU)" : "Rede original NDSR";
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_image, "Reconstrução da cena (GPU)", v -> upscaler(a, g, again))
                     .value(cur + " · depois do render interno, antes da imagem final").chevron(a).view);
@@ -710,7 +710,7 @@ final class GameSettings {
         // output, with the VRS-independent fail-closed GPU handshake.
         String[] labels = {"Rede original NDSR (mais pesada)",
                 "Modo rápido EASU (menos GPU)",
-                "SGSR 1 · reconstrução da cena + saída (Snapdragon)"};
+                "SGSR 1 · reconstrução NDSR interna (Snapdragon)"};
         String selected = Prefs.ndsr(a, g.titleId);
         int checked = Prefs.NDSR_SGSR.equals(selected) ? 2
                     : Prefs.NDSR_FSR.equals(selected) ? 1 : 0;
