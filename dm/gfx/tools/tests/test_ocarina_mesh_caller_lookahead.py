@@ -43,14 +43,16 @@ enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_E
 typedef struct { uint32_t op, size; } op_hdr;
 typedef struct { uint32_t op, size; uint64_t arg; } record;
 typedef struct { int prim, mdi_cnt; } p_draw;
+typedef struct { int32_t mode,pad; uint64_t addr; } p_render_cond;
 typedef struct { int state; } vka_dstate;
 static struct { int memu, mesh, task; } V = {0,0,0};
-static struct { vka_dstate d; } S;
+static struct { vka_dstate d; int rc_skip; } S;
 static vka_dstate g_memu_st;
 static _Thread_local const uint8_t *g_memu_caller[16];
 static _Thread_local int g_memu_depth;
 static uint64_t g_memu_parent_resumes, g_memu_nested_batches;
 static uint64_t g_memu_boundary_op[OP_COUNT_ + 1];
+static uint64_t g_memu_rc_true_crossed,g_memu_rc_true_blocked,g_memu_rc_unsafe_blocked;
 static int batched, states[32];
 static int memu_allowed(uint32_t op) { return op != OP_SET_RT; }
 static const p_draw *draw_rec(const void *arg, uint32_t size, p_draw *tmp) {
