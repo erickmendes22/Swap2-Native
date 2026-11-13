@@ -257,6 +257,15 @@ final class GameSettings {
                     + "Mantém o algoritmo original para tarefas maiores; opção experimental desligada por padrão. "
                     + "Reinicie o jogo para comparar FPS e tempo GPU.");
             box.addView(taskSearch.view);
+            Ui.Setting rcFuse = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Agrupar vegetação entre render enable (teste)", null)
+                    .toggle(a, Prefs.memuRenderEnableFuse(a, id),
+                            (b, on) -> Prefs.memuRenderEnableFuse(a, id, on));
+            rcFuse.value("Permite agrupar lotes mesh compute separados apenas por SetRenderEnable(true) "
+                    + "quando o desenho já está habilitado. Nunca atravessa condições de oclusão, "
+                    + "desativações, barreiras nem mudanças de alvo. Experimental e desligado "
+                    + "por padrão; reinicie o jogo para comparar GPU e FPS.");
+            box.addView(rcFuse.view);
             Ui.Setting compute = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_compute_optimized), null)
                     .toggle(a, Prefs.computeOptimized(a, id), (b, on) -> Prefs.computeOptimized(a, id, on));
             compute.value(a.getString(R.string.s2_compute_optimized_note));
