@@ -8,6 +8,11 @@ on:
       - dm/gfx/tools/tests/test_memu_coalesced_readback.py
       - dm/gfx/tools/tests/test_memu_plane_lut.py
       - dm/gfx/tools/tests/test_banana_input_caches.py
+      - dm/gfx/tools/tests/test_ocarina_mesh_native_hybrid.py
+      - dm/gfx/tools/tests/test_ocarina_mesh_route_ab.py
+      - dm/host/tests/t_android_mesh_invariant.c
+      - dm/gfx/vk_android/selftest/mesh_invariant.mesh
+      - dm/gfx/vk_android/vka_shader.c
       - dm/gfx/vk_android/vka_tex.c
       - dm/gfx/vk_android/vka_exec.c
       - dm/gfx/tools/tests/test_ocarina_pool_fb_direct.py
