@@ -125,16 +125,21 @@ final class Prefs {
     }
     // Qualcomm/Turnip mesh route A/B. Default 0 retains the known-good
     // original-library native + 508 supplemental compute hybrid.
-    // 1: all mesh draws through compute; 2: experimental all native.
+    // -1: automatic (Qualcomm proprietary with mesh emulation -> all compute,
+    // other drivers retain hardware-native / required emulation); 0: older
+    // hybrid baseline; 1: all compute; 2: unsafe native diagnostic.
+    // Existing explicitly saved choices are NOT migrated. Newly configured
+    // Ocarina titles use automatic, following the same-device A/B result
+    // (GPU p50 20.35–20.56ms compute versus 20.84–20.96ms hybrid).
     static int ocarinaMeshRoute(Context c, String titleId) {
-        if (!OCARINA_TITLE.equals(titleId)) return 0;
-        int mode = of(c).getInt(gameKey("oot_mesh_route", titleId), 0);
-        return mode >= 0 && mode <= 2 ? mode : 0;
+        if (!OCARINA_TITLE.equals(titleId)) return -1;
+        int mode = of(c).getInt(gameKey("oot_mesh_route", titleId), -1);
+        return mode >= -1 && mode <= 2 ? mode : -1;
     }
     static void ocarinaMeshRoute(Context c, String titleId, int mode) {
         if (!OCARINA_TITLE.equals(titleId)) return;
         of(c).edit().putInt(gameKey("oot_mesh_route", titleId),
-                mode >= 0 && mode <= 2 ? mode : 0).commit();
+                mode >= -1 && mode <= 2 ? mode : -1).commit();
     }
     static boolean fullVegetation(Context c, String titleId) { return of(c).getBoolean(gameKey("full_vegetation", titleId), true); }
     static void fullVegetation(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on).commit(); }
