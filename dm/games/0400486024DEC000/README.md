@@ -479,6 +479,16 @@ attributed to these backend differences.
 
 ## Cached classic render passes (2026-11-13, current)
 
+**REVERTED after APK 134:** device log `140709` reports a previous native
+SIGSEGV (status 11) and confirms classic passes enabled. It does not contain
+the faulting crash stack, so the exact driver/pipeline failure is unresolved.
+The synthetic test did not establish correctness of the complete game/driver
+path. The following records the reverted attempt, not the active backend.
+All renderer and frontend files changed by that attempt are restored byte for
+byte from working APK 132 commit `13f12f2`. The 540p scene/output profiles and
+SGSR changes stay intact. Only the independently tested profiler shape fix
+remains. The cache switch is removed rather than leaving an inactive control.
+
 The 13f12f2 device logs `134012` and `134102` confirm handheld graphics scale 2,
 respectively 640x360 -> 1280x720 and 960x540 -> 1280x720. Both used EASU NDSR
 plus final SGSR1, not the new internal SGSR1 kernel. Both kept the heavy-fragment

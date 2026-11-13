@@ -1410,6 +1410,12 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 
 ### Cached Vulkan render passes
 
+**Reverted after Android APK 134:** the real Qualcomm 891.14 run reported a
+native SIGSEGV without its faulting stack. Synthetic parity did not cover the
+full game/driver combination. The complete backend/frontend integration was
+removed, restoring the corresponding APK 132 files byte for byte; source and
+measurements below describe the historical attempt. Root cause remains open.
+
 - **Symptom:** heavy scenes record around 150 dynamic-rendering begin/end pairs per frame; driver CPU cost remains material after reducing the reconstruction output.
 - **Cause:** this fork lacked Banana's classic render-pass and imageless-framebuffer caches. Qualcomm drivers may spend much more CPU time in dynamic begin/end than classic begin/end. CPU and GPU waits overlap, so reducing recording time alone does not promise the same whole-frame gain.
 - **Fix:** `vka_renderpass_cache.h` ports the source snapshot's shape caches, retaining each aspect's LOAD/CLEAR/DONT_CARE and STORE/DONT_CARE, sample counts, mutable image flags and view format lists. `vka_draw.c` begins/ends the matching pass type; `vka_pso.c` uses compatible classic render passes in whole pipelines and every GPL shader/output/link stage, including the cache keys. Framebuffers are imageless and do not retain live texture views. The choice is fixed for the process; capability refusal or the frontend OFF choice selects dynamic rendering before pipelines are built. A later allocation failure refuses the draw rather than mixing incompatible pipelines. The independent synthetic graphics fixture compares real output bytes and reports CPU-recording indicators without projecting software results into phone FPS.

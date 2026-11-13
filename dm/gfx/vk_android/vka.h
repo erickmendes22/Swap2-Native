@@ -27,7 +27,6 @@
     X(vkAllocateMemory) X(vkFreeMemory) X(vkMapMemory) X(vkUnmapMemory) X(vkMapMemory2KHR) X(vkUnmapMemory2KHR) \
     X(vkCreateBuffer) X(vkDestroyBuffer) X(vkGetBufferMemoryRequirements) X(vkBindBufferMemory) X(vkGetBufferDeviceAddress) \
     X(vkCreateImage) X(vkDestroyImage) X(vkGetImageMemoryRequirements) X(vkGetImageMemoryRequirements2) X(vkBindImageMemory) X(vkCreateImageView) X(vkDestroyImageView) \
-    X(vkCreateRenderPass) X(vkCreateFramebuffer) X(vkCmdBeginRenderPass) X(vkCmdEndRenderPass) \
     X(vkCreateSampler) X(vkDestroySampler) \
     X(vkCreateCommandPool) X(vkAllocateCommandBuffers) X(vkResetCommandBuffer) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) \
     X(vkCreateSemaphore) X(vkDestroySemaphore) X(vkWaitSemaphores) X(vkGetSemaphoreCounterValue) X(vkSignalSemaphore) \
@@ -85,7 +84,6 @@ typedef struct {
     void *perf_hint;                                // vkQueueSetPerfHintQCOM (VK_QCOM_queue_perf_hint), NULL without it: vka_gpu_floor
     // The draw path's device facts: push descriptors (and how many a set may hold), vertex input dynamic state, robustness2's null descriptors, 8-bit indices,
     // instance-rate divisors, logic operations, dual-source blending, geometry and tessellation stages, depth clamp, fill mode lines, wide lines
-    int imageless;
     int indirect_count;
     int push_desc, vin_dyn, null_desc, ext_storage, idx8, divisor, logic_op, dual_src, geom, tess, depth_clamp, fill_lines, depth_bias_clamp, multi_vp, a2c;
     // NVN2 task and mesh programs (VK_EXT_mesh_shader: mesh = meshShader, task = taskShader too; DM_VK_MESH=0 leaves it off): their shaders are refused without it (vka_shader.c refusal)
@@ -233,7 +231,6 @@ typedef struct vka_img {
     struct vka_img *watch_next, *watch_prev; int watch_listed;
     VkImage img; vka_imem m; vka_fmt f; VkImageUsageFlags usage; VkImageAspectFlags aspect;
     uint32_t w, h, depth, layers, levels, samples; uint64_t bytes;
-    VkImageCreateFlags cflags; uint32_t nvf; VkFormat vf[6];
     int refs, inited, gpu_owned, cpu_dirty;
     uint64_t last_frame, last_fence;  // last use and submitted GPU work; prevents unsafe cache eviction
     // An explicitly discarded attachment range may be loaded as DONT_CARE.
@@ -545,6 +542,3 @@ void vka_fps_fg(int state, int mult);
 enum { VKA_FG_MAX = 3 };
 int vka_fg_frame(uint64_t serial, const int *crop, double period, uint64_t fence, vka_img **gen, double *hold, double *out_period);
 uint64_t vka_refresh_ns(void);   // vka_present.c: the panel's refresh period in ns from display timing, 0 when not known (present thread)
-
-int vka_classic_rp(void);
-VkRenderPass vka_rp_compat(const VkFormat *cf,uint32_t n,VkFormat df,VkFormat sf,uint32_t samples);

@@ -16,9 +16,6 @@
 #include "vka_ndsr.h"
 #include "vka_ndsr_sampler.h"
 
-#ifndef NDSR_EXTRA_FNS
-#define NDSR_EXTRA_FNS(X)
-#endif
 #define FNS(X) X(vkEnumeratePhysicalDevices) X(vkGetPhysicalDeviceProperties) X(vkGetPhysicalDeviceQueueFamilyProperties) X(vkGetPhysicalDeviceMemoryProperties) \
     X(vkGetPhysicalDeviceFormatProperties) X(vkGetPhysicalDeviceFeatures) X(vkCreateDevice) X(vkGetDeviceQueue) X(vkCreateBuffer) X(vkGetBufferMemoryRequirements) X(vkAllocateMemory) \
     X(vkBindBufferMemory) X(vkMapMemory) X(vkCreateImage) X(vkGetImageMemoryRequirements) X(vkBindImageMemory) X(vkCreateImageView) X(vkCreateSampler) \
@@ -26,7 +23,7 @@
     X(vkUpdateDescriptorSets) X(vkCreateCommandPool) X(vkAllocateCommandBuffers) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) X(vkCmdPipelineBarrier) \
     X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) X(vkCmdClearColorImage) X(vkCmdBindPipeline) X(vkCmdBindDescriptorSets) X(vkCmdDispatch) X(vkQueueSubmit) \
     X(vkCmdPushConstants) X(vkCreateQueryPool) X(vkCmdResetQueryPool) X(vkCmdWriteTimestamp) X(vkGetQueryPoolResults) \
-    X(vkQueueWaitIdle) X(vkDestroyPipeline) X(vkDestroyShaderModule) X(vkResetDescriptorPool) NDSR_EXTRA_FNS(X)
+    X(vkQueueWaitIdle) X(vkDestroyPipeline) X(vkDestroyShaderModule) X(vkResetDescriptorPool)
 #define DECL(n) static PFN_##n n;
 FNS(DECL)
 static VkDevice dev; static VkPhysicalDevice pd; static VkQueue q; static VkPhysicalDeviceMemoryProperties memp; static VkCommandPool pool;
@@ -79,7 +76,7 @@ static VkImage image(VkFormat f, uint32_t w, uint32_t h, VkImageUsageFlags use, 
     VkMemoryAllocateInfo ai = {VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = mr.size, .memoryTypeIndex = mem_type(mr.memoryTypeBits, 0)};
     VkDeviceMemory m; VK(vkAllocateMemory(dev, &ai, NULL, &m)); VK(vkBindImageMemory(dev, im, m, 0));
     VkImageViewCreateInfo vi = {VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, .image = im, .viewType = VK_IMAGE_VIEW_TYPE_2D, .format = f, .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-    if(view)VK(vkCreateImageView(dev, &vi, NULL, view));
+    VK(vkCreateImageView(dev, &vi, NULL, view));
     return im;
 }
 static void barrier(VkCommandBuffer cb, VkImage im, VkImageLayout from, VkImageLayout to) {
@@ -92,13 +89,7 @@ static int init(void) {
     void *lib = dlopen("libvulkan.so.1", RTLD_NOW); if (!lib) { printf("SKIP: no libvulkan.so.1\n"); return 0; }
     PFN_vkGetInstanceProcAddr gipa = (PFN_vkGetInstanceProcAddr)dlsym(lib, "vkGetInstanceProcAddr");
     PFN_vkCreateInstance ci_ = (PFN_vkCreateInstance)gipa(NULL, "vkCreateInstance");
-    VkApplicationInfo app = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion =
-#ifdef VKA_RENDERPASS_TEST
-        VK_API_VERSION_1_3
-#else
-        VK_API_VERSION_1_1
-#endif
-    };
+    VkApplicationInfo app = {VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_1};
     VkInstanceCreateInfo ii = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &app}; VkInstance inst;
     if (ci_(&ii, NULL, &inst)) { printf("SKIP: no Vulkan instance\n"); return 0; }
 #define LOAD(n) n = (PFN_##n)gipa(inst, #n); if (!n) { printf("FAIL: no %s\n", #n); exit(2); }
@@ -113,11 +104,6 @@ static int init(void) {
     float prio = 1; VkDeviceQueueCreateInfo qc = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = qi, .queueCount = 1, .pQueuePriorities = &prio};
     VkPhysicalDeviceFeatures f = {.shaderStorageImageWriteWithoutFormat = VK_TRUE};
     VkDeviceCreateInfo dc = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1, .pQueueCreateInfos = &qc, .pEnabledFeatures = &f};
-#ifdef VKA_RENDERPASS_TEST
-    VkPhysicalDeviceVulkan13Features f13={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,.dynamicRendering=VK_TRUE};
-    VkPhysicalDeviceVulkan12Features f12={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,.pNext=&f13,.imagelessFramebuffer=VK_TRUE};
-    dc.pNext=&f12;
-#endif
     VK(vkCreateDevice(pd, &dc, NULL, &dev)); vkGetDeviceQueue(dev, qi, 0, &q);
     VkFormatProperties fp; vkGetPhysicalDeviceFormatProperties(pd, VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, &fp);
     if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) { printf("SKIP: E5B9G9R9 is not sampled on this device\n"); return 0; }

@@ -11,9 +11,6 @@ on:
       - dm/gfx/vk_android/vka_tex.c
       - dm/gfx/vk_android/vka_exec.c
       - dm/gfx/tools/tests/test_ocarina_pool_fb_direct.py
-      - dm/gfx/vk_android/vka_renderpass_cache.h
-      - dm/gfx/vk_android/selftest/renderpass_gpu.c
-      - dm/tools/tests/test_renderpass_cache_gpu.py
       - dm/gfx/vk_android/vka_ndsr*
       - dm/gfx/vk_android/fsr/ndsr*
       - dm/gfx/vk_android/selftest/*sgsr*
@@ -42,7 +39,7 @@ jobs:
       - name: Install Vulkan software driver and validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y mesa-vulkan-drivers libvulkan-dev spirv-tools glslang-tools glslc vulkan-validationlayers
+          sudo apt-get install -y mesa-vulkan-drivers libvulkan-dev spirv-tools glslang-tools glslc
           python3 - <<'PY'
           import glob, os
           paths = glob.glob('/usr/share/vulkan/icd.d/lvp*.json')
@@ -52,8 +49,6 @@ jobs:
           PY
       - name: Validate SGSR1 pixels against independent Banana reference
         run: python3 -m unittest discover -s dm/tools/tests -p test_ndsr_sgsr_gpu.py -v
-      - name: Compare cached classic passes and dynamic rendering on Vulkan
-        run: python3 -m unittest discover -s dm/tools/tests -p test_renderpass_cache_gpu.py -v
       - name: Compile actual texture feedback ring policy and compare all texture IDs
         run: |
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pool_fb_direct.py' -v

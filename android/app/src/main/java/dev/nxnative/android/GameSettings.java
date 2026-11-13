@@ -164,7 +164,6 @@ final class GameSettings {
             sceneWant(id, null);
             Prefs.scene720(a, id, false);
             Prefs.renderProfile(a,id,0);
-            Prefs.classicPasses(a,id,true);
             Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
             // Experimental GPU skips must not survive Restore defaults.
             Prefs.of(a).edit()
@@ -270,9 +269,6 @@ final class GameSettings {
             Ui.add(box, Ui.small(a, a.getString(R.string.s2_vrs_heavy_note)), 6);
         }
         if (Prefs.OCARINA_TITLE.equals(id) && prof != null && prof.hasScene()) {
-            box.addView(new Ui.Setting(a,R.drawable.s2_ic_display,a.getString(R.string.s2_oot_classic_passes),null)
-                .toggle(a,Prefs.classicPasses(a,id),(button,on)->Prefs.classicPasses(a,id,on)).view);
-            Ui.add(box,Ui.small(a,a.getString(R.string.s2_oot_classic_passes_note)),6);
             String[] names=renderProfileNames(a);
             box.addView(new Ui.Setting(a,R.drawable.s2_ic_display,a.getString(R.string.s2_oot_render_profile),
                     v -> renderProfile(a,g,again)).value(names[Prefs.renderProfile(a,id)]).chevron(a).view);

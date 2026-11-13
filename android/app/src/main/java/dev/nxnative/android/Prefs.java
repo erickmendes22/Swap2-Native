@@ -105,12 +105,6 @@ final class Prefs {
      */
     // Unsafe scene-layer speedhacks: never inherited from another game;
     // the second switch is a strict subset of the first and both start OFF.
-    static boolean classicPasses(Context c,String id) {
-        return OCARINA_TITLE.equals(id) && of(c).getBoolean(gameKey("oot_classic_passes",id),true);
-    }
-    static void classicPasses(Context c,String id,boolean on) {
-        of(c).edit().putBoolean(gameKey("oot_classic_passes",id),on).commit();
-    }
     static boolean hiddenLayersOff(Context c, String titleId) {
         return of(c).getBoolean(gameKey("oot_hidden_layers", titleId), false);
     }

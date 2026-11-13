@@ -373,7 +373,6 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // Independent, OFF-by-default draw omissions. Evaluate only
             // for Ocarina; restore defaults by disabling each switch.
             if (Prefs.OCARINA_TITLE.equals(id)) {
-                if(!Prefs.classicPasses(this,id))env.add("DM_VK_CLASSIC_RP=0");
                 env.add("DM_VK_OOT_HIDDEN_LAYERS=" + (Prefs.hiddenLayersOff(this, id) ? "1" : "0"));
                 env.add("DM_VK_OOT_SKIP_HEAVY_FS=" + (Prefs.skipHeavyFragment(this, id) ? "1" : "0"));
             }
