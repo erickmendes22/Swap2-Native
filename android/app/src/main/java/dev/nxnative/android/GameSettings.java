@@ -168,6 +168,7 @@ final class GameSettings {
             Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
             // Experimental GPU skips must not survive Restore defaults.
             Prefs.of(a).edit()
+                    .remove(Prefs.gameKey("oot_mesh_route", id))
                     .remove(Prefs.gameKey("oot_hidden_layers", id))
                     .remove(Prefs.gameKey("oot_skip_heavy_fs", id))
                     .remove(Prefs.gameKey("pause_return", id)).commit();
@@ -213,6 +214,11 @@ final class GameSettings {
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));
             box.addView(vegetation.view);
+            String[] meshNames = {"Híbrido atual", "Compute integral", "Mesh nativo experimental"};
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Execução da vegetação (GPU)", v -> meshRouteDialog(a, g, again))
+                    .value(meshNames[Prefs.ocarinaMeshRoute(a, id)] +
+                           " · teste A/B; reinicie o jogo").chevron(a).view);
             // Both switches are deliberately experimental. The heavy
             // fragment option is a subset of Hidden layers off; users can
             // benchmark each independently without touching shader packs.
@@ -720,6 +726,29 @@ final class GameSettings {
     }
 
     /** Upscaler: the game's NDSR network or FSR 1 in its place (Prefs.ndsr, the profile's ndsr_default without a choice; the host's lines at the next start, Profile.ndsrEnv) */
+    /** Ocarina-only mesh route experiment: do not change a running Vulkan device. */
+    private static void meshRouteDialog(MainActivity a, Game g, Runnable done) {
+        if (!Prefs.OCARINA_TITLE.equals(g.titleId)) return;
+        String[] names = {
+            "Híbrido atual (padrão; mesh base nativo + vegetação em compute)",
+            "Compute integral (todos os mesh draws; comparar com Banana)",
+            "Mesh nativo integral (experimental; pode mostrar espinhos/falhas)"
+        };
+        int selected = Prefs.ocarinaMeshRoute(a, g.titleId);
+        new AlertDialog.Builder(a)
+            .setTitle("Execução da vegetação · " + g.name)
+            .setMessage("O Qualcomm 891.14 anuncia mesh/task shaders, mas os programas de vegetação podem apresentar geometria incorreta. "
+                + "No modo nativo, as posições de profundidade e cor recebem Invariant sem cortar o pré-pass. "
+                + "O modo compute preserva todos os passes. Compare na mesma cena; reinicie para aplicar.")
+            .setSingleChoiceItems(names, selected, (dialog, which) -> {
+                Prefs.ocarinaMeshRoute(a, g.titleId, which);
+                dialog.dismiss();
+                done.run();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
     private static void upscaler(MainActivity a, Game g, Runnable done) {
         // A/B requires the old 720p presentation route to stay available:
         // full internal SGSR1 currently works at the game's 2048x1152 NDSR
