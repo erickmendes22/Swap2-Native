@@ -50,12 +50,14 @@ final class Profile {
         List<String> env = new ArrayList<>();
         if (!hasNdsr()) return env;
         env.add("DM_VK_NDSR_INPUT=" + ndsr);
-        // The SGSR choice now selects the real 12-tap NDSR COMPUTE
-        // replacement instead of applying an additional SGSR presentation
-        // filter after the game's own high-resolution network.
-        if ("sgsr".equals(choice) && Prefs.OCARINA_TITLE.equals(titleId))
+        // Preserve previous SGSR1 presentation as a reproducible baseline.
+        // Only the new explicit sg sr-compute choice runs the 12-tap SGSR1
+        // in the NDSR compute operation at the game's existing output size.
+        if (Prefs.NDSR_SGSR_COMPUTE.equals(choice) &&
+                Prefs.OCARINA_TITLE.equals(titleId))
             env.add("DM_VK_NDSR=sgsr");
-        else if ("fsr".equals(choice) || "sgsr".equals(choice))
+        else if ("fsr".equals(choice) || "sgsr".equals(choice) ||
+                 Prefs.NDSR_SGSR_COMPUTE.equals(choice))
             env.add("DM_VK_NDSR=fsr");
         return env;
     }
