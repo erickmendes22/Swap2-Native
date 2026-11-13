@@ -705,9 +705,9 @@ final class GameSettings {
 
     /** Upscaler: the game's NDSR network or FSR 1 in its place (Prefs.ndsr, the profile's ndsr_default without a choice; the host's lines at the next start, Profile.ndsrEnv) */
     private static void upscaler(MainActivity a, Game g, Runnable done) {
-        // The Snapdragon SGSR1 backend is a presentation upscaler.
-        // Its scene path uses EASU conversion internally plus SGSR1 on
-        // output, with the VRS-independent fail-closed GPU handshake.
+        // The new SGSR1 NDSR kernel reconstructs in the game's compute
+        // stage, preserving its native output for post-processing and UI.
+        // Output only needs an inexpensive final bilinear scaling.
         String[] labels = {"Rede original NDSR (mais pesada)",
                 "Modo rápido EASU (menos GPU)",
                 "SGSR 1 · reconstrução NDSR interna (Snapdragon)"};
@@ -718,9 +718,7 @@ final class GameSettings {
             Prefs.ndsr(a, g.titleId, w == 2 ? Prefs.NDSR_SGSR
                     : w == 1 ? Prefs.NDSR_FSR : Prefs.NDSR_NET);
             if (w == 2) {
-                // Apply both halves of the real SGSR scene route. Do not
-                // claim DM_VK_NDSR=sgsr exists; it would silently fall back.
-                GraphicsOptions.setMode(a, g.titleId, 4, false);
+                GraphicsOptions.setMode(a, g.titleId, 2, false);
             }
             x.dismiss();
             done.run();
