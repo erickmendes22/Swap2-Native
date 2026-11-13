@@ -105,8 +105,9 @@ class VirtualRetile(unittest.TestCase):
         self.assertTrue(any(o==16 and a[-3:]==[8,4,2] for o,a in lines))
         self.assertTrue(any(o==194 and a[1]==22 for o,a in lines))
         self.assertTrue(any(o==199 and a[1]==23 for o,a in lines))
-        self.assertTrue(any(o==83 and a[1]==24 for o,a in lines))
-        self.assertFalse(any(o==61 and a[-1] in (8,9,10) for o,a in lines))
+        self.assertTrue(any(o==82 and a[1]==24 for o,a in lines))
+        self.assertTrue(any(o==61 and a[-1]==10 for o,a in lines))
+        self.assertFalse(any(o==61 and a[-1] in (8,9) for o,a in lines))
         self.assertIn("virtualized 3",why)
 
     def test_shader_without_global_invocation_id_uses_native_group_local(self):
@@ -128,10 +129,10 @@ class VirtualRetile(unittest.TestCase):
         self.assertTrue(any(code==134 for code,_ in parsed))
         self.assertTrue(any(code==137 for code,_ in parsed))
         self.assertTrue(any(code==128 for code,_ in parsed))
-        # Raw hardware group/local loads are needed to reconstruct old
-        # logical values; only the old NumWorkgroups input must disappear.
-        self.assertFalse(any(code==61 and args[-1]==10
-                             for code,args in parsed))
+        # Raw group/local inputs restore the old IDs. NumWorkgroups is
+        # read dynamically, not replaced by the old literal grid.
+        self.assertTrue(any(code==61 and args[-1]==10
+                            for code,args in parsed))
 
     def test_identical_indices_for_all_110592_invocations(self):
         for z in range(24*2):
@@ -144,6 +145,24 @@ class VirtualRetile(unittest.TestCase):
                     self.assertEqual(virt_group,orig_group)
                     self.assertEqual(virt_local,orig_local)
         self.assertEqual(8*9*12*128,8*9*24*64)
+
+    def test_logical_ids_and_numworkgroups_multiple_grids(self):
+        # Deterministic bijection over different grid sizes, including
+        # sizes beyond the originally captured 8x9x12 grid.
+        for gx,gy,gz in ((8,9,12),(10,14,18),(16,12,15),(2,3,7),(1,1,1)):
+            physical=(gx,gy,2*gz)
+            self.assertEqual((physical[0],physical[1],physical[2]//2),(gx,gy,gz))
+            for z in range(4*gz):
+                for y in range(4*gy):
+                    for x in range(8*gx):
+                        newgroup=(x//8,y//4,z//2)
+                        newlocal=(x%8,y%4,z%2)
+                        guestgroup=(newgroup[0],newgroup[1],newgroup[2]//2)
+                        guestlocal=(newlocal[0],newlocal[1],
+                                    (newgroup[2]%2)*2+newlocal[2])
+                        self.assertEqual(guestgroup,(x//8,y//4,z//4))
+                        self.assertEqual(guestlocal,(x%8,y%4,z%4))
+            self.assertEqual(gx*gy*gz*128,gx*gy*(gz*2)*64)
 
     def test_fail_closed_on_unsafe_shader_features(self):
         bad=[op(224,1,1,1),op(227,3,30,8,1),
@@ -160,15 +179,16 @@ class VirtualRetile(unittest.TestCase):
         self.assertIsNotNone(patched, reason)
         self.assertIn('9 local/group builtin loads', reason)
         self.assertIn((16,[20,17,8,4,2]), list(instructions(patched)))
-        # X/Y are physically unchanged; NumWorkgroups uses the original
-        # literal grid, GroupZ halves, and LocalZ restores the half-group.
+        # X/Y are physically unchanged; NumWorkgroups Z is dynamically
+        # halved, GroupZ halves, and LocalZ restores the half-group.
         rows = list(instructions(patched))
         self.assertIn((61,[3,41,40]), rows)
         self.assertIn((61,[3,43,42]), rows)
         self.assertTrue(any(code == 134 and args[1] == 45 for code,args in rows))
         self.assertTrue(any(code == 128 and args[1] == 51 for code,args in rows))
-        for result in (53,55,57):
-            self.assertTrue(any(code == 81 and args[1] == result for code,args in rows))
+        for result in (53,55):
+            self.assertTrue(any(code == 61 and args[1] == result for code,args in rows))
+        self.assertTrue(any(code == 134 and args[1] == 57 for code,args in rows))
 
     def test_component_pointer_escape_and_dynamic_index_still_refused(self):
         for extra in (op(83,30,58,40), op(62,40,31), op(65,30,58,40,31)):
@@ -227,7 +247,9 @@ class VirtualRetile(unittest.TestCase):
         self.assertIn("vka_spv_oot_cs_virtual_retile",SHADER)
         self.assertIn("DM_VK_OOT_CS_VIRTUAL_RETILE",SHADER)
         self.assertIn('!rt.b[0] && !dp->ind && !spill_bytes(sh[5])',DRAW)
-        self.assertIn('dp->x == 8 && dp->y == 9 && dp->z == 12',DRAW)
+        self.assertIn('dp->x > 0 && dp->y > 0 && dp->z > 0',DRAW)
+        self.assertIn('maxComputeWorkGroupCount[2] / 2u',DRAW)
+        self.assertNotIn('dp->x == 8 && dp->y == 9 && dp->z == 12',DRAW)
         self.assertIn('9e6b00b050e30801\t{"local":[8,4,4],"shared":0}',FACTS)
         self.assertIn('9ed48d1011f1b48b\t{"local":[8,8,8],"shared":18432}',FACTS)
         self.assertIn('sh[5]->key == UINT64_C(0x9ed48d1011f1b48b)',DRAW)
