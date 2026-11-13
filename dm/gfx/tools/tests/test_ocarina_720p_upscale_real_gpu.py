@@ -193,7 +193,9 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('atomic_store_explicit(&g_sgsr_last_present, 0', present)
         # Hidden in 0.1.6 clean release because this experimental internal
         # chain did not improve heavy scenes. Native fallback remains.
-        self.assertIn('out.add("DM_VK_OOT_SGSR_CHAIN=" +', ui)
+        # NDSR=sgsr now executes the reconstructed compute kernel inside the
+        # game; the older final-present-dependent bypass stays disabled.
+        self.assertIn('out.add("DM_VK_OOT_SGSR_CHAIN=0")', ui)
         self.assertIn('static int sgsrChain(Context c, String id)', ui)
 
     def test_060_and_075_networks_drop_only_redundant_easu_after_real_sgsr(self):
