@@ -381,6 +381,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_PLANE_LUT=" + (Prefs.vegetationOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_COALESCED=" + (Prefs.vegetationContiguous(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_SHORT_TASK_SEARCH=" + (Prefs.shortTaskSearch(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_RC_TRUE_FUSE=" + (Prefs.memuRenderEnableFuse(this, id) ? "1" : "0"));
             // Optional A/B: legacy texture-discovery feedback remains the
             // default. Restart is required (descriptor pool is created once).
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_POOL_FB_DIRECT=" + (Prefs.poolFeedbackDirect(this, id) ? "1" : "0"));
