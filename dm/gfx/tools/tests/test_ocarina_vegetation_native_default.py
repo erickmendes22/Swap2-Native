@@ -1,9 +1,9 @@
-"""Regression guard: Qualcomm with meshShader+taskShader must run native foliage.
+"""Regression guard: Qualcomm Ocarina foliage must avoid corrupt native mesh.
 
-Unlike the earlier global Qualcomm compute-emulation override (which made
-foliage ON ~20 FPS slower than OFF), Banana Native and the working original
-renderer default to native VK_EXT_mesh_shader whenever taskShader exists.
-The user's Adreno 891.14 driver reports mesh=1 and task=1.
+Although Adreno 891.14 advertises meshShader+taskShader, the native path
+draws Ocarina foliage as white wireframe/triangles. The app must route
+supplemental foliage to compute, preserving original-library native mesh
+via the existing hybrid policy and keeping vegetation-OFF fast.
 
 This test checks the literal production capability selection and the runtime
 rollback switch, plus the 508-key supplement path. It cannot establish GPU
@@ -18,15 +18,16 @@ VK = ROOT / "dm/gfx/vk_android"
 
 
 class NativeFoliageDefault(unittest.TestCase):
-    def test_qualcomm_uses_mesh_hardware_like_reference_banana(self):
+    def test_qualcomm_avoids_broken_native_foliage_in_ocarina(self):
         dev = (VK / "vka_dev.c").read_text()
         m = re.search(r'V\.memu\s*=\s*e\s*&&\s*\*e\s*\?\s*strcmp\(e,\s*"0"\)\s*!=\s*0\s*:\s*([^;]+);', dev)
         self.assertIsNotNone(m)
         default = m.group(1).strip()
-        self.assertEqual(default, '!V.task')
-        self.assertNotIn('VK_DRIVER_ID_QUALCOMM_PROPRIETARY', default)
+        self.assertEqual(default, '(!V.task || qcom_ocarina)')
+        self.assertIn('const int qcom_ocarina = V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY', dev)
+        self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")', dev)
         self.assertIn('getenv("DM_VK_MESH_EMU")', dev)
-        self.assertIn('native VK_EXT_mesh_shader', dev)
+        self.assertIn('hybrid original-native/supplement-compute', dev)
 
     def test_supplement_still_loads_with_native_driver(self):
         shader = (VK / "vka_shader.c").read_text()
@@ -40,7 +41,7 @@ class NativeFoliageDefault(unittest.TestCase):
 
     def test_legacy_compute_remains_explicit_rollback(self):
         dev = (VK / "vka_dev.c").read_text()
-        self.assertIn('strcmp(e, "0") != 0 : !V.task;', dev)
+        self.assertIn('strcmp(e, "0") != 0 : (!V.task || qcom_ocarina);', dev)
         memu = (VK / "vka_memu_draw.inc").read_text()
         self.assertIn('vka_memu_batch(int phase', memu)
         self.assertIn('case MEMU_MESH:', memu)
