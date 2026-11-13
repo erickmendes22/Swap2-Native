@@ -99,6 +99,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_dispatch_overlap.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_720p_upscale_real_gpu.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_hidden_layers.py' -v
+          python3 -m unittest discover -s dm/tools/tests -p 'test_ocarina_render_profile.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_mesh_prewarm.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_hot_shader_overlay.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_captured_shaders.py'

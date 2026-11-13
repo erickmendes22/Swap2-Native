@@ -13,10 +13,11 @@ int vka_ndsr_match(const dmsh_vk_entry *e, const dmsh_vk_bind *b, uint16_t *tex_
 // The replacement's SPIR-V (vka_ndsr_spv.h; packed: the variant whose output is an R32_UINT storage image it stores each texel's 32-bit word into) with its placeholder
 // bindings 100 (input), 101 (output), 102 (push bank) set to these: malloc'ed, *n words; NULL when the module lacks one of the placeholders
 uint32_t *vka_ndsr_words(int packed, uint16_t tex_b, uint16_t img_b, uint16_t bank_b, size_t *n);
+uint32_t *vka_ndsr_sgsr_words(int packed, uint16_t tex_b, uint16_t img_b, uint16_t bank_b, size_t *n);
 // The module's specialization constants (constant_id 0, 1, 2, 3)
 enum { VKA_NDSR_ENC_LINEAR = 0, VKA_NDSR_ENC_SQRT = 1 };
 enum { VKA_NDSR_MAP_FULL = 0, VKA_NDSR_MAP_PUSH = 1 };
-enum { VKA_NDSR_KERNEL_EASU = 0, VKA_NDSR_KERNEL_BILINEAR = 1, VKA_NDSR_KERNEL_SGSR = 2 };
+enum { VKA_NDSR_KERNEL_EASU = 0, VKA_NDSR_KERNEL_BILINEAR = 1, VKA_NDSR_KERNEL_SGSR = 2, VKA_NDSR_KERNEL_SGSR_TILED = 3 };
 enum { VKA_NDSR_PACK_NONE = 0, VKA_NDSR_PACK_B10G11R11 = 1, VKA_NDSR_PACK_RGBA8 = 2 };   // PACK (the packed variant only): the output's format
 // The packed store for an output of VkFormat vkformat (VKA_NDSR_PACK_*): B10G11R11_UFLOAT_PACK32 (122) and R8G8B8A8_UNORM (37); NONE for any other
 int vka_ndsr_pack_of(int vkformat);
@@ -35,5 +36,12 @@ uint32_t vka_ndsr_grid_x(uint32_t width, uint32_t height,
 // variant runs and the output binding is entered in rt as an unsigned integer image (img_retype_of's form: binding << 16 | R32ui << 8 | 1), so vka_dispatch's g_rt5
 // has stage_writes bind it through an R32_UINT view (vka_tex.c id_view: the pair learned, the image remade with storage use through it). rt is left as it was when the
 // result is VK_NULL_HANDLE. cb: the replay's command buffer (the bound textures' images and sizes)
-VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear, uint32_t *output_width, uint32_t *output_height);
+typedef struct { float viewport[4]; uint32_t size[2]; } vka_ndsr_push;
+typedef struct {
+    uint32_t width, height, tile;
+    uint16_t input_binding;
+    VkSampler sampler;
+    vka_ndsr_push push;
+} vka_ndsr_launch;
+VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear, int direct_grid, vka_ndsr_launch *launch);
 #endif

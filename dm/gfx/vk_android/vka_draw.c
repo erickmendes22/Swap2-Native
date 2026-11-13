@@ -7,7 +7,8 @@
 #if defined(__ANDROID__)
 #include "vka.h"
 #include "vka_selftest_spv.h"   // SPV_MESHCOUNT_COMP (mesh_ind_args)
-#include "vka_ndsr.h"           // vka_ndsr_pipeline (vka_dispatch)
+#include "vka_ndsr.h"
+#include "vka_ndsr_sampler.h"           // vka_ndsr_pipeline (vka_dispatch)
 #include "vka_hidden_layers.h"   // exact experimental Ocarina fragment discard keys
 #include "../nvn/nvn_mtl.h"
 #include "../../host/plat/plat.h"
@@ -1201,7 +1202,15 @@ static int push_same(VkPipelineBindPoint bp, VkPipelineLayout layout) {
     if (g_dwn) { g_pd_delta_w += g_dwn; g_pd_delta_all += g_w.n; return 2; }
     return 0;
 }
+// A stand-in spatial reconstructor requires linear-clamp sampling even if
+// the original neural network bound a nearest/repeat sampler. Descriptor
+// layouts and the game's sampler objects stay intact; override this write only.
+static VkSampler g_ndsr_linear_sampler;
+static uint16_t g_ndsr_linear_binding;
+static VkDescriptorImageInfo g_ndsr_linear_info;
 static int sets_push(const vka_layout *lay, VkPipelineBindPoint bp, int any_pool) {
+    if (bp == VK_PIPELINE_BIND_POINT_COMPUTE && g_ndsr_linear_sampler)
+        vka_ndsr_linear_write(g_w.w,g_w.n,g_ndsr_linear_binding,g_ndsr_linear_sampler,&g_ndsr_linear_info);
     uint64_t t2_ = g_prof ? cntvct() : 0;
     if (lay->push) { int ps = g_w.n ? push_same(bp, lay->layout) : 1;
                      if (ps == 0) vk.vkCmdPushDescriptorSetKHR(g_cb, bp, lay->layout, 0, g_w.n, g_w.w);
@@ -2097,9 +2106,9 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         }
     }
     vka_imgrt rt; img_retype_of(sh[5], g_wk.r[5], g_wk.n[5], &rt);
-    uint32_t ndsr_ow = 0, ndsr_oh = 0;
+    vka_ndsr_launch ndsr_launch={0};
     VkPipeline p = vka_ndsr_pipeline(d, sh[5], &lay, g_wk.r[5], g_wk.n[5], &rt, g_cb,
-                                     scene_linear, &ndsr_ow, &ndsr_oh);
+                                     scene_linear, !dp->ind, &ndsr_launch);
     if (scene_linear && !p) {
         // The last stage's output/pipeline failed its runtime checks after
         // earlier stages were skipped. Restore the old flow on later frames.
@@ -2116,6 +2125,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
                   "original chain restored for subsequent frames");
     }
     const int gp_ndsr_replaced = p != VK_NULL_HANDLE;
+    uint32_t ndsr_ow=ndsr_launch.width,ndsr_oh=ndsr_launch.height,ndsr_tile=ndsr_launch.tile;
     int oot_cs_retiled = 0;
     // The hot 9e6b kernel uses an 8x9x12 direct grid and 8x4x4 local size
     // (110,592 invocations). Try a *different* pipeline with 8x4x2 local
@@ -2160,7 +2170,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     // SPIR-V is required. If resources, driver limits, or diagnostics do
     // not support it, preserve the original launch unmodified.
     uint32_t ndsr_groups_x = 0;
-    if (gp_ndsr_replaced && !dp->ind && !sb && !vka_gp_active &&
+    if (gp_ndsr_replaced && !ndsr_tile && !dp->ind && !sb && !vka_gp_active &&
         !vka_nan_on() && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
         VKA_ENV("DM_VK_OOT_NDSR_RETILE", 1) &&
         dp->x > 0 && dp->y > 0 && dp->z > 0) {
@@ -2186,7 +2196,9 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     }
     c0_at c0 = {0};
     g_rt5 = rt.b[0] ? &rt : NULL;
+    g_ndsr_linear_binding=ndsr_launch.input_binding;g_ndsr_linear_sampler=ndsr_launch.sampler;
     int bound_ = bind_sets(d, sh, &lay, VK_PIPELINE_BIND_POINT_COMPUTE, &c0);
+    g_ndsr_linear_sampler=VK_NULL_HANDLE;
     g_rt5 = NULL;
     if (!bound_) {
         if (scene_linear) g_oot_sgsr_chain.refused = 1;
@@ -2222,12 +2234,17 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         else if (r->what == VKA_R_GMEM_MAP || r->what == VKA_R_GMEM_LOG) VLOG("dispatch %llu:   binding %u raw global memory %s", di, r->binding, r->what == VKA_R_GMEM_MAP ? "table" : "write log");
     }
     if (skip) { vka_barrier(g_cb); g_dispatches++; texstat_at(); return; }
-    if (vka_gp_active) vka_gp_compute(sh[5]->key, (uint32_t)dp->x, (uint32_t)dp->y,
-        (uint32_t)dp->z * (oot_cs_retiled ? 2u : 1u), gp_ndsr_replaced);
+    if (vka_gp_active) vka_gp_compute(sh[5]->key, ndsr_tile ? (ndsr_ow + ndsr_tile - 1) / ndsr_tile : (uint32_t)dp->x,
+        ndsr_tile ? (ndsr_oh + ndsr_tile - 1) / ndsr_tile : (uint32_t)dp->y,
+        ndsr_tile ? 1u : (uint32_t)dp->z * (oot_cs_retiled ? 2u : 1u), gp_ndsr_replaced);
     vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, p);
     if (dp->ind) vk.vkCmdDispatchIndirect(g_cb, ib, io);
     else if (dp->x > 0 && dp->y > 0 && dp->z > 0) {
-        if (ndsr_groups_x) vk.vkCmdDispatch(g_cb, ndsr_groups_x, 1, 1);
+        if (ndsr_tile) {
+            vk.vkCmdPushConstants(g_cb,lay.layout,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof ndsr_launch.push,&ndsr_launch.push);
+            vk.vkCmdDispatch(g_cb,(ndsr_ow+ndsr_tile-1)/ndsr_tile,(ndsr_oh+ndsr_tile-1)/ndsr_tile,1);
+        }
+        else if (ndsr_groups_x) vk.vkCmdDispatch(g_cb, ndsr_groups_x, 1, 1);
         else if (sb && (uint64_t)dp->x * dp->y * dp->z > ns) spill_dispatch((uint32_t)dp->x, (uint32_t)dp->y, (uint32_t)dp->z, ns);
         else vk.vkCmdDispatch(g_cb, (uint32_t)dp->x, (uint32_t)dp->y,
                                (uint32_t)dp->z * (oot_cs_retiled ? 2u : 1u));

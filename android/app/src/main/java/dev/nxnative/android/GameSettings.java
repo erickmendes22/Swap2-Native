@@ -163,6 +163,7 @@ final class GameSettings {
             GraphicsOptions.reset(a, id);  // restore only per-game graphics overrides
             sceneWant(id, null);
             Prefs.scene720(a, id, false);
+            Prefs.renderProfile(a,id,0);
             Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
             // Experimental GPU skips must not survive Restore defaults.
             Prefs.of(a).edit()
@@ -267,7 +268,13 @@ final class GameSettings {
                     .value(GraphicsOptions.vrsLabel(a, id)).chevron(a).view);
             Ui.add(box, Ui.small(a, a.getString(R.string.s2_vrs_heavy_note)), 6);
         }
-        if (prof != null && prof.hasScene()) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
+        if (Prefs.OCARINA_TITLE.equals(id) && prof != null && prof.hasScene()) {
+            String[] names=renderProfileNames(a);
+            box.addView(new Ui.Setting(a,R.drawable.s2_ic_display,a.getString(R.string.s2_oot_render_profile),
+                    v -> renderProfile(a,g,again)).value(names[Prefs.renderProfile(a,id)]).chevron(a).view);
+            Ui.add(box,Ui.small(a,a.getString(R.string.s2_oot_render_profile_note)),6);
+        }
+        if (prof != null && prof.hasScene() && Prefs.renderProfile(a,id)==0) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
             String cur = on ? Prefs.sceneLabel(Prefs.sceneScale(a, id, prof.sceneScale())) : a.getString(R.string.s2_scene_game);
             Ui.Setting row = new Ui.Setting(a, R.drawable.s2_ic_display, "Resolução interna da cena (GPU)", v -> scene(a, g, again))
@@ -775,7 +782,7 @@ final class GameSettings {
         File files = a.getExternalFilesDir(null);
         new Thread(() -> {
             String[] in = sceneInputs(g);
-            boolean ok = files != null && in != null && SceneOverlay.current(files, g.titleId, Prefs.sceneScale(a, g.titleId, prof.sceneScale()), prof.sceneExpect(), in[0]);
+            boolean ok = files != null && in != null && SceneOverlay.current(files, g.titleId, Prefs.renderSceneScale(a, g.titleId, prof.sceneScale()), prof.sceneExpect(), in[0]);
             if (!ok) UI.post(() -> row.value(a.getString(R.string.s2_scene_stale)));
         }, "nx-scene-check").start();
     }
@@ -797,12 +804,32 @@ final class GameSettings {
     }
 
     private static void makeScene(MainActivity a, Game g, Profile prof, String selectedScale) {
+        makeScene(a,g,prof,selectedScale,Prefs.renderProfile(a,g.titleId));
+    }
+    private static String[] renderProfileNames(MainActivity a) {
+        return new String[]{a.getString(R.string.s2_oot_render_profile_current),
+            a.getString(R.string.s2_oot_render_profile_360),a.getString(R.string.s2_oot_render_profile_540)};
+    }
+    private static void renderProfile(MainActivity a, Game g, Runnable done) {
+        Profile prof=Profile.of(g.titleId);if(prof==null || !prof.hasScene())return;
+        int current=Prefs.renderProfile(a,g.titleId);
+        new AlertDialog.Builder(a).setTitle(R.string.s2_oot_render_profile)
+            .setSingleChoiceItems(renderProfileNames(a),current,(dialog,which)->{
+                dialog.dismiss();
+                if(which==current){done.run();return;}
+                // Commit the new mode only after its exact scene overlay is
+                // successfully prepared; a failed job keeps the old mode.
+                makeScene(a,g,prof,Prefs.sceneScale(a,g.titleId,prof.sceneScale()),which);
+            }).setNegativeButton(android.R.string.cancel,null).show();
+    }
+    private static void makeScene(MainActivity a, Game g, Profile prof, String selectedScale, int mode) {
         File files = a.getExternalFilesDir(null);
-        sceneWant(g.titleId, selectedScale);
+        String token=selectedScale+":"+mode;
+        sceneWant(g.titleId, token);
         // Back closes it (the :pack process could end without an answer: the first run there also unpacks the packer); the answer still turns 720p on and says so
         AlertDialog wait = new AlertDialog.Builder(a).setMessage(R.string.s2_scene_making).setCancelable(true).create();
         wait.show();
-        String id = g.titleId, scale = selectedScale, expect = prof.sceneExpect();
+        String id = g.titleId, scale = OcarinaRenderProfile.scale(mode,selectedScale), expect = prof.sceneExpect();
         new Thread(() -> {
             String[] in = sceneInputs(g);
             boolean have = files != null && in != null && SceneOverlay.current(files, id, scale, expect, in[0]);
@@ -810,8 +837,8 @@ final class GameSettings {
                 boolean gone = a.isFinishing() || a.isDestroyed();
                 if (in == null || files == null || have) {
                     if (!gone) { try { wait.dismiss(); } catch (RuntimeException ignored) { /* its window is gone */ } }
-                    if (have) { if (sceneWanted(id, scale)) { Prefs.setSceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, Prefs.OCARINA_TITLE.equals(id)
-                                    ? "Perfil " + Prefs.sceneLabel(scale) + " preparado; vale no próximo início (tamanho dinâmico)"
+                    if (have) { if (sceneWanted(id, token)) { Prefs.setSceneScale(a, id, selectedScale); Prefs.renderProfile(a,id,mode); Prefs.scene720(a, id, true); modToast(a, Prefs.OCARINA_TITLE.equals(id)
+                                    ? "Perfil " + (mode==0 ? Prefs.sceneLabel(selectedScale) : renderProfileNames(a)[mode]) + " preparado; vale no próximo início (tamanho dinâmico)"
                                     : a.getString(R.string.s2_scene_made)); } }
                     else if (gone) modToast(a, a.getString(R.string.s2_scene_failed, a.getString(R.string.s2_scene_no_pack)));
                     else a.error(a.getString(R.string.s2_scene_failed, a.getString(R.string.s2_scene_no_pack)));
@@ -825,8 +852,8 @@ final class GameSettings {
                         if (!end) { try { wait.dismiss(); } catch (RuntimeException ignored) { /* its window is gone */ } }
                         if (code == 0) {
                             // made, but turned on only when the player has not chosen otherwise meanwhile (the overlay stays: a later 720p takes it at once)
-                            if (sceneWanted(id, scale)) { Prefs.setSceneScale(a, id, scale); Prefs.scene720(a, id, true); modToast(a, Prefs.OCARINA_TITLE.equals(id)
-                                    ? "Perfil " + Prefs.sceneLabel(scale) + " preparado; vale no próximo início (tamanho dinâmico)"
+                            if (sceneWanted(id, token)) { Prefs.setSceneScale(a, id, selectedScale); Prefs.renderProfile(a,id,mode); Prefs.scene720(a, id, true); modToast(a, Prefs.OCARINA_TITLE.equals(id)
+                                    ? "Perfil " + (mode==0 ? Prefs.sceneLabel(selectedScale) : renderProfileNames(a)[mode]) + " preparado; vale no próximo início (tamanho dinâmico)"
                                     : a.getString(R.string.s2_scene_made)); }
                         } else if (code == SceneService.RUNNING) {
                             // an earlier run (its wait dialog closed with Back) is still making it; its answer turns 720p on while 720p is still the choice

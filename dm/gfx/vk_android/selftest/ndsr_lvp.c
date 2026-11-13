@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "vka_ndsr.h"
+#include "vka_ndsr_sampler.h"
 
 #define FNS(X) X(vkEnumeratePhysicalDevices) X(vkGetPhysicalDeviceProperties) X(vkGetPhysicalDeviceQueueFamilyProperties) X(vkGetPhysicalDeviceMemoryProperties) \
     X(vkGetPhysicalDeviceFormatProperties) X(vkGetPhysicalDeviceFeatures) X(vkCreateDevice) X(vkGetDeviceQueue) X(vkCreateBuffer) X(vkGetBufferMemoryRequirements) X(vkAllocateMemory) \
@@ -21,11 +22,13 @@
     X(vkCreateDescriptorSetLayout) X(vkCreatePipelineLayout) X(vkCreateShaderModule) X(vkCreateComputePipelines) X(vkCreateDescriptorPool) X(vkAllocateDescriptorSets) \
     X(vkUpdateDescriptorSets) X(vkCreateCommandPool) X(vkAllocateCommandBuffers) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) X(vkCmdPipelineBarrier) \
     X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) X(vkCmdClearColorImage) X(vkCmdBindPipeline) X(vkCmdBindDescriptorSets) X(vkCmdDispatch) X(vkQueueSubmit) \
+    X(vkCmdPushConstants) X(vkCreateQueryPool) X(vkCmdResetQueryPool) X(vkCmdWriteTimestamp) X(vkGetQueryPoolResults) \
     X(vkQueueWaitIdle) X(vkDestroyPipeline) X(vkDestroyShaderModule) X(vkResetDescriptorPool)
 #define DECL(n) static PFN_##n n;
 FNS(DECL)
 static VkDevice dev; static VkPhysicalDevice pd; static VkQueue q; static VkPhysicalDeviceMemoryProperties memp; static VkCommandPool pool;
 static VkDescriptorSetLayout dsl; static VkPipelineLayout pl; static VkDescriptorPool dpool; static VkSampler smp; static VkFormat ofmt;
+static VkQueryPool timer; static double tick, gpu_ms;
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { printf("FAIL: " __VA_ARGS__); printf("\n"); fails++; } } while (0)
 #define VK(x) do { VkResult r_ = (x); if (r_) { printf("FAIL: %s = %d\n", #x, r_); exit(2); } } while (0)
@@ -92,7 +95,7 @@ static int init(void) {
 #define LOAD(n) n = (PFN_##n)gipa(inst, #n); if (!n) { printf("FAIL: no %s\n", #n); exit(2); }
     FNS(LOAD)
     uint32_t n = 1; if (vkEnumeratePhysicalDevices(inst, &n, &pd) < 0 || !n) { printf("SKIP: no Vulkan device\n"); return 0; }
-    VkPhysicalDeviceProperties pp; vkGetPhysicalDeviceProperties(pd, &pp); printf("device: %s\n", pp.deviceName);
+    VkPhysicalDeviceProperties pp; vkGetPhysicalDeviceProperties(pd, &pp); printf("device: %s\n", pp.deviceName); tick=pp.limits.timestampPeriod;
     VkPhysicalDeviceFeatures have; vkGetPhysicalDeviceFeatures(pd, &have);
     if (!have.shaderStorageImageWriteWithoutFormat) { printf("SKIP: no shaderStorageImageWriteWithoutFormat\n"); return 0; }
     vkGetPhysicalDeviceMemoryProperties(pd, &memp);
@@ -114,7 +117,10 @@ static int init(void) {
                                           {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT}, {3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
                                           {4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT}, {5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT}};
     VkDescriptorSetLayoutCreateInfo dl = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 6, .pBindings = lb}; VK(vkCreateDescriptorSetLayout(dev, &dl, NULL, &dsl));
-    VkPipelineLayoutCreateInfo li = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &dsl}; VK(vkCreatePipelineLayout(dev, &li, NULL, &pl));
+    VkPushConstantRange push={VK_SHADER_STAGE_COMPUTE_BIT,0,24};
+    VkQueryPoolCreateInfo query={VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,.queryType=VK_QUERY_TYPE_TIMESTAMP,.queryCount=2};
+    VK(vkCreateQueryPool(dev,&query,NULL,&timer));
+    VkPipelineLayoutCreateInfo li = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &dsl,.pushConstantRangeCount=1,.pPushConstantRanges=&push}; VK(vkCreatePipelineLayout(dev, &li, NULL, &pl));
     VkDescriptorPoolSize ps[4] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}};
     VkDescriptorPoolCreateInfo dp = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1, .poolSizeCount = 4, .pPoolSizes = ps}; VK(vkCreateDescriptorPool(dev, &dp, NULL, &dpool));
     VkSamplerCreateInfo sc = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, .magFilter = VK_FILTER_LINEAR, .minFilter = VK_FILTER_LINEAR, .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
@@ -131,7 +137,7 @@ static void pattern(int x, int y, int w, int h, float *c) {   // linear colour i
     else if (v < 0.5f) { int s = ((x >> 2) ^ (y >> 2)) & 1; c[0] = s ? 1.0f : 0.0f; c[1] = s ? 0.2f : 0.7f; c[2] = 0.3f; }   // checkerboard
     else { c[0] = (u - 0.6f) / 0.4f; c[1] = 1.0f - (v - 0.5f) * 2.0f; c[2] = (x & 1) ? 0.25f : 0.75f; }   // ramps, a 1-pixel blue line pattern
 }
-typedef struct { int iw, ih, ow, oh, enc, map, kernel, pack; float bank[64]; int org_x, org_y; } run_t;
+typedef struct { int iw, ih, ow, oh, enc, map, kernel, pack; float bank[64]; int org_x, org_y; float gain; } run_t;
 static float *g_in;   // the decoded input texels (what the GPU reads), iw*ih*3
 // Runs the shader once; returns ow*oh*3 floats (the sentinel where nothing was written)
 static float *run(const run_t *R) {
@@ -140,6 +146,7 @@ static float *run(const run_t *R) {
     free(g_in); g_in = malloc(sizeof(float) * 3 * iw * ih);
     for (int y = 0; y < ih; y++) for (int x = 0; x < iw; x++) {
         float c[3]; pattern(x, y, iw, ih, c);
+        if(R->gain>0)for(int k=0;k<3;k++)c[k]*=R->gain;
         if (R->enc) for (int i = 0; i < 3; i++) c[i] = sqrtf(c[i]);
         uint32_t w = rgb9e5(c[0], c[1], c[2]); ((uint32_t *)up)[y * iw + x] = w; de9e5(w, &g_in[3 * (y * iw + x)]);
     }
@@ -151,7 +158,19 @@ static float *run(const run_t *R) {
     VkImageView iv, ov;
     VkImage si = image(VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, iw, ih, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, &iv);
     VkImage oi = image(of, ow, oh, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, &ov);
-    size_t nw; uint32_t *w = vka_ndsr_words(R->pack != 0, 1, 2, 4, &nw);
+    size_t nw; uint32_t *w = NULL;
+    if(R->kernel==4 || R->kernel==5) {
+        const char *path=getenv(R->kernel==4 ? (R->pack ? "SGSR_REF_PACKED":"SGSR_REF_FLOAT") :
+                                                       (R->pack ? "SGSR_STRIDE_PACKED":"SGSR_STRIDE_FLOAT"));
+        FILE *f=path?fopen(path,"rb"):NULL;if(!f){printf("FAIL: SGSR reference file missing\n");exit(2);}
+        fseek(f,0,SEEK_END);long bytes=ftell(f);rewind(f);w=malloc((size_t)bytes);
+        if(!w || bytes<20 || bytes%4 || fread(w,1,(size_t)bytes,f)!=(size_t)bytes)exit(2);
+        fclose(f);nw=(size_t)bytes/4;
+        for(size_t i=5;i<nw;i+=w[i]>>16)if((w[i]&65535)==71 && w[i]>>16==4 && w[i+2]==33) {
+            if(R->kernel==4){if(w[i+3]==0)w[i+3]=1;else if(w[i+3]==1)w[i+3]=2;}
+            else {if(w[i+3]==100)w[i+3]=1;else if(w[i+3]==101)w[i+3]=2;else if(w[i+3]==102)w[i+3]=4;}
+        }
+    } else w=R->kernel==3 ? vka_ndsr_sgsr_words(R->pack!=0,1,2,4,&nw) : vka_ndsr_words(R->pack!=0,1,2,4,&nw);
     if (!w) { printf("FAIL: vka_ndsr_words found no placeholder bindings\n"); exit(2); }
     VkShaderModuleCreateInfo mi = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = nw * 4, .pCode = w}; VkShaderModule m; VK(vkCreateShaderModule(dev, &mi, NULL, &m)); free(w);
     int32_t sv[4] = {R->enc, R->map, R->kernel, R->pack ? R->pack : 1}; VkSpecializationMapEntry se[4] = {{0, 0, 4}, {1, 4, 4}, {2, 8, 4}, {3, 12, 4}}; VkSpecializationInfo si_ = {4, se, sizeof sv, sv};
@@ -185,7 +204,13 @@ static float *run(const run_t *R) {
     barrier(cb, oi, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, p);
     vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pl, 0, 1, &ds, 0, NULL);
-    vkCmdDispatch(cb, 32, 36, 1);   // the game's group count for its 2048x1152 output (any count covers any size: the grid stride)
+    if(R->kernel>=3){struct{float viewport[4];uint32_t size[2];}pc={{1.0f/iw,1.0f/ih,(float)iw,(float)ih},{(uint32_t)ow,(uint32_t)oh}};
+        vkCmdPushConstants(cb,pl,VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof pc,&pc);}
+    vkCmdResetQueryPool(cb,timer,0,2);
+    vkCmdWriteTimestamp(cb,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,timer,0);
+    if(R->kernel==3 || R->kernel==4)vkCmdDispatch(cb,(uint32_t)(ow+7)/8,(uint32_t)(oh+7)/8,1);
+    else vkCmdDispatch(cb, 32, 36, 1);
+    vkCmdWriteTimestamp(cb,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,timer,1);   // the game's group count for its 2048x1152 output (any count covers any size: the grid stride)
     barrier(cb, oi, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     VkBufferImageCopy rg2 = {0, 0, 0, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {0, 0, 0}, {(uint32_t)ow, (uint32_t)oh, 1}};
     vkCmdCopyImageToBuffer(cb, oi, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, db, 1, &rg2);
@@ -193,6 +218,8 @@ static float *run(const run_t *R) {
     vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &hb, 0, NULL, 0, NULL);
     VK(vkEndCommandBuffer(cb));
     VkSubmitInfo su = {VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &cb}; VK(vkQueueSubmit(q, 1, &su, VK_NULL_HANDLE)); VK(vkQueueWaitIdle(q));
+    uint64_t times[2];VK(vkGetQueryPoolResults(dev,timer,0,2,sizeof times,times,8,VK_QUERY_RESULT_64_BIT|VK_QUERY_RESULT_WAIT_BIT));
+    gpu_ms=(times[1]-times[0])*tick/1e6;
     float *o = malloc(sizeof(float) * 3 * ow * oh);
     for (int i = 0; i < ow * oh; i++) out_px((const uint8_t *)dn + ob * i, &o[3 * i], R->pack);
     vkDestroyPipeline(dev, p, NULL); vkDestroyShaderModule(dev, m, NULL);   // (the rest is left to the process's end)
@@ -247,11 +274,63 @@ static void match_checks(void) {
     #undef NOT
 }
 
+static int sgsr_checks(void) {
+    VkDescriptorImageInfo source={.sampler=(VkSampler)(uintptr_t)1,.imageView=(VkImageView)(uintptr_t)7,.imageLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},scratch={0};
+    VkWriteDescriptorSet write={.dstBinding=7,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,.pImageInfo=&source};
+    CHECK(!vka_ndsr_linear_write(&write,1,8,(VkSampler)(uintptr_t)2,&scratch),"unrelated sampler changed");
+    CHECK(vka_ndsr_linear_write(&write,1,7,(VkSampler)(uintptr_t)2,&scratch),"spatial sampler not replaced");
+    CHECK(source.sampler==(VkSampler)(uintptr_t)1 && scratch.sampler==(VkSampler)(uintptr_t)2 && scratch.imageView==source.imageView && scratch.imageLayout==source.imageLayout,"guest descriptor mutated");
+    write.pImageInfo=&source;write.descriptorCount=2;
+    CHECK(!vka_ndsr_linear_write(&write,1,7,(VkSampler)(uintptr_t)2,&scratch),"array descriptor changed");
+    write.descriptorCount=1;write.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    CHECK(!vka_ndsr_linear_write(&write,1,7,(VkSampler)(uintptr_t)2,&scratch),"storage image changed");
+
+    const int shapes[][4]={{83,47,83,47},{127,73,391,217},{640,360,1280,720},{960,540,1280,720},{683,384,2048,1152}};
+    for(unsigned shape=0;shape<sizeof shapes/sizeof *shapes;shape++)for(int packed=0;packed<2;packed++)for(int enc=0;enc<2;enc++) {
+        run_t r=base(shapes[shape][0],shapes[shape][1],shapes[shape][2],shapes[shape][3],enc,3);r.pack=packed;r.gain=2.0f;
+        float *a=run(&r);double tiled_ms=gpu_ms;int n=r.ow*r.oh;
+        r.kernel=4;float *ref=run(&r);double reference_ms=gpu_ms,max_error=0;int bad=0,finite=0,hdr=0;
+        for(int i=0;i<n*3;i++) {
+            if(!isfinite(a[i]) || !isfinite(ref[i]) || a[i]>=59000){bad++;continue;}
+            finite++;if(a[i]>1.0f)hdr++;
+            double error=fabs((double)a[i]-ref[i]);if(error>max_error)max_error=error;
+            // Both images have already rounded to B10G11R11/RGBA16F.
+            // Require exact decoded output equality against the independent reference.
+            if(error!=0.0)bad++;
+        }
+        CHECK(!bad && hdr>0,"SGSR reference %dx%d -> %dx%d packed=%d enc=%d: %d bad, max %.8g",r.iw,r.ih,r.ow,r.oh,packed,enc,bad,max_error);
+        printf("SGSR reference: %dx%d -> %dx%d packed=%d enc=%d finite=%d HDR=%d max_error=%.8g GPU tiled=%.4f reference=%.4f ms\n",r.iw,r.ih,r.ow,r.oh,packed,enc,finite,hdr,max_error,tiled_ms,reference_ms);
+        r.kernel=5;float *stride=run(&r);double stride_ms=gpu_ms;bad=0;
+        for(int i=0;i<n*3;i++)if(a[i]!=stride[i])bad++;
+        CHECK(!bad,"SGSR tiled/grid-stride exact output: %d differences",bad);
+        printf("SGSR grid coverage: %d output pixels, exact=%d GPU stride=%.4f ms\n",n,bad==0,stride_ms);
+        free(a);free(ref);free(stride);
+    }
+    run_t crop=base(97,65,391,217,1,3);crop.map=1;crop.gain=2.0f;
+    ((uint32_t*)crop.bank)[4]=7;((uint32_t*)crop.bank)[5]=11;
+    crop.bank[20]=97.0f/(391-7);crop.bank[21]=65.0f/(217-11);
+    float *a=run(&crop);crop.kernel=5;float *b=run(&crop);int bad=0,untouched=0;
+    for(int y=0;y<crop.oh;y++)for(int x=0;x<crop.ow;x++) {
+        int i=(y*crop.ow+x)*3;
+        for(int c=0;c<3;c++)if(a[i+c]!=b[i+c])bad++;
+        if(x<7 || y<11){if(a[i]>=59000)untouched++;else bad++;}
+    }
+    CHECK(!bad && untouched==crop.ow*crop.oh-(crop.ow-7)*(crop.oh-11),"SGSR crop/stride/sentinel: %d bad, %d untouched",bad,untouched);
+    free(a);free(b);
+    run_t negative=base(127,73,391,217,1,2);a=run(&negative);negative.kernel=4;b=run(&negative);int different=0;
+    for(int i=0;i<negative.ow*negative.oh*3;i++)if(a[i]!=b[i])different++;
+    CHECK(different>1000,"old simplified SGSR unexpectedly passed new reference: %d differences",different);
+    printf("SGSR negative control: old simplified kernel differs in %d components; reference test detects it\n",different);
+    free(a);free(b);
+    return fails ? 1 : 0;
+}
+
 int main(void) {
     match_checks();
     if (fails) { printf("FAILED: %d checks\n", fails); return 1; }
     printf("match rule: all checks passed\n");
     if (!init()) return 77;
+    if(getenv("NDSR_SGSR_TEST"))return sgsr_checks();
     const double qtol = 2.5 / 64;   // R11G11B10F: 6-bit mantissas (5 in blue): a relative step of 1/64 (1/32); 2.5 steps with the GPU's rounding
     // 1. Bilinear kernel, sqrt input: the CPU reference everywhere (the mapping, the decode and the square)
     run_t R = base(1536, 864, 2048, 1152, 1, 1);

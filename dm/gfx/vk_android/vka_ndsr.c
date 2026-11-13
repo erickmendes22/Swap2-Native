@@ -60,9 +60,8 @@ uint32_t vka_ndsr_grid_x(uint32_t width, uint32_t height,
         target > UINT32_MAX) return 0;
     return (uint32_t)target;
 }
-uint32_t *vka_ndsr_words(int packed, uint16_t tex_b, uint16_t img_b, uint16_t bank_b, size_t *n) {
-    const uint32_t *src = packed ? vka_ndsr_easu_packed : vka_ndsr_easu;
-    size_t bytes = packed ? sizeof vka_ndsr_easu_packed : sizeof vka_ndsr_easu, nw = bytes / 4;
+static uint32_t *ndsr_words_from(const uint32_t *src, size_t bytes, uint16_t tex_b, uint16_t img_b, uint16_t bank_b, size_t *n) {
+    size_t nw = bytes / 4;
     uint32_t *w = malloc(bytes); if (!w) return NULL;
     memcpy(w, src, bytes);
     int seen = 0;
@@ -77,6 +76,15 @@ uint32_t *vka_ndsr_words(int packed, uint16_t tex_b, uint16_t img_b, uint16_t ba
     }
     if (seen != 7) { free(w); return NULL; }
     *n = nw; return w;
+}
+
+uint32_t *vka_ndsr_words(int packed, uint16_t tb, uint16_t ib, uint16_t bb, size_t *n) {
+    return ndsr_words_from(packed ? vka_ndsr_easu_packed : vka_ndsr_easu,
+        packed ? sizeof vka_ndsr_easu_packed : sizeof vka_ndsr_easu,tb,ib,bb,n);
+}
+uint32_t *vka_ndsr_sgsr_words(int packed, uint16_t tb, uint16_t ib, uint16_t bb, size_t *n) {
+    return ndsr_words_from(packed ? vka_ndsr_sgsr_packed : vka_ndsr_sgsr,
+        packed ? sizeof vka_ndsr_sgsr_packed : sizeof vka_ndsr_sgsr,tb,ib,bb,n);
 }
 
 #ifndef VKA_NDSR_PURE
@@ -116,11 +124,33 @@ static void refused(uint64_t key, const char *why) {   // under g_mu
     VRED("NDSR network %016llx not replaced (DM_VK_NDSR): %s; the network runs", (unsigned long long)key, why);
 }
 
+static VkSampler g_sgsr_sampler;
+static struct { VkPipelineLayout original, spatial; } g_sgsr_layouts[NPIPE];
+static int g_sgsr_nlayouts;
+static int sgsr_layout(vka_layout *layout) {   // g_mu held, immutable until process exit
+    for(int i=0;i<g_sgsr_nlayouts;i++)if(g_sgsr_layouts[i].original==layout->layout) {
+        layout->layout=g_sgsr_layouts[i].spatial;return 1;
+    }
+    if(g_sgsr_nlayouts==NPIPE)return 0;
+    VkDescriptorSetLayout sets[3]={layout->set0,vka_bindless_layout(),vka_pfb_layout()};
+    VkPushConstantRange range={VK_SHADER_STAGE_COMPUTE_BIT,0,sizeof(vka_ndsr_push)};
+    VkPipelineLayoutCreateInfo ci={VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount=!sets[1]?1u:sets[2]?3u:2u,.pSetLayouts=sets,
+        .pushConstantRangeCount=1,.pPushConstantRanges=&range};
+    VkPipelineLayout result=VK_NULL_HANDLE;
+    if(vk.vkCreatePipelineLayout(V.dev,&ci,NULL,&result))return 0;
+    g_sgsr_layouts[g_sgsr_nlayouts++]=(typeof(g_sgsr_layouts[0])){layout->layout,result};
+    layout->layout=result;return 1;
+}
+
+
 static VkPipeline make(vka_shader *cs, const vka_layout *lay, uint16_t tb, uint16_t ib, uint16_t bb, int enc, int map, int kernel, int pack) {   // under g_mu
     for (int i = 0; i < g_npipe; i++)
         if (g_pipe[i].key == cs->key && g_pipe[i].layout == lay->layout && g_pipe[i].enc == enc && g_pipe[i].map == map && g_pipe[i].kernel == kernel && g_pipe[i].pack == pack) return g_pipe[i].p;
     if (g_npipe == NPIPE) { refused(cs->key, "more than 64 pipelines"); return VK_NULL_HANDLE; }
-    size_t nw; uint32_t *w = vka_ndsr_words(pack != VKA_NDSR_PACK_NONE, tb, ib, bb, &nw);
+    size_t nw; uint32_t *w = kernel == VKA_NDSR_KERNEL_SGSR_TILED
+        ? vka_ndsr_sgsr_words(pack != VKA_NDSR_PACK_NONE, tb, ib, bb, &nw)
+        : vka_ndsr_words(pack != VKA_NDSR_PACK_NONE, tb, ib, bb, &nw);
     VkPipeline p = VK_NULL_HANDLE; VkShaderModule m = VK_NULL_HANDLE; VkResult r = VK_ERROR_UNKNOWN;
     if (w) {
         VkShaderModuleCreateInfo mi = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = nw * 4, .pCode = w};
@@ -151,7 +181,7 @@ static void log_sizes(const vka_dstate *d, uint64_t key, const vka_res *t, const
     if (i == g_nlog) {
         if (g_nlog == NLOG) return;
         g_log[g_nlog++] = (typeof(g_log[0])){key, iw, ih, ow, oh, enc, map, kernel, pack, 0};
-        VLOG("NDSR network %016llx replaced by %s (input %s, %s mapping, %ux%u -> %ux%u; texture IDs %d -> %d; output VkFormat %d %s)", (unsigned long long)key, kernel == VKA_NDSR_KERNEL_SGSR ? "SGSR1 compute" : kernel == VKA_NDSR_KERNEL_BILINEAR ? "bilinear" : "FSR 1 EASU",
+        VLOG("NDSR network %016llx replaced by %s (input %s, %s mapping, %ux%u -> %ux%u; texture IDs %d -> %d; output VkFormat %d %s)", (unsigned long long)key, (kernel == VKA_NDSR_KERNEL_SGSR || kernel == VKA_NDSR_KERNEL_SGSR_TILED) ? "SGSR1 compute" : kernel == VKA_NDSR_KERNEL_BILINEAR ? "bilinear" : "FSR 1 EASU",
              enc ? "sqrt" : "linear", map ? "push bank" : "full-image", iw, ih, ow, oh, t->tid, o->tid, b ? (int)b->f.vk : 0,
              pack ? "without storage support: packed words through an R32_UINT view" : "stored as floats");
     }
@@ -166,10 +196,9 @@ static void log_sizes(const vka_dstate *d, uint64_t key, const vka_res *t, const
     }
 }
 
-VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear, uint32_t *output_width, uint32_t *output_height) {
-    if (output_width) *output_width = 0;
-    if (output_height) *output_height = 0;
-    if (!cs || !cs->e || !(cs->e->flags & DMSH_VK_F_HMMA)) return VK_NULL_HANDLE;   // (every other dispatch: one test)
+VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, vka_layout *lay, const vka_res *r, int n, vka_imgrt *rt, VkCommandBuffer cb, int source_is_scene_linear, int direct_grid, vka_ndsr_launch *launch) {
+    if (launch) memset(launch,0,sizeof *launch);
+    if (!cs || !cs->e || !(cs->e->flags & DMSH_VK_F_HMMA)) return VK_NULL_HANDLE;
     pthread_mutex_lock(&g_mu);
     switches();
     VkPipeline p = VK_NULL_HANDLE; uint16_t tb = 0, ib = 0, bb = 0;
@@ -276,14 +305,17 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
     // Non-Ocarina games retain EASU until their own NDSR mapping is proved.
     int sgsr_internal = g_sw.mode == 3 &&
         !strcmp(DM_GAME_ID, "0400486024DEC000");
-    int kernel = sgsr_internal ? VKA_NDSR_KERNEL_SGSR :
+    int sgsr_tiled = sgsr_internal && direct_grid &&
+        ((uint64_t)oi->w + 7u) / 8u <= V.props.limits.maxComputeWorkGroupCount[0] &&
+        ((uint64_t)oi->h + 7u) / 8u <= V.props.limits.maxComputeWorkGroupCount[1];
+    int kernel = sgsr_tiled ? VKA_NDSR_KERNEL_SGSR_TILED : sgsr_internal ? VKA_NDSR_KERNEL_SGSR :
                 (g_sw.mode == 2 || large_oot || source_is_scene_linear ||
                  sgsr_network_light)
                ? VKA_NDSR_KERNEL_BILINEAR : VKA_NDSR_KERNEL_EASU;
-    if (sgsr_internal) {
+    if (sgsr_tiled) {
         static _Atomic int once;
         if (!atomic_exchange(&once, 1))
-            VLOG("Ocarina SGSR1 NDSR compute: full 12-neighbour reconstruction "
+            VLOG("Ocarina SGSR1 NDSR compute: full 12-neighbour edge-direction reconstruction "
                  "at the existing game image dimensions; original colour encoding "
                  "and packed-store support retained, no game shader pack rebuild");
     }
@@ -317,11 +349,37 @@ VkPipeline vka_ndsr_pipeline(const vka_dstate *d, vka_shader *cs, const vka_layo
             VLOG("Ocarina NDSR large-output optimization: replace full %ux%u EASU taps with converted bilinear; EASU+RCAS final capped at 1280x720",
                  oi->w, oi->h);
     }
+    if (sgsr_tiled && !g_sgsr_sampler) {
+        VkSamplerCreateInfo si = {VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter=VK_FILTER_LINEAR,.minFilter=VK_FILTER_LINEAR,
+            .mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,.maxLod=0};
+        if (vk.vkCreateSampler(V.dev,&si,NULL,&g_sgsr_sampler)) {
+            refused(cs->key,"SGSR linear clamp sampler unavailable");goto out;
+        }
+    }
+    vka_img *input = sgsr_tiled ? vka_tex_id_img(t->tid,cb) : NULL;
+    if(sgsr_tiled && (!input || !input->w || !input->h || !sgsr_layout(lay))) {
+        refused(cs->key,"SGSR input dimensions or spatial pipeline layout unavailable");goto out;
+    }
     p = make(cs, lay, tb, ib, bb, effective_enc, effective_map, kernel, pack);
     if (p && pack) { memset(rt, 0, sizeof *rt); rt->b[0] = (uint32_t)ib << 16 | 33u << 8 | 1u; }   // (the output an unsigned R32ui image: vka_draw.c rt_dim, then id_view)
     if (p) {
-        if (output_width) *output_width = oi->w;
-        if (output_height) *output_height = oi->h;
+        if (launch) {
+            launch->width=oi->w;launch->height=oi->h;
+            if(sgsr_tiled) {
+                launch->tile=8;launch->sampler=g_sgsr_sampler;launch->input_binding=tb;
+                launch->push=(vka_ndsr_push){{1.0f/input->w,1.0f/input->h,(float)input->w,(float)input->h},{oi->w,oi->h}};
+            }
+        }
+        if (sgsr_tiled) {
+            static _Atomic int noted_tile;
+            if (!atomic_exchange(&noted_tile,1)) {
+                VLOG("SGSR1 native 8x8 grid active: %ux%u -> %ux%u, one output pixel/invocation, edge direction enabled; no grid-stride division or repeated pixel loop",input ? input->w : 0,input ? input->h : 0,oi->w,oi->h);
+            }
+        }
         log_sizes(d, cs->key, t, o, oi, effective_enc, effective_map, kernel, pack, cb);
     }
 out:

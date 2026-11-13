@@ -75,7 +75,7 @@ class Actual720pGpuWork(unittest.TestCase):
         # The no-new-shader-translation path modifies the dispatch of
         # precisely the already-selected NDSR stand-in pipeline.
         self.assertIn('vka_ndsr_grid_x(uint32_t width, uint32_t height,', header)
-        self.assertIn('gp_ndsr_replaced && !dp->ind && !sb', draw)
+        self.assertIn('gp_ndsr_replaced && !ndsr_tile && !dp->ind && !sb', draw)
         self.assertIn('!vka_gp_active', draw)
         self.assertIn('!vka_nan_on()', draw)
         self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")', draw)
@@ -85,7 +85,7 @@ class Actual720pGpuWork(unittest.TestCase):
         self.assertIn('if (ndsr_groups_x) vk.vkCmdDispatch(g_cb, ndsr_groups_x, 1, 1);', draw)
         self.assertIn('else if (sb && (uint64_t)dp->x', draw)
         self.assertIn('else vk.vkCmdDispatch(g_cb, (uint32_t)dp->x', draw)
-        self.assertIn('scene_linear, &ndsr_ow, &ndsr_oh', draw)
+        self.assertIn('scene_linear, !dp->ind, &ndsr_launch', draw)
 
     def test_compiled_c_ndsr_retile_contract_and_driver_limit(self):
         # Execute the actual C selection code, not just an independent

@@ -151,6 +151,15 @@ final class Prefs {
     // follow the actual NDSR shader, never a new UI-only scale preset.
     static final String[] OCARINA_SCENE_SCALES = {"0.6133", "0.46875", "0.4166667", "0.3125"};
     static final String[] OCARINA_SCENE_NAMES = {"720p · Qualidade", "540p · Equilibrado", "480p · Desempenho", "360p · Máximo desempenho"};
+    static int renderProfile(Context c, String id) {
+        return OCARINA_TITLE.equals(id) ? OcarinaRenderProfile.checked(of(c).getInt(gameKey("oot_render_profile",id),0)) : 0;
+    }
+    static void renderProfile(Context c, String id, int mode) {
+        if (OCARINA_TITLE.equals(id)) of(c).edit().putInt(gameKey("oot_render_profile",id),OcarinaRenderProfile.checked(mode)).commit();
+    }
+    static String renderSceneScale(Context c, String id, String fallback) {
+        return OcarinaRenderProfile.scale(renderProfile(c,id),sceneScale(c,id,fallback));
+    }
     static String sceneScale(Context c, String titleId, String profileScale) {
         if (!OCARINA_TITLE.equals(titleId)) return profileScale;
         String v = of(c).getString(gameKey("scene_scale", titleId), profileScale);

@@ -310,3 +310,14 @@ ICD. Its synthetic fixture passes an equivalent shader and deliberately fails
 a changed-output shader. Real captured shader probe results and their limits
 are recorded in the game's README. Shader captures and compiled artifacts
 remain private and outside Git.
+
+
+### Renderer-owned SGSR1 kernel
+
+The internal SGSR1 fix is embedded in the APK (`vka_ndsr_spv.h`), not the
+prepared game library. Updating the APK preserves existing shader files,
+including the six working replacements and vegetation supplement. The
+optional Banana 360p/540p -> 720p scene/output profiles prepare a small scene
+RomFS overlay only. The default profile preserves the previous configuration.
+Algorithm attribution, exact reference-pixel tests and phone-validation limits
+are recorded in the [game note](../dm/games/0400486024DEC000/README.md#sgsr1-and-banana-comparison-2026-11-13-current).

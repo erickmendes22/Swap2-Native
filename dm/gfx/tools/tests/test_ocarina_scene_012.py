@@ -37,7 +37,7 @@ class InternalSceneResolution(unittest.TestCase):
         self.assertNotIn('"0.75"', PREFS)
         self.assertIn("Prefs.OCARINA_SCENE_NAMES", UI)
         self.assertIn("Prefs.OCARINA_SCENE_SCALES[w - 1]", UI)
-        self.assertIn("Prefs.setSceneScale(a, id, scale)", UI)
+        self.assertIn("Prefs.setSceneScale(a, id, selectedScale)", UI)
         self.assertIn("SceneOverlay.current(files, id, scale, expect, in[0])", UI)
         self.assertIn("if scale != 0.6133", DYN)
         self.assertIn("else lambda v: scale", DYN)
@@ -58,9 +58,9 @@ class InternalSceneResolution(unittest.TestCase):
         self.assertIn('gameKey("scene_scale", titleId), profileScale', PREFS)
         self.assertIn("static void setSceneScale(Context c, String titleId, String v)", PREFS)
         self.assertNotIn("static void sceneScale(Context c, String titleId, String v)", PREFS)
-        self.assertIn("sceneWanted(id, scale)", UI)
-        self.assertIn("Prefs.setSceneScale(a, id, scale)", UI)
-        self.assertIn("Prefs.sceneScale(this, id, prof.sceneScale())", RUN)
+        self.assertIn("sceneWanted(id, token)", UI)
+        self.assertIn("Prefs.setSceneScale(a, id, selectedScale)", UI)
+        self.assertIn("Prefs.renderSceneScale(this, id, prof.sceneScale())", RUN)
         self.assertIn("SceneOverlay.stampText(scale, expect, version)", SERVICE)
         self.assertIn("internal render scene scale", RUN)
         # The original 720p palette remains bounded in the patcher, while all
@@ -77,7 +77,7 @@ class InternalSceneResolution(unittest.TestCase):
         self.assertIn("but none matches the game's required ABI", PACK)
 
     def test_scene_status_reports_selected_dynamic_scale(self):
-        self.assertIn("Prefs.sceneLabel(scale)", UI)
+        self.assertIn("Prefs.sceneLabel(selectedScale)", UI)
         self.assertIn("tamanho dinâmico", UI)
         # Settings now show readable quality names instead of raw/nominial scales.
         self.assertIn("480p · Desempenho", PREFS)

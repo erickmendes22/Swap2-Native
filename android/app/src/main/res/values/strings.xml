@@ -738,4 +738,9 @@
     <string name="s2_texture_feedback_direct">Direct texture feedback (test)</string>
     <string name="s2_texture_feedback_direct_note">Test GPU texture ID discovery directly in fence-protected readback slots. Off uses the proven copy/clear path. Preserves textures and image; restart the game to compare.</string>
     <string name="s2_fragment_imported">Scene fragment patch imported. The complete shader library and vegetation are preserved. Restart the game to apply.</string>
+    <string name="s2_oot_render_profile">Scene and output profile</string>
+    <string name="s2_oot_render_profile_current">Current configuration</string>
+    <string name="s2_oot_render_profile_360">Banana profile: 360p → 720p</string>
+    <string name="s2_oot_render_profile_540">Banana profile: 540p → 720p</string>
+    <string name="s2_oot_render_profile_note">Optional: prepares the selected scene size and uses the game handheld 720p output. The shader library is preserved. Restart the game to apply.</string>
 </resources>

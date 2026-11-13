@@ -654,6 +654,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - a converted mesh shader calls a large `mesh_plane_store` helper dozens of times, preserving an independent branch for each output plane even though compute outputs share one word-addressed arena. → [Dynamic mesh-plane scatter through a branch ladder](../reference/rendering.md#dynamic-mesh-plane-scatter-through-a-branch-ladder)
 - full vegetation is enabled and compute mesh is selected, but the log reports `mesh draw through compute that the look-ahead did not prepare: skipped` and no compute-mesh batch statistics. The forest trees remain bare. → [Compute-mesh enabled but every draw is unprepared](../reference/rendering.md#compute-mesh-enabled-but-every-draw-is-unprepared)
 - descriptor memo hit rates are high, but command recording repeatedly fills and compares large unchanged driver banks; vertex descriptions and placed-memory lookups are also rebuilt. → [Unchanged driver inputs rebuilt per draw](../reference/rendering.md#unchanged-driver-inputs-rebuilt-per-draw)
+- internal SGSR1 is slower than the final-720p path, and its output differs from the public Banana/Qualcomm reference. → [Native SGSR1 reconstruction](../reference/rendering.md#native-sgsr1-reconstruction)
 
 ## Shaders
 

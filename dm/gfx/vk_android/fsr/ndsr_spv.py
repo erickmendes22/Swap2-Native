@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Compiles ndsr_easu.comp (FSR 1 EASU in place of agl's NDSR upscaler network, vka_ndsr.c) to SPIR-V and writes it as a word array into ../vka_ndsr_spv.h, which
-vka_ndsr.c includes, so the build compiles no GLSL: two variants, the float store (PACKED=0) and the 32-bit word store into an R32_UINT view (PACKED=1).
+vka_ndsr.c includes, so the build compiles no GLSL: four variants: EASU and native 8x8 SGSR1, each with a float store (PACKED=0) and an R32_UINT packed store (PACKED=1).
 Run it after changing the shader. Needs glslc and spirv-val: on PATH, or the NDK's shader-tools
 (ANDROID_NDK_HOME, or ~/android-ndk-*). --check: exit 1 when the header differs from what the shader compiles to (dm/tools/tests/test_ndsr_standin.py)."""
 import argparse
@@ -17,7 +17,9 @@ SRC = os.path.join(HERE, 'ndsr_easu.comp')
 OUT = os.path.join(HERE, '..', 'vka_ndsr_spv.h')
 FSR1 = os.path.join(REPO, 'dm', 'third_party', 'fidelityfx-fsr1')
 CMD = 'glslc -O --target-env=vulkan1.1 -I dm/third_party/fidelityfx-fsr1 -DPACKED=<0|1> -mfmt=num dm/gfx/vk_android/fsr/ndsr_easu.comp -o -'
-VARIANTS = (('vka_ndsr_easu', 0), ('vka_ndsr_easu_packed', 1))
+VARIANTS = (('vka_ndsr_easu', 0, SRC), ('vka_ndsr_easu_packed', 1, SRC),
+            ('vka_ndsr_sgsr', 0, os.path.join(HERE, 'ndsr_sgsr.comp')),
+            ('vka_ndsr_sgsr_packed', 1, os.path.join(HERE, 'ndsr_sgsr.comp')))
 
 
 def tool(name):
@@ -39,12 +41,12 @@ def header():
         raise FileNotFoundError('glslc and spirv-val are needed (PATH, ANDROID_NDK_HOME or ~/android-ndk-*)')
     arrays = []
     with tempfile.TemporaryDirectory() as tmp:
-        for name, packed in VARIANTS:
+        for name, packed, shader in VARIANTS:
             flags = ['-O', '--target-env=vulkan1.1', '-I', FSR1, f'-DPACKED={packed}']
             spv = os.path.join(tmp, name + '.spv')
-            subprocess.run([glslc] + flags + [SRC, '-o', spv], check=True)
+            subprocess.run([glslc] + flags + [shader, '-o', spv], check=True)
             subprocess.run([val, '--target-env', 'vulkan1.1', spv], check=True)
-            num = subprocess.run([glslc] + flags + ['-mfmt=num', SRC, '-o', '-'], check=True, capture_output=True, text=True).stdout
+            num = subprocess.run([glslc] + flags + ['-mfmt=num', shader, '-o', '-'], check=True, capture_output=True, text=True).stdout
             lines = [ln.strip() for ln in num.strip().splitlines() if ln.strip()]
             arrays += [f'static const uint32_t {name}[] = {{   // PACKED={packed}'] + lines + ['};']
     return '\n'.join([

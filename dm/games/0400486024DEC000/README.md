@@ -418,3 +418,60 @@ optimization. Its time is still unmeasured separately; neither texture latency,
 feedback nor attachment/vertex costs are proven to explain the whole 3.27 ms.
 A subsequent shader experiment must include the runtime-patched modules and
 separately validate their texture-ID reporting as well as pixel values.
+
+## SGSR1 and Banana comparison (2026-11-13, current)
+
+The tested Banana 0.3.20 log identifies commit `db79a6d937a2`; that original
+repository/commit was unavailable at audit time. The public Android source
+snapshot audited here is `hidayat077/BananaNative` at
+`0bac816c8470f3b5a65f23dc011bdcc48ffcd59d`. Do not equate the two revisions.
+
+The same driver 891.14 logs show these different render workloads:
+
+| Log / path | NDSR input and output | frame p50 at 1200 | GPU at 1200 |
+|---|---|---:|---:|
+| Swap 123745, internal SGSR1, optional hidden layers on | 683x384 -> 2048x1152 | 24.30 ms | 23.85 ms |
+| Swap 123841, internal SGSR1, hidden layers off | 683x384 -> 2048x1152 | 24.55 ms | 24.12 ms |
+| Swap 123945, bilinear NDSR plus final SGSR1 at 720p | 683x384 -> 2048x1152 | 24.04 ms | 23.63 ms |
+| Banana 124342, internal SGSR1, handheld graphics scale 2 | 960x540 -> 1280x720 | 23.67 ms | 22.69 ms |
+
+These are whole-frame samples, not isolated kernel benchmarks. Banana's NDSR
+output has 2.56 times fewer pixels despite its larger scene. Sparse profiled
+Swap frames report about 0.57-0.58 ms for internal SGSR1 versus 0.48 ms for
+bilinear, but the existing ordinary-frame NDSR retile is disabled during GPU
+profiling. Those samples cannot prove the normal retiled kernel cost.
+
+**Resolved implementation mismatch:** the old internal SGSR1 adapter omitted
+edge direction and used a different Y anchor and normalization. The new kernel
+ports the public Banana/Qualcomm algorithm with the complete BSD notice,
+mediump reconstruction, highp coordinates, an independent linear/clamp sampler,
+24-byte dimension push constants, and direct 8x8 output dispatch. It retains
+encoding conversion, HDR highlights, crop mapping and packed stores. The
+original EASU, bilinear and final-720p options stay available. A non-direct
+launch retains the prior compatible path. See
+[Native SGSR1 reconstruction](../../../docs/reference/rendering.md#native-sgsr1-reconstruction).
+
+**Explicit output comparison:** the new optional scene/output profile offers
+640x360 -> 1280x720 and 960x540 -> 1280x720, by the engine's handheld scale-2
+configuration and its own scene palette. Mode zero keeps the existing choices
+and remains the default. Selecting a profile prepares only the scene overlay;
+it does not rebuild the shader library. This is a disclosed output-profile
+change, not an instruction-level speedup at identical output quality.
+
+**Validation:** `test_ndsr_sgsr_gpu.py` compiles an independent public-source
+reference plus the adapter's grid-stride control. Twenty combinations of sizes,
+linear/sqrt inputs and float/packed B10G11R11 stores match every decoded output
+pixel, with HDR values retained. An odd-origin crop preserves pixels outside
+it. The previous simplified kernel fails the reference in 112,381 components,
+so the comparison detects the regression it targets. Existing EASU/bilinear
+GPU checks also pass. Software-driver timestamps are not phone performance
+measurements; Adreno image quality and frame time remain to be checked.
+
+**Other Banana differences, open:** the public source and tested log use
+cached classic render passes (`DM_VK_CLASSIC_RP=1`) rather than this fork's
+dynamic rendering. It also has a newer native mesh-prepass workaround with
+22 mapped pairs; the seven coarse vegetation-quality pairs here are not its
+equivalent. Neither mechanism is silently enabled or represented as already
+ported by this SGSR fix. The log does not expose a vegetation-off flag, so a
+vegetation difference is not established. No measured frame gain has yet been
+attributed to these backend differences.

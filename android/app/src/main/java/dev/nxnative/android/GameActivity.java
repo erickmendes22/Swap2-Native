@@ -345,13 +345,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // mode that give that size (graphics_scale rows), as its profile says (Profile.resolutionEnv); nothing for a game with neither
             Profile prof = Profile.of(id);
             if (prof != null) env.addAll(prof.resolutionEnv(Prefs.gameWindow(this, id)));
+            env.addAll(OcarinaRenderProfile.environment(Prefs.renderProfile(this,id)));
             // Upscaler (Game settings): FSR 1 in place of agl's NDSR networks, with the profile's input encoding (Profile.ndsrEnv); nothing for a game without them
             if (prof != null) env.addAll(prof.ndsrEnv(Prefs.ndsr(this, id)));
             // Scene resolution 720p (Game settings): the RomFS overlay made on the phone from the player's files, while it matches this pack (SceneOverlay)
             String sceneNote = null;
             if (prof != null && prof.hasScene() && Prefs.scene720(this, id)) {
-                if (SceneOverlay.current(files, id, Prefs.sceneScale(this, id, prof.sceneScale()), prof.sceneExpect(), pack.version)) {
-                    String effectiveSceneScale = Prefs.sceneScale(this, id, prof.sceneScale());
+                if (SceneOverlay.current(files, id, Prefs.renderSceneScale(this, id, prof.sceneScale()), prof.sceneExpect(), pack.version)) {
+                    String effectiveSceneScale = Prefs.renderSceneScale(this, id, prof.sceneScale());
                     env.add("DM_ROMFS_OVERLAY=" + SceneOverlay.dir(files, id));
                     // Fragment shading rate is independent of scene scale:
                     // no special 360p flag and no silent 480p+ downgrade.
@@ -359,7 +360,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                             + " from RomFS overlay (before NDSR / final output filter)");
                 }
                 else sceneNote = "[RED] [nxlaunch] Scene resolution 720p: the overlay " + SceneOverlay.dir(files, id) + " was not made for this pack (version " + pack.version
-                        + ", scale " + Prefs.sceneScale(this, id, prof.sceneScale()) + "): using the game's own render scale this run; select the internal scene resolution again";
+                        + ", scale " + Prefs.renderSceneScale(this, id, prof.sceneScale()) + "): using the game's own render scale this run; select the internal scene resolution again";
             }
             // Match the emulated Switch language to the selected app locale.
             // env.txt and per-game overrides are appended later and can

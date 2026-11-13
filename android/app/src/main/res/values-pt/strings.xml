@@ -732,4 +732,9 @@
     <string name="s2_texture_feedback_direct">Feedback direto de texturas (teste)</string>
     <string name="s2_texture_feedback_direct_note">Testa a descoberta de IDs de texturas pela GPU diretamente em slots protegidos por fence. Desligado usa a cópia e limpeza anteriores. Preserva texturas e imagem; reinicie o jogo para comparar.</string>
     <string name="s2_fragment_imported">Pacote de fragmento da cena importado. A biblioteca completa e a vegetação foram preservadas. Reinicie o jogo para aplicar.</string>
+    <string name="s2_oot_render_profile">Perfil da cena e saída</string>
+    <string name="s2_oot_render_profile_current">Configuração atual</string>
+    <string name="s2_oot_render_profile_360">Perfil Banana: 360p → 720p</string>
+    <string name="s2_oot_render_profile_540">Perfil Banana: 540p → 720p</string>
+    <string name="s2_oot_render_profile_note">Opcional: prepara a cena escolhida e usa a saída de 720p do modo portátil do jogo. A biblioteca de shaders é preservada. Reinicie o jogo para aplicar.</string>
 </resources>
