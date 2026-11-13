@@ -493,7 +493,12 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
     INS(&A, OpDecorate, in_wg, DecBuiltIn, BIWorkgroupId); INS(&A, OpDecorate, in_nwg, DecBuiltIn, BINumWorkgroups);
     if (!lidvar) { lidvar = gvar(&B, ptr(&B, SCInput, B.t_u32), SCInput); INS(&A, OpDecorate, lidvar, DecBuiltIn, BILocalInvocationIndex); }
     uint32_t p_priv_u32 = ptr(&B, SCPrivate, B.t_u32), p_priv_v3u = ptr(&B, SCPrivate, B.t_v3u), p_wg_u32 = ptr(&B, SCWorkgroup, B.t_u32);
-    uint32_t pv_a = gvar(&B, p_priv_u32, SCPrivate), pv_b = gvar(&B, p_priv_u32, SCPrivate), pv_c = gvar(&B, p_priv_u32, SCPrivate), pv_taskidx = gvar(&B, p_priv_u32, SCPrivate);   // mesh: vertex base, primitive base, index bias; task: its slot
+    uint32_t pv_a = gvar(&B, p_priv_u32, SCPrivate), pv_b = gvar(&B, p_priv_u32, SCPrivate), pv_c = gvar(&B, p_priv_u32, SCPrivate);
+    // Allocate the additional private scalar ONLY with the experimental
+    // codepath. The original default SPIR-V must remain byte-identical
+    // (prewarm keys, caches, golden-module hashes).
+    uint32_t pv_taskidx = !L.task && vka_memu_short_task_search() ?
+                          gvar(&B, p_priv_u32, SCPrivate) : 0;   // mesh: vertex base, primitive base, index bias; task: its slot
     uint32_t new_wgvar = wgvar;   // the program's WorkgroupId variable, re-declared Private (same id) after the new types
     // The chains into the old workgroup ID variable: their pointer types as Private (made before the functions are copied)
     uint32_t pin_from[8] = {0}, pin_to[8] = {0}; int npin = 0;
