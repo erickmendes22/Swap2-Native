@@ -369,6 +369,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_VEGETATION=" + (Prefs.fullVegetation(this, id) ? "1" : "0"));
+            // Independent, OFF-by-default draw omissions. Evaluate only
+            // for Ocarina; restore defaults by disabling each switch.
+            if (Prefs.OCARINA_TITLE.equals(id)) {
+                env.add("DM_VK_OOT_HIDDEN_LAYERS=" + (Prefs.hiddenLayersOff(this, id) ? "1" : "0"));
+                env.add("DM_VK_OOT_SKIP_HEAVY_FS=" + (Prefs.skipHeavyFragment(this, id) ? "1" : "0"));
+            }
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_PLANE_LUT=" + (Prefs.vegetationOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_COALESCED=" + (Prefs.vegetationContiguous(this, id) ? "1" : "0"));
             // Optional A/B: legacy texture-discovery feedback remains the
