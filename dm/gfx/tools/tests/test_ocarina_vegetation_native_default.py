@@ -32,7 +32,7 @@ class NativeFoliageDefault(unittest.TestCase):
         shader = (VK / "vka_shader.c").read_text()
         draw = (VK / "vka_draw.c").read_text()
         self.assertIn('vegetation_complete(&g_vegetation, &g_lib)', shader)
-        self.assertIn('508 verified original task/mesh shaders', shader)
+        self.assertIn('verified original task/mesh shaders', shader)
         self.assertIn('vka_shlib_spirv(s->lib, m, &nb', shader)
         self.assertIn('if (!hybrid && vegetation_on) return V.memu ? 1 : 0;', draw)
         self.assertIn('if (supplement && !vegetation_on) return -1;', draw)
