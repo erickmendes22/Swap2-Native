@@ -1,12 +1,13 @@
 name: Mesh compute correctness (no APK)
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113]
+    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113]
     paths:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
       - dm/gfx/tools/tests/test_memu_coalesced_readback.py
       - dm/gfx/tools/tests/test_oot_short_task_search.py
+      - dm/gfx/tools/tests/test_oot_render_enable_fuse.py
       - dm/gfx/tools/tests/test_memu_plane_lut.py
       - dm/gfx/tools/tests/test_banana_input_caches.py
       - dm/gfx/tools/tests/test_ocarina_mesh_native_hybrid.py
@@ -116,6 +117,8 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 /tmp/mesh-invariant-check \
             /tmp/mesh-invariant.spv /tmp/mesh-invariant-patched.spv
           spirv-val --target-env vulkan1.3 /tmp/mesh-invariant-patched.spv
+      - name: Test real NVN mesh lookahead across safe render-enable conditions
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_oot_render_enable_fuse.py -v
       - name: Check hybrid routing and caller ordering
         run: |
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_banana_input_caches.py -v
