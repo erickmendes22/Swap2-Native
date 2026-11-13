@@ -84,8 +84,25 @@ gl_Position=vec4(p*2.0-1.0,0,1);
     return out
 
 
+def integer_output(module):
+    outputs=[(ident,ptr,module.decos.get(ident,{})) for ident,(ptr,sc) in module.vars.items()
+             if sc==3 and 30 in module.decos.get(ident,{})]
+    if len(outputs)!=1 or outputs[0][2][30]!=[0]:
+        raise ValueError('probe requires one color output at location zero')
+    _,ty=module.pointee(outputs[0][1])
+    if module.op(ty)!=23 or module.types[ty][3]!=4:
+        raise ValueError('probe requires a four-component color output')
+    scalar=module.types[ty][2]
+    if module.op(scalar)==22 and module.types[scalar][2]==32:return False
+    if module.int_type(scalar)==(32,0):return True
+    raise ValueError('probe supports only float32 or uint32 color output')
+
+
 class Probe:
-    def __init__(self, resources, vertex, width=32):
+    def __init__(self, resources, vertex, width=32, integer=False):
+        self.integer=integer
+        self.format=v.VK_FORMAT_R32G32B32A32_UINT if integer else v.VK_FORMAT_R32G32B32A32_SFLOAT
+        self.dtype=np.uint32 if integer else np.float32
         self.width=width; self.resources=resources; self.owned=[]; self.modules=[]; self.pipelines=[]
         self.instance=v.vkCreateInstance(v.VkInstanceCreateInfo(pApplicationInfo=v.VkApplicationInfo(pApplicationName='fragment synthetic probe',apiVersion=v.VK_MAKE_VERSION(1,3,0))),None)
         self.physical=v.vkEnumeratePhysicalDevices(self.instance)[0]
@@ -167,13 +184,14 @@ class Probe:
         depth=4 if kind==2 else 1
         flags=v.VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT if kind==3 else 0
         usage=v.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|v.VK_IMAGE_USAGE_TRANSFER_SRC_BIT if target else v.VK_IMAGE_USAGE_SAMPLED_BIT|v.VK_IMAGE_USAGE_TRANSFER_DST_BIT
-        image=v.vkCreateImage(self.device,v.VkImageCreateInfo(flags=flags,imageType=v.VK_IMAGE_TYPE_3D if kind==2 else v.VK_IMAGE_TYPE_2D,format=v.VK_FORMAT_R32G32B32A32_SFLOAT,extent=v.VkExtent3D(width=width,height=height,depth=depth),mipLevels=1,arrayLayers=layers,samples=v.VK_SAMPLE_COUNT_1_BIT,tiling=v.VK_IMAGE_TILING_OPTIMAL,usage=usage,sharingMode=v.VK_SHARING_MODE_EXCLUSIVE,initialLayout=v.VK_IMAGE_LAYOUT_UNDEFINED),None)
+        image_format=self.format if target else v.VK_FORMAT_R32G32B32A32_SFLOAT
+        image=v.vkCreateImage(self.device,v.VkImageCreateInfo(flags=flags,imageType=v.VK_IMAGE_TYPE_3D if kind==2 else v.VK_IMAGE_TYPE_2D,format=image_format,extent=v.VkExtent3D(width=width,height=height,depth=depth),mipLevels=1,arrayLayers=layers,samples=v.VK_SAMPLE_COUNT_1_BIT,tiling=v.VK_IMAGE_TILING_OPTIMAL,usage=usage,sharingMode=v.VK_SHARING_MODE_EXCLUSIVE,initialLayout=v.VK_IMAGE_LAYOUT_UNDEFINED),None)
         req=v.vkGetImageMemoryRequirements(self.device,image)
         typ=next(i for i in range(32) if req.memoryTypeBits>>i&1)
         mem=v.vkAllocateMemory(self.device,v.VkMemoryAllocateInfo(allocationSize=req.size,memoryTypeIndex=typ),None);v.vkBindImageMemory(self.device,image,mem,0)
         sub=v.VkImageSubresourceRange(aspectMask=v.VK_IMAGE_ASPECT_COLOR_BIT,baseMipLevel=0,levelCount=1,baseArrayLayer=0,layerCount=layers)
         viewtype=v.VK_IMAGE_VIEW_TYPE_CUBE if kind==3 else v.VK_IMAGE_VIEW_TYPE_3D if kind==2 else v.VK_IMAGE_VIEW_TYPE_2D_ARRAY if dim.get('array') else v.VK_IMAGE_VIEW_TYPE_2D
-        view=v.vkCreateImageView(self.device,v.VkImageViewCreateInfo(image=image,viewType=viewtype,format=v.VK_FORMAT_R32G32B32A32_SFLOAT,subresourceRange=sub),None)
+        view=v.vkCreateImageView(self.device,v.VkImageViewCreateInfo(image=image,viewType=viewtype,format=image_format,subresourceRange=sub),None)
         result=image,view,mem,sub
         self.images.append(result)
         return result
@@ -201,7 +219,7 @@ class Probe:
     def pipeline(self,path):
         fragment=self.module(path)
         stages=[v.VkPipelineShaderStageCreateInfo(stage=v.VK_SHADER_STAGE_VERTEX_BIT,module=self.vertex,pName='main'),v.VkPipelineShaderStageCreateInfo(stage=v.VK_SHADER_STAGE_FRAGMENT_BIT,module=fragment,pName='main')]
-        render=v.VkPipelineRenderingCreateInfo(colorAttachmentCount=1,pColorAttachmentFormats=[v.VK_FORMAT_R32G32B32A32_SFLOAT])
+        render=v.VkPipelineRenderingCreateInfo(colorAttachmentCount=1,pColorAttachmentFormats=[self.format])
         info=v.VkGraphicsPipelineCreateInfo(pNext=render,stageCount=2,pStages=stages,pVertexInputState=v.VkPipelineVertexInputStateCreateInfo(),pInputAssemblyState=v.VkPipelineInputAssemblyStateCreateInfo(topology=v.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST),pViewportState=v.VkPipelineViewportStateCreateInfo(viewportCount=1,pViewports=[v.VkViewport(width=self.width,height=self.width,minDepth=0,maxDepth=1)],scissorCount=1,pScissors=[v.VkRect2D(offset=v.VkOffset2D(x=0,y=0),extent=v.VkExtent2D(width=self.width,height=self.width))]),pRasterizationState=v.VkPipelineRasterizationStateCreateInfo(polygonMode=v.VK_POLYGON_MODE_FILL,cullMode=v.VK_CULL_MODE_NONE,frontFace=v.VK_FRONT_FACE_COUNTER_CLOCKWISE,lineWidth=1),pMultisampleState=v.VkPipelineMultisampleStateCreateInfo(rasterizationSamples=1),pColorBlendState=v.VkPipelineColorBlendStateCreateInfo(attachmentCount=1,pAttachments=[v.VkPipelineColorBlendAttachmentState(colorWriteMask=15)]),layout=self.layout)
         pipeline=v.vkCreateGraphicsPipelines(self.device,v.VK_NULL_HANDLE,1,[info],None)[0]
         self.pipelines.append(pipeline)
@@ -218,7 +236,7 @@ class Probe:
         v.vkCmdResetQueryPool(self.cmd,self.queries,0,2)
         self.barrier(self.target[0],v.VK_IMAGE_LAYOUT_GENERAL,v.VK_IMAGE_LAYOUT_GENERAL,v.VK_ACCESS_TRANSFER_READ_BIT,v.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,self.target[3])
         v.vkCmdWriteTimestamp(self.cmd,v.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,self.queries,0)
-        attach=v.VkRenderingAttachmentInfo(imageView=self.target[1],imageLayout=v.VK_IMAGE_LAYOUT_GENERAL,loadOp=v.VK_ATTACHMENT_LOAD_OP_CLEAR,storeOp=v.VK_ATTACHMENT_STORE_OP_STORE,clearValue=v.VkClearValue(color=v.VkClearColorValue(float32=[-999,-999,-999,-999])))
+        attach=v.VkRenderingAttachmentInfo(imageView=self.target[1],imageLayout=v.VK_IMAGE_LAYOUT_GENERAL,loadOp=v.VK_ATTACHMENT_LOAD_OP_CLEAR,storeOp=v.VK_ATTACHMENT_STORE_OP_STORE,clearValue=v.VkClearValue(color=(v.VkClearColorValue(uint32=[0xdeadbeef]*4) if self.integer else v.VkClearColorValue(float32=[-999]*4))))
         v.vkCmdBeginRendering(self.cmd,v.VkRenderingInfo(renderArea=v.VkRect2D(offset=v.VkOffset2D(x=0,y=0),extent=v.VkExtent2D(width=self.width,height=self.width)),layerCount=1,colorAttachmentCount=1,pColorAttachments=[attach]))
         v.vkCmdBindPipeline(self.cmd,v.VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline)
         v.vkCmdBindDescriptorSets(self.cmd,v.VK_PIPELINE_BIND_POINT_GRAPHICS,self.layout,0,1,[self.set],0,None)
@@ -232,7 +250,7 @@ class Probe:
         times=v.ffi.new('uint64_t[2]')
         v.vkGetQueryPoolResults(self.device,self.queries,0,2,16,times,8,v.VK_QUERY_RESULT_64_BIT|v.VK_QUERY_RESULT_WAIT_BIT)
         self.gpu_ms=((int(times[1])-int(times[0]))&self.timestamp_mask)*self.tick/1e6
-        return np.frombuffer(bytes(self.readback[2]),dtype=np.float32).copy()
+        return np.frombuffer(bytes(self.readback[2]),dtype=self.dtype).copy()
 
     def close(self):
         v.vkDeviceWaitIdle(self.device)
@@ -262,7 +280,9 @@ def main():
         right=[{k:v for k,v in r.items() if k!='id'} for r in b.resources()]
         if left!=right:raise ValueError('resource layout differs')
     vs=vertex_shader(a,args.work/'probe.vert')
-    probe=Probe(a.resources(),vs,args.size)
+    integer=integer_output(a)
+    if integer!=integer_output(b):raise ValueError('color output type differs')
+    probe=Probe(a.resources(),vs,args.size,integer)
     try:
         pa=probe.pipeline(args.work/'before.spv');pb=probe.pipeline(args.work/'after.spv')
         result=[]
@@ -275,12 +295,12 @@ def main():
                     outputs[name]=probe.render(pipeline,seed);timings[name]=probe.gpu_ms
                 original=outputs['before'];changed=outputs['after']
                 finite=np.isfinite(original)&np.isfinite(changed)
-                difference=float(np.max(np.abs(original[finite]-changed[finite]))) if np.any(finite) else None
-                equal=bool(np.allclose(original,changed,rtol=1e-5,atol=1e-6,equal_nan=True))
+                difference=float(np.max(np.abs(original[finite].astype(np.float64)-changed[finite].astype(np.float64)))) if np.any(finite) else None
+                equal=bool(np.array_equal(original,changed) if integer else np.allclose(original,changed,rtol=1e-5,atol=1e-6,equal_nan=True))
                 row={'iteration':iteration,'seed':seed,'equal':equal,'gpu_ms':timings,'max_abs_error':difference,'finite_values':int(np.isfinite(original).sum()),'unique_finite_values':len(np.unique(original[np.isfinite(original)])),'seconds':time.perf_counter()-start};result.append(row);print(json.dumps(row),flush=True)
                 np.save(args.work/f'before-{seed}.npy',original);np.save(args.work/f'after-{seed}.npy',changed)
                 if not equal:raise AssertionError('fragment output mismatch')
-        print(json.dumps({'device':probe.name,'scope':'synthetic descriptor-index-zero probe, not a game replay','results':result}),flush=True)
+        print(json.dumps({'device':probe.name,'output_type':str(probe.dtype),'scope':'synthetic descriptor-index-zero probe, not a game replay','results':result}),flush=True)
     finally:
         probe.close()
 

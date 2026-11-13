@@ -346,10 +346,12 @@ instructions fall 4,125 to 2,982, conditional branches 95 to 75, while all
 18 image samples remain. Earlier raw-frontend instruction counts are not the
 final Vulkan counts. These figures describe code, not predicted phone FPS.
 
-Both final base and alpha-test variants passed 12 synthetic GPU comparisons
+Both final base and UINT-output variants passed 12 synthetic GPU comparisons
 each (128x128 RGBA32F, four finite uniform patterns, three alternating runs).
-Every comparison had max absolute error 0, all 65,536 components finite and
-nontrivial patterns with 21,239/41,875 distinct values. Textures retain their
+Every comparison had max absolute error 0. Base output had all 65,536
+components finite and nontrivial patterns with 21,239/41,875 distinct values.
+UINT variant 1 uses an RGBA32_UINT target and exact integer equality (not
+a float attachment or float tolerance). Textures retain their
 actual dimensionality and all sample operations. Important limits: descriptors
 are specialized to index zero on **both probe copies**, textures have one mip,
 SSBO/support data are synthetic, and this is SwiftShader, not a game replay
@@ -367,3 +369,9 @@ private libraries pass the production gate. No resolution, foliage, texture
 samples, SGSR1 or shader quality setting is reduced. Phone performance and
 visual validation of this alternative remain necessary; do not advertise a
 measured FPS gain from its synthetic test.
+
+The initial variant-1 probe used an incorrectly typed float target and was
+excluded. Repeating it with the actual uint32 output format passes all 12
+cases bit-for-bit. The generic negative control now also changes each UINT
+output by one least-significant bit, and must fail. This probe correction does
+not modify the production library, APK shader selector or packaged shader bytes.
