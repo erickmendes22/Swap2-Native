@@ -40,6 +40,20 @@ class MeshRouteAB(unittest.TestCase):
         self.assertNotIn("mesh_cut(d, rt", draw)
         self.assertNotIn("vkpp_prepass(", draw)
 
+    def test_mesh_route_dialog_displays_radio_choices_not_message_only(self):
+        ui = (APP / "GameSettings.java").read_text()
+        start = ui.index("private static void meshRouteDialog(")
+        end = ui.index("private static void upscaler(", start)
+        dialog = ui[start:end]
+        # Android AlertController uses the message instead of the choice
+        # list when both Builder.setMessage and setSingleChoiceItems are set.
+        self.assertNotIn(".setMessage(", dialog)
+        self.assertIn(".setSingleChoiceItems(names, selected,", dialog)
+        self.assertIn("Híbrido atual (padrão;", dialog)
+        self.assertIn("Compute integral (todos os mesh draws;", dialog)
+        self.assertIn("Mesh nativo integral (experimental;", dialog)
+        self.assertIn("Prefs.ocarinaMeshRoute(a, g.titleId, which)", dialog)
+
     def test_launcher_and_reset_are_connected(self):
         pref = (APP / "Prefs.java").read_text()
         game = (APP / "GameActivity.java").read_text()
