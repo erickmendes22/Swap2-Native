@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int g_classic_pass;
 static VkCommandBuffer g_cb; static unsigned g_slot; static int g_prof, g_dyn_filter = 1, g_pass_keep = 1, g_vb_filter = 1;   // g_prof: DM_VK_PROF
 static int g_vin_skip = 1;
 static uint64_t g_vin_kept, g_vin_built, g_vb_kept, g_vb_bound;
@@ -326,7 +327,8 @@ void vka_rp_end(void) {
     // while this dynamic rendering pass is still active. It emits NO GPU
     // commands on ordinary frames and preserves all attachment contents.
     if (vka_gp_active) vka_gp_gfx_flush();
-    vk.vkCmdEndRendering(g_cb);
+    if(g_classic_pass)vk.vkCmdEndRenderPass(g_cb);else vk.vkCmdEndRendering(g_cb);
+    g_classic_pass=0;
     // vkCmdCopyBuffer is forbidden inside rendering. Flush any deferred
     // uniform writes after ending the pass, with a read->transfer dependency.
     // The draw-side shadow already held those values for in-pass consumers.
@@ -391,10 +393,23 @@ static void rt_range(const vka_img *im, const view_t *v, int has_v, uint32_t *lv
     if (*l0 + *nl > all) *nl = *l0 < all ? all - *l0 : 0;
 }
 // Opens the pass over the bound targets: 0 = it cannot (no target can be an attachment), logged
+// Decided at device startup: all pipelines and passes must agree.
+int vka_classic_rp(void) {
+    static int on=-1;
+    if(on<0 && V.dev) {
+        const char *e=getenv("DM_VK_CLASSIC_RP");
+        int want=e ? atoi(e)!=0 : V.driver_id==VK_DRIVER_ID_QUALCOMM_PROPRIETARY && !strcmp(DM_GAME_ID,"0400486024DEC000");
+        on=want && V.imageless;
+        VLOG("cached classic render passes: %s (imageless=%d; DM_VK_CLASSIC_RP)",on ? "on" : "off",V.imageless);
+    }
+    return on>0;
+}
+#include "vka_renderpass_cache.h"
 static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
     if (R.on) { if (!g_pass_keep || rt_same(rt, has_rt, &R.rt, R.has_rt)) return 1; vka_rp_end(); }   // a new SET_RT of other targets ends the pass at its first draw (exec does not)
     if (PC.n && !rt_same(rt, has_rt, &PC.rt, 1)) pc_flush();                             // clears of other targets: done before
     VkRenderingAttachmentInfo ca[8], da = {0}, sa; uint32_t w = UINT32_MAX, h = UINT32_MAX, layers = UINT32_MAX, samples = 0;
+    vka_img *s_im[9]={0};uint32_t s_lv[9]={0},s_nl[9]={0};
     vka_img *fb_im[9]; uint32_t fb_lv[9]; int nfb = 0;   // the attachments' images and levels (vka_tex_feedback)
     memset(&R, 0, sizeof R);
     if (has_rt) R.rt = *rt; R.has_rt = has_rt;
@@ -420,6 +435,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
             g_attachment_loads_avoided++;
         }
         if (ca[i].storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE) g_attachment_stores_avoided++;
+        s_im[i]=im;s_lv[i]=lv;s_nl[i]=nl;
         ca[i].imageView = v; R.cf[i] = f.view; R.ckind[i] = f.kind; samples = im->samples; fb_im[nfb] = im; fb_lv[nfb++] = lv;
         R.cim[R.nci] = im; R.clv[R.nci] = lv; R.cl0[R.nci++] = l0;
         uint32_t lw = im->w >> lv ? im->w >> lv : 1, lh = im->h >> lv ? im->h >> lv : 1;
@@ -445,6 +461,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
                 if (g_store_discard_depth) g_attachment_stores_avoided++;
                 if (im->aspect & VK_IMAGE_ASPECT_DEPTH_BIT) { dp = &da; R.df = im->f.vk; }
                 if (im->aspect & VK_IMAGE_ASPECT_STENCIL_BIT) { sp = &da; R.sf = im->f.vk; }
+                s_im[8]=im;s_lv[8]=lv;s_nl[8]=nl;
                 samples = im->samples; fb_im[nfb] = im; fb_lv[nfb++] = lv;
                 uint32_t lw = im->w >> lv ? im->w >> lv : 1, lh = im->h >> lv ? im->h >> lv : 1;
                 R.dnl = nl; R.dext = (VkExtent2D){lw, lh};
@@ -495,7 +512,33 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
     if ((dp && dp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) ||
         (sp && sp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) || nlate)
         R.awrite = 1;
-    vk.vkCmdBeginRendering(g_cb, &ri);
+    g_classic_pass = 0;
+    if (vka_classic_rp()) {   // DM_VK_CLASSIC_RP: the same pass as a VkRenderPass with an imageless framebuffer
+        rpkey k; memset(&k, 0, sizeof k); fbkey fk; memset(&fk, 0, sizeof fk);
+        VkImageView views[9]; VkClearValue cv[9]; uint32_t na = 0;
+        k.n = (uint32_t)n; k.samples = samples;
+        for (int i = 0; i < n; i++) {
+            if (!ca[i].imageView) { k.cf[i] = VK_FORMAT_UNDEFINED; continue; }
+            k.cf[i] = R.cf[i]; rp_operations(&k,(unsigned)i,&ca[i]);
+            fk.a[na] = fb_att(s_im[i], s_lv[i], s_nl[i], R.cf[i]); views[na] = ca[i].imageView; cv[na++] = ca[i].clearValue;
+        }
+        if (dp || sp) {
+            k.ds = R.df ? R.df : R.sf; k.d = dp != NULL; k.s = sp != NULL;
+            if(dp)rp_operations(&k,8,dp);if(sp)rp_operations(&k,9,sp);
+            fk.a[na] = fb_att(s_im[8], s_lv[8], s_nl[8], k.ds); views[na] = da.imageView;
+            cv[na].depthStencil.depth = da.clearValue.depthStencil.depth; cv[na++].depthStencil.stencil = sa.clearValue.depthStencil.stencil;
+        }
+        VkRenderPass rp = rp_obtain(&k);
+        fk.rp = rp; fk.w = w; fk.h = h; fk.layers = layers; fk.na = na;
+        VkFramebuffer fb = rp ? fb_obtain(&fk) : VK_NULL_HANDLE;   // Never fall back to an incompatible dynamic pipeline.
+        if (!fb) { VRED_ONCE("classic framebuffer unavailable: draw refused, no incompatible dynamic fallback"); return 0; }
+        if (fb) {
+            VkRenderPassAttachmentBeginInfo ab = {VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO, NULL, na, views};
+            VkRenderPassBeginInfo rb = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, .pNext = na ? &ab : NULL, .renderPass = rp, .framebuffer = fb, .renderArea = R.area, .clearValueCount = na, .pClearValues = cv};
+            vk.vkCmdBeginRenderPass(g_cb, &rb, VK_SUBPASS_CONTENTS_INLINE); g_classic_pass = 1;
+        }
+    }
+    if(!g_classic_pass)vk.vkCmdBeginRendering(g_cb, &ri);
     R.on = 1; vka_n_rp++; if (g_dyn_filter == 2) vka_dyn_invalidate();   // DM_VK_DYN_FILTER=2: the dynamic state set again at each pass (bisect)
     for (int k = 0; k < nlate; k++) { VkClearAttachment c = {late[k]->asp, late[k]->ci >= 0 ? (uint32_t)late[k]->ci : 0, late[k]->in}; VkClearRect cr = {late[k]->rc, 0, layers}; vk.vkCmdClearAttachments(g_cb, 1, &c, 1, &cr); }
     PC.n = 0;

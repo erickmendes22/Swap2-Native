@@ -475,3 +475,47 @@ equivalent. Neither mechanism is silently enabled or represented as already
 ported by this SGSR fix. The log does not expose a vegetation-off flag, so a
 vegetation difference is not established. No measured frame gain has yet been
 attributed to these backend differences.
+
+
+## Cached classic render passes (2026-11-13, current)
+
+The 13f12f2 device logs `134012` and `134102` confirm handheld graphics scale 2,
+respectively 640x360 -> 1280x720 and 960x540 -> 1280x720. Both used EASU NDSR
+plus final SGSR1, not the new internal SGSR1 kernel. Both kept the heavy-fragment
+skip enabled and hidden-layers skip disabled. Preserve those choices when
+comparing backend changes. At frame 1500, 540p reports p50 frame 21.60 ms,
+GPU 20.97 ms and recording 18.61 ms (149 passes/frame); 360p reports 19.89 ms,
+19.42 ms and 15.76 ms. Recording includes driver/backpressure time, not just
+independent CPU work. GPU-profiled frames include timing overhead. The 540p
+profile has about 14 ms of graphics plus about 2.9 ms mesh compute, 0.47 ms
+task compute and several other computes. These categories overlap with the
+profiler's formerly unnamed steps and must not be summed twice.
+
+The next backend ports the public Banana snapshot's cached classic render
+passes and imageless framebuffers. It preserves this fork's per-aspect clear,
+load/store discard operations, formats, views, layers, samples and barriers.
+All graphics pipelines, including fast GPL links and optimized replacements,
+use a compatible render pass; shader-part cache keys include it. Framebuffer
+cache keys contain shapes and format lists rather than guest image/view
+handles, so replacing a texture does not leave a framebuffer holding its view.
+A failed classic framebuffer never draws with an incompatible dynamic pipeline.
+
+The default is enabled only for Qualcomm proprietary + Ocarina when imageless
+framebuffers are supported. **Cached passes (Qualcomm)** OFF plus restart
+sets `DM_VK_CLASSIC_RP=0` and restores dynamic rendering in the same APK.
+Other drivers retain the old path by default; an explicit environment override
+can opt in. No shader rebuild, resolution change, vegetation cut or layer
+skip is part of this backend change.
+
+Validation: `test_renderpass_cache_gpu.py` exercises the actual cache with
+150 passes, MRT draws, clear/load/discard, final partial clears, separate
+depth/stencil readback, cache reuse and five alternate-order runs. All output
+bytes match dynamic rendering at 67x41 and 960x540. One local SwiftShader
+median at 960x540 was 0.298 ms dynamic versus 0.216 ms classic for recording
+150 passes; tiny-pass results were slower (0.053 versus 0.168 ms). These
+software-driver numbers are an indicator with a clear platform limit, not an
+Adreno FPS guarantee. Banana's source also documents its Adreno 740 benchmark
+of roughly 13 us per dynamic begin/end pair versus 1.5 us classic; that is a
+different GPU/driver, not a measurement of this RedMagic. The remaining GPU
+frame-time gap to 16.67 ms is open, and this change alone does not establish
+60 FPS. See [Cached Vulkan render passes](../../../docs/reference/rendering.md#cached-vulkan-render-passes).
