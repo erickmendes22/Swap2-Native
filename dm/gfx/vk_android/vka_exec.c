@@ -30,7 +30,9 @@ static uint64_t g_frame, g_stat_ops, g_stat_draws, g_stat_skipped;
 // MEMU_ADD walk (not once per task/mesh replay). Never relax the barrier;
 // report which guest dependency costs us additional GPU pass splits.
 static uint64_t g_memu_boundary_op[OP_COUNT_ + 1]; // last: native route
+static uint64_t g_memu_rc_true_crossed, g_memu_rc_true_blocked, g_memu_rc_unsafe_blocked;
 static void memu_boundary_stats(char *out, size_t n);
+static void memu_rc_true_stats(char *out, size_t n);
 static int g_origin_ll = 1, g_queue_origin_ll = 1, g_depth_zero;
 _Atomic int vka_synclog_n;   // DM_VK_SYNCLOG: lines left (mtl_wait)
 #define g_synclog vka_synclog_n
@@ -271,7 +273,8 @@ void mtl_set_frame(uint64_t f) {
           { char ob[600]; oq_stats(ob, sizeof ob, n); if (ob[0]) VLOG("%s", ob); }
           { void vka_drv_memo_stats(char *b, size_t n); vka_drv_memo_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
           vka_memu_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
-          memu_boundary_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
+          memu_boundary_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
+          memu_rc_true_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb); }
         f0 = f; d0 = g_stat_draws; rp0 = vka_n_rp; b0 = vka_n_bar; ub0 = g_n_ub; s0 = g_n_sub; r0 = g_rec_ns; o0 = g_stat_ops; pc0 = g_n_pclear; ch0 = g_n_chunks;
     }
 }
@@ -1366,6 +1369,24 @@ static void memu_boundary_stats(char *out, size_t n) {
         nt > 2 ? memu_boundary_name(top[2]) : "-", nt > 2 ? top[2] : 0u,
         nt > 2 ? (unsigned long long)delta[top[2]] : 0ull);
 }
+// A pure SetRenderEnable(true) can be crossed by a mesh look-ahead that
+// starts with rendering already enabled (memu_scan refuses rc_skip). It
+// reads/writes no guest memory or GPU state. The actual replay still calls
+// rc_eval in original order. Conditional modes (0/1), unconditional false
+// (3), and malformed records remain strict boundaries.
+static void memu_rc_true_stats(char *out, size_t n) {
+    static uint64_t cross0, block0, unsafe0;
+    uint64_t crossed = g_memu_rc_true_crossed - cross0;
+    uint64_t blocked = g_memu_rc_true_blocked - block0;
+    uint64_t unsafe = g_memu_rc_unsafe_blocked - unsafe0;
+    cross0 = g_memu_rc_true_crossed;
+    block0 = g_memu_rc_true_blocked;
+    unsafe0 = g_memu_rc_unsafe_blocked;
+    if (n) snprintf(out, n,
+        "mesh render condition boundaries: redundant unconditional true crossed=%llu, true retained=%llu, conditional/disabled retained=%llu over 300 frames; DM_VK_MEMU_RC_TRUE_FUSE=%d",
+        (unsigned long long)crossed, (unsigned long long)blocked,
+        (unsigned long long)unsafe, VKA_ENV("DM_VK_MEMU_RC_TRUE_FUSE", 0) != 0);
+}
 static int memu_allowed(uint32_t op) {
     switch (op) {
     case OP_END: case OP_JUMP: case OP_BEGIN: case OP_CALL: case OP_DRAW: case OP_DRAW_IDX: case OP_SCISSOR: case OP_COPY_STRIDE: case OP_CLEAR_COLOR: case OP_CLEAR_DS:
@@ -1402,6 +1423,24 @@ static int memu_walk(const uint8_t *p, int phase) {
         }
         if (h.op == OP_JUMP) { memcpy(&p, a, 8); continue; }
         if (h.op == OP_CALL) { if (nret == 17) break; ret[nret++] = p + h.size; memcpy(&p, a, 8); continue; }
+        if (h.op == OP_RENDER_COND && h.size >= 8u + sizeof(p_render_cond)) {
+            int32_t mode; memcpy(&mode, a, sizeof mode);
+            if (mode == 2 && !S.rc_skip) {
+                // This is ONLY SetRenderEnable(true), not a conditional
+                // query evaluation. No memory read, render-target mutation,
+                // query, barrier or GPU work can occur at this command.
+                // The real replay still executes rc_eval at its original
+                // point; look-ahead must not mutate S.rc_skip or its stats.
+                if (VKA_ENV("DM_VK_MEMU_RC_TRUE_FUSE", 0)) {
+                    if (phase == MEMU_ADD) g_memu_rc_true_crossed++;
+                    p += h.size;
+                    continue;
+                }
+                if (phase == MEMU_ADD) g_memu_rc_true_blocked++;
+            } else if (phase == MEMU_ADD) {
+                g_memu_rc_unsafe_blocked++;
+            }
+        }
         if (!memu_allowed(h.op) || h.size < 8) {
             if (phase == MEMU_ADD && h.op < OP_COUNT_)
                 g_memu_boundary_op[h.op]++;
