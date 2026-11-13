@@ -49,6 +49,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_mesh_native_hybrid.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_mesh_caller_lookahead.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_foliage_gpu_phase_profile.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_scene_chunk_profile.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_vegetation_native_default.py' -v
           python3 dm/gfx/tools/ocarina_vegetation.py --check
           python3 -m unittest discover -s dm/tools/tests -p 'test_ocarina_vegetation_launcher.py' -v
