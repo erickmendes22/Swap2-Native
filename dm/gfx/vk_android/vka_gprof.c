@@ -279,8 +279,9 @@ static void report(void) {
         gh[j].draws += m->gfx_top;
     }
     if (groups) {
-        VLOG("gpu prof scene chunks: frame %llu %u groups %.3fms, mixed %u groups %.3fms; blocks measure graphics time including VS/depth/ROP, NOT fragment shader-only time",
-             (unsigned long long)g_frame, groups, sampled_ms, mixed_groups, mixed_ms);
+        VLOG("gpu prof scene chunks: frame %llu vegetation=%d %u groups %.3fms, mixed %u groups %.3fms; blocks measure graphics time including VS/depth/ROP, NOT fragment shader-only time",
+             (unsigned long long)g_frame, VKA_ENV("DM_VK_VEGETATION", 1),
+             groups, sampled_ms, mixed_groups, mixed_ms);
         unsigned char chosen[64] = {0};
         for (unsigned rank = 0; rank < ngh && rank < 12; rank++) {
             int best = -1;
@@ -324,9 +325,13 @@ void vka_gp_sub_begin(VkCommandBuffer cb, uint64_t frame) {
         // vegetation bottleneck: one timestamped frame in every 300.
         // No tracing or altered GPU commands in the other 299 frames.
         // Explicit DM_VK_GPUPROF=0 disables it entirely, if desired.
+        // Compare graphics costs with foliage ON and OFF in the SAME
+        // build. If profiling were enabled only with foliage on, the
+        // baseline's big graphics passes would remain unmeasured.
+        // The one sampled frame in 300 is diagnostic; all others record
+        // the exact original GPU commands. DM_VK_GPUPROF=0 disables both.
         int every = VKA_ENV("DM_VK_GPUPROF",
-            !strcmp(DM_GAME_ID, "0400486024DEC000") &&
-            VKA_ENV("DM_VK_VEGETATION", 1) ? 300 : 0);
+            !strcmp(DM_GAME_ID, "0400486024DEC000") ? 300 : 0);
         if (every <= 0 || frame == g_frame || (g_last_frame && frame < g_last_frame + (uint64_t)every) || !init()) return;
         g_state = 1; g_frame = g_last_frame = frame; g_n = 0; vka_gp_active = 1; g_pass_new = 0; g_compute_new = 0; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
         g_gfx_n = 0; g_gfx_enabled = 0;
