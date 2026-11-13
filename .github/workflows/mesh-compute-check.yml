@@ -8,6 +8,9 @@ on:
       - dm/gfx/tools/tests/test_memu_coalesced_readback.py
       - dm/gfx/tools/tests/test_memu_plane_lut.py
       - dm/gfx/tools/tests/test_banana_input_caches.py
+      - dm/gfx/vk_android/vka_tex.c
+      - dm/gfx/vk_android/vka_exec.c
+      - dm/gfx/tools/tests/test_ocarina_pool_fb_direct.py
       - dm/gfx/vk_android/vka_draw.c
       - dm/gfx/vk_android/vka.h
       - dm/gfx/vk_android/vka_fragment_patch.h
@@ -39,6 +42,9 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write('VK_ICD_FILENAMES=' + paths[0] + '\n')
           PY
+      - name: Compile actual texture feedback ring policy and compare all texture IDs
+        run: |
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pool_fb_direct.py' -v
       - name: Verify fragment comparison and negative control
         run: |
           python3 -m venv /tmp/fragment-probe-venv
