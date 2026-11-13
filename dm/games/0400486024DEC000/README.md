@@ -561,3 +561,36 @@ attachment shading-rate support, but the current trace does not establish
 the guest palette ABI or image encoding. The inspected public Banana
 snapshot also stubs these calls, so it is not evidence of a working port.
 Removing this experiment is cleanup, not a claimed FPS optimization.
+
+### Compute-route HDR VRS correction (2026-11-13)
+
+The `174854` log uses integral compute and VRS 2x2. The captured HDR pass
+`5ad65c0eefd09c7f` costs 0.55-0.71 ms at 480x270 with two RGBA16F targets,
+but never reports VRS ready for that key. `pstate_fill` recognized only the
+native `(task efaa4fa6a80ba719, mesh 066f5daf12e43c71, FS 5ad6...)` triple.
+`draw_body` replaces task/mesh with its generated VS before pipeline creation,
+so the format exception became unreachable. The observed VS
+`086551b608e12c6b` is exactly that mesh key XOR the generated-VS and coalesced
+layout tags. Recognize that generated VS with its `memu == 2` provenance and
+the same FS/two-target format guard. Both scalar and coalesced layouts work.
+The user's chosen rate, VRS-off path, driver support, single-sample guard and
+fallback remain intact. This makes existing VRS apply to a previously missed
+pass; coarse shading can change fine pixel detail as the existing VRS choice
+already permits. The complete pass cost is not a predicted saving.
+
+The production C eligibility test covers the exact observed VS, both arena
+layouts, native triplet, unrelated shaders, provenance, null stages and every
+attachment format up to 184. Pipeline source guards retain the existing
+VRS-off, driver capability, sample count and whole-pipeline/GPL restrictions.
+No graphics-key size, prepared library or original shader bytes change.
+
+A second experiment stably compacted private indexed triangle padding in place.
+It passed exact ordered indices and arena guards on GPU (15564 -> 6487
+synthetic triangles), then SAME-command-buffer compute->indexed indirect
+raster with alpha blending and precise occlusion: pixels and all 473296
+covered samples match (1025 -> 257 triangles). But its extra dispatch has
+inconsistent software timing, including regressions. It is NOT integrated
+or enabled in this APK. The reproducible source/tests are preserved on
+`research/ocarina-index-compaction-20261113`, commit
+`f571d0bc8ed3774a17317e9b3cf17dcc6b915ae3`. Do not resurrect it as a new
+user-facing option or claim device gains from removed-index counts alone.

@@ -1429,3 +1429,18 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
   Test the real C walker with all modes and nested lists.
 - **Found on:** [Ocarina, withdrawn fusion experiment](../../dm/games/0400486024DEC000/README.md#withdrawn-render-enable-fusion-experiment-2026-11-13).
   No device FPS increase is attributed to removing this experiment.
+
+### HDR shading rate lost after mesh-to-compute routing
+
+- **Symptom:** Ocarina VRS is selected, but the known two-target RGBA16F pass
+  never reports a VRS pipeline in integral compute mode.
+- **Cause:** its exception matched native task/mesh stages, which draw_body
+  clears when substituting the generated arena vertex shader.
+- **Fix:** match the exact generated vertex identity and emulation provenance,
+  same fragment key and target formats. Preserve VRS-off, sample-count and
+  driver guards; ordinary vertex passes and unknown R16 targets stay excluded.
+  Execute the actual C predicate for both arena layouts and negative cases.
+- **Found on:** [Ocarina compute-route HDR VRS correction](../../dm/games/0400486024DEC000/README.md#compute-route-hdr-vrs-correction-2026-11-13).
+  Physical Adreno timing remains open. A separate index-compaction experiment
+  passed GPU pixel/occlusion parity but is withheld because removing work did
+  not establish a consistent complete-interval speed improvement.
