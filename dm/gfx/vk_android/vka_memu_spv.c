@@ -454,18 +454,36 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
             if (off) a = op2(&f, OpIAdd, B.t_u32, a, cu(&B, off));
             if (dyn) a = op2(&f, OpIAdd, B.t_u32, a, dyn);
             uint32_t bias = o->kind == K_IDX && L.indexed ? ld(&f, B.t_u32, pv_c) : 0;
-            uint32_t vt = t, nc = 1, ct = t;
+            uint32_t nc = 1, ct = t;
             if (T_op(&m, t) == OpTypeVector) { nc = T_w(&m, t)[3]; ct = T_w(&m, t)[2]; }
             int sk = scalar_kind(&m, ct);
             if (!sk || nc > 4) FAIL("a store of type %u into an output", t);
+            // Foliage.Product's mesh workgroups export up to 128 vertices
+            // and many float/int vectors. One OpStore(vec4) was previously
+            // translated into 4 * (OpCompositeExtract + OpBitcast + OpStore)
+            // even though bitcasting a vector once preserves EXACTLY the
+            // same 32 bits for every component. Keep the 4 output stores
+            // and all addresses/indices unchanged: just remove 3 redundant
+            // OpBitcast instructions per vec4 (2 per vec3).
+            // No per-fragment, per-primitive, precision or ABI changes.
+            // DM_VK_MEMU_VEC_BITCAST=0 restores original bytecode for A/B.
+            uint32_t uv = 0;
+            const char *fast_vec_env = getenv("DM_VK_MEMU_VEC_BITCAST");
+            if (nc > 1 && (sk == 'f' || sk == 'i') &&
+                (!fast_vec_env || strcmp(fast_vec_env, "0"))) {
+                uint32_t uv_type = ty(&B, OpTypeVector, B.t_u32, nc, 0, 2);
+                uv = op1(&f, OpBitcast, uv_type, x[2]);
+            }
             for (uint32_t j = 0; j < nc; j++) {
-                uint32_t v = nc > 1 ? ext(&f, ct, x[2], j) : x[2];
-                uint32_t u = sk == 'u' ? v : sk == 'b' ? sel(&f, B.t_u32, v, c1, c0) : op1(&f, OpBitcast, B.t_u32, v);
+                uint32_t v = uv ? ext(&f, B.t_u32, uv, j) :
+                                  nc > 1 ? ext(&f, ct, x[2], j) : x[2];
+                uint32_t u = uv || sk == 'u' ? v :
+                             sk == 'b' ? sel(&f, B.t_u32, v, c1, c0) :
+                                         op1(&f, OpBitcast, B.t_u32, v);
                 if (bias) u = op2(&f, OpIAdd, B.t_u32, u, bias);
                 uint32_t aj = j ? op2(&f, OpIAdd, B.t_u32, a, cu(&B, j)) : a;
                 INS(&O, OpStore, chain2(&f, p_sb_u32, arena, c0, aj), u);
             }
-            (void)vt;
             continue;
         }
         sb_raw(&O, x, len);
