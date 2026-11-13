@@ -30,7 +30,7 @@ enum {
     OpAccessChain = 65, OpInBoundsAccessChain = 66, OpPtrAccessChain = 67, OpDecorate = 71, OpMemberDecorate = 72, OpCompositeConstruct = 80, OpCompositeExtract = 81,
     OpImageWrite = 99, OpBitcast = 124, OpIAdd = 128, OpISub = 130, OpIMul = 132, OpUDiv = 134, OpUMod = 137, OpLogicalAnd = 167, OpSelect = 169, OpIEqual = 170,
     OpINotEqual = 171, OpULessThan = 176, OpULessThanEqual = 178, OpShiftRightLogical = 194, OpBitwiseAnd = 199, OpControlBarrier = 224, OpMemoryBarrier = 225,
-    OpAtomicStore = 228, OpLoopMerge = 246, OpSelectionMerge = 247, OpLabel = 248, OpBranch = 249, OpBranchConditional = 250, OpSwitch = 251, OpKill = 252, OpReturn = 253,
+    OpAtomicStore = 228, OpPhi = 245, OpLoopMerge = 246, OpSelectionMerge = 247, OpLabel = 248, OpBranch = 249, OpBranchConditional = 250, OpSwitch = 251, OpKill = 252, OpReturn = 253,
     OpReturnValue = 254, OpUnreachable = 255, OpNoLine = 317, OpModuleProcessed = 330, OpExecutionModeId = 331, OpDecorateId = 332, OpTerminateInvocation = 4416,
     OpEmitMeshTasksEXT = 5294, OpSetMeshOutputsEXT = 5295, OpDemoteToHelperInvocation = 5380, OpDecorateString = 5632, OpMemberDecorateString = 5633,
 };
@@ -491,21 +491,71 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
             // workgroups shares the next one's offset and loses to it), and this one's index among t's; t's payload into the workgroup's own
             uint32_t flags = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_FLAGS));
             uint32_t istask = op2(&f, OpINotEqual, B.t_bool, op2(&f, OpBitwiseAnd, B.t_u32, flags, cu(&B, VKA_MEMU_F_TASK)), c0);
-            uint32_t nt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_NTASK)), cb = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_COUNTS));
-            nt = sel(&f, B.t_u32, istask, nt, c1);   // (no task: one, at an offset of 0 read at the arena's start: unused)
-            cb = sel(&f, B.t_u32, istask, cb, c0);
-            uint32_t last = op2(&f, OpISub, B.t_u32, sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, nt, c1), c1, nt), c1);
-            uint32_t t = c0, rem = nt;
-            for (int s = 0; s < 17; s++) {
-                uint32_t half = op2(&f, OpShiftRightLogical, B.t_u32, rem, c1);
-                uint32_t mid = op2(&f, OpIAdd, B.t_u32, t, half);
-                mid = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, mid, last), mid, last);
-                uint32_t o = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, mid)));
-                t = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, t);
-                rem = op2(&f, OpISub, B.t_u32, rem, half);
+            // The vast majority of Ocarina's supplemental foliage draws
+            // have NO task shader (~12,288 of 14,264 compute batches in the
+            // reference 720p run). Previously each mesh workgroup STILL
+            // executed a 17-step binary search of the task offset buffer,
+            // reading 18 arena words for a task that did not exist.
+            //
+            // The record's TASK flag is uniform for every invocation in
+            // the workgroup. Branch to the task search ONLY when present;
+            // otherwise use flat+first directly. This reduces actual GPU
+            // memory traffic, rather than merely deferring a CPU command.
+            // DM_VK_MEMU_FAST_TASKLESS=0 retains old branchless SPIR-V to
+            // isolate any driver bug; no shader-library ABI changes.
+            uint32_t t;
+            const char *fast_env = getenv("DM_VK_MEMU_FAST_TASKLESS");
+            if (!fast_env || strcmp(fast_env, "0")) {
+                uint32_t task_label = B.next++, plain_label = B.next++, merge_label = B.next++;
+                INS(&O, OpSelectionMerge, merge_label, 0);
+                INS(&O, OpBranchConditional, istask, task_label, plain_label);
+                INS(&O, OpLabel, task_label);
+                uint32_t nt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_NTASK));
+                uint32_t cb = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_COUNTS));
+                uint32_t last = op2(&f, OpISub, B.t_u32,
+                    sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, nt, c1), c1, nt), c1);
+                uint32_t ti = c0, rem = nt;
+                for (int s = 0; s < 17; s++) {
+                    uint32_t half = op2(&f, OpShiftRightLogical, B.t_u32, rem, c1);
+                    uint32_t mid = op2(&f, OpIAdd, B.t_u32, ti, half);
+                    mid = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, mid, last), mid, last);
+                    uint32_t o = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, mid)));
+                    ti = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, ti);
+                    rem = op2(&f, OpISub, B.t_u32, rem, half);
+                }
+                uint32_t ot = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, ti)));
+                uint32_t task_own = op2(&f, OpISub, B.t_u32, flat, ot);
+                INS(&O, OpBranch, merge_label);
+                INS(&O, OpLabel, plain_label);
+                uint32_t plain_own = op2(&f, OpIAdd, B.t_u32, flat, first);
+                INS(&O, OpBranch, merge_label);
+                INS(&O, OpLabel, merge_label);
+                own = B.next++;
+                INS(&O, OpPhi, B.t_u32, own, task_own, task_label, plain_own, plain_label);
+                t = B.next++;
+                INS(&O, OpPhi, B.t_u32, t, ti, task_label, c0, plain_label);
+            } else {
+                // Exact pre-optimization shader for driver A/B comparison.
+                uint32_t nt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_NTASK));
+                uint32_t cb = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_COUNTS));
+                nt = sel(&f, B.t_u32, istask, nt, c1);
+                cb = sel(&f, B.t_u32, istask, cb, c0);
+                uint32_t last = op2(&f, OpISub, B.t_u32,
+                    sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, nt, c1), c1, nt), c1);
+                t = c0;
+                uint32_t rem = nt;
+                for (int k = 0; k < 17; k++) {
+                    uint32_t half = op2(&f, OpShiftRightLogical, B.t_u32, rem, c1);
+                    uint32_t mid = op2(&f, OpIAdd, B.t_u32, t, half);
+                    mid = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, mid, last), mid, last);
+                    uint32_t o = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, mid)));
+                    t = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, t);
+                    rem = op2(&f, OpISub, B.t_u32, rem, half);
+                }
+                uint32_t ot = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, t)));
+                own = sel(&f, B.t_u32, istask, op2(&f, OpISub, B.t_u32, flat, ot),
+                          op2(&f, OpIAdd, B.t_u32, flat, first));
             }
-            uint32_t ot = ld(&f, B.t_u32, AREA(&f, op2(&f, OpIAdd, B.t_u32, cb, t)));
-            own = sel(&f, B.t_u32, istask, op2(&f, OpISub, B.t_u32, flat, ot), op2(&f, OpIAdd, B.t_u32, flat, first));
             if (payload) {   // words past the task's own (or every word without a task) read 0
                 uint32_t wt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_WT)), pl = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_PAYLOAD));
                 uint32_t src0 = op2(&f, OpIAdd, B.t_u32, pl, op2(&f, OpIMul, B.t_u32, t, wt));
