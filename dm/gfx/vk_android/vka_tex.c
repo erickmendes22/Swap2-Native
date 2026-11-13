@@ -2160,7 +2160,13 @@ static VkImageView g_null_view;
 enum { PFB_BYTES = 1 << 17, PFB_RING = 8, PFB_WANT = 1, PFB_NULL = 2, PFB_MADE = 4 };
 static _Atomic int g_pfb = -1;   // -1 not decided; 0 off; 1 on (the bitmap and the ring made)
 static vka_span g_pfb_map, g_pfb_ring;
-static VkDescriptorSetLayout g_pfb_dsl; static VkDescriptorPool g_pfb_dpool; static VkDescriptorSet g_pfb_set;   // the bitmap's set (made in bindless_init)
+static VkDescriptorSetLayout g_pfb_dsl; static VkDescriptorPool g_pfb_dpool; static VkDescriptorSet g_pfb_set;   // original shared bitmap set
+// Optional zero-copy feedback: eight IMMUTABLE descriptor sets, one for
+// each host-visible ring slot. Never update a descriptor after it was bound
+// by an in-flight command buffer (especially important on Adreno).
+static VkDescriptorSet g_pfb_direct_set[PFB_RING];
+static int g_pfb_direct_on, g_pfb_direct_cur = -1;
+static uint64_t g_pfb_direct_subs, g_pfb_direct_full, g_pfb_direct_zeros;
 static struct { uint64_t fence; uint32_t n; int busy; } g_pfb_r[PFB_RING];   // (under g_tmu)
 static _Atomic int g_pfb_any;   // the submission being recorded has a draw or dispatch that reads the pool
 static uint8_t *g_pfb_st;   // (under g_tmu) per texture ID: PFB_WANT, PFB_NULL (its slot was last written with the null view)
@@ -2190,8 +2196,8 @@ static int pfb_avail(void) {
             // The bitmap's set (set VKA_POOL_FB_SET of every pipeline layout), written once: made here, at device init, before any module or pipeline layout
             VkDescriptorSetLayoutBinding fb = {VKA_POOL_FB_BINDING, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, NULL};
             VkDescriptorSetLayoutCreateInfo fli = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, .bindingCount = 1, .pBindings = &fb};
-            VkDescriptorPoolSize fps = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1};
-            VkDescriptorPoolCreateInfo fpi = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &fps};
+            VkDescriptorPoolSize fps = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, PFB_RING + 1};
+            VkDescriptorPoolCreateInfo fpi = {VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = PFB_RING + 1, .poolSizeCount = 1, .pPoolSizes = &fps};
             VkDescriptorSetAllocateInfo fai = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO, .descriptorSetCount = 1, .pSetLayouts = &g_pfb_dsl};
             VkResult r;
             if ((r = vk.vkCreateDescriptorSetLayout(V.dev, &fli, NULL, &g_pfb_dsl)) || (r = vk.vkCreateDescriptorPool(V.dev, &fpi, NULL, &g_pfb_dpool)) ||
@@ -2201,6 +2207,41 @@ static int pfb_avail(void) {
                 VkDescriptorBufferInfo bi = {g_pfb_map.buf, g_pfb_map.off, PFB_BYTES};
                 VkWriteDescriptorSet w = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_pfb_set, .dstBinding = VKA_POOL_FB_BINDING, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi};
                 vk.vkUpdateDescriptorSets(V.dev, 1, &w, 0, NULL);
+                // The original single-bitmap path stays available even
+                // when direct-ring allocation fails or all eight slots
+                // are still waiting on GPU fences. Only allocate these
+                // descriptors once; NEVER update while in-flight.
+                if (VKA_ENV("DM_VK_POOL_FB_DIRECT", 0)) {
+                    VkDescriptorSetLayout layouts[PFB_RING];
+                    for (int i = 0; i < PFB_RING; i++) layouts[i] = g_pfb_dsl;
+                    VkDescriptorSetAllocateInfo slots = {
+                        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                        .descriptorPool = g_pfb_dpool,
+                        .descriptorSetCount = PFB_RING, .pSetLayouts = layouts
+                    };
+                    VkResult sr = vk.vkAllocateDescriptorSets(V.dev, &slots, g_pfb_direct_set);
+                    if (!sr) {
+                        VkDescriptorBufferInfo info[PFB_RING];
+                        VkWriteDescriptorSet writes[PFB_RING];
+                        for (int i = 0; i < PFB_RING; i++) {
+                            info[i] = (VkDescriptorBufferInfo){
+                                g_pfb_ring.buf, g_pfb_ring.off + (VkDeviceSize)i * PFB_BYTES, PFB_BYTES
+                            };
+                            writes[i] = (VkWriteDescriptorSet){
+                                VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_pfb_direct_set[i],
+                                .dstBinding = VKA_POOL_FB_BINDING,
+                                .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                .pBufferInfo = &info[i]
+                            };
+                        }
+                        vk.vkUpdateDescriptorSets(V.dev, PFB_RING, writes, 0, NULL);
+                        g_pfb_direct_on = 1;
+                        VLOG("texture pool feedback: direct ring enabled, %u immutable host-coherent slot descriptors; fallback preserves original copy+clear path", PFB_RING);
+                    } else {
+                        memset(g_pfb_direct_set, 0, sizeof g_pfb_direct_set);
+                        VRED("texture pool feedback: direct ring descriptor allocation failed (%d); original copy+clear kept", sr);
+                    }
+                }
             }
         }
         if (v) VLOG("texture pool reads: the GPU reports the texture IDs shaders read through the pool (a bitmap in descriptor set %d); their images are made when read and kept while read (DM_VK_POOL_FB=0 off)", VKA_POOL_FB_SET);
@@ -2214,8 +2255,60 @@ unsigned vka_tex_pfb_flags(void) {
     return (V.vstores ? VKA_PFB_VTX_STORES : 0u) | (VKA_ENV("DM_VK_POOL_FB_EARLY", 1) ? VKA_PFB_EARLY : 0u);
 }
 void vka_tex_pfb_draw(void) { if (atomic_load_explicit(&g_pfb, memory_order_relaxed) > 0) atomic_store_explicit(&g_pfb_any, 1, memory_order_relaxed); }
+// Called AFTER vka_tex_prepare consumed all completed readbacks, BEFORE
+// command recording binds its first pool-using shader. One slot belongs
+// exclusively to this submission. The previous GPU fence must have completed
+// before the CPU can clear/reuse it. The buffer allocation is HOST_COHERENT;
+// the later vkQueueSubmit makes these preceding host writes visible to GPU.
+// All fragmented command buffers of this submission use the SAME slot.
+void vka_tex_pfb_begin(void) {
+    g_pfb_direct_cur = -1;
+    if (!g_pfb_direct_on || atomic_load(&g_pfb) <= 0 ||
+        atomic_load_explicit(&g_pfb_any, memory_order_relaxed)) return;
+    pthread_mutex_lock(&g_tmu);
+    int slot = -1;
+    for (int i = 0; i < PFB_RING; i++)
+        if (!g_pfb_r[i].busy) { slot = i; break; }
+    if (slot >= 0) {
+        // A reservation must not be consumed as a finished GPU readback.
+        g_pfb_r[slot].busy = 1;
+        g_pfb_r[slot].fence = UINT64_MAX;
+        g_pfb_r[slot].n = 0;
+        memset(g_pfb_ring.ptr + (size_t)slot * PFB_BYTES, 0, PFB_BYTES);
+        g_pfb_direct_cur = slot;
+        g_pfb_direct_zeros++;
+    } else g_pfb_direct_full++;
+    pthread_mutex_unlock(&g_tmu);
+}
 void vka_tex_pfb_commit(VkCommandBuffer cb, uint64_t fence) {
-    if (!cb || atomic_load(&g_pfb) <= 0 || !atomic_exchange(&g_pfb_any, 0)) return;
+    if (!cb || atomic_load(&g_pfb) <= 0) return;
+    int any = atomic_exchange(&g_pfb_any, 0);
+    if (g_pfb_direct_cur >= 0) {
+        int slot = g_pfb_direct_cur;
+        g_pfb_direct_cur = -1;
+        pthread_mutex_lock(&g_tmu);
+        uint32_t n = (uint32_t)(((uint64_t)g_ntreg + 31) / 32 * 4);
+        if (n > PFB_BYTES) n = PFB_BYTES;
+        if (any && n) {
+            g_pfb_r[slot].fence = fence;
+            g_pfb_r[slot].n = n;
+            g_pfb_direct_subs++;
+        } else {
+            // No shader read: the reservation was never used on the GPU.
+            g_pfb_r[slot].busy = 0;
+            g_pfb_r[slot].fence = 0;
+            g_pfb_r[slot].n = 0;
+            if (any) atomic_store(&g_pfb_any, 1); // no ID lost if n=0
+        }
+        pthread_mutex_unlock(&g_tmu);
+        // vka_exec.c immediately records a mandatory ALL_COMMANDS ->
+        // HOST_READ|HOST_WRITE barrier after this call and writeback.
+        // That barrier covers ALL shader writes to the direct host-visible
+        // ring buffer. The CPU only reads a slot when its fence is done.
+        // No copy, vkCmdFillBuffer, or additional GPU barrier is needed.
+        return;
+    }
+    if (!any) return;
     pthread_mutex_lock(&g_tmu);
     uint32_t n = (uint32_t)(((uint64_t)g_ntreg + 31) / 32 * 4), k = PFB_RING; if (n > PFB_BYTES) n = PFB_BYTES;
     for (uint32_t i = 0; i < PFB_RING && k == PFB_RING; i++) if (!g_pfb_r[i].busy) k = i;
@@ -2297,7 +2390,10 @@ static void bindless_init(void) {
 VkDescriptorSet vka_bindless_set(void) { return g_set; }
 VkDescriptorSetLayout vka_bindless_layout(void) { return g_dsl; }
 VkDescriptorSetLayout vka_pfb_layout(void) { return atomic_load(&g_pfb) > 0 ? g_pfb_dsl : VK_NULL_HANDLE; }
-VkDescriptorSet vka_pfb_set(void) { return atomic_load(&g_pfb) > 0 ? g_pfb_set : VK_NULL_HANDLE; }
+VkDescriptorSet vka_pfb_set(void) {
+    if (atomic_load(&g_pfb) <= 0) return VK_NULL_HANDLE;
+    return g_pfb_direct_cur >= 0 ? g_pfb_direct_set[g_pfb_direct_cur] : g_pfb_set;
+}
 
 static void dirty(int **list, int *n, int *cap, uint8_t **flag, int nslots, int id) {
     if (!*flag) *flag = calloc((size_t)nslots, 1);
