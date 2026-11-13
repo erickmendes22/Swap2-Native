@@ -145,6 +145,16 @@ final class Prefs {
     static void fullVegetation(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on).commit(); }
     static boolean vegetationOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_optimized", titleId), true); }
     static void vegetationOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_optimized", titleId), on).commit(); }
+    // GPU-side task->mesh index search: default OFF until on-device FPS
+    // confirms an improvement over the 17-step shader.
+    static boolean shortTaskSearch(Context c, String titleId) {
+        return OCARINA_TITLE.equals(titleId) &&
+               of(c).getBoolean(gameKey("oot_short_task_search", titleId), false);
+    }
+    static void shortTaskSearch(Context c, String titleId, boolean on) {
+        if (OCARINA_TITLE.equals(titleId))
+            of(c).edit().putBoolean(gameKey("oot_short_task_search", titleId), on).commit();
+    }
     static boolean vegetationContiguous(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_contiguous", titleId), false); }
     // Experimental zero-copy GPU texture ID feedback. Preserve legacy
     // bitmap copy/clear by default until same-device A/B is confirmed.
