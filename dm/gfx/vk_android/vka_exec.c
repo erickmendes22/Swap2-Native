@@ -740,6 +740,10 @@ void vka_rp_sub_begin(void) {
     vka_barrier(g_cb);   // the host's writes to guest memory before this submission (made available by the submit), and earlier submissions' writes
     vka_tex_prepare(g_cb);
     vka_barrier(g_cb);   // the re-uploads of CPU-written textures before the submission's draws read them
+    // Reserve a fence-released texture-feedback ring slot BEFORE any draw
+    // can bind its immutable pool-feedback descriptor; normal fallback uses
+    // the original shared bitmap and the original copy+clear at commit.
+    vka_tex_pfb_begin();
     vka_draw_sub_begin(g_cb, k);
     { void vka_pso_pause(int on); vka_pso_pause(0); }   // the game submits: resumed (mtl_drain paused the pipeline threads)
     g_chunk_draws = VKA_ENV("DM_VK_CHUNK", 600);   // live: from the next submission
