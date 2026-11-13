@@ -723,4 +723,6 @@
     <string name="s2_full_vegetation_note">Ligada: desenha a grama e a folhagem completas. Desligada: reduz os grupos de vegetação revisados. Reinicie o jogo para aplicar.</string>
     <string name="s2_vegetation_optimized">Otimizar vegetação</string>
     <string name="s2_vegetation_optimized_note">Usa o novo processamento da vegetação. Desative para comparar o desempenho com o modo anterior. Reinicie o jogo para aplicar.</string>
+    <string name="s2_vegetation_contiguous">Memória contígua da vegetação (teste)</string>
+    <string name="s2_vegetation_contiguous_note">Testa outra organização dos vértices na memória sem reduzir a folhagem. Reinicie para aplicar. A primeira execução pode demorar mais para carregar; a biblioteca de shaders é mantida.</string>
 </resources>

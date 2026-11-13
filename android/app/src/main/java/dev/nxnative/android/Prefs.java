@@ -107,6 +107,8 @@ final class Prefs {
     static void fullVegetation(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on).commit(); }
     static boolean vegetationOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_optimized", titleId), true); }
     static void vegetationOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_optimized", titleId), on).commit(); }
+    static boolean vegetationContiguous(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_contiguous", titleId), false); }
+    static void vegetationContiguous(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_contiguous", titleId), on).commit(); }
     /** RAM saver per game: large guest texture pools use files in the private cache. */
     static boolean ramSaver(Context c, String titleId) { return of(c).getBoolean(gameKey("ram_saver", titleId), false); }
     static void ramSaver(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("ram_saver", titleId), on).commit(); }

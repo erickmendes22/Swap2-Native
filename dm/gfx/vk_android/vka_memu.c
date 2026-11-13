@@ -98,13 +98,15 @@ vka_shader *vka_memu_vs_of(vka_shader *s) {
     return v;
 }
 vka_shader *vka_memu_by_key(uint64_t key) {
-    // LUT changes code, not storage. Resolve both generations' prewarm
-    // records to the ACTIVE module/key, including on a rollback. Never
-    // accept the other (incompatible) coalesced storage layout.
+    // Prewarm records name original shaders through a derived-key tag.
+    // Resolve both historical layouts to the ACTIVE producer/consumer
+    // modules. Their active keys still differ, so incompatible compiled
+    // pipelines are never reused; the prewarm recipe itself stays useful.
     static const uint64_t tag[5] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
         VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL};
-    for (int i = 0; i < 5; i++) {
-        uint64_t k = key ^ tag[i] ^ vka_memu_layout_tag();
+    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 5; i++) {
+        uint64_t layout = vka_memu_layout_tag() ^ (old_layout ? VKA_MEMU_KEY_COALESCED : 0);
+        uint64_t k = key ^ tag[i] ^ layout;
         if (!vka_shader_lib_has(k)) continue;
         vka_shader *s = vka_shader_by_key(k); if (!s || !s->e || s->e->stage < DMSH_VK_STAGE_TS) continue;
         if (i >= 3 && s->e->stage != DMSH_VK_STAGE_MS) continue;

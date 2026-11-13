@@ -22,6 +22,8 @@
 #include <string.h>
 
 static VkCommandBuffer g_cb; static unsigned g_slot; static int g_prof, g_dyn_filter = 1, g_pass_keep = 1, g_vb_filter = 1;   // g_prof: DM_VK_PROF
+static int g_vin_skip = 1;
+static uint64_t g_vin_kept, g_vin_built, g_vb_kept, g_vb_bound;
 uint64_t vka_n_rp;   // render passes the draws opened (vka_exec.c replay statistics)
 static uint64_t g_draws, g_skipped, g_dispatches;
 static int g_dispatch_overlap_pending;
@@ -102,6 +104,10 @@ static int draws_on(void) {
 }
 
 // ---------- State ----------
+// Banana Native's per-input stamps: unique across queue states and the
+// mesh look-ahead's copies, not merely incremented within each copy.
+static _Atomic uint64_t g_state_stamp;
+static uint64_t state_stamp(void) { return atomic_fetch_add_explicit(&g_state_stamp, 1, memory_order_relaxed) + 1; }
 void vka_dstate_reset(vka_dstate *d) {   // NVN's defaults (nvn_mtl.m state_reset)
     memset(d, 0, sizeof *d); d->inited = 1;
     for (int i = 0; i < 8; i++) d->blend[i] = (blend_st){i, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ZERO, NVN_BLEND_FUNC_ONE, NVN_BLEND_FUNC_ZERO, NVN_BLEND_EQUATION_ADD, NVN_BLEND_EQUATION_ADD};
@@ -109,6 +115,8 @@ void vka_dstate_reset(vka_dstate *d) {   // NVN's defaults (nvn_mtl.m state_rese
     d->poly = (poly_st){NVN_FACE_NONE, NVN_FRONT_FACE_CCW, NVN_POLYGON_MODE_FILL, 0};
     d->ds = (ds_st){0, 1, NVN_DEPTH_FUNC_LESS, 0, NVN_STENCIL_FUNC_ALWAYS, NVN_STENCIL_FUNC_ALWAYS, 1, 1, 1, 1, 1, 1};
     d->st_vmask[0] = d->st_vmask[1] = d->st_wmask[0] = d->st_wmask[1] = 0xff; d->dr[1] = 1; d->b.samples = 1;
+    d->s_vfmt = state_stamp(); d->s_vbuf = state_stamp(); d->s_push = state_stamp();
+    for (int st = 0; st < VKA_NSTAGE; st++) { d->s_ssbo[st] = state_stamp(); d->s_tex[st] = state_stamp(); }
 }
 int nvn_dpool_base(const void *pool, int tex);   // hle_nvn.c: where a descriptor pool's IDs start in the host table
 int vka_state_op(vka_dstate *d, uint32_t op, const void *a) {
@@ -130,11 +138,11 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a) {
         case 5: memcpy(&d->ds, b->bytes, sizeof d->ds); break;
         }
         break; }
-    case OP_BIND_VATTR: { const p_bind_vattr *b = a; if (b->first >= 0 && b->first + b->n <= 16) { memcpy(&d->attr[b->first], b->st, 4 * (size_t)b->n); if (b->first + b->n > d->nattr) d->nattr = b->first + b->n; } break; }
-    case OP_BIND_VSTREAM: { const p_bind_vstream *b = a; if (b->first >= 0 && b->first + b->n <= 16) { memcpy(&d->stream[b->first], b->st, 8 * (size_t)b->n); if (b->first + b->n > d->nstream) d->nstream = b->first + b->n; } break; }
-    case OP_BIND_VBUF: case OP_BIND_VBUF1: { p_bind_vbuf tmp; const p_bind_vbuf *b = vbuf_rec(op, a, &tmp); if (b->first >= 0 && b->first + b->n <= 16) memcpy(&d->vbuf[b->first], b->r, sizeof *b->r * (size_t)b->n); break; }
+    case OP_BIND_VATTR: { const p_bind_vattr *b = a; if (b->first >= 0 && b->n >= 0 && b->first + b->n <= 16) { memcpy(&d->attr[b->first], b->st, 4 * (size_t)b->n); if (b->first + b->n > d->nattr) d->nattr = b->first + b->n; d->s_vfmt = state_stamp(); } break; }
+    case OP_BIND_VSTREAM: { const p_bind_vstream *b = a; if (b->first >= 0 && b->n >= 0 && b->first + b->n <= 16) { memcpy(&d->stream[b->first], b->st, 8 * (size_t)b->n); if (b->first + b->n > d->nstream) d->nstream = b->first + b->n; d->s_vfmt = state_stamp(); } break; }
+    case OP_BIND_VBUF: case OP_BIND_VBUF1: { p_bind_vbuf tmp; const p_bind_vbuf *b = vbuf_rec(op, a, &tmp); if (b->first >= 0 && b->n >= 0 && b->first + b->n <= 16) { memcpy(&d->vbuf[b->first], b->r, sizeof *b->r * (size_t)b->n); d->s_vbuf = state_stamp(); } break; }
     case OP_BIND_UBO: case OP_BIND_UBO_SMALL: { p_bind_buf tmp; const p_bind_buf *b = bind_buf_rec(op, a, &tmp); if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->index >= 0 && b->index < 16) d->b.ubo[b->stage][b->index] = (vka_range){b->addr, b->size}; break; }
-    case OP_BIND_SSBO: { const p_bind_buf *b = a; if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->index >= 0 && b->index < 16) d->b.ssbo[b->stage][b->index] = (vka_range){b->addr, b->size}; break; }
+    case OP_BIND_SSBO: { const p_bind_buf *b = a; if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->index >= 0 && b->index < 16) { d->b.ssbo[b->stage][b->index] = (vka_range){b->addr, b->size}; d->s_ssbo[b->stage] = state_stamp(); } break; }
     case OP_BIND_TEX: case OP_BIND_TEX1: { p_bind_handles t1; const p_bind_handles *b = bind_rec(op, a, &t1);
         if (b->n < 0 || b->n > 32) { VRED_ONCE("texture bind record with count %d: overwritten after recording", b->n); break; }
         uint64_t h[32]; memcpy(h, b->h, 8 * (size_t)b->n);
@@ -144,10 +152,10 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a) {
             else if (!plat_mem_read(b->src, w, 4 * (size_t)b->n)) for (int k = 0; k < b->n; k++) h[k] = w[k];   // one read for the run (they are in the game's heap; profile p2: 3.4 % in process_vm_readv)
             else for (int k = 0; k < b->n; k++) if (!plat_mem_read(b->src + 4u * k, &w[k], 4)) h[k] = w[k];   // a run across an unreadable page: word by word
         }
-        if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->first >= 0 && b->first + b->n <= VKA_NTEX) memcpy(&d->b.tex[b->stage][b->first], h, 8 * (size_t)b->n);
+        if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->first >= 0 && b->first + b->n <= VKA_NTEX) { memcpy(&d->b.tex[b->stage][b->first], h, 8 * (size_t)b->n); d->s_tex[b->stage] = state_stamp(); }
         break; }
-    case OP_BIND_SAMP: { const p_bind_handles *b = a; if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->first >= 0 && b->n >= 0 && b->first + b->n <= 128) memcpy(&d->b.samp[b->stage][b->first], b->h, 8 * (size_t)b->n); break; }
-    case OP_BIND_IMG: { const p_bind_handles *b = a; if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->first >= 0 && b->n >= 0 && b->first + b->n <= 32) memcpy(&d->b.img[b->stage][b->first], b->h, 8 * (size_t)b->n); break; }
+    case OP_BIND_SAMP: { const p_bind_handles *b = a; if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->first >= 0 && b->n >= 0 && b->first + b->n <= 128) { memcpy(&d->b.samp[b->stage][b->first], b->h, 8 * (size_t)b->n); d->s_tex[b->stage] = state_stamp(); } break; }
+    case OP_BIND_IMG: { const p_bind_handles *b = a; if (b->stage >= 0 && b->stage < VKA_NSTAGE && b->first >= 0 && b->n >= 0 && b->first + b->n <= 32) { memcpy(&d->b.img[b->stage][b->first], b->h, 8 * (size_t)b->n); d->s_tex[b->stage] = state_stamp(); } break; }
     case OP_STENCIL: { const p_stencil *b = a;
         for (int f = 0; f < 2; f++) if (b->face & (1 << f)) { if (b->which == 0) d->st_vmask[f] = (uint32_t)b->value_mask; else if (b->which == 1) d->st_wmask[f] = (uint32_t)b->mask; else d->st_ref[f] = (uint32_t)b->ref; }
         break; }
@@ -158,7 +166,7 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a) {
     case OP_VP_SWIZZLE: { const p_vp_swizzle *b = a; if (b->first >= 0 && b->first + b->n <= 16) memcpy(d->vp_sw[b->first], b->sw, 4 * (size_t)b->n); break; }
     case OP_BLEND_COLOR: memcpy(d->blend_color, ((const p_blend_color *)a)->rgba, 16); break;
     case OP_ALPHA_REF: d->alpha_ref = ((const p_alpha_ref *)a)->ref; break;
-    case OP_PUSH_CONST: { const p_push_const *b = a; if ((uint32_t)b->offset + b->size <= DMSH_PUSH_SIZE) memcpy(d->b.push[b->compute ? 1 : 0] + b->offset, b->data, b->size); break; }
+    case OP_PUSH_CONST: { const p_push_const *b = a; if ((uint32_t)b->offset + b->size <= DMSH_PUSH_SIZE) { memcpy(d->b.push[b->compute ? 1 : 0] + b->offset, b->data, b->size); d->s_push = state_stamp(); } break; }
     case OP_TF_BIND: break;
     case OP_TF_STATE: { const p_tf_state *b = a; d->tf_on = b->what == 0 || b->what == 3; break; }
     case OP_PRIM_RESTART: d->restart = *(const p_prim_restart *)a; break;
@@ -188,6 +196,7 @@ void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot) {
     { void vka_mem_rec_thread(void); vka_mem_rec_thread(); }   // the address lookups' cache outside TLS for the recording thread (vka_mem.c)
     drv_memo_reset();   // the last submission's scratch spans go with its fence
     g_prof = VKA_ENV("DM_VK_PROF", 0) != 0; g_dyn_filter = VKA_ENV("DM_VK_DYN_FILTER", 1); g_pass_keep = VKA_ENV("DM_VK_PASS_KEEP", 1); g_vb_filter = VKA_ENV("DM_VK_VB_FILTER", 1);   // live: from this submission
+    g_vin_skip = VKA_ENV("DM_VK_VIN_SKIP", 1);
     for (int i = 0; i < g_ndp[g_slot]; i++) vk.vkResetDescriptorPool(V.dev, g_dp[g_slot][i], 0);   // the slot's last submission is done (mtl_sub_begin waited for it)
     g_cur_dp[g_slot] = 0;
     vka_pso_save(0);
@@ -734,11 +743,18 @@ static int ssbo_desc(uint64_t addr, uint64_t size, VkDescriptorBufferInfo *bi) {
 // Graphics stages only: an indirect dispatch's counts are copied into its c0 by the GPU (vka_dispatch). A span lives until the submission's fence (vka_scratch_retire at
 // its commit), so the memo is forgotten at each submission's start (vka_draw_sub_begin)
 typedef struct { VkBuffer buf; VkDeviceSize off; } c0_at;
-static struct { int valid; vka_span s; uint8_t b[DMSH_DRV_SIZE]; } g_dm[VKA_NSTAGE][3];
+static struct { int valid; vka_span s; uint64_t k[3]; uint8_t b[DMSH_DRV_SIZE]; } g_dm[VKA_NSTAGE][3];
 static struct { int valid; uint64_t gen; vka_span s; } g_gm;
 static struct { int valid; uint32_t ref; vka_span s; } g_sm_ref;   // the support buffer with the alpha test's reference (stage_writes)
-static int g_drv_memo = 1; static uint64_t g_dm_hit, g_dm_miss;
-static void drv_memo_reset(void) { for (int st = 0; st < VKA_NSTAGE; st++) for (int b = 0; b < 3; b++) g_dm[st][b].valid = 0; g_gm.valid = 0; g_sm_ref.valid = 0; g_drv_memo = VKA_ENV("DM_VK_DRV_MEMO", 1); }
+static int g_drv_memo = 1, g_drv_stamp = 1; static uint64_t g_dm_hit, g_dm_miss, g_dm_stamp;
+static void drv_memo_reset(void) { for (int st = 0; st < VKA_NSTAGE; st++) for (int b = 0; b < 3; b++) g_dm[st][b].valid = 0; g_gm.valid = 0; g_sm_ref.valid = 0; g_drv_memo = VKA_ENV("DM_VK_DRV_MEMO", 1); g_drv_stamp = VKA_ENV("DM_VK_DRV_STAMP", 1); }
+// Ported from Banana Native: these are ALL inputs read by vka_drv_fill
+// for a graphics stage. Compute's GPU-patched c0 remains excluded below.
+static void drv_key(const vka_dstate *d, int st, int bank, int pool, uint64_t k[3]) {
+    if (bank == 0) { k[0] = d->s_ssbo[st]; k[1] = d->b.base_instance; k[2] = d->b.samples; }
+    else if (bank == 1) { k[0] = d->s_tex[st]; k[1] = pool ? (uint64_t)(uint32_t)d->b.tex_base | (uint64_t)(uint32_t)d->b.samp_base << 32 : 0; k[2] = (uint64_t)(pool != 0); }
+    else { k[0] = d->s_push; k[1] = k[2] = 0; }
+}
 static int drv_seg(const vka_dstate *d, int st, int bank, int pool, VkDescriptorBufferInfo *bi, c0_at *c0) {
     size_t sz = vka_drv_size(bank); vka_span s;
     // One memo slot per segment kind: c0, c2 and the push bank. Any other driver bank (an all-zero c17-style read of DMSH_DRV_SIZE bytes) takes the fill below: sharing
@@ -746,11 +762,13 @@ static int drv_seg(const vka_dstate *d, int st, int bank, int pool, VkDescriptor
     int bi_ = bank == 0 ? 0 : bank == 2 ? 1 : bank == DMSH_PUSH_BANK ? 2 : -1;
     if (g_drv_memo && bi_ >= 0 && st != 5 && sz <= DMSH_DRV_SIZE) {
         static uint8_t tmp[DMSH_DRV_SIZE];
-        vka_drv_fill(&d->b, st, bank, pool, tmp);
         typeof(g_dm[0][0]) *m = &g_dm[st][bi_];
-        if (m->valid && !memcmp(m->b, tmp, sz)) { g_dm_hit++; *bi = (VkDescriptorBufferInfo){m->s.buf, m->s.off, sz}; return 1; }
+        uint64_t key[3]; drv_key(d, st, bi_, pool, key);
+        if (g_drv_stamp && m->valid && !memcmp(m->k, key, sizeof key)) { g_dm_hit++; g_dm_stamp++; *bi = (VkDescriptorBufferInfo){m->s.buf, m->s.off, sz}; return 1; }
+        vka_drv_fill(&d->b, st, bank, pool, tmp);
+        if (m->valid && !memcmp(m->b, tmp, sz)) { memcpy(m->k, key, sizeof key); g_dm_hit++; *bi = (VkDescriptorBufferInfo){m->s.buf, m->s.off, sz}; return 1; }
         if (!vka_scratch(sz, V.ub_align, &s)) return 0;
-        memcpy(s.ptr, tmp, sz); memcpy(m->b, tmp, sz); m->s = s; m->valid = 1; g_dm_miss++;
+        memcpy(s.ptr, tmp, sz); memcpy(m->b, tmp, sz); memcpy(m->k, key, sizeof key); m->s = s; m->valid = 1; g_dm_miss++;
         *bi = (VkDescriptorBufferInfo){s.buf, s.off, sz};
         return 1;
     }
@@ -1131,13 +1149,16 @@ static struct { uint64_t *w; size_t n, cap; } g_pd[2];
 static uint64_t g_pd_skip, g_pd_push, g_pd_skip_all, g_pd_push_all, g_pd_delta_w, g_pd_delta_all;
 // The replay statistics' line: driver segments bound again (DM_VK_DRV_MEMO) and pushes skipped (DM_VK_PUSH_DEDUP) since the last line
 void vka_drv_memo_stats(char *b, size_t n) {
-    static uint64_t h0, m0, s0, p0;
+    static uint64_t h0, m0, s0, p0, ds0, vk0, vb0, bk0, bb0;
     uint64_t h = g_dm_hit - h0, m = g_dm_miss - m0, sk = g_pd_skip_all - s0, pu = g_pd_push_all - p0;
     h0 = g_dm_hit; m0 = g_dm_miss; s0 = g_pd_skip_all; p0 = g_pd_push_all;
+    uint64_t ds = g_dm_stamp - ds0, vk = g_vin_kept - vk0, vb = g_vin_built - vb0, bk = g_vb_kept - bk0, bb = g_vb_bound - bb0;
+    ds0 = g_dm_stamp; vk0 = g_vin_kept; vb0 = g_vin_built; bk0 = g_vb_kept; bb0 = g_vb_bound;
     if (!h && !m && !sk && !pu) { if (n) b[0] = 0; return; }
     snprintf(b, n, "descriptors: driver segments %.0f %% the same bytes as the draw before (bound again: DM_VK_DRV_MEMO); push descriptor sets %.0f %% skipped as the same (DM_VK_PUSH_DEDUP); "
-             "partial pushes (DM_VK_PUSH_DELTA) wrote %.0f %% of their descriptors", h + m ? 100.0 * h / (double)(h + m) : 0.0, sk + pu ? 100.0 * sk / (double)(sk + pu) : 0.0,
-             g_pd_delta_all ? 100.0 * g_pd_delta_w / (double)g_pd_delta_all : 0.0);
+             "partial pushes (DM_VK_PUSH_DELTA) wrote %.0f %% of their descriptors; input stamps skipped %.0f %% of driver fills; vertex build/bind kept %.0f/%.0f %%", h + m ? 100.0 * h / (double)(h + m) : 0.0, sk + pu ? 100.0 * sk / (double)(sk + pu) : 0.0,
+             g_pd_delta_all ? 100.0 * g_pd_delta_w / (double)g_pd_delta_all : 0.0, h + m ? 100.0 * ds / (double)(h + m) : 0.0,
+             vk + vb ? 100.0 * vk / (double)(vk + vb) : 0.0, bk + bb ? 100.0 * bk / (double)(bk + bb) : 0.0);
     g_pd_delta_w = g_pd_delta_all = 0;
 }
 static VkWriteDescriptorSet g_dw[512]; static uint32_t g_dwn;   // the writes that changed (push_same returns 2)
@@ -1280,7 +1301,9 @@ static int resolve(const prog_t *p, int st, vka_shader **out, unsigned *bad) {
 // Vertex input: an attribute per input location the vertex shader reads (Location = NVN attribute index), each from its stream; an input no attribute feeds reads a zero buffer.
 // With VK_EXT_vertex_input_dynamic_state the descriptions are set per draw, else they go into the pipeline key
 static struct { VkVertexInputBindingDescription2EXT b[33]; VkVertexInputAttributeDescription2EXT a[32]; uint32_t nb, na, used, zb; int zero; } VI;
+static uint64_t g_vi_ser;
 static void vin_build(const vka_dstate *d, const vka_shader *vs, vka_gkey *k) {
+    g_vi_ser++;
     VI.nb = VI.na = VI.used = 0; VI.zero = 0;
     VI.zb = V.max_vin_bindings > 32 ? 31 : V.max_vin_bindings > 16 ? V.max_vin_bindings - 1 : 15;   // the zero buffer's binding: past the 16 streams when the device has room
     for (uint32_t loc = 0; loc < 32; loc++) {
@@ -1346,6 +1369,23 @@ static void vin_bind(const vka_dstate *d) {
     if (VI.zero) vb_set(VI.zb, g_zero.buf, g_zero.off, 65536, &n0, &nn, rb, ro, rs);
     if (nn) vk.vkCmdBindVertexBuffers2(g_cb, n0, nn, rb, ro, rs, NULL);
     VB.valid = 1;
+}
+
+// Banana Native's input-revision cache: reuse descriptions only for the
+// same vertex shader and unchanged formats. Reuse buffer bindings only
+// while the command buffer and placed-memory generation are unchanged.
+static struct { int valid; const vka_shader *vs; uint64_t s_vfmt; uint32_t vin_u, vin_s; } VC;
+static struct { int valid; uint64_t ser, s_vbuf, mg; } VBC;
+static void vin_build_kept(const vka_dstate *d, const vka_shader *vs, vka_gkey *k) {
+    if (g_vin_skip && V.vin_dyn && VC.valid && VC.vs == vs && VC.s_vfmt == d->s_vfmt) { k->vin_u = VC.vin_u; k->vin_s = VC.vin_s; g_vin_kept++; return; }
+    vin_build(d, vs, k); g_vin_built++;
+    VC.valid = 1; VC.vs = vs; VC.s_vfmt = d->s_vfmt; VC.vin_u = k->vin_u; VC.vin_s = k->vin_s;
+}
+static void vin_bind_kept(const vka_dstate *d) {
+    uint64_t mg = vka_mem_gen();
+    if (g_vin_skip && V.vin_dyn && g_vb_filter && VB.valid && !VB.vin_stale && VBC.valid && VBC.ser == g_vi_ser && VBC.s_vbuf == d->s_vbuf && VBC.mg == mg) { g_vb_kept++; return; }
+    vin_bind(d); g_vb_bound++;
+    VBC.valid = 1; VBC.ser = g_vi_ser; VBC.s_vbuf = d->s_vbuf; VBC.mg = mg;
 }
 
 // The guest indices of an indexed draw as 32-bit values (the CPU's view): for primitives Vulkan has no topology for and 8-bit indices on a device without them
@@ -1818,7 +1858,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     if (src1_used) VRED_ONCE("a SRC1 blend factor with no dual-source module (MOD_DUAL; the profile's dual_want.tsv) or no dualSrcBlend: the second source reads as zero");
 
     PT(3);
-    if (!mesh) vin_build(d, sh[0], &k);
+    if (!mesh) vin_build_kept(d, sh[0], &k);
     PT(4);
     VkPipeline p = vka_gfx_pipeline(sh, &lay, &k);
     if (!p) SKIPQ();
@@ -1828,7 +1868,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     if (!bind_sets(d, sh, &lay, VK_PIPELINE_BIND_POINT_GRAPHICS, NULL)) SKIPQ();
     texstat_rt(sh[1], rt, has_rt);   // (diagnostic: DM_VK_TEXSTAT_FS)
     PT(6);
-    if (!mesh) vin_bind(d);
+    if (!mesh) vin_bind_kept(d);
 
     // Viewport and scissor. The translator writes clip space for Metal (y up, origin upper left): Metal's viewport, flipped for a lower-left window origin as on Metal, then given
     // a negative height, maps it as Metal does (android/SHADERS.md "Depth and Y")

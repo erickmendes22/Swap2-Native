@@ -7,6 +7,9 @@ on:
       - dm/gfx/vk_android/memu/**
       - dm/gfx/tools/tests/test_memu_coalesced_readback.py
       - dm/gfx/tools/tests/test_memu_plane_lut.py
+      - dm/gfx/tools/tests/test_banana_input_caches.py
+      - dm/gfx/vk_android/vka_draw.c
+      - dm/gfx/vk_android/vka.h
       - dm/gfx/tools/memu_plane_audit.py
       - dm/host/tests/memu/plane_fixture.py
       - dm/host/tests/t_android_memu*
@@ -44,6 +47,7 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 DM_VK_MEMU_COALESCED=1 /tmp/memu-check
       - name: Check hybrid routing and caller ordering
         run: |
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_banana_input_caches.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_mesh_*.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_vegetation_fast_path.py -v
           python3 -m unittest discover -s dm/tools/tests -p test_android_perf_compare.py -v

@@ -454,6 +454,9 @@ typedef struct {
     float blend_color[4], alpha_ref;
     p_prim_restart restart; int rast_discard, tf_on;
     int inited;
+    // Unique input revisions survive copied look-ahead states. A memo
+    // can reuse derived bytes without refilling unchanged driver banks.
+    uint64_t s_vfmt, s_vbuf, s_ssbo[VKA_NSTAGE], s_tex[VKA_NSTAGE], s_push;
 } vka_dstate;
 void vka_dstate_reset(vka_dstate *d);
 int vka_state_op(vka_dstate *d, uint32_t op, const void *a);   // 1 = a state record, taken

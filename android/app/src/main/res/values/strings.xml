@@ -729,4 +729,6 @@
     <string name="s2_full_vegetation_note">On: draws the full grass and foliage. Off: reduces reviewed vegetation groups. Restart the game to apply.</string>
     <string name="s2_vegetation_optimized">Optimize vegetation</string>
     <string name="s2_vegetation_optimized_note">Uses the new vegetation processing path. Turn off to compare performance with the previous path. Restart the game to apply.</string>
+    <string name="s2_vegetation_contiguous">Contiguous vegetation memory (test)</string>
+    <string name="s2_vegetation_contiguous_note">Tests another vertex memory layout without reducing foliage. Restart to apply. The first run may take longer to load; the shader library is kept.</string>
 </resources>

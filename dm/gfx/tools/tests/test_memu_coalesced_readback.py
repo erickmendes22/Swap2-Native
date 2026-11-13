@@ -171,7 +171,7 @@ class CoalescedReadback(unittest.TestCase):
                 for expected, module in zip(golden[tag], self.convert(fixture, 0)[1:]):
                     self.assertEqual(hashlib.sha256(struct.pack(f"<{len(module)}I", *module)).hexdigest(), expected)
 
-    def test_real_prewarm_decoders_reject_the_other_layout(self):
+    def test_real_prewarm_decoders_migrate_recipes_to_active_layout(self):
         def function(path, name):
             source = path.read_text()
             start = source.index(name)
@@ -214,8 +214,8 @@ int main(void) {
         if (i == 1 || i == 4) active ^= VKA_MEMU_KEY_GL;
         assert(vka_memu_by_key(key)->key == active);
         assert(vka_shader_memu_key(key));
-        assert(!vka_memu_by_key(key ^ VKA_MEMU_KEY_COALESCED));
-        assert(!vka_shader_memu_key(key ^ VKA_MEMU_KEY_COALESCED));
+        assert(vka_memu_by_key(key ^ VKA_MEMU_KEY_COALESCED)->key == active);
+        assert(vka_shader_memu_key(key ^ VKA_MEMU_KEY_COALESCED));
     }
     assert(!vka_shader_memu_key(base));
     return 0;

@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Unchanged driver inputs rebuilt per draw](../../../docs/reference/rendering.md#unchanged-driver-inputs-rebuilt-per-draw): port Banana Native input revisions and vertex caches, with production C equivalence and invalidation tests.
+
 - [Compression dictionaries in bounded static shader extraction](../../../docs/reference/shaders.md#compression-dictionaries-in-bounded-static-shader-extraction): build 101 selected the correct stages but bypassed dictionary initialization when opening their compressed source.
 
 - [Launcher shader selection before the pack process starts](../../../docs/reference/shaders.md#launcher-shader-selection-before-the-pack-process-starts): build 100 selected 56 captures instead of the 508 static stages because the launcher tried to initialize a service-owned native engine.
@@ -282,3 +284,18 @@ A timestamped **software Vulkan synthetic fixture** with 27 helper calls per inv
 `Optimize vegetation` / `Otimizar vegetação` defaults on and sets `DM_VK_MEMU_PLANE_LUT=1`; off restores the prior scalar scatter (`=0`) without removing foliage. Restart between comparisons, leave Full vegetation on, and use the same save/camera/driver. Distinct runtime compute keys prevent binary-cache confusion, while both old and new prewarm records resolve to the active implementation, including rollback. Vertex keys and the arena format do not change. The earlier coalesced arena remains off, and vector-bitcast remains off. The full 42,339 shaders, approved replacements, 508-entry supplement, shader ABI, native-original hybrid, package and signing identity are preserved. No shader preparation is required; affected driver pipelines may compile once.
 
 See [the general scatter lowering](../../../docs/reference/rendering.md#dynamic-mesh-plane-scatter-through-a-branch-ladder). The test APK is an isolated runtime optimization with an in-app comparison switch, not a claim of confirmed phone FPS improvement.
+
+
+### Build 120 device result and CPU input reuse (2026-11-13)
+
+The uploaded `013618` log identifies `eed329f757df`, direct plane lookup enabled and complete foliage. The title menu lasts through frame 3000, so matching frame numbers against earlier runs would compare different scenes. Warm gameplay windows ending at 3900/4200 measure whole-frame p50 26.17/26.29 ms, GPU p50 25.74/25.82 ms and command recording 17.67/17.69 ms. The earlier Build 116 gameplay window measured 27.61/27.15/18.34 ms respectively. Camera differences prevent treating every delta as a controlled effect.
+
+Sparse GPU samples nevertheless explain the observed change: mesh compute falls from 7.468 ms to 6.050 ms, with the four hot keys summing 4.604 to 3.515 ms. Graphics remains 13.87 to 13.89 ms. Other warm samples show mesh 5.910 ms and graphics 14.02 ms. Thus neither a repeat of taskless-search changes nor fixing only the remaining mesh work can establish 60 FPS; raster work and CPU command recording also need attention. VRS 2x2 already applies to the hot fragment stages and is not a new remedy.
+
+Comparison with Banana Native `d652abeb534496724e798ff96474752903d7953a` found its input-stamp driver-segment and vertex-input reuse missing here. The previous memo still rebuilt each driver bank before comparing the bytes, although the device log reports 74% unchanged banks. The port stamps every relevant SSBO/texture/sampler/image/push change, includes direct base-instance/sample/pool inputs, and gives copied queue/look-ahead states globally unique revisions. Compute's GPU-patched c0 and unknown banks retain their original fill path. Vertex descriptions reuse the same shader/format revision; vertex buffer lookup reuse also requires the same memory generation and valid command-buffer state. `DM_VK_DRV_STAMP=0` and `DM_VK_VIN_SKIP=0` independently restore the earlier paths.
+
+A compiled production-C regression compares 3000 mixed driver operations and copied states against actual `vka_drv_fill`, plus 500 vertex operations against the uncached production functions, including memory placement and command-buffer invalidation. ASan/UBSan passes. An x86 host synthetic repeat of an unchanged c2 bind measured 300.30 ns with 200000 fills versus 5.52 ns with zero fills. This measures avoided CPU work only, not an Adreno frame-time prediction. The runtime logs actual stamp and vertex cache hit rates.
+
+The existing component-planar mesh arena can also be compared from `Vegetation memory layout (test)` / `Memória contígua da vegetação (teste)`. It remains OFF by default; full foliage and direct plane lookup stay ON. With lookup enabled, a 27-call software Vulkan fixture measured median 0.661 ms for the original arena versus 0.597 ms for component planes across three alternated runs; this is not phone FPS evidence. Producer and vertex-reader layouts are validated together. Historical prewarm recipes for either layout resolve to the active module and its distinct cache key, preserving recipes without reusing incompatible pipelines. Restart after changing the option; one-time driver compilation may occur, but the imported full library and ABI are preserved.
+
+Next device comparison must evaluate whole warm frame/GPU intervals, not only a hot shader timestamp. For the remaining graphics cost, the existing `Work/0400486024DEC000/nvn_shdump/` capture folder contains original `.ctl`/`.code` hot-stage inputs; the uploaded archive contains only the text log, so their instructions have not yet been audited.

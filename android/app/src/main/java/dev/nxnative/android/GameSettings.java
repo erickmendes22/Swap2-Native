@@ -210,6 +210,10 @@ final class GameSettings {
                     .toggle(a, Prefs.vegetationOptimized(a, id), (b, on) -> Prefs.vegetationOptimized(a, id, on));
             vegetationOptimization.value(a.getString(R.string.s2_vegetation_optimized_note));
             box.addView(vegetationOptimization.view);
+            Ui.Setting contiguous = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_vegetation_contiguous), null)
+                    .toggle(a, Prefs.vegetationContiguous(a, id), (b, on) -> Prefs.vegetationContiguous(a, id, on));
+            contiguous.value(a.getString(R.string.s2_vegetation_contiguous_note));
+            box.addView(contiguous.view);
         }
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip, "Economia de RAM (usa armazenamento)", null)
                 .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
