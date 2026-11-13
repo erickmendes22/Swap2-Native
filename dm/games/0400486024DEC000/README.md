@@ -525,3 +525,39 @@ added. The remaining gap to 16.67 ms and the fixed option's actual performance
 on driver891.14 remain device-validation work, not a reason to claim 60 FPS.
 The existing sampled scene profiler now recognizes 640x360 and 960x540 as well
 as legacy683x384, with no ordinary-frame GPU commands.
+
+### Withdrawn render-enable fusion experiment (2026-11-13)
+
+The uploaded `174854` run identifies `32e82da+dirty`, driver 891.14,
+960x540 scene, integral compute mesh routing and render-enable fusion ON.
+At frames 1200-2400, frame p50 stays 20.83-20.99 ms and GPU p50
+20.46-20.61 ms. The walker crosses roughly 22 unconditional-true records
+per frame but still splits mesh preparation roughly 25 times per frame.
+The synthetic true-only stream's batching improvement did not remove the
+real scene's conditional boundaries. This run alone is not a controlled
+ON/OFF proof of regression or a measure of the option's isolated cost.
+
+At the user's request the experimental `Group vegetation across render
+enable` control, launcher export, preference accessors, runtime override
+and counters are removed. Previously saved values no longer enable it.
+Every render-enable command again terminates mesh lookahead and clears
+its coverage; replay still evaluates the original condition. Integral
+compute routing and the existing prepared shader library are unchanged.
+The production-walker C regression covers all four render-enable modes,
+malformed records and nested command lists, not merely an idealized batch.
+
+The sampled frame1501 graphics chunks total about 10.4 ms; mesh and task
+intervals additionally account for about 3.1 and 0.5 ms respectively.
+Blocks dominated by FS `1e4d2630d24846d0` sum about 3.14 ms, including
+vertex, depth and attachment work: these are not fragment-only savings.
+Forcing early fragment tests on alpha-discard modules was considered and
+rejected: even read-only depth/stencil does not preserve samples-passed
+query semantics when discarded fragments begin counting before shading.
+`g_oq_count` persists after the first reset; a read-only attachment check
+alone is insufficient. No such change is shipped.
+
+Shading-rate image calls remain unimplemented; the device reports KHR
+attachment shading-rate support, but the current trace does not establish
+the guest palette ABI or image encoding. The inspected public Banana
+snapshot also stubs these calls, so it is not evidence of a working port.
+Removing this experiment is cleanup, not a claimed FPS optimization.

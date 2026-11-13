@@ -1414,3 +1414,18 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Cause:** classic begin/end entry points were omitted from `ENC_FNS`. They called the driver immediately on the producer while draws and barriers remained queued on another thread, violating both call order and Vulkan command-buffer external synchronization. The device log lacks the previous crash's faulting stack, but the ordering defect is independently reproduced by bypassing those wrappers in the production-encoder regression.
 - **Fix:** port Banana's classic pass records, argument deep copies, pNext rebasing and worker dispatch into `vka_enc.c`. Unsupported pNext chains use the existing drain-before-direct fallback. The cache remains explicitly optional, OFF by default and after restoring defaults. Compatible whole/GPL pipelines and cached imageless framebuffers preserve load/clear/discard/store, format lists, layers and samples. Test the real encoder across ring wrap with poisoned caller arguments, a bypassed-wrapper negative control, and actual GPU parity with the encoder both off and on; direct GPU validation alone misses this bug. Linux uses an atomic load in place of the unchanged ARM exclusive-monitor wait instruction for the host test.
 - **Found on:** [Ocarina, cached classic render passes](../../dm/games/0400486024DEC000/README.md#cached-classic-render-passes-2026-11-13-current). RedMagic performance and whole-game validation of the corrected option remain open.
+
+### Render-enable boundaries in compute mesh preparation
+
+- **Symptom:** a true-only synthetic stream batches better, but a real
+  Ocarina run still has about 25 mesh preparation splits per frame and
+  about 20.5 ms GPU time with the fusion experiment enabled.
+- **Cause:** crossing unconditional-true render-enable records does not
+  remove the scene's conditional boundaries. Precomputed mesh coverage
+  must not survive a boundary the preparation walker did not cross.
+- **Fix:** withdraw the optional override and its Android control. Keep
+  all render-enable records as lookahead boundaries, clear coverage on
+  unsupported records and retain replay's original condition evaluation.
+  Test the real C walker with all modes and nested lists.
+- **Found on:** [Ocarina, withdrawn fusion experiment](../../dm/games/0400486024DEC000/README.md#withdrawn-render-enable-fusion-experiment-2026-11-13).
+  No device FPS increase is attributed to removing this experiment.

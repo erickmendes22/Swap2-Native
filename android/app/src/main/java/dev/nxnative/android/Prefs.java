@@ -155,17 +155,6 @@ final class Prefs {
         if (OCARINA_TITLE.equals(titleId))
             of(c).edit().putBoolean(gameKey("oot_short_task_search", titleId), on).commit();
     }
-    // Experimental mesh-compute lookahead across unconditional
-    // SetRenderEnable(true) only. False/conditional modes remain hard bounds.
-    // Keep OFF by default until same-scene GPU A/B confirms a real gain.
-    static boolean memuRenderEnableFuse(Context c, String titleId) {
-        return OCARINA_TITLE.equals(titleId) &&
-               of(c).getBoolean(gameKey("oot_memu_rc_true_fuse", titleId), false);
-    }
-    static void memuRenderEnableFuse(Context c, String titleId, boolean enabled) {
-        if (OCARINA_TITLE.equals(titleId))
-            of(c).edit().putBoolean(gameKey("oot_memu_rc_true_fuse", titleId), enabled).commit();
-    }
     static boolean vegetationContiguous(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_contiguous", titleId), false); }
     // Experimental zero-copy GPU texture ID feedback. Preserve legacy
     // bitmap copy/clear by default until same-device A/B is confirmed.

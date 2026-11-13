@@ -1,10 +1,5 @@
-"""Execute production mesh lookahead C across redundant render-enable records.
-
-The host chooses lookahead before a raster pass while render is enabled.
-SetRenderEnable(true) has no GPU side effects; the interpreter's real
-rc_eval still executes in replay order. Conditional/false modes must
-remain strict boundaries. This test compiles the PRODUCTION memu_walk,
-not a Python reimplementation of the algorithm.
+"""Production mesh lookahead must stop at every render-enable boundary.
+The failed fusion option is removed; replay still evaluates all conditions.
 """
 import re
 import shutil
@@ -28,7 +23,15 @@ def body(source, name):
     raise AssertionError("unterminated C function " + name)
 
 
-class RenderEnableFuse(unittest.TestCase):
+class RenderEnableBoundaries(unittest.TestCase):
+    def test_experiment_cannot_be_reenabled_from_saved_preferences(self):
+        app = ROOT / "android/app/src/main/java/dev/nxnative/android"
+        for name in ("Prefs.java", "GameSettings.java", "GameActivity.java"):
+            text = (app / name).read_text()
+            self.assertNotIn("memuRenderEnableFuse", text)
+            self.assertNotIn("DM_VK_MEMU_RC_TRUE_FUSE", text)
+        self.assertNotIn("DM_VK_MEMU_RC_TRUE_FUSE", SRC)
+
     def test_real_production_walker_respects_all_render_conditions(self):
         cc = shutil.which("clang") or shutil.which("cc")
         self.assertIsNotNone(cc)
@@ -38,8 +41,7 @@ class RenderEnableFuse(unittest.TestCase):
 #include <stdio.h>
 #include <string.h>
 #define DM_GAME_ID "0400486024DEC000"
-static int g_fuse;
-#define VKA_ENV(k, def) (!strcmp((k), "DM_VK_MEMU_RC_TRUE_FUSE") ? g_fuse : (def))
+#define VKA_ENV(k, def) (def)
 #define NVN_PRIM_MESH 5
 enum {
  OP_END=0, OP_JUMP=1, OP_CALL=2, OP_DRAW=3,
@@ -59,7 +61,6 @@ static _Thread_local const uint8_t *g_memu_caller[16];
 static _Thread_local int g_memu_depth;
 static uint64_t g_memu_parent_resumes,g_memu_nested_batches;
 static uint64_t g_memu_boundary_op[OP_COUNT_+1];
-static uint64_t g_memu_rc_true_crossed,g_memu_rc_true_blocked,g_memu_rc_unsafe_blocked;
 static int g_n, states[128];
 static int memu_allowed(uint32_t op) {
     return op != OP_RENDER_COND && op != OP_BARRIER && op != OP_SET_RT;
@@ -80,59 +81,28 @@ static void vka_memu_batch(int phase,const vka_dstate *d,const p_draw *dw,
     states[g_n++]=d->state;
 }
 """ + "static int " + body(SRC, "memu_walk") + r"""
-static record cmd(uint32_t op,uint64_t x) {
- return (record){.op=op,.size=sizeof(record),.x=x};
-}
-static int walk(const record *records,int fuse) {
- g_fuse=fuse;S.rc_skip=0;S.d.state=10;
+static int walk(const record *records) {
+ S.rc_skip=0;S.d.state=10;
  g_n=0;g_memu_depth=0;
  int n=memu_walk((const uint8_t*)records,MEMU_ADD);
  assert(n==g_n);
  return n;
 }
 int main(void) {
- record two[]={
-    {OP_DRAW,24,5,0},{OP_RENDER_COND,24,2,0},
-    {OP_BIND_PROGRAM,24,20,0},{OP_DRAW,24,5,0},
-    {OP_BARRIER,24,0,0},{OP_DRAW,24,5,0},{OP_END,24,0,0}};
- assert(walk(two,0)==1 && states[0]==10);
- assert(walk(two,1)==2 && states[0]==10 && states[1]==20);
- assert(g_memu_rc_true_crossed==1);
- assert(g_memu_rc_true_blocked==1);
- // A disabled or query-dependent render condition is NEVER bypassed.
- for (int mode=0; mode<=3;mode++) {
-    record r[]={{OP_DRAW,24,5,0},{OP_RENDER_COND,24,(uint64_t)mode,0},
-                {OP_DRAW,24,5,0},{OP_END,24,0,0}};
-    assert(walk(r,1)==(mode==2?2:1));
+ for(int mode=0;mode<=3;mode++) {
+  record r[]={{OP_DRAW,24,5,0},{OP_RENDER_COND,24,(uint64_t)mode,0},
+              {OP_BIND_PROGRAM,24,20,0},{OP_DRAW,24,5,0},{OP_END,24,0,0}};
+  assert(walk(r)==1 && states[0]==10);
  }
- // A malformed/truncated condition must always be a hard boundary.
- record malformed[]={{OP_DRAW,24,5,0},{OP_RENDER_COND,16,2,0},
-                     {OP_DRAW,24,5,0},{OP_END,24,0,0}};
- assert(walk(malformed,1)==1);
- // Simulated no-dependency foliage trace: sixteen mesh draws separated
- // ONLY by redundant true render-enable commands. One merged batch
- // (instead of sixteen), no draw lost, no state reordered.
- record many[34];int k=0;
- for(int i=0;i<16;i++) {
-    many[k++]=cmd(OP_DRAW,5);
-    if(i<15)many[k++]=cmd(OP_RENDER_COND,2);
- }
- many[k++]=cmd(OP_BARRIER,0);
- many[k++]=cmd(OP_END,0);
- assert(walk(many,0)==1);
- assert(walk(many,1)==16 && g_n==16);
- for(int i=0;i<16;i++)assert(states[i]==10);
- // No speculative crossing of a parent's callback before a condition.
+ record malformed[]={{OP_DRAW,24,5,0},{OP_RENDER_COND,16,2,0},{OP_END,24,0,0}};
+ assert(walk(malformed)==1);
  record inner[]={{OP_DRAW,24,5,0},{OP_RENDER_COND,24,2,0},{OP_END,24,0,0}};
- record parent[]={{OP_BIND_PROGRAM,24,42,0},{OP_DRAW,24,5,0},{OP_END,24,0,0}};
- S.rc_skip=0;S.d.state=10;g_fuse=1;g_n=0;g_memu_depth=1;
- g_memu_caller[0]=(const uint8_t*)&parent[0];
- assert(memu_walk((const uint8_t*)inner,MEMU_ADD)==2);
- assert(g_n==2 && states[0]==10 && states[1]==42);
- assert(g_memu_parent_resumes==1);
- // The original replay STILL evaluates every render condition.
- assert(g_memu_rc_unsafe_blocked>=3);
- puts("real mesh lookahead: all conditional/false barriers preserved; 16-to-1 synthetic redundant-true batching");
+ record parent[]={{OP_DRAW,24,5,0},{OP_END,24,0,0}};
+ S.rc_skip=0;S.d.state=10;g_n=0;g_memu_depth=1;
+ g_memu_caller[0]=(const uint8_t*)parent;
+ assert(memu_walk((const uint8_t*)inner,MEMU_ADD)==1);
+ assert(g_n==1 && g_memu_parent_resumes==0);
+ puts("render-enable boundaries: all modes and nested-list conditions retained");
  return 0;
 }
 """
@@ -147,11 +117,8 @@ int main(void) {
 
     def test_source_preserves_render_query_and_barrier_replay(self):
         b = body(SRC, "memu_walk")
-        self.assertIn('mode == 2 && !S.rc_skip', b)
-        self.assertIn('h.size >= 8u + sizeof(p_render_cond)', b)
-        self.assertIn('VKA_ENV("DM_VK_MEMU_RC_TRUE_FUSE", 0)', b)
+        self.assertNotIn('DM_VK_MEMU_RC_TRUE_FUSE', SRC)
         self.assertIn('if (!memu_allowed(h.op) || h.size < 8)', b)
-        self.assertIn('if (phase == MEMU_ADD) g_memu_rc_true_crossed++', b)
         self.assertIn('case OP_RENDER_COND: S.rc_skip = rc_eval(a);', SRC)
         self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);', SRC)
 

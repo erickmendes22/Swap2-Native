@@ -52,7 +52,6 @@ static _Thread_local const uint8_t *g_memu_caller[16];
 static _Thread_local int g_memu_depth;
 static uint64_t g_memu_parent_resumes, g_memu_nested_batches;
 static uint64_t g_memu_boundary_op[OP_COUNT_ + 1];
-static uint64_t g_memu_rc_true_crossed,g_memu_rc_true_blocked,g_memu_rc_unsafe_blocked;
 static int batched, states[32];
 static int memu_allowed(uint32_t op) { return op != OP_SET_RT; }
 static const p_draw *draw_rec(const void *arg, uint32_t size, p_draw *tmp) {
