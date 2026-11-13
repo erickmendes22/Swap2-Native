@@ -1371,16 +1371,25 @@ static int memu_walk(const uint8_t *p, int phase) {
     }
     return n;
 }
+// Mark actual GPU work by phase on the (rare) sampled GPU-profiler frame.
+// Normal frames add ZERO commands. GPU timing markers do not modify shaders.
 static void memu_scan(const uint8_t *p) {
     g_memu_cover = 1;
-    if (S.rc_skip || !memu_walk(p, -1)) return;   // (most passes have no mesh draw: no state copied for them)
+    if (S.rc_skip || !memu_walk(p, -1)) return;
+    if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_START", 0);
     vka_memu_batch(MEMU_BEGIN, NULL, NULL, NULL, 0);
     if (!memu_walk(p, MEMU_ADD)) return;
+    if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_ADD", 0);
     vka_memu_batch(MEMU_SETUP, NULL, NULL, NULL, 0);
+    if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_SETUP", 0);
     memu_walk(p, MEMU_TASK);
+    if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_TASK", 0);
     vka_memu_batch(MEMU_DIST, NULL, NULL, NULL, 0);
+    if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_DIST", 0);
     memu_walk(p, MEMU_MESH);
+    if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_MESH", 0);
     vka_memu_batch(MEMU_END, NULL, NULL, NULL, 0);
+    if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_END", 0);
 }
 static void memu_before_draw(const uint8_t *p, const p_draw *d) {
     if (!vka_memu_on()) return;
