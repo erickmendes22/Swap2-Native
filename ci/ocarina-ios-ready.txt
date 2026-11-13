@@ -449,3 +449,5 @@ Build124 comparison control: independent localized Optimize compute (test), defa
 Build SGSRI internal NDSR test rerun: updated the obsolete CI assertion for the formerly selected final-presentation chain. The per-frame runtime still keeps the old chain fail-closed for manual diagnostics; this build deliberately uses the verified internal compute kernel instead of that chain.
 
 SGSR1 internal compute A/B CI rerun: Profile retains standalone JVM compatibility through the string value 'sgsr-compute' rather than a Prefs class constant (test_android_shaderzip).
+
+SGSR1 internal/legacy same-APK A/B with two OFF-by-default FS toggles: compatibility JVM fix and test Python syntax corrected; hot-path skips unrelated FS without reading environment. CI compiled SGSR1 NDSR SPIR-V float and packed variants on previous run; full signed APK still awaiting this validation.
