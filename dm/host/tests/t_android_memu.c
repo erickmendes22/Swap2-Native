@@ -140,6 +140,34 @@ int main(void) {
         CHECK(bind == 2, "the arena and the records bound at VKA_MEMU_ARENA_BINDING / _REC_BINDING");
         free(o);
     }
+    {   // The foliage output-vector optimization must reduce real SPIR-V
+        // instructions while preserving the exact number of scalar arena
+        // writes, pixel/primitive indices and Vulkan 1.3 validity. Compare
+        // the SAME real production converter with both env configurations.
+        const char *prior = getenv("DM_VK_MEMU_VEC_BITCAST");
+        char *saved = prior ? strdup(prior) : NULL;
+        size_t old_n = 0, fast_n = 0;
+        setenv("DM_VK_MEMU_VEC_BITCAST", "0", 1);
+        uint32_t *old = vka_memu_cs(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4, &old_n, err, sizeof err);
+        setenv("DM_VK_MEMU_VEC_BITCAST", "1", 1);
+        uint32_t *fast = vka_memu_cs(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4, &fast_n, err, sizeof err);
+        CHECK(old && fast, "mesh vector-bitcast: baseline and fast shader compile (%s)", err);
+        if (old && fast) {
+            int old_casts = count_op(old, old_n, 124), new_casts = count_op(fast, fast_n, 124);
+            CHECK(old_casts >= new_casts + 3,
+                  "mesh output vec4: bitcasts reduced (old %d, fast %d)", old_casts, new_casts);
+            CHECK(count_op(old, old_n, 62) == count_op(fast, fast_n, 62),
+                  "mesh output stores unchanged (%d -> %d)",
+                  count_op(old, old_n, 62), count_op(fast, fast_n, 62));
+            CHECK(validate(old, old_n, "vecbitcast_original"),
+                  "original mesh output shader remains legal Vulkan SPIR-V");
+            CHECK(validate(fast, fast_n, "vecbitcast_optimized"),
+                  "optimized mesh output shader remains legal Vulkan SPIR-V");
+        }
+        free(old); free(fast);
+        if (saved) { setenv("DM_VK_MEMU_VEC_BITCAST", saved, 1); free(saved); }
+        else unsetenv("DM_VK_MEMU_VEC_BITCAST");
+    }
     {   // the pixel shader made flat
         uint32_t *o = vka_memu_fs_flat(MEMU_FS_PRIM, sizeof MEMU_FS_PRIM / 4, &on, err, sizeof err);
         CHECK(o && count_dec(o, on, 5271) == 0 && count_dec(o, on, 14) == 1 && count_op(o, on, 10) == 0, "per-primitive input made flat, the extension dropped (%s)", err);
