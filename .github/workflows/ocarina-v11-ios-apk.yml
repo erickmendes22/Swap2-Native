@@ -205,7 +205,10 @@ jobs:
             dm/host/tests/t_android_memu.c dm/gfx/vk_android/vka_memu_spv.c \
             dm/gfx/vk_android/vka_spvpatch.c dm/gfx/vk_android/vka_shlib.c \
             dm/third_party/zstd/zstddeclib.c -lm -o /tmp/t_android_memu
-          ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_memu
+          # Validate both the fast taskless foliage path and exact
+          # pre-optimization rollback. Both must generate legal SPIR-V.
+          DM_VK_MEMU_FAST_TASKLESS=1 ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_memu
+          DM_VK_MEMU_FAST_TASKLESS=0 ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_memu
           clang -O1 -g -fsanitize=address,undefined \
             dm/host/tests/t_android_pool_feedback.c dm/gfx/vk_android/vka_spvpatch.c \
             -o /tmp/t_android_pool_feedback
