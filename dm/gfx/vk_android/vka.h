@@ -326,6 +326,7 @@ extern int vka_gp_active;
 void vka_gp_mark(VkCommandBuffer cb, const char *file, int line);
 void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key);  // sampled exact compute mesh/task dispatch key
 void vka_gp_pass(const char *desc);
+void vka_gp_gfx_flush(void); // only on sparse profiling frames: close 16-draw raster timing block before EndRendering
 void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh, uint64_t task,
                  uint32_t units, uint32_t instances, int indirect);
 void vka_gp_compute(uint64_t key, uint32_t x, uint32_t y, uint32_t z, int replaced);
