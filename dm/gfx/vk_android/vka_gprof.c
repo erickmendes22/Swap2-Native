@@ -10,7 +10,7 @@
 #include <string.h>
 
 enum { NQ = 2048, DESC = 256, SHADERS = 64 };
-typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
+typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint8_t mesh_stage; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
 static gp_mark g_m[NQ]; static int g_n;
 static VkQueryPool g_qp; static int g_ok = -1; static double g_tick_ns;
 static PFN_vkCmdWriteTimestamp g_write; static PFN_vkCmdResetQueryPool g_reset; static PFN_vkGetQueryPoolResults g_get;
@@ -98,6 +98,16 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
     g_n++;
 }
 void vka_gp_mark(VkCommandBuffer cb, const char *file, int line) { if (cb == g_cb) mark(cb, 0, file, line); }
+// Sparse, timestamped attribution of each converted mesh/task GPU dispatch.
+// A marker is emitted AFTER the dispatch so its interval measures the shader
+// that just ran. This call is made only with vka_gp_active (1/300 frames).
+void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key) {
+    if (!vka_gp_active || cb != g_cb || g_n >= NQ) return;
+    mark(cb, 0, task ? "MEMU_TASK_SHADER" : "MEMU_MESH_SHADER", 0);
+    gp_mark *m = &g_m[g_n - 1];
+    m->mesh_key = key;
+    m->mesh_stage = task ? 1 : 2;
+}
 void vka_gp_pass(const char *desc) { if (vka_gp_active) { snprintf(g_pass, DESC, "%s", desc); g_pass_new = 1; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0; } }
 void vka_gp_part(VkCommandBuffer cb) { if (!vka_gp_active) return; g_cb = cb; mark(cb, 2, "part", 0); }
 
@@ -144,6 +154,39 @@ static void report(void) {
              mesh_phase_ms[2], mesh_phase_n[2], mesh_phase_ms[3], mesh_phase_n[3],
              mesh_phase_ms[4], mesh_phase_n[4], mesh_phase_ms[5], mesh_phase_n[5],
              mesh_phase_ms[6], mesh_phase_n[6]);
+    // Exact source-key attribution: no need to recompile the 508 source
+    // shaders or guess which foliage variant is the real GPU bottleneck.
+    // Include the stage's timestamp as part of the dispatch interval.
+    struct { uint64_t key; double ms; unsigned n; int task; } hot[128] = {0};
+    unsigned nhot = 0;
+    for (int k = 0; k < ns; k++) {
+        const gp_mark *m = &g_m[s[k].i];
+        if (!m->mesh_stage) continue;
+        unsigned j = 0;
+        while (j < nhot && (hot[j].key != m->mesh_key ||
+                            hot[j].task != (m->mesh_stage == 1))) j++;
+        if (j == nhot) {
+            if (nhot == sizeof(hot)/sizeof(hot[0])) continue;
+            hot[j].key = m->mesh_key;
+            hot[j].task = m->mesh_stage == 1;
+            nhot++;
+        }
+        hot[j].ms += s[k].ms;
+        hot[j].n++;
+    }
+    // Only report the 12 most expensive keys on each sampled frame. Preserve
+    // complete workload execution; the profiler only observes timestamps.
+    unsigned char reported[128] = {0};
+    for (unsigned rank = 0; rank < nhot && rank < 12; rank++) {
+        int best = -1;
+        for (unsigned j = 0; j < nhot; j++)
+            if (!reported[j] && (best < 0 || hot[j].ms > hot[best].ms)) best = (int)j;
+        if (best < 0) break;
+        reported[best] = 1;
+        VLOG("gpu prof foliage key: frame %llu %s %016llx: %.3fms across %u dispatches",
+             (unsigned long long)g_frame, hot[best].task ? "task" : "mesh",
+             (unsigned long long)hot[best].key, hot[best].ms, hot[best].n);
+    }
     if (VKA_ENV("DM_VK_GPUPROF_LIST", 0))   // every step in order
         for (int k = 0; k < ns; k++) { const gp_mark *a = &g_m[s[k].i - 1], *b = &g_m[s[k].i];
             VLOG("gpu prof: step #%d %.3f ms: %s:%d, %llu draws, %llu ops%s%s", s[k].i, s[k].ms, b->file, b->line, (unsigned long long)(b->draws - a->draws),
