@@ -108,6 +108,8 @@ final class Prefs {
     static boolean vegetationOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_optimized", titleId), true); }
     static void vegetationOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_optimized", titleId), on).commit(); }
     static boolean vegetationContiguous(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_contiguous", titleId), false); }
+    static boolean fragmentOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("fragment_optimized", titleId), true); }
+    static void fragmentOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("fragment_optimized", titleId), on).commit(); }
     static boolean computeOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("compute_optimized", titleId), true); }
     static void computeOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("compute_optimized", titleId), on).commit(); }
     static void vegetationContiguous(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_contiguous", titleId), on).commit(); }

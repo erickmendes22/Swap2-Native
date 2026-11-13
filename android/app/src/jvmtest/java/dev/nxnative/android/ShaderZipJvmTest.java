@@ -200,6 +200,7 @@ public final class ShaderZipJvmTest {
         File t = new File(a[0]);
         roundTrip(new File(t, "rt"));
         ocarinaBaseline(new File(t, "oot"));
+        fragmentPatch(new File(t, "fragment"));
         choice(new File(t, "choice"));
         refusals(new File(t, "ref"));
         cancel(new File(t, "cancel"));
@@ -207,6 +208,58 @@ public final class ShaderZipJvmTest {
         restamp(new File(t, "restamp"));
         lists(new File(t, "lists"));
         System.out.println("ok " + n);
+    }
+
+    static void fragmentPatch(File t) throws Exception {
+        String id = "0400486024DEC000";
+        File p = new File(t, "pack");
+        byte[] baseline = lib(id, CUR, INPUTS, ABI, 5, 2048, 12);
+        addLib(p, CUR, baseline, stamp(id, INPUTS));
+        write(new File(p, "shaders/hot/v-" + CUR + "/dmsh_vk.lib"), "six repairs");
+        write(new File(p, "shaders/vegetation/v-" + CUR + "/dmsh_vk.lib"), "complete foliage");
+        TreeMap<String, String> originals = tree(p);
+        ShaderZip.Target target = new ShaderZip.Target(p, id);
+        byte[] inputs = stamp(id, INPUTS).getBytes(StandardCharsets.UTF_8);
+        byte[] patch = lib(id, ShaderZip.FRAGMENT_VERSION, INPUTS, ABI, 1, 4096, 8);
+        put(patch, 8, "de2cd6b79f33");
+        u64(patch, 128, 0x1e4d2630d24846d0L); patch[144] = 4;
+        File zip = craft(new File(t, "patch.zip"), patch, inputs, "purpose", ShaderZip.FRAGMENT_PURPOSE);
+        ShaderZip.Result result = importFile(zip, target);
+        check(result.fragmentPatch && result.version.equals(ShaderZip.FRAGMENT_VERSION), "fragment purpose preserved");
+        File installed = new File(p, "shaders/fragment-ast/dmsh_vk.lib");
+        check(Arrays.equals(bytes(installed), patch), "fragment bytes and real chain intact");
+        for (java.util.Map.Entry<String,String> e : originals.entrySet())
+            check(e.getValue().equals(tree(p).get(e.getKey())), "original library preserved: " + e.getKey());
+        check(!new File(p, "shaders/v-" + ShaderZip.FRAGMENT_VERSION).exists(), "partial fragment never installed as full library");
+        TreeMap<String,String> stable = tree(p);
+        byte[] wrong = patch.clone(); wrong[128] ^= 1;
+        refused("wrong fragment key", ShaderZip.Why.DAMAGED,
+                craft(new File(t,"key.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,false);
+        wrong = patch.clone(); wrong[144] = 5;
+        refused("compute cannot be fragment patch", ShaderZip.Why.DAMAGED,
+                craft(new File(t,"stage.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,true);
+        wrong = patch.clone(); wrong[116] ^= 1;
+        refused("wrong fragment ABI", ShaderZip.Why.OTHER_VERSION,
+                craft(new File(t,"abi.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,false);
+        wrong = patch.clone(); put(wrong, 24, "0123456789ab");
+        refused("wrong fragment version", ShaderZip.Why.OTHER_VERSION,
+                craft(new File(t,"version.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,false);
+        wrong = patch.clone(); u32(wrong,72,2);
+        refused("not a one-entry fragment patch", ShaderZip.Why.OTHER_VERSION,
+                craft(new File(t,"count.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,false);
+        wrong = patch.clone(); wrong[8] ^= 1;
+        refused("wrong fragment translator chain", ShaderZip.Why.DAMAGED,
+                craft(new File(t,"chain.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,true);
+        refused("unmarked foreign chain", ShaderZip.Why.OTHER_VERSION,
+                craft(new File(t,"unmarked.zip"),patch,inputs),target,false);
+        check(stable.equals(tree(p)), "failed fragment imports leave every file intact");
+        check(new File(p,"shaders/fragment-ast").renameTo(new File(p,"shaders/.replaced-fragment-ast")), "simulate interrupted fragment replace");
+        ShaderZip.recover(p);
+        check(stable.equals(tree(p)), "fragment replacement recovery restores only its own slot");
+        importStream(zip,target);
+        check(Arrays.equals(bytes(installed),patch), "stream replacement preserves patch bytes");
+        for (java.util.Map.Entry<String,String> e : originals.entrySet())
+            check(e.getValue().equals(tree(p).get(e.getKey())), "stream keeps original " + e.getKey());
     }
 
     static void roundTrip(File t) throws Exception {

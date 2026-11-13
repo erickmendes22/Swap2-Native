@@ -211,6 +211,10 @@ final class ShaderUi {
             if (gone) return;   // the activity was recreated meanwhile: the new one shows the card from the saved list
             a.refresh();
             AlertDialog.Builder b = new AlertDialog.Builder(a).setTitle(R.string.s2_shaders_imported_title);
+            if (res.fragmentPatch) {
+                b.setMessage(R.string.s2_fragment_imported).setPositiveButton(android.R.string.ok, null).show();
+                return;
+            }
             if (res.hadPack && ShaderZip.ready(res.packDir, g.titleId)) {
                 b.setMessage(a.getString(R.string.s2_shaders_imported_ready, res.shaders, res.version)).setPositiveButton(android.R.string.ok, null).show();
                 return;

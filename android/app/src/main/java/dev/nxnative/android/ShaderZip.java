@@ -51,6 +51,10 @@ import java.util.zip.ZipOutputStream;
 final class ShaderZip {
     static final String KIND = "swap2-shaders", FORMAT = "1";
     static final String MANIFEST = "manifest.tsv", INPUTS = "inputs.tsv", LIB = "dmsh_vk.lib", SOURCE = "source.tsv";
+    // Explicit, separately installed experiment. Its real translator/version
+    // stamps stay intact; it can never replace a complete library or vegetation.
+    static final String FRAGMENT_PURPOSE = "ocarina-fragment-ast-v1";
+    static final String FRAGMENT_VERSION = "a16478ff8bcd", FRAGMENT_DIR = "fragment-ast";
     static final String IMPORT = ".import-", REPLACED = ".replaced-", PARTIAL = ".partial", PREFIX = "swap2-shaders-";
     /** The largest library taken (Pokemon Pokopia's blob is 9.8 GB), the largest manifest.tsv or inputs.tsv, the room kept free beside an import */
     static final long MAX_LIB = 32L << 30, SPARE = 256L << 20;
@@ -167,7 +171,8 @@ final class ShaderZip {
                 File f = new File(sh, n);
                 if (n.startsWith(IMPORT)) deleteTree(f);
                 else if (n.startsWith(REPLACED)) {
-                    File v = new File(sh, "v-" + n.substring(REPLACED.length()));
+                    String suffix = n.substring(REPLACED.length());
+                    File v = new File(sh, suffix.equals(FRAGMENT_DIR) ? suffix : "v-" + suffix);
                     if (!v.exists()) f.renameTo(v);
                     else deleteTree(f);
                 }
@@ -457,6 +462,7 @@ final class ShaderZip {
         boolean locked;   // holds its pack against recover until install or unstage
         String version, sha256, abi, inputs;
         long shaders, libSize;
+        boolean fragmentPatch;
         Map<String, List<String>> manifest;
     }
 
@@ -466,6 +472,7 @@ final class ShaderZip {
         String from;      // the zip's version
         long shaders, libSize;
         File packDir;
+        boolean fragmentPatch;
         boolean hadPack;  // the folder has a pack.tsv of this game (Play uses it now); else Prepare only rewrites the code
     }
 
@@ -568,12 +575,20 @@ final class ShaderZip {
             if (s.libSize > MAX_LIB) throw new Failure(Why.TOO_BIG, "the library is " + s.libSize + " bytes", SaveStore.size(s.libSize));
             if (s.libSize < ShaderLibs.HEADER_SIZE) throw new Failure(Why.DAMAGED, "the library is " + s.libSize + " bytes", "lib_size " + s.libSize);
             s.manifest = m;
+            String purpose = one(m, "purpose");
+            s.fragmentPatch = FRAGMENT_PURPOSE.equals(purpose);
+            if (!purpose.isEmpty() && !s.fragmentPatch)
+                throw new Failure(Why.NOT_SHADER_ZIP, "unknown shader purpose " + purpose, zipName, purpose);
+            if (s.fragmentPatch && (!Prefs.OCARINA_TITLE.equals(id) ||
+                    !FRAGMENT_VERSION.equals(v) || s.shaders != 1 ||
+                    !t.abi.equals(s.abi) || "unknown".equals(t.inputs) || !t.inputs.equals(s.inputs)))
+                throw new Failure(Why.OTHER_VERSION, "fragment patch requires its exact Ocarina version, one shader, ABI and profile inputs", v, t.current);
             if (t.verifyOnly) return;
-            if (!v.equals(t.current) && !restampable(v) && !compatibleOcarinaBase())
+            if (!v.equals(t.current) && !restampable(v) && !compatibleOcarinaBase() && !s.fragmentPatch)
                 throw new Failure(Why.OTHER_VERSION, "the shaders are of version " + v + ", this app needs " + t.current, v, t.current);
             if (!"unknown".equals(t.inputs) && !t.inputs.equals(s.inputs))
                 throw new Failure(Why.OTHER_INPUTS, "the shaders were built from other shader tables (" + s.inputs + ") than the profile's (" + t.inputs + ")", s.inputs, t.inputs);
-            long need = (v.equals(t.current) || compatibleOcarinaBase() ? s.libSize : 2 * s.libSize) + SPARE;   // a trusted original keeps its version, no restamp copy
+            long need = (v.equals(t.current) || compatibleOcarinaBase() || s.fragmentPatch ? s.libSize : 2 * s.libSize) + SPARE;   // a trusted original keeps its version, no restamp copy
             long free = t.space.free(new File(t.pack, "shaders"));
             if (free < need) throw new Failure(Why.NO_SPACE, "the shaders need " + need + " bytes, " + free + " free", SaveStore.size(need), t.pack.getPath(), SaveStore.size(free));
         }
@@ -612,6 +627,8 @@ final class ShaderZip {
             String bad = !t.titleId.equals(h.game) ? "game " + h.game : !s.version.equals(h.vkChain) ? "version " + h.vkChain : !s.inputs.equals(h.inputs) ? "inputs " + h.inputs
                     : !s.abi.equals(h.abi) ? "abi " + h.abi : h.entries != s.shaders ? h.entries + " shaders" : !h.fits(s.libSize) ? "tables outside the file" : null;
             if (bad == null && !t.verifyOnly && s.version.equals(t.current) && !t.abi.equals(h.abi)) bad = "abi " + h.abi + ", this app's " + t.abi;
+            if (s.fragmentPatch && (h.entryOff != ShaderLibs.HEADER_SIZE ||
+                    !"de2cd6b79f33".equals(h.chain))) bad = "fragment patch entry table or translator chain";
             if (bad != null) throw new Failure(Why.DAMAGED, "the library's header does not match its manifest: " + bad, bad);
         }
 
@@ -623,18 +640,30 @@ final class ShaderZip {
             CRC32 crc = new CRC32();
             md.update(hb);
             crc.update(hb);
-            long done = hb.length;
+            // The bounded patch's sole index record is directly after the header.
+            // Check it even in verifyOnly mode, before any installed file changes.
+            byte[] entry = s.fragmentPatch ? new byte[ShaderLibs.ENTRY_SIZE] : new byte[0];
+            if (s.fragmentPatch) {
+                for (int got = 0, n; got < entry.length; got += n)
+                    if ((n = in.read(entry, got, entry.length - got)) < 0)
+                        throw new Failure(Why.DAMAGED, "fragment patch has no index record", "entry");
+                long key = java.nio.ByteBuffer.wrap(entry).order(java.nio.ByteOrder.LITTLE_ENDIAN).getLong();
+                if (key != 0x1e4d2630d24846d0L || entry[16] != 4)
+                    throw new Failure(Why.DAMAGED, "fragment patch does not contain only the expected fragment shader", "fragment key/stage");
+                md.update(entry); crc.update(entry);
+            }
+            long done = hb.length + entry.length;
             int phase = t.verifyOnly ? CHECK : COPY;
             FileOutputStream out = null;
             if (!t.verifyOnly) {
                 File sh = new File(t.pack, "shaders");
-                s.dir = new File(sh, IMPORT + s.version);
+                s.dir = new File(sh, IMPORT + (s.fragmentPatch ? FRAGMENT_DIR : s.version));
                 if (s.dir.exists()) deleteTree(s.dir);
                 if (!s.dir.mkdirs()) throw io("cannot create " + s.dir, IO_CREATE, s.dir);
                 out = new FileOutputStream(new File(s.dir, LIB));
             }
             try {
-                if (out != null) out.write(hb);
+                if (out != null) { out.write(hb); out.write(entry); }
                 byte[] buf = new byte[CHUNK];
                 for (int n; (n = in.read(buf)) > 0; ) {
                     done += n;
@@ -782,7 +811,8 @@ final class ShaderZip {
      */
     static Result install(Staged s, Target t) throws IOException {
         if (s.dir == null || !s.dir.isDirectory()) { release(s); throw io("nothing staged", IO_NOTHING_STAGED, null); }
-        File sh = new File(t.pack, "shaders"), dst = new File(sh, "v-" + s.version), old = new File(sh, REPLACED + s.version);
+        String slot = s.fragmentPatch ? FRAGMENT_DIR : s.version;
+        File sh = new File(t.pack, "shaders"), dst = new File(sh, s.fragmentPatch ? slot : "v-" + slot), old = new File(sh, REPLACED + slot);
         lock(t);
         try {
             synchronized (ACTIVE) {   // recover's own steps, with this import's staged folder kept
@@ -797,6 +827,7 @@ final class ShaderZip {
                 throw io("cannot name the imported library " + dst, IO_NAME_LIB, dst);
             }
             Result r = new Result();
+            r.fragmentPatch = s.fragmentPatch;
             r.from = s.version;
             r.version = s.version;
             // Keep the complete original OR its fully merged six-replacement
@@ -804,7 +835,7 @@ final class ShaderZip {
             // loader accepts the same-ABI library with no header spoof.
             boolean keepBaseline = ShaderLibs.trustedOcarinaBase(t.titleId,
                     s.version, s.abi, s.inputs, s.shaders, t.abi, t.inputs);
-            if (!s.version.equals(t.current) && !keepBaseline) {
+            if (!s.version.equals(t.current) && !keepBaseline && !s.fragmentPatch) {
                 String took = ShaderLibs.restamp(t.pack, t.titleId, t.current, t.abi, t.stamps);
                 if (!s.version.equals(took) || !new File(sh, "v-" + t.current + "/" + LIB).isFile()) {
                     deleteTree(dst);

@@ -727,4 +727,7 @@
     <string name="s2_vegetation_contiguous_note">Testa outra organização dos vértices na memória sem reduzir a folhagem. Reinicie para aplicar. A primeira execução pode demorar mais para carregar; a biblioteca de shaders é mantida.</string>
     <string name="s2_compute_optimized">Otimizar compute (teste)</string>
     <string name="s2_compute_optimized_note">Testa grupos menores de trabalho na GPU, preservando a imagem. Desative para comparar com o processamento anterior. Reinicie o jogo para aplicar.</string>
+    <string name="s2_fragment_optimized">Otimizar fragmento (teste)</string>
+    <string name="s2_fragment_optimized_note">Usa o pacote de fragmento da cena importado separadamente. Desative para restaurar o shader original. Reinicie o jogo para aplicar.</string>
+    <string name="s2_fragment_imported">Pacote de fragmento da cena importado. A biblioteca completa e a vegetação foram preservadas. Reinicie o jogo para aplicar.</string>
 </resources>

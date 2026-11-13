@@ -14,11 +14,11 @@ class VegetationOptimization(unittest.TestCase):
     @unittest.skipUnless(shutil.which("java"), "JDK required")
     def test_setting_switches_only_plane_scatter_with_full_foliage_retained(self):
         prefs = (JAVA / "Prefs.java").read_text()
-        methods = "\n".join(re.findall(r"    static (?:boolean|void) (?:fullVegetation|vegetationOptimized|vegetationContiguous|computeOptimized)\([^\n]+", prefs))
-        self.assertEqual(methods.count("static "), 8)
+        methods = "\n".join(re.findall(r"    static (?:boolean|void) (?:fullVegetation|vegetationOptimized|vegetationContiguous|computeOptimized|fragmentOptimized)\([^\n]+", prefs))
+        self.assertEqual(methods.count("static "), 10)
         activity = (JAVA / "GameActivity.java").read_text()
-        env = "\n".join(re.findall(r'            if \(Prefs.OCARINA_TITLE.equals\(id\)\) env.add\("DM_VK_(?:VEGETATION|MEMU_PLANE_LUT|MEMU_COALESCED|OOT_CS_RETILE)=[^\n]+', activity))
-        self.assertEqual(env.count("env.add"), 4)
+        env = "\n".join(re.findall(r'            if \(Prefs.OCARINA_TITLE.equals\(id\)\) env.add\("DM_VK_(?:VEGETATION|MEMU_PLANE_LUT|MEMU_COALESCED|OOT_CS_RETILE|OOT_FRAGMENT_AST)=[^\n]+', activity))
+        self.assertEqual(env.count("env.add"), 5)
         settings = (JAVA / "GameSettings.java").read_text()
         self.assertIn(".toggle(a, Prefs.vegetationOptimized(a, id), (b, on) -> Prefs.vegetationOptimized(a, id, on))", settings)
         source = '''import java.util.*;
@@ -49,6 +49,11 @@ public class Probe extends Context {
     check(p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
     check(p.env.contains("DM_VK_MEMU_COALESCED=0"));
     check(p.env.contains("DM_VK_OOT_CS_RETILE=1"));
+    check(p.env.contains("DM_VK_OOT_FRAGMENT_AST=1"));
+    Prefs.fragmentOptimized(p, id, false); p.environment(id);
+    check(p.env.contains("DM_VK_OOT_FRAGMENT_AST=0") && p.env.contains("DM_VK_OOT_CS_RETILE=1") && p.env.contains("DM_VK_VEGETATION=1"));
+    Prefs.fragmentOptimized(p, id, true); p.environment(id);
+    check(p.env.contains("DM_VK_OOT_FRAGMENT_AST=1"));
     Prefs.computeOptimized(p, id, false); p.environment(id);
     check(p.env.contains("DM_VK_OOT_CS_RETILE=0") && p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
     Prefs.computeOptimized(p, id, true); p.environment(id);

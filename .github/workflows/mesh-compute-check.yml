@@ -10,6 +10,9 @@ on:
       - dm/gfx/tools/tests/test_banana_input_caches.py
       - dm/gfx/vk_android/vka_draw.c
       - dm/gfx/vk_android/vka.h
+      - dm/gfx/vk_android/vka_fragment_patch.h
+      - dm/gfx/tools/fragment_gpu_probe.py
+      - dm/tools/tests/test_fragment_gpu_probe.py
       - dm/gfx/vk_android/vka_spvpatch.c
       - dm/gfx/tools/tests/test_ocarina_compute_virtual_retile.py
       - dm/host/tests/compute/component_ids.spvasm
@@ -36,6 +39,11 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write('VK_ICD_FILENAMES=' + paths[0] + '\n')
           PY
+      - name: Verify fragment comparison and negative control
+        run: |
+          python3 -m venv /tmp/fragment-probe-venv
+          /tmp/fragment-probe-venv/bin/pip install vulkan==1.3.275.1 numpy==2.3.5
+          /tmp/fragment-probe-venv/bin/python -m unittest discover -s dm/tools/tests -p test_fragment_gpu_probe.py -v
       - name: Compare actual GPU exports and generated vertex readers
         env:
           MEMU_TEST_VULKAN: '1'

@@ -175,8 +175,8 @@ class VegetationSupplement(unittest.TestCase):
 #include "vka_shlib.h"
 #include "vka_vegetation_supplement.h"
 #include "../nvn/dmsh_chain_vk.h"
-static vka_shlib g_lib, g_hot, g_vegetation;
-static int g_hot_loaded, g_vegetation_loaded;
+static vka_shlib g_lib, g_hot, g_vegetation, g_fragment_ast;
+static int g_hot_loaded, g_vegetation_loaded, g_fragment_ast_loaded;
 #define VKA_ENV(n,d) (d)
 #define VLOG(...) ((void)0)
 static int oot_hot_scene_fragment_compatible(const dmsh_vk_entry*a,const dmsh_vk_entry*b){return 0;}

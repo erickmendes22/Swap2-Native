@@ -66,6 +66,7 @@ jobs:
           # be exported/imported byte for byte on the 0.1.6 launcher.
           command -v javac && command -v java
           python3 -m unittest discover -s dm/tools/tests -p 'test_android_shaderzip.py' -v
+          python3 -m unittest discover -s dm/tools/tests -p 'test_fragment_patch.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cold_build_memory.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_raw_gmem_fast1.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v101_paths.py'

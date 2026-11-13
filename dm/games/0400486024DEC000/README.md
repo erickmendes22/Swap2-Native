@@ -319,3 +319,51 @@ The source-verified real shader now transforms successfully and both original/tr
 
 
 The controlled APK exposes `Optimize compute (test)` / `Otimizar compute (teste)` independently of foliage. It defaults ON (`DM_VK_OOT_CS_RETILE=1`); OFF selects the original compute on restart. The JVM regression executes the actual persistent preference and launch environment to verify that changing it does not alter foliage, plane lookup or coalesced storage settings. Keep those three established foliage settings ON for the next same-camera compute ON/OFF comparison.
+
+### Build 124 device result and bounded fragment AST alternative (2026-11-13)
+
+The user's 07:50:25 log confirms the component-pointer compute retile actually
+runs (six virtualized scalar builtin loads, physical 8x4x2 workgroups). Warm
+1500/1800-frame summaries move from 25.135 to 24.595 ms/frame and GPU
+24.680 to 24.140 ms. These separate sessions are not an isolated causal
+benchmark: the sampled `9e6b` compute remains about 1.3–1.4 ms, so do not credit
+the whole ~0.54 ms to compute. Graphics remains about 14 ms, mesh about 4 ms.
+The first 16-draw scene block consistently identifies all 16 fragments as
+`1e4d2630d24846d0` and costs about 3.25–3.30 ms. This includes vertex, depth,
+ROP and pass overhead, not 3.3 ms of removable fragment ALU.
+
+The actual uploaded `.ctl/.code` captures were verified against their program
+keys. The locked translator's non-debug AST mode compiles `1e4d`, with identical
+reflection, descriptor resources and stage interface. The official normal-mode
+one-key build reproduces the full manifest's entry digest `62a0bcaaa922986f`.
+Do **not** enable this mode globally: `5ad6` and `9e6b` fail in the translator
+with an AST operand cast error. Repeating existing local ALU CSE removes zero
+additional operations in these captured fragments.
+
+For the **final Vulkan base module**, code size falls 231,172 to 155,756 bytes.
+After applying the same diagnostic `spirv-opt -O` to both final modules,
+instructions fall 4,125 to 2,982, conditional branches 95 to 75, while all
+18 image samples remain. Earlier raw-frontend instruction counts are not the
+final Vulkan counts. These figures describe code, not predicted phone FPS.
+
+Both final base and alpha-test variants passed 12 synthetic GPU comparisons
+each (128x128 RGBA32F, four finite uniform patterns, three alternating runs).
+Every comparison had max absolute error 0, all 65,536 components finite and
+nontrivial patterns with 21,239/41,875 distinct values. Textures retain their
+actual dimensionality and all sample operations. Important limits: descriptors
+are specialized to index zero on **both probe copies**, textures have one mip,
+SSBO/support data are synthetic, and this is SwiftShader, not a game replay
+or Adreno timing. The unchanged, fully indexed production modules are the
+ones packaged. Warm software timestamps improve but do not establish an
+Adreno speedup or guarantee equivalence on all game inputs.
+
+Build 125 adds only the explicitly imported, one-entry fragment experiment
+(documented in `android/SHADERS.md`). Its real version is `a16478ff8bcd`,
+frontend `de2cd6b79f33`, same ABI and profile inputs. Normal headers and all
+42,339+six replacement+508 supplement bytes stay intact. The APK has an
+independent per-game switch and logs actual key selection. Import/recovery
+and native resource/IO mismatch refusals are tested; the baseline and optimized
+private libraries pass the production gate. No resolution, foliage, texture
+samples, SGSR1 or shader quality setting is reduced. Phone performance and
+visual validation of this alternative remain necessary; do not advertise a
+measured FPS gain from its synthetic test.

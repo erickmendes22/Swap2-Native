@@ -273,3 +273,40 @@ Full DKB build on the Mac (`J=12`, 14.5 min), library `v-9b3a2294056a`: **22,852
 7. **Pool view types:** see the aliasing note above; and a combined or storage image traced to no slot is not in the ABI (kind `UNKNOWN`; none on DKB).
 8. **Tessellation:** the build passes hull and domain shaders through like the others (stage ranges 1 and 2), but no game here has one and their `c0` storage tables were never measured.
 9. **Not run on the phone.** Everything above is checked by `spirv-val` only; no module has been through Adreno's compiler.
+
+## Separately imported Ocarina fragment experiment (Build 125)
+
+The `1e4d2630d24846d0` scene fragment has a source-verified alternative from
+`XLATE_DEBUG=0`, enabling the locked translator's AST optimization. This is
+**not** a global translation-mode switch: other captured shaders fail that
+mode. Normal full/hot/vegetation libraries and their `b127f6d0b014` chain stay
+unchanged. The alternative was built with its actual distinct frontend
+`de2cd6b79f33` and Vulkan `a16478ff8bcd` versions, ABI `674db0a4ff79`.
+No version header is relabelled to bypass the chain checks.
+
+An explicit `swap2-shaders` format-1 zip carries the additional manifest row
+`purpose\tocarina-fragment-ast-v1` (a real tab). It still has exactly the three
+STORED entries `manifest.tsv`, `inputs.tsv`, `dmsh_vk.lib`, with SHA-256, CRC
+and size checks. Import accepts only that Ocarina title, version, translator
+chain, exact ABI/profile inputs, one entry at the normal index offset, and the
+expected fragment key/stage. It atomically installs into
+`<pack>/shaders/fragment-ast/`, with its own staging, rollback and recovery.
+It never overwrites or advertises this one-entry file as the complete library.
+
+The renderer opens this optional file independently, verifies game, ABI,
+profile inputs, subgroup/alignment conventions and the exact base entry's
+resource bindings, c1 bytes, flags, output/input metadata and module variants.
+Absent or incompatible replacements fall back without blocking gameplay.
+`Ocarina fragment AST ACTIVE` means the key was actually selected; `ready`
+alone does not prove execution. The per-game **Optimize fragment (test)**
+setting maps to `DM_VK_OOT_FRAGMENT_AST`; OFF plus restart restores the previous
+shader path with all files preserved. Importing the small patch requires no
+full shader preparation. The APK itself contains no game shader bytes.
+
+Validation uses `t_fragment_patch.c` against the production linkage gate,
+JVM importer tests including unchanged base/hot/vegetation files and interrupted
+replacement recovery, and `fragment_gpu_probe.py` with an explicit Vulkan 1.3
+ICD. Its synthetic fixture passes an equivalent shader and deliberately fails
+a changed-output shader. Real captured shader probe results and their limits
+are recorded in the game's README. Shader captures and compiled artifacts
+remain private and outside Git.

@@ -31,7 +31,7 @@ class ColdShaderBuild(unittest.TestCase):
         self.assertIn('expectedInputs.equals(inputs)', LIBS)
         self.assertIn('&& !compatibleOcarinaBase()', ZIP)
         self.assertIn('boolean keepBaseline = ShaderLibs.trustedOcarinaBase', ZIP)
-        self.assertIn('if (!s.version.equals(t.current) && !keepBaseline)', ZIP)
+        self.assertIn('if (!s.version.equals(t.current) && !keepBaseline && !s.fragmentPatch)', ZIP)
         self.assertIn('ShaderLibs.trustedOcarinaBase(packDir, titleId', ZIP)
         self.assertIn('"v-b6b21fb5753a"', VK)
 

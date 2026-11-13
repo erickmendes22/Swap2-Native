@@ -14,6 +14,7 @@
 #include "vka_spvpatch.h"
 #include "vka_abi_compat.h"  // audited source-level ABI extension certificates
 #include "vka_vegetation_supplement.h"
+#include "vka_fragment_patch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,8 @@
 // compiled small hot-shader library can override only its listed keys while
 // everything else keeps running from the stable full library.
 static vka_shlib g_lib, g_hot, g_vegetation;
+static vka_shlib g_fragment_ast;
+static int g_fragment_ast_loaded;
 static int g_lib_state, g_hot_loaded, g_vegetation_loaded;   // 0 not tried, 1 loaded, -1 none
 static char g_lib_path[1024];                       // the library loaded (vka_shader_lib_path)
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
@@ -445,6 +448,33 @@ static int lib_load(void) {
                 }
             } else VRED("vegetation supplement rejected: %s", ve);
         } else VLOG("vegetation supplement missing: prepare the 508-stage static update; full base preserved");
+    }
+    // Separately imported, correctly versioned one-key AST experiment. Never
+    // replace the base, six-shader repair or vegetation supplement on disk.
+    if (!(e && *e) && !strcmp(DM_GAME_ID, "0400486024DEC000")) {
+        char fp[1024], fe[256];
+        snprintf(fp, sizeof fp, "%s/shaders/fragment-ast/" DMSH_VK_LIB_FILE, dir);
+        if (!access(fp, R_OK)) {
+            if (!VKA_ENV("DM_VK_OOT_FRAGMENT_AST", 1)) {
+                VLOG("Ocarina fragment AST disabled: original scene shader selected");
+            } else if (!vka_shlib_open(&g_fragment_ast, fp, "de2cd6b79f33", "a16478ff8bcd",
+                                       DM_GAME_ID, DMSH_VK_ABI, fe, sizeof fe)) {
+                VRED("Ocarina fragment AST rejected (%s); original shader retained", fe);
+            } else {
+                char version[17], chain[17];
+                vka_shlib_str(g_fragment_ast.h->vk_chain, version);
+                vka_shlib_str(g_fragment_ast.h->chain, chain);
+                if (strcmp(version, "a16478ff8bcd") || strcmp(chain, "de2cd6b79f33") ||
+                    g_fragment_ast.h->entry_count != 1 ||
+                    !vka_fragment_patch_compatible(&g_lib, &g_fragment_ast, UINT64_C(0x1e4d2630d24846d0))) {
+                    VRED("Ocarina fragment AST rejected (version, resources or IO differ); original shader retained");
+                    vka_shlib_close(&g_fragment_ast);
+                } else {
+                    g_fragment_ast_loaded = 1;
+                    VLOG("Ocarina fragment AST ready: 1e4d exact resource/IO match, original libraries preserved");
+                }
+            }
+        }
     }
     const char *ck = getenv("DM_VK_SHLIB_CHECK");
     if (ck && atoi(ck)) vka_shlib_check_all(&g_lib);
@@ -996,6 +1026,14 @@ static int oot_hot_scene_fragment_compatible(const dmsh_vk_entry *old,
     return 1;
 }
 static const vka_shlib *library_for_key(uint64_t key) {
+    if (g_fragment_ast_loaded && key == UINT64_C(0x1e4d2630d24846d0)) {
+        static int logged;
+        if (!logged) {
+            logged = 1;
+            VLOG("Ocarina fragment AST ACTIVE: 1e4d optimized module selected; DM_VK_OOT_FRAGMENT_AST=0 restores original shader");
+        }
+        return &g_fragment_ast;
+    }
     if (g_vegetation_loaded && !vka_shlib_find(&g_lib, key) &&
         vka_shlib_find(&g_vegetation, key)) return &g_vegetation;
     if (!g_hot_loaded) return &g_lib;

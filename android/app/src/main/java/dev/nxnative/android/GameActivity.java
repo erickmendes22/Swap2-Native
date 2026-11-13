@@ -371,6 +371,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_VEGETATION=" + (Prefs.fullVegetation(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_PLANE_LUT=" + (Prefs.vegetationOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_COALESCED=" + (Prefs.vegetationContiguous(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FRAGMENT_AST=" + (Prefs.fragmentOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_CS_RETILE=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
             if (Prefs.ramSaver(this, id)) {
                 // TMPDIR is the app's private cache; the native backend reserves storage before mapping.

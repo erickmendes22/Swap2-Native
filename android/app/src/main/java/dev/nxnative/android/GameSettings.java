@@ -218,6 +218,10 @@ final class GameSettings {
                     .toggle(a, Prefs.computeOptimized(a, id), (b, on) -> Prefs.computeOptimized(a, id, on));
             compute.value(a.getString(R.string.s2_compute_optimized_note));
             box.addView(compute.view);
+            Ui.Setting fragment = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_fragment_optimized), null)
+                    .toggle(a, Prefs.fragmentOptimized(a, id), (b, on) -> Prefs.fragmentOptimized(a, id, on));
+            fragment.value(a.getString(R.string.s2_fragment_optimized_note));
+            box.addView(fragment.view);
         }
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip, "Economia de RAM (usa armazenamento)", null)
                 .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
