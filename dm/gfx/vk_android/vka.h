@@ -324,6 +324,7 @@ void vka_graphics_read_barrier_at(VkCommandBuffer cb, const char *file, int line
 // DM_VK_GPUPROF (vka_gprof.c): GPU timestamps between the steps of a profiled frame
 extern int vka_gp_active;
 void vka_gp_mark(VkCommandBuffer cb, const char *file, int line);
+void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key);  // sampled exact compute mesh/task dispatch key
 void vka_gp_pass(const char *desc);
 void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh, uint64_t task,
                  uint32_t units, uint32_t instances, int indirect);
