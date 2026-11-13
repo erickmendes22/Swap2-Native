@@ -85,10 +85,10 @@ final class Prefs {
      * default (Profile.ndsrDefault: its ndsr_default row, else the network); a choice equal to that default is not kept, so Restore defaults and a later change of the
      * profile's default both reach it. Lines of env.txt, the game's extra environment lines or env-&lt;title ID&gt;.txt win over it for a run
      */
-    static final String NDSR_NET = "net", NDSR_FSR = "fsr", NDSR_SGSR = "sgsr";
+    static final String NDSR_NET = "net", NDSR_FSR = "fsr", NDSR_SGSR = "sgsr", NDSR_SGSR_COMPUTE = "sgsr-compute";
     static String ndsr(Context c, String titleId) {
         String v = of(c).getString(gameKey("ndsr", titleId), null);
-        if (NDSR_FSR.equals(v) || NDSR_NET.equals(v) || NDSR_SGSR.equals(v)) return v;
+        if (NDSR_FSR.equals(v) || NDSR_NET.equals(v) || NDSR_SGSR.equals(v) || NDSR_SGSR_COMPUTE.equals(v)) return v;
         Profile p = Profile.of(titleId);
         return p != null ? p.ndsrDefault() : NDSR_NET;
     }
@@ -96,7 +96,7 @@ final class Prefs {
     static void ndsr(Context c, String titleId, String v) {
         Profile p = Profile.of(titleId);
         String def = p != null ? p.ndsrDefault() : NDSR_NET;
-        put(c, gameKey("ndsr", titleId), (NDSR_FSR.equals(v) || NDSR_NET.equals(v) || NDSR_SGSR.equals(v)) && !v.equals(def) ? v : null);
+        put(c, gameKey("ndsr", titleId), (NDSR_FSR.equals(v) || NDSR_NET.equals(v) || NDSR_SGSR.equals(v) || NDSR_SGSR_COMPUTE.equals(v)) && !v.equals(def) ? v : null);
     }
 
     /**
