@@ -493,7 +493,7 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
     INS(&A, OpDecorate, in_wg, DecBuiltIn, BIWorkgroupId); INS(&A, OpDecorate, in_nwg, DecBuiltIn, BINumWorkgroups);
     if (!lidvar) { lidvar = gvar(&B, ptr(&B, SCInput, B.t_u32), SCInput); INS(&A, OpDecorate, lidvar, DecBuiltIn, BILocalInvocationIndex); }
     uint32_t p_priv_u32 = ptr(&B, SCPrivate, B.t_u32), p_priv_v3u = ptr(&B, SCPrivate, B.t_v3u), p_wg_u32 = ptr(&B, SCWorkgroup, B.t_u32);
-    uint32_t pv_a = gvar(&B, p_priv_u32, SCPrivate), pv_b = gvar(&B, p_priv_u32, SCPrivate), pv_c = gvar(&B, p_priv_u32, SCPrivate);   // mesh: vertex base, primitive base, index bias; task: its slot
+    uint32_t pv_a = gvar(&B, p_priv_u32, SCPrivate), pv_b = gvar(&B, p_priv_u32, SCPrivate), pv_c = gvar(&B, p_priv_u32, SCPrivate), pv_taskidx = gvar(&B, p_priv_u32, SCPrivate);   // mesh: vertex base, primitive base, index bias; task: its slot
     uint32_t new_wgvar = wgvar;   // the program's WorkgroupId variable, re-declared Private (same id) after the new types
     // The chains into the old workgroup ID variable: their pointer types as Private (made before the functions are copied)
     uint32_t pin_from[8] = {0}, pin_to[8] = {0}; int npin = 0;
@@ -720,7 +720,7 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                 // When nt <= 256, eight steps yield exactly the same upper
                 // offset, including empty tasks with repeated offsets.
                 // Execute the original 17-step search for larger task lists.
-                // The two paths merge their SSA index via OpPhi.
+                // The two paths merge through a Private scalar index.
                 // DM_VK_MEMU_SHORT_TASK_SEARCH=0 is the exact old fallback.
                 uint32_t ti;
                 if (vka_memu_short_task_search()) {
@@ -739,6 +739,7 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                         its = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, its);
                         rems = op2(&f, OpISub, B.t_u32, rems, half);
                     }
+                    INS(&O, OpStore, pv_taskidx, its);
                     INS(&O, OpBranch, lm);
                     INS(&O, OpLabel, ll);
                     uint32_t itl = c0, reml = nt;
@@ -750,10 +751,14 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                         itl = sel(&f, B.t_u32, op2(&f, OpULessThanEqual, B.t_bool, o, flat), mid, itl);
                         reml = op2(&f, OpISub, B.t_u32, reml, half);
                     }
+                    INS(&O, OpStore, pv_taskidx, itl);
                     INS(&O, OpBranch, lm);
                     INS(&O, OpLabel, lm);
-                    ti = B.next++;
-                    INS(&O, OpPhi, B.t_u32, ti, its, ls, itl, ll);
+                    // Merge through Private storage rather than asserting
+                    // the branch entry labels are the phi's direct
+                    // predecessors: SPIR-V validation forbids that if
+                    // a generated helper splits an instruction block.
+                    ti = ld(&f, B.t_u32, pv_taskidx);
                 } else {
                     uint32_t rem = nt; ti = c0;
                     for (int j = 0; j < 17; ++j) {
