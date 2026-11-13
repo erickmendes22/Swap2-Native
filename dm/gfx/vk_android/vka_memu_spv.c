@@ -149,11 +149,6 @@ static void member_builtins(const mod_t *m, uint32_t st, int32_t out[8]) {
 enum { K_POS = 1, K_VLOC, K_PLOC, K_IDX, K_CULL };
 typedef struct { uint32_t id; int kind, k; uint32_t elem; int32_t mb[8]; } outvar;   // k: the location's arena order; mb: the block's member BuiltIns (K_POS)
 static int cmp_u8(const void *a, const void *b) { return (int)*(const uint8_t *)a - (int)*(const uint8_t *)b; }
-int vka_memu_short_task_search(void) {
-    // Restart-only SPIR-V compile choice, never modified on a live pipeline.
-    const char *v = getenv("DM_VK_MEMU_SHORT_TASK_SEARCH");
-    return v && !strcmp(v, "1");
-}
 int vka_memu_coalesced(void) {
     const char *value = getenv("DM_VK_MEMU_COALESCED");
     return value && !strcmp(value, "1");
