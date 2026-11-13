@@ -123,6 +123,19 @@ final class Prefs {
     static void skipHeavyFragment(Context c, String titleId, boolean on) {
         of(c).edit().putBoolean(gameKey("oot_skip_heavy_fs", titleId), on).commit();
     }
+    // Qualcomm/Turnip mesh route A/B. Default 0 retains the known-good
+    // original-library native + 508 supplemental compute hybrid.
+    // 1: all mesh draws through compute; 2: experimental all native.
+    static int ocarinaMeshRoute(Context c, String titleId) {
+        if (!OCARINA_TITLE.equals(titleId)) return 0;
+        int mode = of(c).getInt(gameKey("oot_mesh_route", titleId), 0);
+        return mode >= 0 && mode <= 2 ? mode : 0;
+    }
+    static void ocarinaMeshRoute(Context c, String titleId, int mode) {
+        if (!OCARINA_TITLE.equals(titleId)) return;
+        of(c).edit().putInt(gameKey("oot_mesh_route", titleId),
+                mode >= 0 && mode <= 2 ? mode : 0).commit();
+    }
     static boolean fullVegetation(Context c, String titleId) { return of(c).getBoolean(gameKey("full_vegetation", titleId), true); }
     static void fullVegetation(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on).commit(); }
     static boolean vegetationOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_optimized", titleId), true); }
