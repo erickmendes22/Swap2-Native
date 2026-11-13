@@ -130,6 +130,10 @@ final class GraphicsOptions {
                 Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id))) m = 4;
         if (Prefs.OCARINA_TITLE.equals(id) &&
                 Prefs.NDSR_SGSR_COMPUTE.equals(Prefs.ndsr(c, id))) m = 2;
+        // Direct scene/output 1280x720: prevent a stale SGSR/FSR filter
+        // preference from introducing an unnecessary second GPU upscale.
+        if (Prefs.OCARINA_TITLE.equals(id) &&
+                OcarinaRenderProfile.direct720(Prefs.renderProfile(c, id))) m = 2;
         out.add("DM_VK_PRESENT_FILTER=" + m);
         out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));
         out.add("DM_VK_FSR_SHARP=" + sharp(c, id));
@@ -163,7 +167,8 @@ final class GraphicsOptions {
             // The 0.25 legacy chain bypass is validated only with a final
             // SGSR presentation, not when SGSR runs inside NDSR.
             out.add("DM_VK_OOT_SGSR_CHAIN=" +
-                    (Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id)) ? 1 : 0));
+                    (!OcarinaRenderProfile.direct720(Prefs.renderProfile(c, id)) &&
+                    Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id)) ? 1 : 0));
             // Backported from iOS: independent consecutive NVN compute dispatches
             // no longer force individual GPU barriers. Does not rebuild shaders.
             out.add("DM_VK_OOT_DISPATCH_OVERLAP=1");
