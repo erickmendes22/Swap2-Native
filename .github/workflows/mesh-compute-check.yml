@@ -76,6 +76,11 @@ jobs:
         env:
           MEMU_TEST_VULKAN: '1'
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_memu_*.py' -v
+      - name: Verify Vulkan GPU readback under short task index search
+        env:
+          MEMU_TEST_VULKAN: '1'
+          DM_VK_MEMU_SHORT_TASK_SEARCH: '1'
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_memu_coalesced_readback.py -v
       - name: Verify scalar component compute retile on the GPU
         env:
           MEMU_TEST_VULKAN: '1'
