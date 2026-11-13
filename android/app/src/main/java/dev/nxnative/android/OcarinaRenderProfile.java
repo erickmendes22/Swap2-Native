@@ -10,9 +10,10 @@ import java.util.List;
  */
 final class OcarinaRenderProfile {
     private OcarinaRenderProfile() {}
-    static int checked(int mode) { return mode >= 0 && mode <= 2 ? mode : 0; }
+    static int checked(int mode) { return mode >= 0 && mode <= 3 ? mode : 0; }
+    static boolean direct720(int mode) { return checked(mode) == 3; }
     static String scale(int mode, String selected) {
-        return mode == 1 ? "0.5" : mode == 2 ? "0.75" : selected;
+        return mode == 1 ? "0.5" : mode == 2 ? "0.75" : mode == 3 ? "1.0" : selected;
     }
     static List<String> environment(int mode) {
         return checked(mode) == 0 ? Collections.emptyList()
