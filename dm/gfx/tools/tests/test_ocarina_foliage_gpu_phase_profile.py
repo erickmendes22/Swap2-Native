@@ -33,11 +33,11 @@ class FoliagePhaseProfile(unittest.TestCase):
         self.assertLess(walk.index('memu_walk(p, MEMU_MESH)'), walk.index('"MEMU_MESH"'))
         self.assertLess(walk.index('vka_memu_batch(MEMU_END'), walk.index('"MEMU_END"'))
 
-    def test_trace_is_sparse_and_disabled_without_foliage(self):
+    def test_trace_is_sparse_and_compares_foliage_on_off(self):
         s = (VK / "vka_gprof.c").read_text()
         self.assertIn('int every = VKA_ENV("DM_VK_GPUPROF",', s)
         self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")', s)
-        self.assertIn('VKA_ENV("DM_VK_VEGETATION", 1) ? 300 : 0', s)
+        self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000") ? 300 : 0', s)
         self.assertIn('VLOG("gpu prof foliage phases:', s)
         for phase in ('MEMU_START','MEMU_ADD','MEMU_SETUP','MEMU_TASK','MEMU_DIST','MEMU_MESH','MEMU_END'):
             self.assertIn(f'"{phase}"',s)
