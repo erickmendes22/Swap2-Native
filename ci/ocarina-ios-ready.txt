@@ -503,3 +503,9 @@ Build 157 — depth-dirty cave query pass optimization
 - Extend the production oq_report C harness to verify 128 combinations (query report order, OFF behavior, depth read-only vs depth-written).
 - Keep Build156's Ocarina V11 0.1.6 branch, com.swap2native.ootv11ios package, original test signing key SHA-256 a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad, increasing versionCode, and a single update APK.
 - Do not modify game shader ABI or the previously prepared shader library. FPS and cave correctness must be tested on device.
+
+
+Build 158 GPU masked: signed test candidate for heavy vegetation scene, based on tested Build157 b2c5dbe (cave walls preserved).
+- Ports paired fragment-input masked mesh compute producer and vertex consumer. Both modules always selected or both unchanged; no shader ABI rebuild and no renderer occlusion change.
+- Independent Vulkan Lavapipe synthetic benchmark, exact surviving SSBO output: 1.354x (16 workgroups), 2.090x (64), 2.604x (128); production FPS still unmeasured.
+- Keep package com.swap2native.ootv11ios, same persistent signing key SHA256 a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad, one APK and increasing versionCode. Do not use cave-area FPS as performance reference: compare user heavy area 12:26:39 (43.9 FPS baseline).
