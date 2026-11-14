@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 SRC = (Path(__file__).resolve().parents[2] / "vk_android" / "vka_gprof.c").read_text()
+SHADER = (Path(__file__).resolve().parents[2] / "vk_android" / "vka_shader.c").read_text()
 
 
 class OcarinaGraphicsGPUProfile(unittest.TestCase):
@@ -34,6 +35,23 @@ class OcarinaGraphicsGPUProfile(unittest.TestCase):
         # Previously observed stable frame ~1077 timestamps of which ~165
         # were 16-draw chunks; with ~2400 draws, new count remains in budget.
         self.assertLess(1077 - 165 + (2400 + 3) // 4, 2048)
+
+    def test_missing_raster_shader_sources_captured_once_with_existing_shdump(self):
+        cap = SHADER[SHADER.index("static int ocarina_hot_shader_slot("):
+                     SHADER.index("static int capture_matches(")]
+        keys = re.findall(r"UINT64_C\\(0x([0-9a-f]{16})\\)", cap)
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertLess(len(keys), 32)  # unsigned done bitmask has exactly 32 bits.
+        for key in ("a566b7687b712ff3", "a1d325b7a1c81256",
+                    "9f36b8ee91e736c6", "438955b0098580f7",
+                    "09bdc3e13d9f2461"):
+            self.assertIn(key, keys)
+        capture = SHADER[SHADER.index("static void capture_hot_shader_source("):
+                         SHADER.index("static int capture_ocarina_stage_pair(")]
+        self.assertIn("unsigned mask = 1u << slot;", capture)
+        self.assertIn("capture_shader_source(p, i, key)", capture)
+        self.assertIn('getenv("DM_NVN_SHDUMP")', SHADER)
+        self.assertIn("if (key == keys[i]) return (int)i;", cap)
 
     def test_gpu_profiler_only_not_renderer_changes(self):
         self.assertIn('mark(g_cb, 0, "GFX_CHUNK", 0)', SRC)
