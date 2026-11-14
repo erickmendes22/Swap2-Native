@@ -71,6 +71,11 @@ jobs:
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_classic_encoder_order.py -v
       - name: Compare cached classic passes and dynamic rendering on Vulkan
         run: python3 -m unittest discover -s dm/tools/tests -p test_renderpass_cache_gpu.py -v
+      - name: Verify real occlusion query counts and depth/colour parity for cave barrier
+        env:
+          MEMU_TEST_VULKAN: '1'
+          VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+        run: python3 -m unittest discover -s dm/tools/tests -p test_cave_query_gpu.py -v
       - name: Compile actual texture feedback ring policy and compare all texture IDs
         run: |
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pool_fb_direct.py' -v

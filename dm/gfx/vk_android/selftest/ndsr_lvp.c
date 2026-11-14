@@ -112,6 +112,10 @@ static int init(void) {
     uint32_t qi = 0; while (qi < nq && !(qf[qi].queueFlags & VK_QUEUE_COMPUTE_BIT)) qi++;
     float prio = 1; VkDeviceQueueCreateInfo qc = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, .queueFamilyIndex = qi, .queueCount = 1, .pQueuePriorities = &prio};
     VkPhysicalDeviceFeatures f = {.shaderStorageImageWriteWithoutFormat = VK_TRUE};
+#ifdef VKA_CAVE_QUERY_TEST
+    if (!have.occlusionQueryPrecise) return 0;
+    f.occlusionQueryPrecise = VK_TRUE;
+#endif
     VkDeviceCreateInfo dc = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1, .pQueueCreateInfos = &qc, .pEnabledFeatures = &f};
 #ifdef VKA_RENDERPASS_TEST
     VkPhysicalDeviceVulkan13Features f13={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,.dynamicRendering=VK_TRUE};

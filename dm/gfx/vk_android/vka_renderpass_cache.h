@@ -1,6 +1,7 @@
 // Cached classic render-pass backend from Banana Native Android snapshot
 // 0bac816c8470f3b5a65f23dc011bdcc48ffcd59d; adapted to preserve discard operations.
 #pragma once
+#include "vka_cave_sync.h"
 typedef struct { VkFormat cf[8]; uint32_t n; VkFormat ds; uint32_t d, s, samples, clear, discard_load, discard_store; } rpkey;   // clear: bit i colour i, bit 8 depth, bit 9 stencil
 // Every shape's render pass is kept for the run (the pipelines made against it hold no reference, but each pass begun with it does until its fence): the list grows, so a
 // shape past any cap never makes a new VkRenderPass per pass (the 256-entry array this was did, and leaked one at each)
@@ -35,7 +36,9 @@ static VkRenderPass rp_obtain(const rpkey *k) {
         dr = (VkAttachmentReference){na++, VK_IMAGE_LAYOUT_GENERAL};
     }
     VkSubpassDescription sd = {0, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, NULL, k->n, cr, NULL, k->ds ? &dr : NULL, 0, NULL};
-    VkRenderPassCreateInfo ci = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, .attachmentCount = na, .pAttachments = at, .subpassCount = 1, .pSubpasses = &sd};
+    VkSubpassDependency self = vka_cave_depth_self_dependency();
+    VkRenderPassCreateInfo ci = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, .attachmentCount = na, .pAttachments = at, .subpassCount = 1, .pSubpasses = &sd,
+        .dependencyCount = k->ds ? 1 : 0, .pDependencies = k->ds ? &self : NULL};
     VkRenderPass r = VK_NULL_HANDLE; VkResult e = vk.vkCreateRenderPass(V.dev, &ci, NULL, &r);
     if (e) { VRED_ONCE("vkCreateRenderPass %d", e); r = VK_NULL_HANDLE; }
     else {

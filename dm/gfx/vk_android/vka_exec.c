@@ -23,7 +23,7 @@ static int g_chunk_draws = -1, g_nx; static uint64_t g_chunk_d0;   // chunk(): d
 static VkCommandPool g_pool;
 static VkCommandBuffer g_cb;   // the submission being recorded (NULL without a device)
 VkCommandBuffer vka_rp_cb(void) { return g_cb; }
-typedef struct { int kind; uint32_t mode, v, type; uint64_t addr, q0, q1; } pop;   // kind 1 event, 2 counter report, 3 frame span, 4 counted samples-passed report, 5 occlusion queries given back unread (q0..q1: their sequence numbers), 6 conservative visibility snapshot (q0: proxy count)
+typedef struct { int kind; uint32_t mode, v, type; uint64_t addr, q0, q1; } pop;   // kind 1 event, 2 counter report, 3 frame span, 4 counted samples-passed report, 5 occlusion queries given back unread (q0..q1: their sequence numbers)
 static pop *g_post; static int g_npost, g_postcap;
 static uint64_t g_frame, g_stat_ops, g_stat_draws, g_stat_skipped;
 // The first NVN opcode stopping a mesh->compute batch. Record only on the
@@ -121,27 +121,12 @@ static void rc_occ_add(uint64_t a) {
     size_t j = (size_t)(a >> 4) & (g_rc_occ_cap - 1); while (g_rc_occ[j]) j = (j + 1) & (g_rc_occ_cap - 1);
     g_rc_occ[j] = a; g_rc_occ_n++;
 }
-// A later timestamp at the same address owns that record now. Conservative
-// occlusion must not poison a timestamp-based conditional clear forever.
-static void rc_occ_remove(uint64_t a) {
-    if (!a || !g_rc_occ_cap) return;
-    size_t mask = g_rc_occ_cap - 1, i = (size_t)(a >> 4) & mask;
-    while (g_rc_occ[i] && g_rc_occ[i] != a) i = (i + 1) & mask;
-    if (!g_rc_occ[i]) return;
-    g_rc_occ[i] = 0; g_rc_occ_n--;
-    // Close the probe-chain gap without tombstones or allocating a new table.
-    for (i = (i + 1) & mask; g_rc_occ[i]; i = (i + 1) & mask) {
-        uint64_t key = g_rc_occ[i]; g_rc_occ[i] = 0; g_rc_occ_n--;
-        rc_occ_add(key);
-    }
-}
 // A report recorded in the submission being recorded. A non-timestamp one goes in the occlusion set, which rc_known looks at before the list, so it takes a list entry only
 // when the set could not hold it; a second report at an address this submission already reported replaces that entry (as nvn_mtl.m's rc_note; the last RC_MERGE entries are
 // searched). Before both, every occlusion report took an entry no condition read, and a game with many of them filled the list and overflowed it. A counted samples-passed
 // report (kind 3) skips the set: it takes an entry, and its address reads from memory once its submission is done
 enum { RC_MERGE = 64 };
 static void rc_note(uint64_t a, int kind) {
-    if (kind == 1) rc_occ_remove(a);
     if (kind == 2) { rc_occ_add(a); if (rc_occ_has(a)) return; }
     for (int i = g_nrcp - 1, k = 0; i >= 0 && !g_rcp[i].fence && k < RC_MERGE; i--, k++) if (g_rcp[i].addr == a) {
         g_rcp[i].kind = kind;
@@ -334,8 +319,7 @@ enum { OQ_N = 32768, OQ_RB = 256, OQ_BATCH = 1024 }; // ring, conservative per-r
 // reduces driver round trips without changing result availability, report
 // order, query pool allocation or fallback stack memory.
 static struct { VkQueryPool pool; int precise, host; PFN_vkCmdBeginQuery begin; PFN_vkCmdEndQuery end; PFN_vkCmdResetQueryPool creset; PFN_vkResetQueryPool hreset; PFN_vkGetQueryPoolResults get; } OQ;
-static uint64_t g_oq_visible, g_oq_visible_draws; // opt-in conservative visibility, never pixel-accurate counts
-static int g_oq = -1;                      // 2 conservative draw proxies; 1 counted; 0 the constant 1 (DM_VK_OCCLUSION=0, no device or no query pool); -1 not decided yet
+static int g_oq = -1;                      // 1 counted; 0 the constant 1 (DM_VK_OCCLUSION=0, no device or no query pool); -1 not decided yet
 static int g_oq_split_pass; // startup-only Ocarina/Qualcomm cave-wall workaround, opt-in
 static int g_oq_count, g_oq_fresh, g_oq_open;   // a samples-passed reset came (draws count); a reset since the last report (the next starts from 0); a query is active in the open pass
 static uint32_t g_oq_lost;                 // draws of the segment that count 1 sample (no query, or skipped by the replay)
@@ -348,19 +332,6 @@ static int oq_on(void) {
     g_oq = 0;
     if (!VKA_ENV("DM_VK_OCCLUSION", 1)) { VLOG("occlusion queries: off (DM_VK_OCCLUSION=0): every samples-passed report writes 1"); return 0; }
     if (!vka_ok()) { VRED("occlusion queries: no device: every samples-passed report writes 1"); return 0; }
-    // Avoid the query/depth-driver interaction entirely instead of ending
-    // ~1800 tile passes/frame. This is deliberately conservative visibility:
-    // guest draws add a positive proxy count even if their pixels are hidden.
-    // Never substitute a constant 1: equal before/after values would let guest
-    // CPU visibility tests incorrectly cull the object. Legacy split remains
-    // available as an explicit diagnostic override; other drivers are unchanged.
-    if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
-        V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
-        VKA_ENV("DM_VK_OOT_CAVE_VISIBLE", 0) &&
-        !VKA_ENV("DM_VK_OQ_SPLIT_PASS", 0)) {
-        VLOG("Ocarina Keep cave walls: conservative visibility; no hardware occlusion queries or query-driven pass splits; guest counters use cumulative positive draw proxies at the original completion fences");
-        return g_oq = 2;
-    }
     VkPhysicalDeviceVulkan12Features f12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     VkPhysicalDeviceFeatures2 f2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &f12};
     vk.vkGetPhysicalDeviceFeatures2(V.pd, &f2);   // (the device was made with every feature it has: vka_dev.c)
@@ -391,11 +362,13 @@ static int oq_on(void) {
     // Cache once, not an environment/title/driver lookup at every report.
     // Keep the existing boolean-query and batched host-reset paths: the
     // workaround changes render-pass boundaries, never query accuracy/readback.
+    int cave_mode = (int)VKA_ENV("DM_VK_OQ_SPLIT_PASS", 0);
     g_oq_split_pass = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
-        V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
-        VKA_ENV("DM_VK_OQ_SPLIT_PASS", 0) != 0;
+        V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY ?
+        (cave_mode == 2 ? 2 : cave_mode != 0) : 0;
     if (g_oq_split_pass)
-        VLOG("Ocarina Keep cave walls: counted depth-query pass splits enabled (Qualcomm); attachment-scoped dependencies and batched queries retained");
+        VLOG("Ocarina Keep cave walls: real GPU queries retained, %s (Qualcomm)",
+             g_oq_split_pass == 2 ? "framebuffer-local depth barrier in cached passes; split fallback if unavailable" : "original per-query pass split");
     return g_oq = 1;
 }
 typedef struct { VkCommandBuffer cb; uint32_t q, end; } oq_arg;
@@ -405,7 +378,6 @@ static void oq_close(void) { if (g_oq_open) { g_oq_open = 0; oq_rec((uint32_t)((
 void vka_oq_pass_end(void) { oq_close(); }   // vka_rp_end: the pass's query ends before the pass
 void vka_oq_draw(void) {   // vka_draw: a draw about to be recorded in the open pass; while counting, the pass's first draw (or the first after a report) begins a query
     if (!g_oq_count || g_oq_open || !g_cb) return;
-    if (g_oq == 2) { g_oq_visible++; g_oq_visible_draws++; return; }
     uint64_t ready = atomic_load_explicit(&g_oq_ready, memory_order_acquire);
     if (g_oq_head >= ready) { g_oq_lost++; g_oqs_full++; return; }   // the ring is full (or not reset yet): this draw counts 1
     uint64_t base = OQ.host ? ready - OQ_N : atomic_load_explicit(&g_oq_freed, memory_order_relaxed);
@@ -417,11 +389,6 @@ static void oq_sk1(uint64_t s0) { if (!g_oq_count) return; uint64_t s = 0; vka_d
 static void oq_reset(void) {   // OP_RESET_COUNTER(SAMPLES_PASSED)
     g_oqs_reset++;
     if (!oq_on()) return;
-    if (g_oq == 2) {
-        g_oq_visible = 0; g_oq_count = 1; g_oq_fresh = 1; g_oq_lost = 0;
-        g_oq_epoch++; g_oq_lost_epoch_total = 0;
-        return;
-    }
     oq_close();
     if (g_oq_head > g_oq_seg0) post((pop){5, 0, 0, 0, 0, g_oq_seg0, g_oq_head});   // the queries since the last report: no report reads them
     g_oq_seg0 = g_oq_head; g_oq_count = 1; g_oq_fresh = 1; g_oq_lost = 0;
@@ -431,14 +398,6 @@ static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_P
     g_oqs_rep++;
     if (!oq_on()) return 0;
     if (!g_oq_count) { g_oqs_nores++; return 0; }
-    if (g_oq == 2) {
-        // Snapshot now, publish only at this submission's normal completion.
-        // Reports do not reset the running total; RESET_COUNTER does. Skipped
-        // or unavailable draws count visible too, matching the existing fallback.
-        g_oq_visible += g_oq_lost; g_oq_lost = 0;
-        post((pop){6, 0, 0, t, ad, g_oq_visible, 0});
-        return 2; // mark the report as conservative/unknown, not a real query
-    }
     // No command buffer (a GPU hang: vka_rp_sub_begin; its effects run at once on the CPU, vka_fence_cpu): the constant 1, not an empty segment's 0. Its segment stays open for
     // the next counted report, whose fence is later than those of the submissions that began its queries (the draws dropped meanwhile count 1: OP_DRAW)
     if (!g_cb) return 0;
@@ -454,7 +413,7 @@ static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_P
     // Use the ordinary end: it preserves all attachments and publishes only
     // their writes unless shader writes/guest barriers require broader scope.
     // No extra all-commands barrier or GPU wait is introduced here.
-    if (split) vka_rp_end();
+    if (split && !(g_oq_split_pass == 2 && vka_rp_cave_sync())) vka_rp_end();
     return 1;
 }
 // Query availability may precede the submission's fence. For the game's
@@ -630,12 +589,7 @@ static void oq_stats(char *b, size_t n, double frames) {   // every 300 frames w
     old_get = get; old_reset = resets; old_prefetched = prefetched;
     b[0] = 0;
     if (frames > 0 && (g_oqs_reset != r0 || g_oqs_rep != p0)) {
-        if (g_oq == 2) {
-            static uint64_t vd0;
-            snprintf(b, n, "Ocarina conservative cave visibility per frame: %.1f reports, %.1f visible draw proxies; 0 hardware queries, 0 query-driven pass splits (not measured sample counts)",
-                     (g_oqs_rep - p0) / frames, (g_oq_visible_draws - vd0) / frames);
-            vd0 = g_oq_visible_draws;
-        } else if (g_oq != 1) snprintf(b, n, "occlusion queries per frame (not counted: %s): %.1f samples-passed resets, %.1f reports, each written 1", g_oq < 0 ? "no reset or report reached the GPU path" : "DM_VK_OCCLUSION=0 or no query pool",
+        if (g_oq != 1) snprintf(b, n, "occlusion queries per frame (not counted: %s): %.1f samples-passed resets, %.1f reports, each written 1", g_oq < 0 ? "no reset or report reached the GPU path" : "DM_VK_OCCLUSION=0 or no query pool",
                                 (g_oqs_reset - r0) / frames, (g_oqs_rep - p0) / frames);
         else snprintf(b, n, "occlusion queries per frame (counted, %s, %s): %.1f samples-passed resets, %.1f reports (%.1f before any reset, written 1; %.1f counted read 0 samples), %.1f queries "
                       "begun, %.1f draws counted 1 without a query (%.1f with the ring full, %.1f skipped by the replay), %.1f results not available after their fence (counted 1); queries in flight up to %llu of %d",
@@ -681,13 +635,6 @@ static void post_run(void *ops_, int n) {   // the completion thread, in submiss
             uint64_t back = (uint64_t)((double)(tmax - gq[q++]) * g_sq_ns); uint64_t tk = nvn_timestamp_from_ns(g > back ? g - back : 0), tt = ops[i].type;
             uint64_t rec[2] = {DM_GAME_RENDER_COND ? 0 : tk, tk}; (void)tt;
             memcpy((void *)(uintptr_t)ops[i].addr, rec, sizeof rec); continue;
-        }
-        if (ops[i].kind == 6) {
-            // Conservative occlusion snapshot; timestamps and real query reports
-            // retain their independent paths. Never write during CPU recording.
-            uint64_t rec[2] = {ops[i].q0, ticks};
-            memcpy((void *)(uintptr_t)ops[i].addr, rec, sizeof rec);
-            continue;
         }
         if (ops[i].kind == 4 || ops[i].kind == 5) { oq_done(&ops[i], ticks, &oqb); continue; }   // original report order; query results were prefetched
         if (ops[i].kind == 1) { volatile uint32_t *v = (volatile uint32_t *)(uintptr_t)ops[i].addr; if (ops[i].mode == NVN_EVENT_SIGNAL_MODE_ADD) *v += ops[i].v; else *v = ops[i].v; }
@@ -1622,8 +1569,7 @@ static void exec(const uint8_t *p, int depth) {
         }
         case OP_SIGNAL_EVENT: { uint64_t val; uint32_t m, v; memcpy(&val, a, 8); memcpy(&m, (const uint8_t *)a + 8, 4); memcpy(&v, (const uint8_t *)a + 12, 4); post((pop){1, m, v, 0, val}); break; }
         case OP_REPORT_COUNTER: { uint64_t t, ad; memcpy(&t, a, 8); memcpy(&ad, (const uint8_t *)a + 8, 8);
-            int counted = t == NVN_COUNTER_TYPE_SAMPLES_PASSED ? oq_report(ad, (uint32_t)t) : 0;
-            if (counted) { if (DM_GAME_RENDER_COND) rc_note(ad, counted == 2 ? 2 : 3); } // conservative reports always draw, even after completion
+            if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED && oq_report(ad, (uint32_t)t)) { if (DM_GAME_RENDER_COND) rc_note(ad, 3); }   // counted (Occlusion queries)
             else {
                 uint32_t q = 0;
                 if (g_sqp && g_cb && g_sq_n < SEGQ && (t == NVN_COUNTER_TYPE_TIMESTAMP || t == NVN_COUNTER_TYPE_TIMESTAMP_TOP)) {

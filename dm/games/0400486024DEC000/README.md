@@ -716,3 +716,44 @@ ordered writer boundary is followed by1800 read-only barriers with only
 one extra pass boundary; explicit ZCULL still forces a boundary. Tests
 check dirty-state integration and the original full-order replay handoff.
 These are policy/integration checks, not Qualcomm image validation.
+
+
+### Clothes flicker since Build153; rollback and real-query candidate (2026-11-14)
+
+The user reports that154 still fails and clothes have also flickered since
+153. Both new logs (`101050`,`101146`) run154 with conservative visibility
+ON. The depth-boundary rule actually runs (~8/frame in the cave-like run,
+~21/frame outdoors), so its failure is not an unselected codepath. The clothes
+observation is user-provided; logs are not a visual capture.
+
+**Withdrawn:** remove153's proxy counters, permanent conservative visibility,
+timestamp-address marker change, and154's added guest-depth boundary policy.
+Restore152's real GPU query allocation/results/reset/publication and ordinary
+render-condition evaluation. Do not report the18ms outdoor timing as success
+while the picture is wrong. The temporal link to153 warrants rollback; it
+is not proof that every garment/cave defect has one cause.
+
+**Build155 candidate:** optional mode2 uses the existing cached classic passes
+and a framebuffer-local depth dependency after ending the real query. The
+render pass declares the same self-dependency (EARLY/LATE_FRAGMENT_TESTS,
+depth/stencil READ/WRITE, BY_REGION). No layout transition, report-count
+substitution, forced visibility, shader edit or new user control. Mode1
+retains the original pass-split workaround; OFF uses the152 query path.
+
+Do not weaken broader dependencies: shader writes, pending guest barriers,
+pending clears or uniform uploads always fall back to the original split.
+Unavailable classic/imageless support also falls back. Encoder serialization
+is the existing vkCmdPipelineBarrier wrapper; its original worker ownership
+and payload-copy regression passes. Logs separately count in-pass barriers
+and split fallbacks. Classic render-pass compatibility is unchanged by the
+added depth self-dependency; prepared shader libraries/ABI are unchanged.
+
+**Validation:** Vulkan software ICD with Khronos validation compares192 real
+precise queries (44zero,148positive), colour pixels and D32 depth bytes at
+64x64 and960x540: exact match to the pass-split reference, including alpha
+discard, depth writes, EQUAL colour passes and read-only queries. Reference
+193 pass instances become1. Software GPU timing varies with warmup and is
+not an Adreno FPS claim. Production query/report order tests cover original,
+mode2 and fallback;256 production sync-guard cases keep broader dependencies
+on the original path. Actual cave/garment correctness and phone cost remain
+device validation, not a proven fix from these tests alone.
