@@ -28,6 +28,7 @@ on:
       - dm/gfx/tools/tests/test_classic_encoder_order.py
       - dm/gfx/vk_android/vka_renderpass_cache.h
       - dm/gfx/vk_android/selftest/renderpass_gpu.c
+      - dm/gfx/vk_android/selftest/cave_query_gpu.c
       - dm/tools/tests/test_renderpass_cache_gpu.py
       - dm/gfx/vk_android/vka_ndsr*
       - dm/gfx/vk_android/fsr/ndsr*
