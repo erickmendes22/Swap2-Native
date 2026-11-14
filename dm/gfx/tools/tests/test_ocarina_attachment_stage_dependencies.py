@@ -76,41 +76,6 @@ class AttachmentDependencyTest(unittest.TestCase):
                                 self.assertTrue(storage)
                                 self.assertFalse(guest or clears or diagnostic or pending)
 
-    def test_memu_interphase_hazards_use_only_compute_and_indirect_consumers(self):
-        # Scope changes ONLY the internal staging dependencies, not guest
-        # barriers or the final dependency protecting fragment/vertex/copies.
-        memu = (ROOT / "dm/gfx/vk_android/vka_memu_draw.inc").read_text()
-        begin = TEX.index("void vka_memu_interphase_barrier_at(")
-        end = TEX.index("void vka_transfer_write_barrier_at(", begin)
-        narrow = TEX[begin:end]
-        self.assertIn("VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT", narrow)
-        self.assertIn("VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT", narrow)
-        self.assertIn("VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT", narrow)
-        self.assertIn("VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT", narrow)
-        self.assertIn("VK_ACCESS_INDIRECT_COMMAND_READ_BIT", narrow)
-        self.assertNotIn("VK_PIPELINE_STAGE_ALL_COMMANDS_BIT", narrow)
-        self.assertIn("vka_n_memu_interphase_bar++", narrow)
-        self.assertIn("vka_memu_interphase_barrier_at", HEADER)
-        self.assertIn("#define vka_memu_interphase_barrier(cb)", HEADER)
-        self.assertIn('VKA_ENV("DM_VK_MEMU_INTERPHASE_SCOPE", 1)', memu)
-        self.assertIn('VKA_ENV("DM_VK_MEMU_SCOPED_BAR", 1)', memu)
-        self.assertIn("case MEMU_SETUP: vka_barrier(g_cb);", memu)
-        self.assertIn("memu_helper(0); memu_phase_barrier(1);", memu)
-        self.assertIn("if (MB.task_draws) { memu_phase_barrier(1); memu_helper(1); memu_phase_barrier(1); }", memu)
-        self.assertIn("case MEMU_END: memu_phase_barrier(0);", memu)
-        self.assertIn("else\n        vka_compute_write_barrier(g_cb);", memu)
-        # Synthetic per-batch hazard matrix: setup->task, task->distribution,
-        # distribution->mesh, or setup->mesh for taskless batches. All use
-        # only compute shader accesses and indirect-dispatch argument reads.
-        for task_draws in range(0, 129):
-            edges = [("setup", "task"), ("task", "distribution"),
-                     ("distribution", "mesh")] if task_draws else [("setup", "mesh")]
-            for producer, consumer in edges:
-                self.assertIn(consumer, ("task", "distribution", "mesh"))
-                self.assertIn(producer, ("setup", "task", "distribution"))
-            # Final mesh->raster cannot use the narrow dependency.
-            self.assertNotIn(("mesh", "raster"), edges)
-
     def test_no_shader_library_or_new_toggle(self):
         self.assertIn("vka_attachment_write_barrier_at", HEADER)
         self.assertNotIn("DM_VK_RP_SCOPE", DRAW)

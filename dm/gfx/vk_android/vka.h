@@ -316,7 +316,6 @@ VkDescriptorSetLayout vka_bindless_layout(void);
 void vka_barrier_at(VkCommandBuffer cb, const char *file, int line);   // a full memory barrier (the replay orders every transfer op after the previous one)
 void vka_graphics_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // all graphics shader/attachments -> all later consumers
 void vka_compute_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // compute + transfer producers -> all later consumers
-void vka_memu_interphase_barrier_at(VkCommandBuffer cb, const char *file, int line); // mesh staging only: compute/transfer writes -> next compute or indirect dispatch
 void vka_transfer_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // after a buffer copy: transfer write -> any later consumer
 void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // after an attachment-only render pass: fragment attachment writes -> any later consumer
 void vka_graphics_read_barrier_at(VkCommandBuffer cb, const char *file, int line); // read-only pass: execution-only WAR dependency, no cache memory flush
@@ -324,7 +323,6 @@ void vka_graphics_read_barrier_at(VkCommandBuffer cb, const char *file, int line
 #define vka_graphics_read_barrier(cb) vka_graphics_read_barrier_at(cb, __FILE_NAME__, __LINE__)
 #define vka_graphics_write_barrier(cb) vka_graphics_write_barrier_at(cb, __FILE_NAME__, __LINE__)
 #define vka_compute_write_barrier(cb) vka_compute_write_barrier_at(cb, __FILE_NAME__, __LINE__)
-#define vka_memu_interphase_barrier(cb) vka_memu_interphase_barrier_at(cb, __FILE_NAME__, __LINE__)
 #define vka_transfer_write_barrier(cb) vka_transfer_write_barrier_at(cb, __FILE_NAME__, __LINE__)
 #define vka_barrier(cb) vka_barrier_at(cb, __FILE_NAME__, __LINE__)   // the site names the step that ends there in DM_VK_GPUPROF's report (vka_gprof.c)
 // DM_VK_GPUPROF (vka_gprof.c): GPU timestamps between the steps of a profiled frame

@@ -62,13 +62,11 @@ class VegetationGpuFastPath(unittest.TestCase):
         self.assertIn('DM_VK_MEMU_SCOPED_BAR', phase_bar)
         self.assertIn('vka_compute_write_barrier(g_cb)', phase_bar)
         self.assertIn('vka_barrier(g_cb)', phase_bar)
-        self.assertIn('vka_memu_interphase_barrier(g_cb)', phase_bar)
-        self.assertIn('DM_VK_MEMU_INTERPHASE_SCOPE', phase_bar)
         batch = function(self.memu, 'vka_memu_batch')
-        self.assertIn('case MEMU_SETUP: vka_barrier(g_cb); memu_helper(0); memu_phase_barrier(1);', batch)
+        self.assertIn('case MEMU_SETUP: vka_barrier(g_cb); memu_helper(0); memu_phase_barrier();', batch)
         self.assertIn('case MEMU_DIST:', batch)
-        self.assertIn('if (MB.task_draws) { memu_phase_barrier(1); memu_helper(1); memu_phase_barrier(1); }', batch)
-        self.assertIn('case MEMU_END: memu_phase_barrier(0);', batch)
+        self.assertIn('if (MB.task_draws) { memu_phase_barrier(); memu_helper(1); memu_phase_barrier(); }', batch)
+        self.assertIn('case MEMU_END: memu_phase_barrier();', batch)
         self.assertIn('case MEMU_MESH:', batch)
 
     def test_taskless_batch_has_no_distribution_work_to_do(self):

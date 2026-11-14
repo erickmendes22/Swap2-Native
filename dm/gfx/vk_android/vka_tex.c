@@ -194,25 +194,6 @@ void vka_compute_write_barrier_at(VkCommandBuffer cb, const char *file, int line
                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
 }
-// MEMU helper -> task -> distribution -> mesh: only the *next compute shader*
-// and its vkCmdDispatchIndirect argument reader consume these intermediate
-// arena/record writes. The final MEMU_END dependency remains the original
-// compute/transfer -> ALL_COMMANDS barrier, protecting raster, copies and
-// all guest-visible consumers. The initial MEMU_SETUP full barrier still
-// imports preceding guest graphics/transfer writes.
-uint64_t vka_n_memu_interphase_bar;
-void vka_memu_interphase_barrier_at(VkCommandBuffer cb, const char *file, int line) {
-    vka_n_memu_interphase_bar++;
-    VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
-                         VK_ACCESS_INDIRECT_COMMAND_READ_BIT};
-    vk.vkCmdPipelineBarrier(cb,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-        0, 1, &mb, 0, NULL, 0, NULL);
-    if (vka_gp_active) vka_gp_mark(cb, file, line);
-}
 void vka_transfer_write_barrier_at(VkCommandBuffer cb, const char *file, int line) {
     vka_n_transfer_bar++;
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
