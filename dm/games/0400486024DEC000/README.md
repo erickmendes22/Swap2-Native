@@ -757,3 +757,40 @@ not an Adreno FPS claim. Production query/report order tests cover original,
 mode2 and fallback;256 production sync-guard cases keep broader dependencies
 on the original path. Actual cave/garment correctness and phone cost remain
 device validation, not a proven fix from these tests alone.
+
+
+### Resume checkpoint after155 (2026-11-14, WORK IN PROGRESS, not an APK)
+
+User confirms clothing is fixed by155, cave walls still flicker, and the
+previous outdoor area lost FPS. Uploads `104838` and `104948` both run
+`63d23dd` with mode2; outdoor frame1500 GPU23.37ms,149passes,2398draws,
+1723.9in-pass barriers/frame and zero fallback splits. Thus the path
+was selected and failed its visual/performance objectives. Keep REAL GPU
+query results; never resurrect153 proxy counters/conservative visibility.
+
+Current work restores152's ORIGINAL physical per-query pass ends, dynamic
+rendering default, and launcher mode1. Mode2's auto-classic selection, local
+barriers, self-dependency header and guard test are removed. Added only
+observational colour/depth write flags and one summary per300frames; they
+do not select any render path. Original query report/order test passes.
+The observer classifies physical pass ends that bind unused colour targets
+and passes without depth writes, to quantify future bandwidth work.
+
+CRITICAL next validation: we have not yet received a cave capture on this
+phone using152's original physical-split algorithm. Its device-specific
+visual correctness must be established before claiming an optimized
+equivalent. Upstream issue210 still documents no cheaper proven fix.
+
+Independent research fixture `selftest/cave_query_gpu.c` now keeps EVERY
+physical depth pass end but omits masked-out colour attachments for read-only
+queries. It is TEST ONLY, not integrated into gameplay. The test compares
+real precise query counts, colour and depth under Khronos validation.
+Latest local run was still pending when this checkpoint was saved; check
+`test_cave_query_gpu.py` results before calling it validated.
+
+Remaining work: finish that GPU readback, test production observer wrapper
+for exact original command order, run affected query/graphics tests, update
+release marker to156 only after checks, compile signed APK on the original
+branch and inspect Actions result/artifact. Tell the user original-mode
+cave correctness is unconfirmed; do not call it a performance fix. Save
+intermediate checkpoints to GitHub frequently as explicitly requested.

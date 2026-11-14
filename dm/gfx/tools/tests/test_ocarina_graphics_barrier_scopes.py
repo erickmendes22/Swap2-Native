@@ -43,11 +43,11 @@ class BarrierScopeTests(unittest.TestCase):
         body = source_body(DRAW, 'void vka_rp_end(void) {',
                            '// OP_BARRIER used to end a render pass')
         self.assertIn('int awrite;', DRAW)
-        self.assertIn('if (ca[i].imageView && ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) R.awrite = 1;', DRAW)
+        self.assertIn('if (ca[i].imageView && ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) R.awrite = R.cave_cwrite = 1;', DRAW)
         self.assertIn('if ((dp && dp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) ||', DRAW)
         self.assertIn('(sp && sp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) || nlate)', DRAW)
         self.assertIn('R.awrite = 1; // a clear is never a read-only occlusion pass', DRAW)
-        self.assertIn('if (k.att[i].mask) { R.awrite = 1; break; }', DRAW)
+        self.assertIn('if (k.att[i].mask) { R.awrite = 1; R.cave_cwrite = 1; break; }', DRAW)
         self.assertIn('R.df != VK_FORMAT_UNDEFINED && d->ds.dt && d->ds.dw', DRAW)
         self.assertIn('R.sf != VK_FORMAT_UNDEFINED && d->ds.st', DRAW)
         self.assertLess(body.index('if (full || (R.swrite'),

@@ -362,13 +362,11 @@ static int oq_on(void) {
     // Cache once, not an environment/title/driver lookup at every report.
     // Keep the existing boolean-query and batched host-reset paths: the
     // workaround changes render-pass boundaries, never query accuracy/readback.
-    int cave_mode = (int)VKA_ENV("DM_VK_OQ_SPLIT_PASS", 0);
     g_oq_split_pass = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
-        V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY ?
-        (cave_mode == 2 ? 2 : cave_mode != 0) : 0;
+        V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
+        VKA_ENV("DM_VK_OQ_SPLIT_PASS", 0) != 0;
     if (g_oq_split_pass)
-        VLOG("Ocarina Keep cave walls: real GPU queries retained, %s (Qualcomm)",
-             g_oq_split_pass == 2 ? "framebuffer-local depth barrier in cached passes; split fallback if unavailable" : "original per-query pass split");
+        VLOG("Ocarina Keep cave walls: counted depth-query pass splits enabled (Qualcomm); attachment-scoped dependencies and batched queries retained");
     return g_oq = 1;
 }
 typedef struct { VkCommandBuffer cb; uint32_t q, end; } oq_arg;
@@ -413,7 +411,7 @@ static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_P
     // Use the ordinary end: it preserves all attachments and publishes only
     // their writes unless shader writes/guest barriers require broader scope.
     // No extra all-commands barrier or GPU wait is introduced here.
-    if (split && !(g_oq_split_pass == 2 && vka_rp_cave_sync())) vka_rp_end();
+    if (split) vka_rp_cave_end();
     return 1;
 }
 // Query availability may precede the submission's fence. For the game's

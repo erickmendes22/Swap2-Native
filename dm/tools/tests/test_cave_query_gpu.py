@@ -1,4 +1,4 @@
-"""Real GPU query counts and colour/depth equality for in-pass cave dependency."""
+"""Real GPU query counts and colour/depth equality for research-only unused colour attachment omission."""
 import os
 from pathlib import Path
 import shutil
@@ -18,7 +18,7 @@ void main(){if(pc.shape.y>0.5&&((int(gl_FragCoord.x)+int(gl_FragCoord.y))&1)==0)
 '''
 class CaveQueryGPU(unittest.TestCase):
  @unittest.skipUnless(os.getenv('MEMU_TEST_VULKAN')=='1','real Vulkan ICD required')
- def test_precise_queries_and_pixels_match_split_reference(self):
+ def test_precise_queries_and_pixels_match_physical_split_reference(self):
   compiler=shutil.which('glslangValidator');self.assertTrue(compiler)
   with tempfile.TemporaryDirectory() as tmp:
    d=Path(tmp);env=dict(os.environ)

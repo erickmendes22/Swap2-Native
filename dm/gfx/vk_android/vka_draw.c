@@ -247,6 +247,7 @@ static struct {
     uint32_t cnl[8], dnl; VkExtent2D cext[8], dext;      // each attachment's layers and level size (clears in the pass must cover what they would outside it)
     int swrite;                                          // a draw of the pass wrote memory (storage buffers or images, raw global stores, a geometry shader's claim)
     int awrite;                                          // an actual colour/depth/stencil write or clear occurred; depth-test-only occlusion passes stay read-only
+    int cave_cwrite, cave_dwrite; // diagnostic only; never used to change rendering
     int bar_pending;                                     // a game barrier came inside the pass and was taken there (vka_rp_game_barrier): the draws after it are checked (bar_hazard)
 } R;
 // Clears waiting for the pass of their targets (vka_rp_clear), in order: the next draw over the same targets opens its pass with them (loadOp CLEAR, or vkCmdClearAttachments),
@@ -308,20 +309,16 @@ int vka_rp_can_defer_ub(uint64_t addr, uint64_t size) {
     return 1;
 }
 int vka_rp_has_depth(void) { return R.on && (R.df || R.sf); }
-#include "vka_cave_sync.h"
-static uint64_t g_cave_sync_inpass, g_cave_sync_fallback;
-int vka_rp_cave_sync(void) {
-    if (!R.on || !g_classic_pass || (!R.df && !R.sf) ||
-        R.swrite || R.bar_pending || PC.n || vka_ub_active()) { g_cave_sync_fallback++; return 0; }
-    // A report previously also flushed pending uploads and shader writers.
-    // Keep that original split whenever those broader dependencies exist.
-    // The pass declares this exact self-dependency. The real query was ended
-    // first by oq_report; attachment contents and normal visibility stay intact.
-    VkMemoryBarrier b = vka_cave_depth_memory_barrier();
-    vk.vkCmdPipelineBarrier(g_cb, VKA_CAVE_DEPTH_STAGES, VKA_CAVE_DEPTH_STAGES,
-                           VK_DEPENDENCY_BY_REGION_BIT, 1, &b, 0, NULL, 0, NULL);
-    g_cave_sync_inpass++;
-    return 1;
+static uint64_t g_cave_original_splits, g_cave_unused_color, g_cave_depth_readonly;
+void vka_rp_cave_end(void) {
+    // Observations only: every report still executes the original pass end.
+    g_cave_original_splits++;
+    int colors = 0;
+    for (unsigned i = 0; i < R.ncolor; i++) colors += R.cf[i] != VK_FORMAT_UNDEFINED;
+    if (colors && !R.cave_cwrite && !R.swrite && !PC.n && !vka_ub_active())
+        g_cave_unused_color++;
+    if (!R.cave_dwrite) g_cave_depth_readonly++;
+    vka_rp_end();
 }
 
 void vka_rp_end(void) {
@@ -416,9 +413,6 @@ int vka_classic_rp(void) {
     if(on<0 && V.dev) {
         const char *e=getenv("DM_VK_CLASSIC_RP");
         int want=e && atoi(e)!=0;
-        if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
-            V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
-            (int)VKA_ENV("DM_VK_OQ_SPLIT_PASS", 0) == 2) want = 1;
         on=want && V.imageless;
         VLOG("cached classic render passes: %s (imageless=%d; DM_VK_CLASSIC_RP)",on ? "on" : "off",V.imageless);
     }
@@ -528,10 +522,15 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
     // A loadOp CLEAR is a real attachment write even if no subsequent draw
     // touches it. Late vkCmdClearAttachments is also an attachment writer.
     for (int i = 0; i < n; i++)
-        if (ca[i].imageView && ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) R.awrite = 1;
+        if (ca[i].imageView && ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) R.awrite = R.cave_cwrite = 1;
     if ((dp && dp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) ||
         (sp && sp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) || nlate)
         R.awrite = 1;
+    if ((dp && dp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) ||
+        (sp && sp->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR)) R.cave_dwrite = 1;
+    for (int i = 0; i < nlate; i++) {
+        if (late[i]->ci >= 0) R.cave_cwrite = 1; else R.cave_dwrite = 1;
+    }
     g_classic_pass = 0;
     if (vka_classic_rp()) {   // DM_VK_CLASSIC_RP: the same pass as a VkRenderPass with an imageless framebuffer
         rpkey k; memset(&k, 0, sizeof k); fbkey fk; memset(&fk, 0, sizeof fk);
@@ -586,10 +585,10 @@ int vka_rp_game_barrier(uint32_t bits) {
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
     static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0, reused0, ro0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
-    static uint64_t cave_in0, cave_fb0;
-    if (g_cave_sync_inpass != cave_in0 || g_cave_sync_fallback != cave_fb0)
-        VLOG("Ocarina real-query cave sync: %.1f in-pass depth barriers/frame; %.1f original pass-split fallbacks/frame; query results unchanged", (g_cave_sync_inpass - cave_in0) / frames, (g_cave_sync_fallback - cave_fb0) / frames);
-    cave_in0 = g_cave_sync_inpass; cave_fb0 = g_cave_sync_fallback;
+    static uint64_t cave0, color0, depth0;
+    if (g_cave_original_splits != cave0)
+        VLOG("Ocarina original cave path: %.1f physical query pass ends/frame; %.1f bind unused colour targets; %.1f do not write depth (diagnostic only)", (g_cave_original_splits-cave0)/frames, (g_cave_unused_color-color0)/frames, (g_cave_depth_readonly-depth0)/frames);
+    cave0=g_cave_original_splits; color0=g_cave_unused_color; depth0=g_cave_depth_readonly;
 
     if (g_bar_in != i0 || g_attachment_discards != d0 || g_attachment_loads_avoided != a0 || g_attachment_stores_avoided != s0 || g_bar_duplicate_avoided != dup0 || g_rp_scoped != scoped0 || g_rp_graphics != graphics0 || g_rp_full != full0 || g_rp_postub_barriers_saved != reused0 || g_rp_readonly_barriers_avoided != ro0)
         snprintf(b, n, "game barriers inside a draw pass per frame: %.1f, %.1f kept, %.1f ended later; redundant full barriers avoided %.1f/frame; pass-end barriers: %.1f attachment-scoped, %.1f graphics-shader-scoped, %.1f full/frame; pending-attachment scoped %.1f/frame; redundant post-uniform barriers removed %.1f/frame; read-only passes using execution-only dependency %.1f/frame; explicit attachment discards %.1f/frame, loads avoided %.1f/frame, stores avoided %.1f/frame",
@@ -652,6 +651,7 @@ int vka_rp_clear(const p_set_rt *rt, int has_rt, const vka_dstate *d, const vka_
     VkClearAttachment ca = {c->asp, ci >= 0 ? (uint32_t)ci : 0, c->in}; VkClearRect cr = {rc, 0, nl};
     vk.vkCmdClearAttachments(g_cb, 1, &ca, 1, &cr);
     R.awrite = 1; // a clear is never a read-only occlusion pass
+    if (ci >= 0) R.cave_cwrite = 1; else R.cave_dwrite = 1;
     return 1;
 }
 
@@ -1974,10 +1974,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     // state is deliberately considered writable.
     if (!d->rast_discard) {
         for (uint32_t i = 0; i < R.ncolor; i++)
-            if (k.att[i].mask) { R.awrite = 1; break; }
+            if (k.att[i].mask) { R.awrite = 1; R.cave_cwrite = 1; break; }
         if ((R.df != VK_FORMAT_UNDEFINED && d->ds.dt && d->ds.dw) ||
             (R.sf != VK_FORMAT_UNDEFINED && d->ds.st))
-            R.awrite = 1;
+            R.awrite = R.cave_dwrite = 1;
     }
     if (src1_used) VRED_ONCE("a SRC1 blend factor with no dual-source module (MOD_DUAL; the profile's dual_want.tsv) or no dualSrcBlend: the second source reads as zero");
 
