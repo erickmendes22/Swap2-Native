@@ -55,7 +55,7 @@ static _Thread_local int g_memu_depth;
 static uint64_t g_memu_parent_resumes, g_memu_nested_batches;
 static uint64_t g_memu_boundary_op[OP_COUNT_ + 1];
 static uint64_t g_memu_noop_enable_merged;
-static int batched, states[32];
+static int batched, states[128];
 static int memu_allowed(uint32_t op) { return op != OP_SET_RT && op != OP_RENDER_COND; }
 static const p_draw *draw_rec(const void *arg, uint32_t size, p_draw *tmp) {
     (void)size; (void)tmp; return (const p_draw *)arg;
@@ -68,7 +68,7 @@ static void vka_state_op(vka_dstate *s, uint32_t op, const void *a) {
 static void vka_memu_batch(int phase, const vka_dstate *s, const p_draw *d, const uint8_t *p, int idx) {
     (void)p; (void)d; (void)idx;
     assert(phase == MEMU_ADD);
-    assert(batched < 32);
+    assert(batched < 128);
     states[batched++] = s->state;
 }
 """ + "static int " + body(SRC, 'memu_noop_enable') + "\nstatic int " + body(SRC, 'memu_walk') + r"""
