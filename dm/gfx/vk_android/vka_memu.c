@@ -63,26 +63,33 @@ static vka_shader *derive(vka_shader *s, const dmsh_vk_entry *e, VkShaderModule 
     if (kind == 2) { v->b = NULL; v->c1_len = 0; }
     return v;
 }
-vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
-    vka_memu_sh *d = vka_memu_of(s); if (!d) return NULL;
+static vka_shader *vka_memu_cs_variant(vka_shader *s, int gl, int taskless) {
+    vka_memu_sh *d = vka_memu_of(s); if (!d || (taskless && d->L.task)) return NULL;
     gl = gl && (s->e->flags & DMSH_VK_F_GL_DEPTH) ? 1 : 0;
-    pthread_mutex_lock(&g_mu); vka_shader *have = d->cs[gl]; pthread_mutex_unlock(&g_mu);
+    vka_shader **slot = taskless ? &d->cs_taskless[gl] : &d->cs[gl];
+    pthread_mutex_lock(&g_mu); vka_shader *have = *slot; pthread_mutex_unlock(&g_mu);
     if (have) return have;
     char err[256] = ""; size_t nb = 0, fn = 0, on = 0;
     uint32_t *w = vka_shader_memu_words(s, &nb, err, sizeof err);
     uint32_t *fz = w ? vka_spv_spec_freeze(w, nb / 4, DMSH_VK_SPEC_GL_DEPTH, (uint32_t)gl, &fn) : NULL;   // (folded: Qualcomm's lanes read 0 in a compute module with a specialization constant)
-    uint32_t *o = w ? vka_memu_cs(fz ? fz : w, fz ? fn : nb / 4, &on, err, sizeof err) : NULL;
+    uint32_t *o = w ? (taskless ? vka_memu_cs_taskless(fz ? fz : w, fz ? fn : nb / 4, &on, err, sizeof err)
+                                 : vka_memu_cs(fz ? fz : w, fz ? fn : nb / 4, &on, err, sizeof err)) : NULL;
     VkShaderModule mod = o ? make_module(o, on) : VK_NULL_HANDLE;
     free(w); free(fz); free(o);
     if (!mod) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("%s shader %016llx: its compute form not made (%s); its draws are skipped", stage_name(s->e->stage), (unsigned long long)s->key, err[0] ? err : "vkCreateShaderModule failed"); return NULL; }
-    dmsh_vk_entry *e = malloc(sizeof *e); *e = d->ce; e->key ^= gl ? VKA_MEMU_KEY_GL : 0;
+    dmsh_vk_entry *e = malloc(sizeof *e); *e = d->ce;
+    e->key ^= (gl ? VKA_MEMU_KEY_GL : 0) ^ (taskless ? VKA_MEMU_KEY_TASKLESS : 0);
     e->flags &= (uint16_t)~DMSH_VK_F_GL_DEPTH;   // (the depth convention is in the module)
     vka_shader *v = derive(s, e, mod, 1);
     pthread_mutex_lock(&g_mu);
-    if (d->cs[gl]) { vka_shader *h = d->cs[gl]; pthread_mutex_unlock(&g_mu); vk.vkDestroyShaderModule(V.dev, mod, NULL); free(v); free(e); return h; }
-    d->cs[gl] = v; pthread_mutex_unlock(&g_mu);
+    if (*slot) { vka_shader *h = *slot; pthread_mutex_unlock(&g_mu); vk.vkDestroyShaderModule(V.dev, mod, NULL); free(v); free(e); return h; }
+    *slot = v; pthread_mutex_unlock(&g_mu);
     return v;
 }
+// No-task specialization has a distinct derived shader key and pipeline cache
+// identity, and cannot be selected by draws that have any bound task shader.
+vka_shader *vka_memu_cs_of(vka_shader *s, int gl) { return vka_memu_cs_variant(s, gl, 0); }
+vka_shader *vka_memu_cs_taskless_of(vka_shader *s, int gl) { return vka_memu_cs_variant(s, gl, 1); }
 vka_shader *vka_memu_vs_of(vka_shader *s) {
     vka_memu_sh *d = vka_memu_of(s); if (!d || d->L.task) return NULL;
     pthread_mutex_lock(&g_mu); vka_shader *have = d->vs; pthread_mutex_unlock(&g_mu);
