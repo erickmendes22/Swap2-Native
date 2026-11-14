@@ -162,9 +162,17 @@ int main(void) {
             CHECK(model_of(no_task, no_task_n) == 5 && no_task_n < base_n,
                   "no-task mesh is smaller: %zu -> %zu words (%.2f%% fewer)",
                   base_n, no_task_n, base_n ? 100.0*(base_n-no_task_n)/base_n:0);
-            CHECK(count_op(base, base_n, 250) > count_op(no_task, no_task_n, 250),
-                  "no-task shader avoids the runtime task offset search branch (%d -> %d)",
-                  count_op(base, base_n, 250), count_op(no_task, no_task_n, 250));
+            const char *fast_env = getenv("DM_VK_MEMU_FAST_TASKLESS");
+            int original_has_taskless_branch = !fast_env || strcmp(fast_env, "0") != 0;
+            CHECK(original_has_taskless_branch ?
+                      count_op(base, base_n, 250) > count_op(no_task, no_task_n, 250) :
+                      count_op(base, base_n, 250) >= count_op(no_task, no_task_n, 250),
+                  "no-task module removes task-search branch when original has it (%d -> %d, fast=%d)",
+                  count_op(base, base_n, 250), count_op(no_task, no_task_n, 250),
+                  original_has_taskless_branch);
+            CHECK(count_op(base, base_n, 61) > count_op(no_task, no_task_n, 61),
+                  "no-task code drops runtime task-offset loads even on original branchless fallback (%d -> %d)",
+                  count_op(base, base_n, 61), count_op(no_task, no_task_n, 61));
             // The short-search variant adds TWO Private OpStore instructions
             // for the two search branches' saved task index. Both disappear
             // with the entire unreachable task-search path. Arena and mesh
