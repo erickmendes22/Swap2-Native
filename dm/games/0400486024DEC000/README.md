@@ -594,3 +594,38 @@ or enabled in this APK. The reproducible source/tests are preserved on
 `research/ocarina-index-compaction-20261113`, commit
 `f571d0bc8ed3774a17317e9b3cf17dcc6b915ae3`. Do not resurrect it as a new
 user-facing option or claim device gains from removed-index counts alone.
+
+
+### Optional Qualcomm cave walls (2026-11-14, device validation pending)
+
+Ported Banana Native `dc7c4203`'s `DM_VK_OQ_SPLIT_PASS` workaround
+(`vka_exec.c`, issue #210): after an active samples-passed query in a
+depth/stencil pass, close the query, publish the original counter segment,
+then store/end the pass. The exact driver interaction remains unknown.
+The new **Keep cave walls (Qualcomm)** setting is off by default, per-game,
+reset with Restore defaults, requires restart, and is ignored on other
+drivers/titles. The user's requested Portuguese label is also provided.
+
+The port retains this fork's non-precise visibility queries, batched post-fence
+readback/host reset and attachment-scoped pass-end dependencies. It adds no
+GPU waits, forced query result fetches or unconditional full GPU barrier.
+Eligibility is cached at query initialization; OFF performs no depth-pass
+inspection at a report. Active-query and open-depth checks avoid empty or
+colour-only splits, as upstream does. These are retained efficiency paths,
+not evidence of lower Adreno GPU time: the expensive attachment store/reload
+is still required by the known workaround. Do not claim that its high device
+cost has been eliminated or replace it with an unverified barrier.
+
+`test_ocarina_cave_walls.py` compiles and executes the production report
+function through 64 live/off/depth/empty paths, checking publication state,
+query-end -> post -> pass-end order and zero pass inspection when off.
+In-game cave preservation and enabled-option frame cost require device tests.
+
+The new `084355` log is Build151AB source `62b707e+dirty` on Adreno 840
+891.14: at frame3000 p50 frame/GPU is 20.60/20.22 ms. Sample3001 has
+12.63 ms graphics passes, 2.999 ms mesh compute and 0.466 ms task intervals.
+Fragment-masked draw/channel counters remain zero throughout: the preceding
+synthetic store elimination did not activate on this scene. Do not describe
+that candidate as a measured gain. This run exports `DM_VK_VEGETATION=1`;
+that is the recorded configuration of this file, not an assumption about
+the user's separate vegetation-OFF comparisons.

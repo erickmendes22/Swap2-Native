@@ -307,6 +307,7 @@ int vka_rp_can_defer_ub(uint64_t addr, uint64_t size) {
     }
     return 1;
 }
+int vka_rp_has_depth(void) { return R.on && (R.df || R.sf); }
 void vka_rp_end(void) {
     int had_clears = PC.n != 0;
     if (PC.n) pc_flush();

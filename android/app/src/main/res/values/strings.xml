@@ -746,4 +746,6 @@
     <string name="s2_oot_render_profile_note">Preserves existing 360p/540p profiles. Direct 720p uses a 1280×720 scene and output with bilinear conversion, without EASU/SGSR enlargement. Prepares the RomFS scene overlay; restart to apply.</string>
     <string name="s2_oot_classic_passes">Cached passes (Qualcomm)</string>
     <string name="s2_oot_classic_passes_note">Uses the Banana render-pass cache when supported. Restart to apply. Disable to compare with the previous rendering path.</string>
+    <string name="s2_keep_cave_walls">Keep cave walls (Qualcomm)</string>
+    <string name="s2_keep_cave_walls_note">Keeps walls and rocks from vanishing in affected areas. Off by default. May reduce FPS; restart to apply. No effect on Turnip.</string>
 </resources>

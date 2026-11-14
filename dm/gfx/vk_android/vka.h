@@ -468,6 +468,7 @@ int vka_state_op(vka_dstate *d, uint32_t op, const void *a);   // 1 = a state re
 // The render pass the draws of a submission go into: opened at a draw, closed by anything that is not a draw or state (vka_rp_end), and by a new SET_RT
 void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot);    // the slot's per-draw descriptor sets are free again (its last fence is done)
 void vka_rp_end(void);
+int vka_rp_has_depth(void); // open pass has a depth or stencil attachment
 int vka_rp_can_defer_ub(uint64_t addr, uint64_t size);
 int vka_rp_bar_pending(void); // pending in-pass guest barrier, without shader writes
 int vka_ub_active(void);

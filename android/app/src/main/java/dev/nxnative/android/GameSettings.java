@@ -165,6 +165,7 @@ final class GameSettings {
             Prefs.scene720(a, id, false);
             Prefs.renderProfile(a,id,0);
             Prefs.classicPasses(a,id,false);
+            Prefs.keepCaveWalls(a,id,false);
             Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
             // Experimental GPU skips must not survive Restore defaults.
             Prefs.of(a).edit()
@@ -213,6 +214,11 @@ final class GameSettings {
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
                 .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
         if (Prefs.OCARINA_TITLE.equals(id)) {
+            Ui.Setting caveWalls = new Ui.Setting(a, R.drawable.s2_ic_display,
+                    a.getString(R.string.s2_keep_cave_walls), null)
+                    .toggle(a, Prefs.keepCaveWalls(a, id), (b, on) -> Prefs.keepCaveWalls(a, id, on));
+            caveWalls.value(a.getString(R.string.s2_keep_cave_walls_note));
+            box.addView(caveWalls.view);
             Ui.Setting vegetation = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_full_vegetation), null)
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));

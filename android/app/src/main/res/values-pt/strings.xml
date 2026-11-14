@@ -739,4 +739,6 @@
     <string name="s2_oot_render_profile_note">Opcional: prepara a cena escolhida e usa a saída de 720p do modo portátil do jogo. A biblioteca de shaders é preservada. Reinicie o jogo para aplicar.</string>
     <string name="s2_oot_classic_passes">Passes em cache (Qualcomm)</string>
     <string name="s2_oot_classic_passes_note">Usa o cache de passes do Banana quando suportado. Reinicie para aplicar. Desative para comparar com o caminho anterior.</string>
+    <string name="s2_keep_cave_walls">Manter paredes de cavernas (Qualcomm)</string>
+    <string name="s2_keep_cave_walls_note">Evita paredes e pedras desaparecendo nas áreas afetadas. Desligado por padrão. Pode reduzir o FPS; reinicie para aplicar. Sem efeito no Turnip.</string>
 </resources>

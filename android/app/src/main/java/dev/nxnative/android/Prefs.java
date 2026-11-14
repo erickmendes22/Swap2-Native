@@ -111,6 +111,12 @@ final class Prefs {
     static void classicPasses(Context c,String id,boolean on) {
         of(c).edit().putBoolean(gameKey("oot_classic_passes",id),on).commit();
     }
+    static boolean keepCaveWalls(Context c, String id) {
+        return OCARINA_TITLE.equals(id) && of(c).getBoolean(gameKey("oot_keep_cave_walls", id), false);
+    }
+    static void keepCaveWalls(Context c, String id, boolean on) {
+        of(c).edit().putBoolean(gameKey("oot_keep_cave_walls", id), on).commit();
+    }
     static boolean hiddenLayersOff(Context c, String titleId) {
         return of(c).getBoolean(gameKey("oot_hidden_layers", titleId), false);
     }

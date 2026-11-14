@@ -320,6 +320,7 @@ enum { OQ_N = 32768, OQ_RB = 256, OQ_BATCH = 1024 }; // ring, conservative per-r
 // order, query pool allocation or fallback stack memory.
 static struct { VkQueryPool pool; int precise, host; PFN_vkCmdBeginQuery begin; PFN_vkCmdEndQuery end; PFN_vkCmdResetQueryPool creset; PFN_vkResetQueryPool hreset; PFN_vkGetQueryPoolResults get; } OQ;
 static int g_oq = -1;                      // 1 counted; 0 the constant 1 (DM_VK_OCCLUSION=0, no device or no query pool); -1 not decided yet
+static int g_oq_split_pass; // startup-only Ocarina/Qualcomm cave-wall workaround, opt-in
 static int g_oq_count, g_oq_fresh, g_oq_open;   // a samples-passed reset came (draws count); a reset since the last report (the next starts from 0); a query is active in the open pass
 static uint32_t g_oq_lost;                 // draws of the segment that count 1 sample (no query, or skipped by the replay)
 static uint64_t g_oq_head, g_oq_seg0;      // the next query's sequence number; the segment's first
@@ -358,6 +359,14 @@ static int oq_on(void) {
          OQ.host ? "host reset" : "a reset at a submission's start");
     if (oot_fast)
         VLOG("Ocarina fast occlusion: boolean samples-passed queries enabled (same-reset-epoch visibility-equality preserving); DM_VK_OOT_FAST_OCCLUSION=0 restores precise counts");
+    // Cache once, not an environment/title/driver lookup at every report.
+    // Keep the existing boolean-query and batched host-reset paths: the
+    // workaround changes render-pass boundaries, never query accuracy/readback.
+    g_oq_split_pass = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        V.driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
+        VKA_ENV("DM_VK_OQ_SPLIT_PASS", 0) != 0;
+    if (g_oq_split_pass)
+        VLOG("Ocarina Keep cave walls: counted depth-query pass splits enabled (Qualcomm); attachment-scoped dependencies and batched queries retained");
     return g_oq = 1;
 }
 typedef struct { VkCommandBuffer cb; uint32_t q, end; } oq_arg;
@@ -390,11 +399,19 @@ static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_P
     // No command buffer (a GPU hang: vka_rp_sub_begin; its effects run at once on the CPU, vka_fence_cpu): the constant 1, not an empty segment's 0. Its segment stays open for
     // the next counted report, whose fence is later than those of the submissions that began its queries (the draws dropped meanwhile count 1: OP_DRAW)
     if (!g_cb) return 0;
+    // Banana Native dc7c420 (#210): store/reload the depth attachment after
+    // an active counted query. Do not split empty reports, colour-only passes,
+    // other titles or other drivers. The exact driver fault remains open.
+    const int split = g_oq_split_pass && g_oq_open && vka_rp_has_depth();
     oq_close();   // (draws after it begin a new query)
     post((pop){4, (uint32_t)g_oq_fresh, g_oq_lost, t, ad, g_oq_seg0, g_oq_head});
     g_oq_lost_epoch_total += g_oq_lost;
     g_oq_last_report_head = g_oq_head;
     g_oq_seg0 = g_oq_head; g_oq_fresh = 0; g_oq_lost = 0;
+    // Use the ordinary end: it preserves all attachments and publishes only
+    // their writes unless shader writes/guest barriers require broader scope.
+    // No extra all-commands barrier or GPU wait is introduced here.
+    if (split) vka_rp_end();
     return 1;
 }
 // Query availability may precede the submission's fence. For the game's
