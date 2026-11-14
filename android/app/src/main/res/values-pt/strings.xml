@@ -740,5 +740,5 @@
     <string name="s2_oot_classic_passes">Passes em cache (Qualcomm)</string>
     <string name="s2_oot_classic_passes_note">Usa o cache de passes do Banana quando suportado. Reinicie para aplicar. Desative para comparar com o caminho anterior.</string>
     <string name="s2_keep_cave_walls">Manter paredes de cavernas (Qualcomm)</string>
-    <string name="s2_keep_cave_walls_note">Mantém a geometria visível sem dividir os passes por consultas de oclusão. Pode desenhar objetos encobertos. Desligado por padrão; reinicie. Apenas Qualcomm.</string>
+    <string name="s2_keep_cave_walls_note">Correção experimental para paredes e pedras que piscam. Pode aumentar a carga da GPU. Desligado por padrão; reinicie para aplicar. Apenas Qualcomm.</string>
 </resources>

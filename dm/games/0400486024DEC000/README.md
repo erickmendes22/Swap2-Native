@@ -677,3 +677,42 @@ colliding marker addresses. 1800 query pairs issue exactly zero GPU query
 or split calls. Existing real-query order/batching tests pass. These checks
 prove work elimination and counter/control-flow properties, not cave image
 correctness or Adreno FPS: both must be tested on the affected scene.
+
+
+### Build153 did not preserve cave walls (2026-11-14, confirmed failure)
+
+User uploads `095119` and `095224` both identify source `34ac426`,
+conservative visibility ON, split OFF, zero hardware queries. The user
+reports cave walls disappearing/reappearing. The outdoor-like `095119`
+settles at ~2394 draws,149 passes,GPU18.1ms/frame; `095224` has ~876-955
+draws,117-120 passes,GPU15.1-15.6ms. Lower timings do not establish visual
+correctness or an isolated query-removal speedup. No on-device query is
+necessary for the reported flicker, so conservative visibility alone is
+withdrawn as a claimed cave fix.
+
+**Build154 candidate: depth synchronization at guest barriers.**
+`vka_rp_game_barrier` previously discarded the meaning of `bits`, including
+`NVN_BARRIER_INVALIDATE_ZCULL_BIT`, while retaining the barrier inside the
+pass. The optional Qualcomm cave path now returns to the existing full
+pass-end/attachment-store/barrier path for explicit ZCULL invalidation over
+a depth/stencil attachment, and for primitive/fragment order requests after
+that pass may have written depth/stencil. Read-only depth passes and
+colour-only passes retain their fast path. Depth dirty state covers loadOp
+clears, queued partial clears, in-pass clears and depth/stencil draw writes;
+opening a pass resets it. No location heuristic or per-query pass split.
+
+The source issue is concrete (barrier bits were ignored); whether respecting
+these depth-cache boundaries fixes the proprietary-driver wall defect is
+still a device-test hypothesis. It does NOT prove the root driver cause.
+The uploaded traces show ~83-86 retained guest barriers/frame, rather than
+~1800 reports/frame outdoors. The actual number selected for depth
+synchronization is logged separately; no FPS or split-count guarantee.
+Conservative guest counter behavior and query elimination stay as in153.
+Legacy per-query splits remain available through the existing override.
+
+Production C policy testing covers all256 bit masks across enabled/off,
+pass, shader-write, attachment and depth-dirty states (32768 cases). An
+ordered writer boundary is followed by1800 read-only barriers with only
+one extra pass boundary; explicit ZCULL still forces a boundary. Tests
+check dirty-state integration and the original full-order replay handoff.
+These are policy/integration checks, not Qualcomm image validation.

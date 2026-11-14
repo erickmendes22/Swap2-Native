@@ -81,6 +81,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_bar_keep.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cave_walls.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cave_visible.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cave_depth_barriers.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_query_batched.py'
           python3 dm/tools/tests/test_ndsr_standin.py OcarinaLargeNdsr
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_scoped_uniform_barrier.py'

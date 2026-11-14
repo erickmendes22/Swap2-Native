@@ -490,3 +490,5 @@ GPU task-index 8/17-step signed APK CI rerun: fix transfer-barrier test to ignor
 2026-11-14 Ocarina Build152: optional Keep cave walls (Qualcomm), OFF by default, retaining batched boolean occlusion and attachment-scoped pass boundaries. Production query-order regression added; cave correctness and Adreno enabled-option GPU cost pending device measurement. No shader rebuild required.
 
 2026-11-14 Ocarina Build153: optional conservative Keep cave walls candidate removes hardware occlusion queries and query-driven tile pass splits; cumulative positive draw proxies preserve guest visibility differences at completion fences. Production counter/condition/timestamp-reuse tests pass; device cave preservation and FPS pending.
+
+2026-11-14 Ocarina Build154: experimental cave path honors guest ZCULL/depth-order boundaries after depth/stencil writes; no hardware query or per-report pass split. Production barrier-policy and counter tests pass; cave image and phone cost pending.

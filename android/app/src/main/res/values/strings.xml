@@ -747,5 +747,5 @@
     <string name="s2_oot_classic_passes">Cached passes (Qualcomm)</string>
     <string name="s2_oot_classic_passes_note">Uses the Banana render-pass cache when supported. Restart to apply. Disable to compare with the previous rendering path.</string>
     <string name="s2_keep_cave_walls">Keep cave walls (Qualcomm)</string>
-    <string name="s2_keep_cave_walls_note">Keeps geometry conservatively visible without query-driven pass splits. May draw hidden objects. Off by default; restart to apply. Qualcomm only.</string>
+    <string name="s2_keep_cave_walls_note">Experimental correction for flickering walls and rocks. May increase GPU load. Off by default; restart to apply. Qualcomm only.</string>
 </resources>
