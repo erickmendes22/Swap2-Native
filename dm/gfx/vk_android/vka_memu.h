@@ -15,6 +15,7 @@ typedef struct vka_memu_sh {
     uint32_t nsb;                    // its storage buffer descriptors (with the emulation's two: within maxPerStageDescriptorStorageBuffers)
     dmsh_vk_entry ce, ve;            // the entries of its compute form (the stage compute) and of its vertex shader (no binding)
     struct vka_shader *cs[2], *vs;
+    struct { uint64_t mask; struct vka_shader *cs[2]; } masked_cs[16];
     struct { uint64_t mask; struct vka_shader *vs; } masked_vs[16];
 } vka_memu_sh;
 #define VKA_MEMU_KEY_CS 0x4d454d555f43535full   // a compute form's key: the shader's key XOR this (XOR VKA_MEMU_KEY_GL for GL depth): no library key
