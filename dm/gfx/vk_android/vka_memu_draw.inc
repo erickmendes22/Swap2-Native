@@ -99,7 +99,28 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         if (!resolve(mp, 6, &ts, &bad) || !resolve(mp, 7, &ms, &bad) || bad || !ms) return;
         vka_memu_sh *mi = vka_memu_of(ms), *ti = ts ? vka_memu_of(ts) : NULL;
         if (!mi || (ts && !ti)) return;
-        E->ts = ts; E->ms = ms; E->vs = vka_memu_vs_of(ms); E->mcs = vka_memu_cs_of(ms, !vka_depth_zero()); E->tcs = ts ? vka_memu_cs_of(ts, 0) : NULL;
+        E->ts = ts; E->ms = ms; E->vs = vka_memu_vs_of(ms);
+        E->mcs = vka_memu_cs_of(ms, !vka_depth_zero());
+        E->tcs = ts ? vka_memu_cs_of(ts, 0) : NULL;
+        // The two shader stages MUST be specialized as a pair. A masked
+        // producer with an original/full consumer would read uninitialized
+        // arena words; NEVER accept only one half. The shader library and
+        // task stage are still untouched. The actual bound fragment program
+        // (which need not be the mesh program) supplies the exact input mask.
+        if (!ts && E->vs && E->mcs &&
+            !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+            VKA_ENV("DM_VK_OOT_VARYING_PRUNE", 1)) {
+            vka_shader *fs = NULL; unsigned fbad = 0;
+            if (resolve(d->bst[1], 1, &fs, &fbad) && !fbad) {
+                vka_shader *sel_vs = vka_memu_vs_for_fs(ms, fs);
+                if (sel_vs && sel_vs != E->vs) {
+                    vka_shader *sel_cs = vka_memu_cs_for_fs(ms, !vka_depth_zero(), fs);
+                    if (sel_cs && sel_cs != E->mcs) {
+                        E->vs = sel_vs; E->mcs = sel_cs;
+                    }
+                }
+            }
+        }
         if (!E->vs || !E->mcs || (ts && !E->tcs)) return;
         vka_shader *c5[VKA_NSTAGE] = {0};
         c5[5] = E->mcs; if (!vka_layout_of(c5, 1, &E->ml) || !(E->mp = vka_cs_pipeline(E->mcs, &E->ml))) return;
