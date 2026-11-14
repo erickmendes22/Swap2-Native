@@ -1062,3 +1062,39 @@ ICD is not Adreno and these numbers are not Android FPS predictions. Do NOT
 use a cold first-run comparison (48-88ms in preliminary runs) as a speedup.
 No APK or runtime enablement is justified by this experiment alone. Continue
 with actual work elimination while retaining157's real-query cave fix.
+
+
+### Clean submission preparation: redundant full dependency removed (2026-11-14)
+
+The submission prefix always emitted two identical ALL_COMMANDS full memory
+barriers around vka_tex_prepare, including when it performed no GPU work.
+Keep the FIRST dependency unconditionally: host writes and writes in earlier
+submissions must remain visible. vka_tex_prepare now returns a conservative
+possible-GPU-work bit. With the existing selective-GPU-synchronization switch
+DM_VK_ATTACHMENT_PARTS enabled, omit ONLY the second dependency when that bit
+is zero. No queries, dispatches, uploads, draws or new barriers are added.
+No change to the157 cave/query pass-end path or actual visibility values.
+
+Mark BEFORE each possible upload (including partial/row), sparse refresh or
+bind, NaN diagnostic scan and descriptor-driven image preparation. First
+pool initialization also returns possible work. Failed/no-op attempts stay
+conservative; upload-byte counters are deliberately not used as the proof.
+Sampler/descriptor CPU updates alone require no command-buffer memory barrier.
+All three existing optional controls remain independent; this reduction is
+part of selective synchronization, whose OFF mode restores both barriers.
+
+Tests execute the actual production submission-prefix code and full-barrier
+implementation on Vulkan. Eight cases cover clean versus transfer-writing
+preparation, conservative sparse/descriptor attempts and option OFF/ON. Every
+4096-byte GPU readback is exact under synchronization validation. Only clean
+preparation with the option ON changes2 dependencies to1. A separate source
+coverage check requires every preparation helper taking cb to mark work.
+An Android NDK28.2 source-compile CI job checks the complete modified C files
+without generating an APK. New per-frame statistics report actual removals.
+
+This eliminates GPU commands but its phone-time/FPS benefit is UNMEASURED.
+The measured scene had~6 logical submissions/frame; actual selection depends
+on texture/descriptor preparation. Do not claim an FPS figure or build a
+standalone APK for this small change; carry it into the next combined
+performance candidate after validation. The fragment-elision experiment
+above remains disabled because its timing did not establish a gain.

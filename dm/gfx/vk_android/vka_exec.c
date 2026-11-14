@@ -26,6 +26,7 @@ VkCommandBuffer vka_rp_cb(void) { return g_cb; }
 typedef struct { int kind; uint32_t mode, v, type; uint64_t addr, q0, q1; } pop;   // kind 1 event, 2 counter report, 3 frame span, 4 counted samples-passed report, 5 occlusion queries given back unread (q0..q1: their sequence numbers)
 static pop *g_post; static int g_npost, g_postcap;
 static uint64_t g_frame, g_stat_ops, g_stat_draws, g_stat_skipped;
+static uint64_t g_prepare_barriers_removed;
 // The first NVN opcode stopping a mesh->compute batch. Record only on the
 // MEMU_ADD walk (not once per task/mesh replay). Never relax the barrier;
 // report which guest dependency costs us additional GPU pass splits.
@@ -248,6 +249,10 @@ void mtl_set_frame(uint64_t f) {
         if (f0) VLOG("replay up to frame %llu: per frame %.0f draws, %.0f render passes, %.0f clears / copies (%.0f in a pass), %.0f full barriers, %.0f inline uniform updates, %.1f submissions (%.1f parts); recording %.2f ms a frame (%.2f us a draw)",
                      (unsigned long long)f, (g_stat_draws - d0) / n, (vka_n_rp - rp0) / n, (g_stat_ops - o0) / n, (g_n_pclear - pc0) / n, (vka_n_bar - b0) / n, (g_n_ub - ub0) / n, (g_n_sub - s0) / n, (g_n_sub - s0 + g_n_chunks - ch0) / n, (g_rec_ns - r0) / n / 1e6,
                      g_stat_draws > d0 ? (g_rec_ns - r0) / 1e3 / (double)(g_stat_draws - d0) : 0.0);
+        { static uint64_t prep0;
+          if (g_prepare_barriers_removed != prep0)
+              VLOG("GPU submission preparation: %.1f duplicate full barriers removed/frame; initial host/previous-submission dependency retained", (g_prepare_barriers_removed-prep0)/n);
+          prep0 = g_prepare_barriers_removed; }
         { static uint64_t tb0; VLOG("Vulkan scoped upload dependencies: %.1f transfer-write -> ALL_COMMANDS barriers/frame (replacing full barriers only after inline uniform copies)", (vka_n_transfer_bar - tb0) / n); tb0 = vka_n_transfer_bar; }
         { static uint64_t c0, r0; VLOG("inline uniform GPU batching: %.1f staged copy regions -> %.1f vkCmdCopyBuffer calls/frame (%.1f commands removed; disjoint destination ranges only; DM_VK_UB_BATCH=0 disables)",
               (g_ub_copy_regions-r0)/n, (g_ub_copy_cmds-c0)/n, (g_ub_copy_regions-r0-g_ub_copy_cmds+c0)/n);
@@ -765,8 +770,15 @@ void vka_rp_sub_begin(void) {
     vka_gp_sub_begin(g_cb, g_frame);
     vka_enc_start(g_cb);
     vka_barrier(g_cb);   // the host's writes to guest memory before this submission (made available by the submit), and earlier submissions' writes
-    vka_tex_prepare(g_cb);
-    vka_barrier(g_cb);   // the re-uploads of CPU-written textures before the submission's draws read them
+    int prepare_gpu_work = vka_tex_prepare(g_cb);
+    // Keep the initial full dependency for host/previous-submission writes.
+    // Without any intervening GPU work a second identical barrier adds no
+    // memory or execution ordering. Nonzero means MAYBE: retain it on all
+    // uploads, sparse remaps, descriptor-driven image creation and diagnostics.
+    if (prepare_gpu_work || !VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0))
+        vka_barrier(g_cb);
+    else
+        g_prepare_barriers_removed++;
     // Reserve a fence-released texture-feedback ring slot BEFORE any draw
     // can bind its immutable pool-feedback descriptor; normal fallback uses
     // the original shared bitmap and the original copy+clear at commit.

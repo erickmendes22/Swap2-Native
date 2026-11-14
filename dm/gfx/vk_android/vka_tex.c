@@ -3206,7 +3206,13 @@ static void read_watch(void) {
     int bad = 0; for (int i = n0; i < n; i++) if (mprotect((void *)g_rwr[i].lo, g_rwr[i].hi - g_rwr[i].lo, PROT_NONE)) bad++;
     VLOG("read watch: %d storages of GPU-written images (%.1f MiB) made inaccessible (%d failed)", n - n0, bytes / 1048576.0, bad);
 }
-void vka_tex_prepare(VkCommandBuffer cb) {
+int vka_tex_prepare(VkCommandBuffer cb) {
+    // Return a conservative GPU-work bit, NOT an upload-byte statistic:
+    // sparse remaps, zero-image ownership and descriptor-driven image creation
+    // can record work without increasing upload-byte counters. A fresh pool
+    // initialization also retains the original post-prepare dependency.
+    int gpu_work = !g_set;
+#define PREP_GPU(call) (gpu_work = 1, (call))
     bindless_init();
     nvn_pool_use(1);   // the re-uploads below read guest storage: no pool is finalized (and unmapped) under them. Taken before g_tmu, as write_tex does
     pthread_mutex_lock(&g_tmu);
@@ -3220,12 +3226,12 @@ void vka_tex_prepare(VkCommandBuffer cb) {
         if (im->gpu_owned || img_pool_dead(im)) continue;
         tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
         nvn_tex_layout(&t.d, &t.L);
-        if (im->vtrack) { sparse_refresh(im, cb); g_reup++; continue; }
+        if (im->vtrack) { PREP_GPU(sparse_refresh(im, cb)); g_reup++; continue; }
         if (!im->track && (im->span = nvn_dirty_span(t.mem, t.L.size))) {
             im->track = 1;
             watch_add(im);
         }
-        if (im->track) upload_tracked(im, &t, cb); else upload_fill(im, &t, cb);
+        if (im->track) PREP_GPU(upload_tracked(im, &t, cb)); else PREP_GPU(upload_fill(im, &t, cb));
         g_reup++;
     }
     g_nredo = 0;
@@ -3238,12 +3244,12 @@ void vka_tex_prepare(VkCommandBuffer cb) {
                 if (im->gpu_owned || !im->mem || im->vpool || im->vtrack || img_pool_dead(im) || !im->from_mem) continue;
                 if (!im->track && rt < 2) continue;
                 tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
-                if (im->track) { upload_tracked(im, &t, cb); nt++; } else { upload_fill(im, &t, cb); nf++; } k++; }
+                if (im->track) { PREP_GPU(upload_tracked(im, &t, cb)); nt++; } else { PREP_GPU(upload_fill(im, &t, cb)); nf++; } k++; }
             if (cur >= g_nlive) { VLOG("DM_VK_RETRACK=%d: %d tracked and %d filled-once images uploaded again from their storage", rt, nt, nf); cur = -1; } }
     }
     // GPU writes whose submission is done: the images over them that did not get their bytes are uploaded again (see gw_t above)
     gml_poll();
-    if (vka_nan_on()) watch_scan(cb);
+    if (vka_nan_on()) PREP_GPU(watch_scan(cb));
     static uint64_t nprep, kinds[4], ntake; nprep++;
     if (vka_nan_on()) { for (int i = 0; i < g_ngw; i++) if (g_gw[i].fence && g_gw[i].fence <= vka_done()) kinds[g_gw[i].kind]++;
         if (nprep % 600 == 0) VLOG("NaN scan: GPU writes into guest memory done so far: %llu copies, %llu fills, %llu inline updates, %llu stores / texture → buffer copies (%llu pages from raw global memory logs, %llu logs full, %llu without a log); textures re-uploaded after them %llu", (unsigned long long)kinds[0], (unsigned long long)kinds[1], (unsigned long long)kinds[2], (unsigned long long)kinds[3], (unsigned long long)g_gml_pages, (unsigned long long)g_gml_full, (unsigned long long)g_gml_none, (unsigned long long)g_gw_late); }
@@ -3294,7 +3300,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
                     if (!im->from_mem || im->gpu_owned || !im->mem || im->vpool || img_pool_dead(im) ||
                         a >= w->hi || w->lo >= a + im->L.size || im->gw_seen >= w->seq) continue;
                     tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
-                    if (im->track) upload_tracked(im, &t, cb); else upload_fill(im, &t, cb);
+                    if (im->track) PREP_GPU(upload_tracked(im, &t, cb)); else PREP_GPU(upload_fill(im, &t, cb));
                     g_gw_late++;
                 }
                 free(w->data);
@@ -3305,7 +3311,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
                 vka_img *im = by[j]; uint64_t a = (uint64_t)(uintptr_t)im->mem;
                 if (w->lo >= a + im->L.size || im->gw_seen >= w->seq || im->gpu_owned || img_pool_dead(im)) continue;
                 tex_t t = {0}; t.serial = im->serial; t.d = im->d; t.L = im->L; t.mem = (uint8_t *)im->mem;
-                if (im->track) upload_tracked(im, &t, cb); else upload_fill(im, &t, cb);
+                if (im->track) PREP_GPU(upload_tracked(im, &t, cb)); else PREP_GPU(upload_fill(im, &t, cb));
                 g_gw_late++; if (g_gw_late <= 8 || !(g_gw_late & (g_gw_late - 1))) VLOG("textures re-uploaded after a GPU write into their storage: %llu (uploads that applied pending GPU writes: %llu; pages raw global memory stores wrote: %llu)", (unsigned long long)g_gw_late, (unsigned long long)g_gw_over, (unsigned long long)g_gml_pages);
                 if (g_gw_late <= 8) VLOG("texture serial %llu %ux%u format %#x: a GPU write into its storage (%s %#llx+%#llx) is done, re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format,
                                           w->kind == GW_COPY ? "copy" : w->kind == GW_FILL ? "fill" : w->kind == GW_UPDATE ? "inline update" : "store", (unsigned long long)w->lo, (unsigned long long)(w->hi - w->lo));
@@ -3325,10 +3331,10 @@ void vka_tex_prepare(VkCommandBuffer cb) {
         for (vka_img *im = g_watch_head, *next; im; im = next) {
             next = im->watch_next;
             if (img_pool_dead(im)) continue;
-            if (im->vbind && im->mem) { if (nvn_sparse_since(im->vpool, (uint64_t)(uintptr_t)im->mem, im->L.size, im->vgen, im->stamp)) sparse_bind(im, cb, 0); continue; }   // (GPU-written: binds only)
+            if (im->vbind && im->mem) { if (nvn_sparse_since(im->vpool, (uint64_t)(uintptr_t)im->mem, im->L.size, im->vgen, im->stamp)) PREP_GPU(sparse_bind(im, cb, 0)); continue; }   // (GPU-written: binds only)
             if (im->vtrack && !im->gpu_owned && im->mem) {
                 if (!nvn_sparse_since(im->vpool, (uint64_t)(uintptr_t)im->mem, im->L.size, im->vgen, im->stamp)) continue;
-                sparse_refresh(im, cb);
+                PREP_GPU(sparse_refresh(im, cb));
                 if (g_reup++ < 8) VLOG("sparse texture serial %llu %ux%u format %#x: its mappings or pages changed, re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format);
                 continue;
             }
@@ -3340,19 +3346,19 @@ void vka_tex_prepare(VkCommandBuffer cb) {
             int rows = VKA_ENV("DM_VK_ROWS", 1);
             // (the rows path's re-uploads were not counted in g_reup until 2026-11-07: the packaged-textures line's "re-uploads on pool content change" left out every
             // partial re-upload of a linear texture, which read as "the CPU's writes were never seen")
-            if (rows && upload_rows_tracked(im, &t, cb, lo, hi)) { g_reup++; lin_note_reup(im, lo, hi, 1); continue; }
-            if (upload_images_tracked(im, &t, cb)) { g_reup++; continue; }
-            upload_tracked(im, &t, cb); lin_note_reup(im, lo, hi, 0);
+            if (rows && PREP_GPU(upload_rows_tracked(im, &t, cb, lo, hi))) { g_reup++; lin_note_reup(im, lo, hi, 1); continue; }
+            if (PREP_GPU(upload_images_tracked(im, &t, cb))) { g_reup++; continue; }
+            PREP_GPU(upload_tracked(im, &t, cb)); lin_note_reup(im, lo, hi, 0);
             if (g_reup++ < 8) VLOG("texture serial %llu %ux%u format %#x flags %#x target %d: its storage changed, re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format, im->d.flags, im->d.target);
         }
     }
     nvn_pool_use(0);   // (write_tex takes it again for each ID, after letting g_tmu go: never twice on one thread)
-    if (!g_set) { g_ntd = g_nsd = 0; if (g_tdflag) memset(g_tdflag, 0, 1 << 20); if (g_sdflag) memset(g_sdflag, 0, 4096 * 4); pthread_mutex_unlock(&g_tmu); return; }
+    if (!g_set) { g_ntd = g_nsd = 0; if (g_tdflag) memset(g_tdflag, 0, 1 << 20); if (g_sdflag) memset(g_sdflag, 0, 4096 * 4); pthread_mutex_unlock(&g_tmu); return gpu_work; }
     enum { BATCH = 64 }; VkWriteDescriptorSet w[BATCH]; VkDescriptorImageInfo ii[BATCH]; int nw = 0;
     for (int k = 0; k < g_ntd; k++) {
         int id = g_tdirty[k]; g_tdflag[id] = 0;
         if (id >= (int)(g_treg[id].img ? g_nimg_slots : g_ntex_slots)) { VRED_ONCE("texture ID %d beyond the table", id); continue; }
-        write_tex(id, cb, &w[nw], &ii[nw]);
+        PREP_GPU(write_tex(id, cb, &w[nw], &ii[nw]));
         if (w[nw].pImageInfo->imageView) {
             int kind = w[nw].dstBinding == 2 ? 1 : 0;
             VkImageView view = ii[nw].imageView;
@@ -3386,6 +3392,8 @@ void vka_tex_prepare(VkCommandBuffer cb) {
     g_nsd = 0;
     if (nw) vk.vkUpdateDescriptorSets(V.dev, (uint32_t)nw, w, 0, NULL);
     pthread_mutex_unlock(&g_tmu);
+#undef PREP_GPU
+    return gpu_work;
 }
 
 // ---------- The frame capture (vka_capture.c, DM_NVN_CAPTURE) and its replayer (vka_replay.c) ----------

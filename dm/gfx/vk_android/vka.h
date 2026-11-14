@@ -309,7 +309,7 @@ void vka_tex_pfb_draw(void);                   // the draw or dispatch being rec
 void vka_tex_pfb_begin(void);                  // experimental direct ring: reserve and zero a fence-released readback slot BEFORE the next pool draw
 void vka_tex_pfb_commit(VkCommandBuffer cb, uint64_t fence);   // the submission's end (vka_exec.c): the bitmap copied to a host slot and cleared
 VkImageView vka_view(vka_img *im, VkFormat fmt, VkImageViewType type, VkImageAspectFlags aspect, uint32_t level, uint32_t nlevels, uint32_t layer, uint32_t nlayers, const VkComponentMapping *swz);
-void vka_tex_prepare(VkCommandBuffer cb);           // at submit begin: dirty CPU textures re-uploaded, registered descriptors written
+int vka_tex_prepare(VkCommandBuffer cb);            // at submit begin: dirty CPU textures re-uploaded, descriptors written; 1 if GPU work may have been recorded
 void vka_tex_uploads(VkCommandBuffer cb);
 VkDescriptorSet vka_bindless_set(void);
 VkDescriptorSetLayout vka_bindless_layout(void);
