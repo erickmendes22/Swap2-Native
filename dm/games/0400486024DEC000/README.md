@@ -993,3 +993,43 @@ selected memory barriers per frame, so selection is measurable on device.
 Build160 contains only partial uploads and MUST NOT be the delivered build.
 Next on-device comparison uses161 against159 in the heavy outdoor area;
 never the cave as a performance reference.
+
+
+### Build161 device A/B:145358/145505/145603/145653 (2026-11-14)
+
+All four supplied logs identify16cba49 and the expected signer. Every launch
+environment variable is identical EXCEPT the three optional GPU switches;
+this was checked from the complete env headers, not inferred from filenames.
+Use the common stabilized300-frame window ending1500, not loading averages,
+longframe-only samples or the truncated2048-timestamp profiling sum.
+
+| Capture | Partial uploads | Omit unused colour | Selective attachment memory | Frame p50 ms | Frame p95 ms | GPU p50 ms | Reciprocal frame-p50 FPS |
+|---|---|---|---|---|---|---|---|
+|145358|ON|ON|ON|22.62|23.73|22.31|44.21|
+|145505|ON|ON|OFF|22.68|23.63|22.33|44.09|
+|145603|ON|OFF|ON|22.69|23.76|22.44|44.07|
+|145653|OFF|ON|ON|22.53|23.34|22.10|44.39|
+
+Interpretation: no material FPS improvement demonstrated by either depth
+option. Removing unused colour is actually selected (~823colour load/store
+pairs/frame), and selective attachment barriers are actually selected
+(~950/frame), so this is not another zero-selected-draw result. Marginal
+GPU differences0.13ms and0.02ms are too small to establish a meaningful gain
+from single sequential runs without controlled thermal/clock conditions.
+The OFF controls restore zero selections as expected. Keep visual correctness
+as a separate user observation: the logs are not a picture validation.
+
+ALL four captures report zero texture re-uploads and no partial-upload
+selection. Thus the faster reciprocal p50 with partial uploads OFF cannot
+be attributed to avoiding partial-upload work: that routine was never
+exercised. Its streaming benefit remains unmeasured by this stationary test.
+There is no all-three-OFF capture here; do not fabricate one or claim an
+aggregate three-feature speedup from these marginal A/B results.
+
+The heavy scene still has~2390-2400draws and~973-975physical render passes
+per frame, including~833real-query depth-dirty pass ends. Omission removes
+colour binding/traffic but leaves these depth boundaries intact. It cannot
+be described as eliminating the remaining query/depth store/reload workload.
+Do not re-enable proxy results, forced visibility or failed155 in-pass
+depth barriers. Save this measured result before any further optimization;
+no new APK is justified solely by these tiny timing differences.
