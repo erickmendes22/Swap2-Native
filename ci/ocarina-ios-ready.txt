@@ -12,3 +12,5 @@ Build162 combined GPU producer-dependency candidate; continue from approved157/c
 Build162 CPU/GPU candidate based on 67f92dd: CPU mesh per-draw state snapshots eliminate two redundant guest command-list walks, preserving original ordered Vulkan task/mesh dispatches and optional DM_VK_MEMU_SNAPSHOT=0 fallback. GPU depth-only colourless fragment program replaced by strict SPIR-V safety-filtered no-output fragment stage, not a missing stage; optional DM_VK_OOT_DEPTH_FS_ELIDE=0 fallback. Precise 192 GPU occlusion samples, depth, pixels and 193 physical pass ends passed under Lavapipe with no scene substitutions. Synthetic timings, not Qualcomm FPS; phone validation is necessary. Keeps Build157 cave safeguards; no extra launcher buttons. The exact CI APK comes from this branch and retains the 0.1.6 installed signing identity if the cache fingerprint check succeeds.
 
 CI rerun: shader proof tests use the installed Android NDK glslc if Ubuntu lacks glslangValidator; no shader or runtime semantic changes.
+
+CI contract corrected: asserted versionCode 2000+Github run number is greater than the previous test APK, while package and signer remain unchanged.
