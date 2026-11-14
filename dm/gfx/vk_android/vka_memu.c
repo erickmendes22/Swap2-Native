@@ -98,6 +98,108 @@ vka_shader *vka_memu_vs_of(vka_shader *s) {
     d->vs = v; pthread_mutex_unlock(&g_mu);
     return v;
 }
+// GPU raster fetch reduction: the original producer writes all location planes,
+// but a generated vertex consumer only needs to fetch locations that the
+// ACTUAL bound fragment program declares. Position, point size, primitive
+// indices and culling are never removed. A missing/opaque fragment module,
+// unrepresentable input, an unsupported pair or >16 distinct variants ALWAYS
+// falls back to the unmodified vertex module.
+//
+// Cache parsed fragment masks by shader identity in TLS. This is purely to
+// prevent re-decompressing SPIR-V for each draw; it does not change the render
+// thread's guest command sequence, descriptor bindings or pipeline ordering.
+static uint64_t g_memu_varying_draws, g_memu_varying_words_saved;
+void vka_memu_varying_stats(uint64_t *draws, uint64_t *words) {
+    if (draws) *draws = g_memu_varying_draws;
+    if (words) *words = g_memu_varying_words_saved;
+}
+vka_shader *vka_memu_vs_for_fs(vka_shader *mesh, vka_shader *fragment) {
+    vka_shader *fallback = vka_memu_vs_of(mesh);
+    if (!fallback || !VKA_ENV("DM_VK_OOT_VARYING_PRUNE", 1)) return fallback;
+    vka_memu_sh *d = vka_memu_of(mesh);
+    if (!d || d->L.task) return fallback;
+    uint64_t all = vka_memu_vs_locs(&d->L), used = 0;
+    if (!all) return fallback;
+    if (fragment) {
+        // Stable key is insufficient when the user changes shader libraries:
+        // key the TLS entry by the actual in-memory shader, not by a hash.
+        static __thread struct { const vka_shader *shader; uint64_t mask; int ok; } cache[128];
+        unsigned pos = (unsigned)(((uintptr_t)fragment >> 4) & 127u);
+        if (cache[pos].shader == fragment) {
+            if (!cache[pos].ok) return fallback;
+            used = cache[pos].mask;
+        } else {
+            char err[160] = ""; size_t n = 0;
+            uint32_t *spv = vka_shader_memu_words(fragment, &n, err, sizeof err);
+            int ok = spv && vka_memu_fs_input_locs(spv, n / 4, &used);
+            free(spv);
+            cache[pos] = (typeof(cache[pos])){fragment, used, ok};
+            if (!ok) return fallback;
+        }
+    }
+    if ((used & ~all) || used == all) return fallback;
+    // A single deleted vec4 may not overcome an extra pipeline variant.
+    // Only enable when >=2 vec4 planes = >=8 GPU SSBO loads per vertex
+    // are PROVEN not to feed this fragment program.
+    unsigned dropped = (unsigned)__builtin_popcountll(all & ~used);
+    if (dropped < 2) return fallback;
+    pthread_mutex_lock(&g_mu);
+    int slot = -1;
+    for (unsigned i = 0; i < 16; i++) {
+        if (d->masked_vs[i].vs && d->masked_vs[i].mask == used) {
+            vka_shader *v = d->masked_vs[i].vs;
+            pthread_mutex_unlock(&g_mu);
+            ++g_memu_varying_draws; g_memu_varying_words_saved += dropped * 4u;
+            return v;
+        }
+        if (slot < 0 && !d->masked_vs[i].vs) slot = (int)i;
+    }
+    pthread_mutex_unlock(&g_mu);
+    if (slot < 0) return fallback;
+
+    char err[256] = ""; size_t words = 0;
+    uint32_t *spv = vka_memu_vs_masked(&d->L, used, &words, err, sizeof err);
+    VkShaderModule mod = spv ? make_module(spv, words) : VK_NULL_HANDLE;
+    free(spv);
+    if (!mod) {
+        static _Atomic int n;
+        if (atomic_fetch_add(&n, 1) < 4)
+            VRED("mesh selective raster vertex module %016llx failed: %s",
+                 (unsigned long long)mesh->key, err[0] ? err : "vkCreateShaderModule failed");
+        return fallback;
+    }
+    dmsh_vk_entry *e = malloc(sizeof *e);
+    if (!e) { vk.vkDestroyShaderModule(V.dev, mod, NULL); return fallback; }
+    *e = d->ve;
+    e->key ^= VKA_MEMU_KEY_VS_MASKED ^ used;
+    vka_shader *v = derive(mesh, e, mod, 2);
+    if (!v) { free(e); vk.vkDestroyShaderModule(V.dev, mod, NULL); return fallback; }
+    memset(v->fcomp, 0xf, sizeof v->fcomp);
+    pthread_mutex_lock(&g_mu);
+    for (unsigned i = 0; i < 16; i++) {
+        if (d->masked_vs[i].vs && d->masked_vs[i].mask == used) {
+            vka_shader *have = d->masked_vs[i].vs;
+            pthread_mutex_unlock(&g_mu);
+            vk.vkDestroyShaderModule(V.dev, mod, NULL);
+            free(e); free(v);
+            ++g_memu_varying_draws; g_memu_varying_words_saved += dropped * 4u;
+            return have;
+        }
+    }
+    // The original free slot might have been taken during module creation.
+    slot = -1;
+    for (unsigned i = 0; i < 16; i++)
+        if (!d->masked_vs[i].vs) { slot = (int)i; break; }
+    if (slot >= 0) d->masked_vs[slot] = (typeof(d->masked_vs[slot])){used, v};
+    pthread_mutex_unlock(&g_mu);
+    if (slot < 0) {
+        vk.vkDestroyShaderModule(V.dev, mod, NULL); free(e); free(v);
+        return fallback;
+    }
+    ++g_memu_varying_draws; g_memu_varying_words_saved += dropped * 4u;
+    return v;
+}
+
 vka_shader *vka_memu_by_key(uint64_t key) {
     // Prewarm records name original shaders through a derived-key tag.
     // Resolve both historical layouts to the ACTIVE producer/consumer
