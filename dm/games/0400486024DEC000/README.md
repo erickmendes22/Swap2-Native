@@ -1270,3 +1270,25 @@ First heavy window ending1500: framep50=20.16ms (~49.60 reciprocal-p50FPS), GPUp
 Later166 window medians19.42,18.60,16.68ms coincide with scene changes: frame1801's largest block changes from19f99 to90a0132cb7fb4a0f and passes fall to140. Do not credit later lighter-scene FPS to the optimization or use caves as a benchmark. Preserve the accepted165 CPU reduction and fast cave-OFF renderer.
 
 The next source target is the graphics block dominated by19f99e925937b038 (~2.925ms across two dominated blocks in frame1501, including VS/depth/ROP). It already uses2x2VRS and is distinct from the existing1e4d AST replacement. The log explicitly confirms19f99 source capture succeeded, at /storage/emulated/0/Download/1DM/Compressed/Work/0400486024DEC000/nvn_shdump. The uploaded7z contains only the log; the older local59-shader capture has no19f99 source. Need the newly captured19f99e925937b038.ctl and19f99e925937b038.code for source-verified translation/reflection/pixel comparisons. Do not guess a replacement, repeat ALU CSE that previously removed zero operations, or issue an APK solely relabelling the payload result. No new runtime change or APK is justified by this log analysis alone.
+
+### Build167 candidate: captured19f99 AST, paired import (2026-11-14)
+
+The new nvn_shdump.zip contains61 matched shader pairs, including the newly
+requested19f99e925937b038 source. Its control/code hash is verified by the
+normal captured-record builder. Normal translation reproduces the existing
+full-library entryef7497c34de69c64; an isolated AST-mode build produces
+60921281eeaf11a6 with the exact same resource/c1/interface linkage. The
+previous1e4d source also reproduces normal62a0bcaaa922986f; its AST entry
+4f6e507bc5f89ed6 is included in the same two-entry patch, using the existing
+reviewed compiler/options/versions. See [shader validation and import](../../../android/SHADERS.md#build167-second-captured-heavy-fragment-in-the-same-bounded-patch)
+for counts, GPU comparison scope and limitations. No full42k rebuild or ABI
+change. Native source/importer changes merely admit that exact reviewed pair;
+legacy one-key imports still work. Keep Optimize fragment (test) ON; import
+the delivered pair ZIP after updating the APK, then restart the game. An APK
+alone cannot activate19f99 until its separately imported patch is present.
+
+Preserve165 CPU improvements,166 payload path, existing VRS/resolution,
+vegetation and approved fast cave-OFF policy. Do not substitute shaderless
+query fragments, approximate counters, affinity or extra GPU passes. This
+candidate targets code of the actual remaining heavy scene variant; GPU/FPS
+benefit on the phone is unmeasured, and the ~3ms block includes VS/depth/ROP.

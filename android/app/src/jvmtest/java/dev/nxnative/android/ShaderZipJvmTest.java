@@ -244,8 +244,8 @@ public final class ShaderZipJvmTest {
         wrong = patch.clone(); put(wrong, 24, "0123456789ab");
         refused("wrong fragment version", ShaderZip.Why.OTHER_VERSION,
                 craft(new File(t,"version.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,false);
-        wrong = patch.clone(); u32(wrong,72,2);
-        refused("not a one-entry fragment patch", ShaderZip.Why.OTHER_VERSION,
+        wrong = patch.clone(); u32(wrong,72,3);
+        refused("too many fragment shaders", ShaderZip.Why.OTHER_VERSION,
                 craft(new File(t,"count.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,false);
         wrong = patch.clone(); wrong[8] ^= 1;
         refused("wrong fragment translator chain", ShaderZip.Why.DAMAGED,
@@ -260,6 +260,37 @@ public final class ShaderZipJvmTest {
         check(Arrays.equals(bytes(installed),patch), "stream replacement preserves patch bytes");
         for (java.util.Map.Entry<String,String> e : originals.entrySet())
             check(e.getValue().equals(tree(p).get(e.getKey())), "stream keeps original " + e.getKey());
+        byte[] pair = lib(id, ShaderZip.FRAGMENT_VERSION, INPUTS, ABI, 2, 4096, 8);
+        put(pair, 8, "de2cd6b79f33");
+        u64(pair, 128, 0x19f99e925937b038L); pair[144] = 4;
+        u64(pair, 192, 0x1e4d2630d24846d0L); pair[208] = 4;
+        File pairZip = craft(new File(t,"pair.zip"),pair,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE);
+        importFile(pairZip,target);
+        check(Arrays.equals(bytes(installed),pair), "both reviewed fragments installed together");
+        TreeMap<String,String> stablePair = tree(p);
+        wrong = pair.clone(); u64(wrong,192,0x19f99e925937b038L);
+        refused("duplicate fragment key",ShaderZip.Why.DAMAGED,
+                craft(new File(t,"duplicate-key.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,true);
+        wrong = pair.clone(); u64(wrong,128,0x1e4d2630d24846d0L); u64(wrong,192,0x19f99e925937b038L);
+        refused("fragment order",ShaderZip.Why.DAMAGED,
+                craft(new File(t,"order-key.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,false);
+        wrong = pair.clone(); wrong[208] = 5;
+        refused("second fragment stage",ShaderZip.Why.DAMAGED,
+                craft(new File(t,"second-stage.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,true);
+        wrong = patch.clone(); u64(wrong,128,0x19f99e925937b038L);
+        refused("heavy-only would lose previous fragment",ShaderZip.Why.DAMAGED,
+                craft(new File(t,"heavy-only.zip"),wrong,inputs,"purpose",ShaderZip.FRAGMENT_PURPOSE),target,false);
+        check(stablePair.equals(tree(p)), "rejected pair imports preserve installed pair");
+        importStream(pairZip,target);
+        check(Arrays.equals(bytes(installed),pair), "two-fragment stream import");
+        stablePair = tree(p); // source.tsv records the stream origin
+        check(new File(p,"shaders/fragment-ast").renameTo(new File(p,"shaders/.replaced-fragment-ast")), "simulate pair replace interruption");
+        ShaderZip.recover(p);
+        check(stablePair.equals(tree(p)), "pair recovery preserves both fragments");
+        importFile(zip,target);
+        check(Arrays.equals(bytes(installed),patch), "legacy one-fragment import still supported");
+        for (java.util.Map.Entry<String,String> e : originals.entrySet())
+            check(e.getValue().equals(tree(p).get(e.getKey())), "pair keeps original " + e.getKey());
     }
 
     static void roundTrip(File t) throws Exception {

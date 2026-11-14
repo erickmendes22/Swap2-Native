@@ -449,7 +449,7 @@ static int lib_load(void) {
             } else VRED("vegetation supplement rejected: %s", ve);
         } else VLOG("vegetation supplement missing: prepare the 508-stage static update; full base preserved");
     }
-    // Separately imported, correctly versioned one-key AST experiment. Never
+    // Separately imported, correctly versioned bounded AST experiment. Never
     // replace the base, six-shader repair or vegetation supplement on disk.
     if (!(e && *e) && !strcmp(DM_GAME_ID, "0400486024DEC000")) {
         char fp[1024], fe[256];
@@ -465,13 +465,12 @@ static int lib_load(void) {
                 vka_shlib_str(g_fragment_ast.h->vk_chain, version);
                 vka_shlib_str(g_fragment_ast.h->chain, chain);
                 if (strcmp(version, "a16478ff8bcd") || strcmp(chain, "de2cd6b79f33") ||
-                    g_fragment_ast.h->entry_count != 1 ||
-                    !vka_fragment_patch_compatible(&g_lib, &g_fragment_ast, UINT64_C(0x1e4d2630d24846d0))) {
+                    !vka_fragment_patch_library_compatible(&g_lib, &g_fragment_ast)) {
                     VRED("Ocarina fragment AST rejected (version, resources or IO differ); original shader retained");
                     vka_shlib_close(&g_fragment_ast);
                 } else {
                     g_fragment_ast_loaded = 1;
-                    VLOG("Ocarina fragment AST ready: 1e4d exact resource/IO match, original libraries preserved");
+                    VLOG("Ocarina fragment AST ready: %u reviewed scene fragments, exact resource/IO match, original libraries preserved", g_fragment_ast.h->entry_count);
                 }
             }
         }
@@ -1050,11 +1049,14 @@ static int oot_hot_scene_fragment_compatible(const dmsh_vk_entry *old,
     return 1;
 }
 static const vka_shlib *library_for_key(uint64_t key) {
-    if (g_fragment_ast_loaded && key == UINT64_C(0x1e4d2630d24846d0)) {
-        static int logged;
-        if (!logged) {
-            logged = 1;
-            VLOG("Ocarina fragment AST ACTIVE: 1e4d optimized module selected; DM_VK_OOT_FRAGMENT_AST=0 restores original shader");
+    if (g_fragment_ast_loaded &&
+        (key == UINT64_C(0x1e4d2630d24846d0) || key == UINT64_C(0x19f99e925937b038)) &&
+        vka_shlib_find(&g_fragment_ast, key)) {
+        static _Atomic unsigned logged;
+        unsigned bit = key == UINT64_C(0x1e4d2630d24846d0) ? 1u : 2u;
+        if (!(atomic_load_explicit(&logged, memory_order_relaxed) & bit) &&
+            !(atomic_fetch_or_explicit(&logged, bit, memory_order_relaxed) & bit)) {
+            VLOG("Ocarina fragment AST ACTIVE: %016llx optimized module selected; DM_VK_OOT_FRAGMENT_AST=0 restores original shader", (unsigned long long)key);
         }
         return &g_fragment_ast;
     }

@@ -321,3 +321,35 @@ optional Banana 360p/540p -> 720p scene/output profiles prepare a small scene
 RomFS overlay only. The default profile preserves the previous configuration.
 Algorithm attribution, exact reference-pixel tests and phone-validation limits
 are recorded in the [game note](../dm/games/0400486024DEC000/README.md#sgsr1-and-banana-comparison-2026-11-13-current).
+
+### Build167: second captured heavy fragment in the same bounded patch
+
+The optional AST import also accepts exactly two sorted fragment keys:
+`19f99e925937b038`, then the existing `1e4d2630d24846d0`. Legacy one-key
+`1e4d` imports remain supported. A heavy-only, duplicate, reordered,
+unrelated, non-fragment or larger import is rejected before staging. Both
+entries must independently match the complete base library's ABI, profile
+inputs, descriptor resources, c1 bytes, IO flags and module variants at
+runtime. The actual frontend/Vulkan versions remain `de2cd6b79f33` /
+`a16478ff8bcd`; no stamp is relabelled and the full library is unchanged.
+Import the small pair ZIP after installing167; leave **Optimize fragment
+(test)** ON and restart. OFF restores both original scene fragments.
+The `ACTIVE` log includes each full shader key, independently of readiness.
+
+The source-verified19f99 normal build reproduces reference entry
+`ef7497c34de69c64`; its AST entry is `60921281eeaf11a6`. Base code shrinks
+208832 to136632bytes; UINT variant208960 to136760bytes. The same diagnostic
+`spirv-opt -O` applied to both base modules yields3698 to2588instructions,
+54 to34conditional branches, retaining all17 image samples. Diagnostic
+modules are not packaged. Real production linkage checks pass for both
+entries. The delivered ZIP is imported byte-exactly by the actual Java
+file and stream importers; base/hot/vegetation and interrupted replacement
+regressions pass. No captured game shader bytes are committed to this repo.
+
+Twelve128x128 GPU comparisons per float/UINT variant (four finite uniform
+seeds, three alternating rounds) have max absolute error0; nonzero seeds
+produce27749–41167distinct output values. The probe specializes descriptor
+arrays to index zero on BOTH copies, uses synthetic buffers/textures and
+one mip, and is not a gameplay capture. Software timing is mixed/noisy and
+cannot establish Adreno speed or the whole3ms graphics block's fragment
+cost. Phone visuals, GPU time and FPS remain pending controlled testing.

@@ -32,3 +32,20 @@ static inline int vka_fragment_patch_compatible(const vka_shlib *base,
     }
     return 1;
 }
+
+// Keep the original one-fragment import valid. The expanded patch MUST
+// contain both reviewed keys, in library sort order: it cannot silently
+// replace the previous optimization with only the newly captured shader.
+static inline int vka_fragment_patch_library_compatible(const vka_shlib *base,
+                                                        const vka_shlib *patch) {
+    const uint64_t prior = UINT64_C(0x1e4d2630d24846d0);
+    const uint64_t heavy = UINT64_C(0x19f99e925937b038);
+    if (!patch->h || !patch->ent) return 0;
+    if (patch->h->entry_count == 1)
+        return patch->ent[0].key == prior &&
+               vka_fragment_patch_compatible(base, patch, prior);
+    return patch->h->entry_count == 2 &&
+           patch->ent[0].key == heavy && patch->ent[1].key == prior &&
+           vka_fragment_patch_compatible(base, patch, prior) &&
+           vka_fragment_patch_compatible(base, patch, heavy);
+}

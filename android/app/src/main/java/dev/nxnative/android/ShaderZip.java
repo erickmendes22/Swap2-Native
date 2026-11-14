@@ -580,9 +580,9 @@ final class ShaderZip {
             if (!purpose.isEmpty() && !s.fragmentPatch)
                 throw new Failure(Why.NOT_SHADER_ZIP, "unknown shader purpose " + purpose, zipName, purpose);
             if (s.fragmentPatch && (!Prefs.OCARINA_TITLE.equals(id) ||
-                    !FRAGMENT_VERSION.equals(v) || s.shaders != 1 ||
+                    !FRAGMENT_VERSION.equals(v) || (s.shaders != 1 && s.shaders != 2) ||
                     !t.abi.equals(s.abi) || "unknown".equals(t.inputs) || !t.inputs.equals(s.inputs)))
-                throw new Failure(Why.OTHER_VERSION, "fragment patch requires its exact Ocarina version, one shader, ABI and profile inputs", v, t.current);
+                throw new Failure(Why.OTHER_VERSION, "fragment patch requires its exact Ocarina version, one or two reviewed shaders, ABI and profile inputs", v, t.current);
             if (t.verifyOnly) return;
             if (!v.equals(t.current) && !restampable(v) && !compatibleOcarinaBase() && !s.fragmentPatch)
                 throw new Failure(Why.OTHER_VERSION, "the shaders are of version " + v + ", this app needs " + t.current, v, t.current);
@@ -640,16 +640,20 @@ final class ShaderZip {
             CRC32 crc = new CRC32();
             md.update(hb);
             crc.update(hb);
-            // The bounded patch's sole index record is directly after the header.
+            // The bounded patch's one or two index records follow the header.
             // Check it even in verifyOnly mode, before any installed file changes.
-            byte[] entry = s.fragmentPatch ? new byte[ShaderLibs.ENTRY_SIZE] : new byte[0];
+            byte[] entry = s.fragmentPatch ? new byte[(int)s.shaders * ShaderLibs.ENTRY_SIZE] : new byte[0];
             if (s.fragmentPatch) {
                 for (int got = 0, n; got < entry.length; got += n)
                     if ((n = in.read(entry, got, entry.length - got)) < 0)
                         throw new Failure(Why.DAMAGED, "fragment patch has no index record", "entry");
-                long key = java.nio.ByteBuffer.wrap(entry).order(java.nio.ByteOrder.LITTLE_ENDIAN).getLong();
-                if (key != 0x1e4d2630d24846d0L || entry[16] != 4)
-                    throw new Failure(Why.DAMAGED, "fragment patch does not contain only the expected fragment shader", "fragment key/stage");
+                java.nio.ByteBuffer table = java.nio.ByteBuffer.wrap(entry).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+                for (int i = 0; i < (int)s.shaders; i++) {
+                    int offset = i * ShaderLibs.ENTRY_SIZE;
+                    long expected = s.shaders == 2 && i == 0 ? 0x19f99e925937b038L : 0x1e4d2630d24846d0L;
+                    if (table.getLong(offset) != expected || entry[offset + 16] != 4)
+                        throw new Failure(Why.DAMAGED, "fragment patch does not contain exactly the reviewed fragment set", "fragment key/stage/order");
+                }
                 md.update(entry); crc.update(entry);
             }
             long done = hb.length + entry.length;

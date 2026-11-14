@@ -170,6 +170,7 @@ class VegetationSupplement(unittest.TestCase):
         helpers = '\n'.join(function(src, name) for name in ('vegetation_complete', 'library_for_key'))
         code = '''
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include "vka_shlib.h"
@@ -206,6 +207,15 @@ int main(void) {
     ve[0].stage=DMSH_VK_STAGE_CS;assert(!vegetation_complete(&g_vegetation,&g_lib));ve[0].stage=vka_veg_entries[0].stage;
     g_vegetation.by_abi=1;assert(!vegetation_complete(&g_vegetation,&g_lib));g_vegetation.by_abi=0;
     vh.inputs[0]=1;assert(!vegetation_complete(&g_vegetation,&g_lib));vh.inputs[0]=0;
+    dmsh_vk_header fh={.entry_count=2};
+    dmsh_vk_entry fe[2]={{.key=UINT64_C(0x19f99e925937b038)}, {.key=UINT64_C(0x1e4d2630d24846d0)}};
+    g_fragment_ast=(vka_shlib){.h=&fh,.ent=fe};g_fragment_ast_loaded=1;
+    assert(library_for_key(fe[0].key)==&g_fragment_ast);
+    assert(library_for_key(fe[1].key)==&g_fragment_ast);
+    fh.entry_count=1;g_fragment_ast.ent=&fe[1];
+    assert(library_for_key(fe[0].key)==&g_lib); // legacy patch never redirects missing key
+    assert(library_for_key(fe[1].key)==&g_fragment_ast);
+    g_fragment_ast_loaded=0;
     bh.entry_count=0;assert(!vegetation_complete(&g_vegetation,&g_lib));
     free(ve);free(be);return 0;
 }
