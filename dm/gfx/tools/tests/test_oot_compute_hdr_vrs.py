@@ -95,7 +95,9 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=20)
 
     def test_real_pipeline_uses_predicate_and_retains_opt_out_and_driver_guards(self):
-        self.assertIn('sh[0] = vka_memu_vs_for_fs(memu_e->ms, sh[1]);', DRAW)
+        self.assertIn('sh[0] = memu_e->vs; sh[6] = sh[7] = NULL; mesh = 0;', DRAW)
+        self.assertIn('vka_memu_vs_for_fs(ms, fs)', (ROOT / 'dm/gfx/vk_android/vka_memu_draw.inc').read_text())
+        self.assertIn('vka_memu_cs_for_fs(ms, !vka_depth_zero(), fs)', (ROOT / 'dm/gfx/vk_android/vka_memu_draw.inc').read_text())
         self.assertIn('profiled_mesh_hdr = oot_profiled_mesh_hdr(sh, k, mesh)', PSO)
         self.assertIn('V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
         self.assertIn('(k->samples ? k->samples : 1) == 1', PSO)
