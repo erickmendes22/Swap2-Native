@@ -47,6 +47,8 @@ on:
       - dm/gfx/vk_android/selftest/ndsr_lvp.c
       - dm/tools/tests/test_ndsr_sgsr_gpu.py
       - dm/gfx/vk_android/vka_draw.c
+      - dm/gfx/vk_android/vka_depth_fs_elide.h
+      - dm/gfx/tools/tests/test_ocarina_depth_fs_elide_gpu.py
       - dm/gfx/vk_android/vka.h
       - dm/gfx/vk_android/vka_fragment_patch.h
       - dm/gfx/tools/fragment_gpu_probe.py
@@ -83,6 +85,8 @@ jobs:
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_classic_encoder_order.py -v
       - name: Compare cached classic passes and dynamic rendering on Vulkan
         run: python3 -m unittest discover -s dm/tools/tests -p test_renderpass_cache_gpu.py -v
+      - name: Prove safe depth-only fragment elision using real compiled SPIR-V
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_depth_fs_elide_gpu.py -v
       - name: Verify unused-colour research parity with original depth pass ends
         env:
           MEMU_TEST_VULKAN: '1'
