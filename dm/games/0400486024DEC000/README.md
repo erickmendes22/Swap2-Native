@@ -794,3 +794,32 @@ release marker to156 only after checks, compile signed APK on the original
 branch and inspect Actions result/artifact. Tell the user original-mode
 cave correctness is unconfirmed; do not call it a performance fix. Save
 intermediate checkpoints to GitHub frequently as explicitly requested.
+
+
+### Checkpoint completion / Build156 recovery reference (2026-11-14)
+
+The checkpoint above was saved at `e7198a3` on
+`checkpoint/swap2-cave-recovery-20261114` at the user's explicit request
+for frequent remote saves. The previously pending GPU research test now
+PASSES under Khronos validation:192 precise queries, colour and depth match
+at64x64 and960x540, including44zero and148positive counts. Every193physical
+depth pass instance is retained;96unused-colour load/store pairs are omitted
+only in the synthetic fixture. No gameplay optimisation has been enabled
+from this result. Software timings37.450->36.709ms and26.181->23.756ms
+are not Adreno performance claims.
+
+Production observer testing executes160flag combinations and always calls
+the original physical pass end exactly once. Original query report order
+and query batching tests pass. Build156 is a RECOVERY/REFERENCE build,
+not a claimed optimized cave fix: OFF restores the known normal path, ON
+uses the original physical-split algorithm and can still be expensive.
+Real query results keep the clothing correction reported by the user.
+
+Next device result must establish original-mode cave correctness and the
+measured count of unused-colour passes. Before any runtime colour omission,
+prove preservation of original effective render area/layers/sample count,
+VRS/alpha-to-coverage, clears, shader variants, feedback and later colour
+writes; the simplified fixture does not establish all those game cases.
+No further approximate counters, forced visibility or per-query in-pass
+barriers should be enabled as a wall fix. Save each implementation step
+on GitHub before waiting for long checks/builds.
