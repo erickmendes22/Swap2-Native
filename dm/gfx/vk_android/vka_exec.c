@@ -1309,6 +1309,7 @@ static void not_yet(uint32_t op) {
 // record it stops at, and by a new submission)
 enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_END };
 void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint8_t *p, int idx);
+void vka_memu_replay_phase(int phase); // same ordered GPU dispatches, captured state from ADD
 int vka_memu_on(void); int vka_memu_has(const uint8_t *p); void vka_memu_cur(const uint8_t *p);
 int vka_vegetation_mesh_omit(const vka_dstate *d);  // identical no-side-effect test to final raster cut
 int vka_mesh_route(const vka_dstate *d);  // -1 omit new supplement, 0 original native, 1 supplemental compute
@@ -1439,11 +1440,11 @@ static void memu_scan(const uint8_t *p) {
     if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_ADD", 0);
     vka_memu_batch(MEMU_SETUP, NULL, NULL, NULL, 0);
     if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_SETUP", 0);
-    memu_walk(p, MEMU_TASK);
+    vka_memu_replay_phase(MEMU_TASK);
     if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_TASK", 0);
     vka_memu_batch(MEMU_DIST, NULL, NULL, NULL, 0);
     if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_DIST", 0);
-    memu_walk(p, MEMU_MESH);
+    vka_memu_replay_phase(MEMU_MESH);
     if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_MESH", 0);
     vka_memu_batch(MEMU_END, NULL, NULL, NULL, 0);
     if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_END", 0);
