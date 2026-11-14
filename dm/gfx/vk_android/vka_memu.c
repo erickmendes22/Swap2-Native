@@ -98,6 +98,186 @@ vka_shader *vka_memu_vs_of(vka_shader *s) {
     d->vs = v; pthread_mutex_unlock(&g_mu);
     return v;
 }
+// GPU raster fetch reduction: the original producer writes all location planes,
+// but a generated vertex consumer only needs to fetch locations that the
+// ACTUAL bound fragment program declares. Position, point size, primitive
+// indices and culling are never removed. A missing/opaque fragment module,
+// unrepresentable input, an unsupported pair or >16 distinct variants ALWAYS
+// falls back to the unmodified vertex module.
+//
+// Cache parsed fragment masks by shader identity in TLS. This is purely to
+// prevent re-decompressing SPIR-V for each draw; it does not change the render
+// thread's guest command sequence, descriptor bindings or pipeline ordering.
+// Shared by mesh *producer* and generated vertex *consumer*. It is not
+// enough to optimize VS alone: compute-shader stores of dead vec4 output
+// planes are the actual GPU memory traffic we want to eliminate.
+static int vka_memu_pixel_mask(const vka_shader *fragment, uint64_t *used) {
+    *used = 0;
+    if (!fragment) return 1;
+    static __thread struct { const vka_shader *shader; uint64_t mask; int ok; } cache[128];
+    unsigned pos = (unsigned)(((uintptr_t)fragment >> 4) & 127u);
+    if (cache[pos].shader == fragment) {
+        *used = cache[pos].mask;
+        return cache[pos].ok;
+    }
+    char err[160] = ""; size_t n = 0;
+    uint32_t *spv = vka_shader_memu_words((vka_shader *)fragment, &n, err, sizeof err);
+    int ok = spv && vka_memu_fs_input_locs(spv, n / 4, used);
+    free(spv);
+    cache[pos] = (typeof(cache[pos])){fragment, *used, ok};
+    return ok;
+}
+static uint64_t g_memu_varying_draws, g_memu_varying_words_saved;
+void vka_memu_varying_stats(uint64_t *draws, uint64_t *words) {
+    if (draws) *draws = g_memu_varying_draws;
+    if (words) *words = g_memu_varying_words_saved;
+}
+
+vka_shader *vka_memu_cs_for_fs(vka_shader *mesh, int gl, vka_shader *fragment) {
+    vka_shader *fallback = vka_memu_cs_of(mesh, gl);
+    if (!fallback || strcmp(DM_GAME_ID, "0400486024DEC000") ||
+        !VKA_ENV("DM_VK_OOT_VARYING_PRUNE", 1)) return fallback;
+    vka_memu_sh *d = vka_memu_of(mesh);
+    if (!d || d->L.task) return fallback;
+    uint64_t all = vka_memu_vs_locs(&d->L), used = 0;
+    if (!all || !vka_memu_pixel_mask(fragment, &used) ||
+        (used & ~all) || used == all || __builtin_popcountll(all & ~used) < 2)
+        return fallback;
+    gl = gl && (mesh->e->flags & DMSH_VK_F_GL_DEPTH) ? 1 : 0;
+    pthread_mutex_lock(&g_mu);
+    int slot = -1;
+    for (int i = 0; i < 16; i++) {
+        if (d->masked_cs[i].cs[gl] && d->masked_cs[i].mask == used) {
+            vka_shader *v = d->masked_cs[i].cs[gl];
+            pthread_mutex_unlock(&g_mu);
+            return v;
+        }
+        if (slot < 0 && !d->masked_cs[i].cs[0] && !d->masked_cs[i].cs[1])
+            slot = i;
+        if (d->masked_cs[i].mask == used &&
+            (d->masked_cs[i].cs[0] || d->masked_cs[i].cs[1]))
+            slot = i;
+    }
+    pthread_mutex_unlock(&g_mu);
+    if (slot < 0) return fallback;
+    char err[256] = ""; size_t bytes = 0, frozen_n = 0, mod_n = 0;
+    uint32_t *raw = vka_shader_memu_words(mesh, &bytes, err, sizeof err);
+    uint32_t *frozen = raw ? vka_spv_spec_freeze(raw, bytes / 4, DMSH_VK_SPEC_GL_DEPTH, (uint32_t)gl, &frozen_n) : NULL;
+    uint32_t *spv = raw ? vka_memu_cs_masked(frozen ? frozen : raw,
+                                frozen ? frozen_n : bytes / 4, used,
+                                &mod_n, err, sizeof err) : NULL;
+    VkShaderModule mod = spv ? make_module(spv, mod_n) : VK_NULL_HANDLE;
+    free(raw); free(frozen); free(spv);
+    if (!mod) {
+        static _Atomic int n;
+        if (atomic_fetch_add(&n, 1) < 4)
+            VRED("Ocarina masked mesh compute for %016llx failed (%s), full module retained",
+                 (unsigned long long)mesh->key, err[0] ? err : "VkShaderModule");
+        return fallback;
+    }
+    dmsh_vk_entry *entry = malloc(sizeof *entry);
+    if (!entry) { vk.vkDestroyShaderModule(V.dev, mod, NULL); return fallback; }
+    *entry = d->ce;
+    entry->key ^= (gl ? VKA_MEMU_KEY_GL : 0) ^ VKA_MEMU_KEY_CS_MASKED ^ used;
+    entry->flags &= (uint16_t)~DMSH_VK_F_GL_DEPTH;
+    vka_shader *v = derive(mesh, entry, mod, 1);
+    pthread_mutex_lock(&g_mu);
+    slot = -1;
+    for (int i = 0; i < 16; i++) {
+        if (d->masked_cs[i].cs[gl] && d->masked_cs[i].mask == used) {
+            vka_shader *prior = d->masked_cs[i].cs[gl];
+            pthread_mutex_unlock(&g_mu);
+            vk.vkDestroyShaderModule(V.dev, mod, NULL); free(entry); free(v);
+            return prior;
+        }
+        if (d->masked_cs[i].mask == used &&
+            (d->masked_cs[i].cs[0] || d->masked_cs[i].cs[1]))
+            slot = i;
+        if (slot < 0 && !d->masked_cs[i].cs[0] && !d->masked_cs[i].cs[1])
+            slot = i;
+    }
+    if (slot >= 0) {
+        d->masked_cs[slot].mask = used;
+        d->masked_cs[slot].cs[gl] = v;
+    }
+    pthread_mutex_unlock(&g_mu);
+    if (slot < 0) {
+        vk.vkDestroyShaderModule(V.dev, mod, NULL); free(entry); free(v);
+        return fallback;
+    }
+    return v;
+}
+vka_shader *vka_memu_vs_for_fs(vka_shader *mesh, vka_shader *fragment) {
+    vka_shader *fallback = vka_memu_vs_of(mesh);
+    if (!fallback || !VKA_ENV("DM_VK_OOT_VARYING_PRUNE", 1)) return fallback;
+    vka_memu_sh *d = vka_memu_of(mesh);
+    if (!d || d->L.task) return fallback;
+    uint64_t all = vka_memu_vs_locs(&d->L), used = 0;
+    if (!all) return fallback;
+    if (!vka_memu_pixel_mask(fragment, &used)) return fallback;
+    if ((used & ~all) || used == all) return fallback;
+    // A single deleted vec4 may not overcome an extra pipeline variant.
+    // Only enable when >=2 vec4 planes = >=8 GPU SSBO loads per vertex
+    // are PROVEN not to feed this fragment program.
+    unsigned dropped = (unsigned)__builtin_popcountll(all & ~used);
+    if (dropped < 2) return fallback;
+    pthread_mutex_lock(&g_mu);
+    int slot = -1;
+    for (unsigned i = 0; i < 16; i++) {
+        if (d->masked_vs[i].vs && d->masked_vs[i].mask == used) {
+            vka_shader *v = d->masked_vs[i].vs;
+            pthread_mutex_unlock(&g_mu);
+            ++g_memu_varying_draws; g_memu_varying_words_saved += dropped * 4u;
+            return v;
+        }
+        if (slot < 0 && !d->masked_vs[i].vs) slot = (int)i;
+    }
+    pthread_mutex_unlock(&g_mu);
+    if (slot < 0) return fallback;
+
+    char err[256] = ""; size_t words = 0;
+    uint32_t *spv = vka_memu_vs_masked(&d->L, used, &words, err, sizeof err);
+    VkShaderModule mod = spv ? make_module(spv, words) : VK_NULL_HANDLE;
+    free(spv);
+    if (!mod) {
+        static _Atomic int n;
+        if (atomic_fetch_add(&n, 1) < 4)
+            VRED("mesh selective raster vertex module %016llx failed: %s",
+                 (unsigned long long)mesh->key, err[0] ? err : "vkCreateShaderModule failed");
+        return fallback;
+    }
+    dmsh_vk_entry *e = malloc(sizeof *e);
+    if (!e) { vk.vkDestroyShaderModule(V.dev, mod, NULL); return fallback; }
+    *e = d->ve;
+    e->key ^= VKA_MEMU_KEY_VS_MASKED ^ used;
+    vka_shader *v = derive(mesh, e, mod, 2);
+    if (!v) { free(e); vk.vkDestroyShaderModule(V.dev, mod, NULL); return fallback; }
+    memset(v->fcomp, 0xf, sizeof v->fcomp);
+    pthread_mutex_lock(&g_mu);
+    for (unsigned i = 0; i < 16; i++) {
+        if (d->masked_vs[i].vs && d->masked_vs[i].mask == used) {
+            vka_shader *have = d->masked_vs[i].vs;
+            pthread_mutex_unlock(&g_mu);
+            vk.vkDestroyShaderModule(V.dev, mod, NULL);
+            free(e); free(v);
+            ++g_memu_varying_draws; g_memu_varying_words_saved += dropped * 4u;
+            return have;
+        }
+    }
+    // The original free slot might have been taken during module creation.
+    slot = -1;
+    for (unsigned i = 0; i < 16; i++)
+        if (!d->masked_vs[i].vs) { slot = (int)i; break; }
+    if (slot >= 0) d->masked_vs[slot] = (typeof(d->masked_vs[slot])){used, v};
+    pthread_mutex_unlock(&g_mu);
+    if (slot < 0) {
+        vk.vkDestroyShaderModule(V.dev, mod, NULL); free(e); free(v);
+        return fallback;
+    }
+    ++g_memu_varying_draws; g_memu_varying_words_saved += dropped * 4u;
+    return v;
+}
+
 vka_shader *vka_memu_by_key(uint64_t key) {
     // Prewarm records name original shaders through a derived-key tag.
     // Resolve both historical layouts to the ACTIVE producer/consumer
@@ -230,7 +410,7 @@ int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layo
 // than issuing a new setup/mesh dispatch for each short called list.
 void vka_memu_caller_stats(uint64_t *resumes, uint64_t *nested);
 void vka_memu_stats(char *b, size_t n) {
-    static uint64_t b0, d0, s0, k0, c0, x0, tsmall0, tlarge0, tind0;
+    static uint64_t b0, d0, s0, k0, c0, x0, tsmall0, tlarge0, tind0, varydraw0, varyword0;
     uint64_t sm = vka_memu_task_small - tsmall0,
              lg = vka_memu_task_large - tlarge0,
              id = vka_memu_task_indirect - tind0;
@@ -238,14 +418,19 @@ void vka_memu_stats(char *b, size_t n) {
     tind0 = vka_memu_task_indirect;
     uint64_t cr = 0, nx = 0;
     vka_memu_caller_stats(&cr, &nx);
+    uint64_t varydraw = 0, varyword = 0;
+    vka_memu_varying_stats(&varydraw, &varyword);
+    uint64_t masked_draws = varydraw - varydraw0, dropped_channels = varyword - varyword0;
+    varydraw0 = varydraw; varyword0 = varyword;
     uint64_t nb = vka_memu_n_batches - b0, nd = vka_memu_n_draws - d0, ns = vka_memu_n_splits - s0, nk = vka_memu_n_skip - k0,
              crossings = cr - c0, nested = nx - x0;
     b0 = vka_memu_n_batches; d0 = vka_memu_n_draws; s0 = vka_memu_n_splits; k0 = vka_memu_n_skip; c0 = cr; x0 = nx;
     if (!nb && !nd) { if (n) b[0] = 0; return; }
-    snprintf(b, n, "mesh draws through compute: %llu draws in %llu batches (%.1f a batch), %llu render passes split for one, %llu not prepared; %llu parent-list resumes across %llu nested lookaheads; task mesh draws direct <=256: %llu, direct >256: %llu, indirect: %llu; short GPU task lookup %s", (unsigned long long)nd, (unsigned long long)nb,
+    snprintf(b, n, "mesh draws through compute: %llu draws in %llu batches (%.1f a batch), %llu render passes split for one, %llu not prepared; %llu parent-list resumes across %llu nested lookaheads; task mesh draws direct <=256: %llu, direct >256: %llu, indirect: %llu; short GPU task lookup %s; GPU fragment-masked draws %llu, unused arena scalar channels/vertex %llu", (unsigned long long)nd, (unsigned long long)nb,
              nb ? (double)nd / (double)nb : 0.0, (unsigned long long)ns, (unsigned long long)nk,
              (unsigned long long)crossings, (unsigned long long)nested,
              (unsigned long long)sm, (unsigned long long)lg,
-             (unsigned long long)id, vka_memu_short_task_search() ? "ON" : "OFF");
+             (unsigned long long)id, vka_memu_short_task_search() ? "ON" : "OFF",
+             (unsigned long long)masked_draws, (unsigned long long)dropped_channels);
 }
 #endif
