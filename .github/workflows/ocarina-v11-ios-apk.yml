@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0bd8de45877924628be8644b1b6d127610e0c370
+          ref: 2e4a5179fe821f1d76e467151ef7bb010abd7946
       - name: Install Zstandard for dictionary-compressed NUP regression
         run: |
           if python3 -c 'from compression import zstd'; then
@@ -135,7 +135,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0bd8de45877924628be8644b1b6d127610e0c370
+          ref: 2e4a5179fe821f1d76e467151ef7bb010abd7946
       - name: Generate matching shader headers for the actual APK build
         shell: bash
         run: |
