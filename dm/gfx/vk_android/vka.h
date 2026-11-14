@@ -470,6 +470,7 @@ void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot);    // the slot's per
 void vka_rp_end(void);
 void vka_rp_cave_end(void); // original pass end plus diagnostic-only pass classification
 int vka_rp_has_depth(void); // open pass has a depth or stencil attachment
+int vka_rp_cave_depth_dirty(void); // depth/stencil actually written during the open pass
 int vka_rp_can_defer_ub(uint64_t addr, uint64_t size);
 int vka_rp_bar_pending(void); // pending in-pass guest barrier, without shader writes
 int vka_ub_active(void);
