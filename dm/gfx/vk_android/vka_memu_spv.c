@@ -468,16 +468,66 @@ static void plane_lut_emit(fn_t *f, const mod_t *m, const vka_memu_layout *L,
 
 // ---------- Task / mesh as compute ----------
 typedef struct { uint32_t var; uint32_t idx[6]; int n; } chain_t;
+// Mesh payloads are read-only (SPV_EXT_mesh_shader). Admit only direct uint
+// element pointers consumed by ordinary loads: unknown aliases/escapes retain
+// the complete shared-memory copy. The switch is experimental until timed.
+static uint32_t *payload_read_indices(const mod_t *m, uint32_t payload) {
+    const char *enabled = getenv("DM_VK_MEMU_DIRECT_PAYLOAD");
+    if (!payload || !vka_memu_direct_payload() || m->model != EMMesh) return NULL;
+    uint32_t array = ptr_pointee(m, m->rtype[payload], NULL), element = 0;
+    if (strcmp(enabled, "2") && array_len(m, array, &element) < 256) return NULL;
+    uint32_t *idx = calloc(m->bound, sizeof *idx);
+    if (!idx) return NULL;
+    for (size_t i = m->first_fn; i < m->n; i += m->w[i] >> 16) {
+        const uint32_t *x = m->w + i; uint32_t op = x[0] & 65535, n = x[0] >> 16;
+        if ((op == OpAccessChain || op == OpInBoundsAccessChain) && n == 5 && x[3] == payload &&
+            x[2] < m->bound && x[4] < m->bound && (scalar_kind(m, m->rtype[x[4]]) == 'u' || scalar_kind(m, m->rtype[x[4]]) == 'i') &&
+            scalar_kind(m, ptr_pointee(m, x[1], NULL)) == 'u') idx[x[2]] = x[4];
+    }
+    for (size_t i = 5; i < m->first_fn; i += m->w[i] >> 16) {
+        const uint32_t *x = m->w + i; uint32_t op = x[0] & 65535;
+        if ((op == OpDecorate || op == OpDecorateId || op == OpDecorateString) &&
+            (x[1] == payload || (x[1] < m->bound && idx[x[1]]))) {
+            free(idx); return NULL;
+        }
+    }
+    for (size_t i = m->first_fn; i < m->n; i += m->w[i] >> 16) {
+        const uint32_t *x = m->w + i; uint32_t op = x[0] & 65535, n = x[0] >> 16;
+        if (op == OpLine || op == OpNoLine) continue;
+        for (uint32_t k = 1; k < n; k++) {
+            if (x[k] != payload && !(x[k] < m->bound && idx[x[k]])) continue;
+            if ((op == OpAccessChain || op == OpInBoundsAccessChain) && n == 5 &&
+                x[2] < m->bound && idx[x[2]] && ((k == 3 && x[k] == payload) || k == 2)) continue;
+            if (op == OpLoad && n == 4 && k == 3 && idx[x[k]]) continue;
+            free(idx); return NULL;
+        }
+    }
+    return idx;
+}
+uint32_t vka_memu_direct_payload_words(const uint32_t *w, size_t nw) {
+    mod_t m; char err[64]; vka_memu_layout L; outvar ov[64]; int nov;
+    uint32_t payload = 0, lid = 0, wg = 0, words = 0;
+    if (mod_read(&m, w, nw, err, sizeof err) &&
+        layout_read(&m, &L, ov, &nov, &payload, &lid, &wg, err, sizeof err)) {
+        uint32_t *indices = payload_read_indices(&m, payload);
+        if (indices) words = L.payload_words;
+        free(indices);
+    }
+    mod_free(&m);
+    return words;
+}
 static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
                                    uint64_t used_locations,
                                    size_t *out_nw, char *err, size_t errn) {
     mod_t m; bld_t B; memset(&B, 0, sizeof B); sb_t A = {0}, F = {0}, O = {0};
     chain_t *ch = NULL; uint32_t *oid = NULL;   // oid: per id, 1 + the output it is (an output variable or a chain into one), 0 none
     uint8_t *wgch = NULL;   // per id: a chain into the workgroup ID variable (retyped as Private)
+    uint32_t *payload_idx = NULL;
     outvar ov[64]; int nov = 0; vka_memu_layout L; uint32_t payload = 0, lidvar = 0, wgvar = 0;
     err[0] = 0;
     if (!mod_read(&m, w, nw, err, errn)) { mod_free(&m); return NULL; }
     if (!layout_read(&m, &L, ov, &nov, &payload, &lidvar, &wgvar, err, errn)) goto fail;
+    payload_idx = payload_read_indices(&m, payload);
     B.m = &m; B.next = m.bound;
     bld_base_types(&B);
     ch = calloc(m.bound, sizeof *ch); oid = calloc(m.bound, 4); wgch = calloc(m.bound, 1);
@@ -496,6 +546,8 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
     if (!lidvar) { lidvar = gvar(&B, ptr(&B, SCInput, B.t_u32), SCInput); INS(&A, OpDecorate, lidvar, DecBuiltIn, BILocalInvocationIndex); }
     uint32_t p_priv_u32 = ptr(&B, SCPrivate, B.t_u32), p_priv_v3u = ptr(&B, SCPrivate, B.t_v3u), p_wg_u32 = ptr(&B, SCWorkgroup, B.t_u32);
     uint32_t pv_a = gvar(&B, p_priv_u32, SCPrivate), pv_b = gvar(&B, p_priv_u32, SCPrivate), pv_c = gvar(&B, p_priv_u32, SCPrivate);
+    uint32_t pv_payload = payload_idx ? gvar(&B, p_priv_u32, SCPrivate) : 0;
+    uint32_t pv_payload_limit = payload_idx ? gvar(&B, p_priv_u32, SCPrivate) : 0;
     // Allocate the additional private scalar ONLY with the experimental
     // codepath. The original default SPIR-V must remain byte-identical
     // (prewarm keys, caches, golden-module hashes).
@@ -530,8 +582,8 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
         if (op == OpEntryPoint) {
             size_t sw = strlen((const char *)(x + 3)) / 4 + 1;
             uint32_t ifc[256]; uint32_t ni = 0;
-            for (size_t k = 3 + sw; k < len; k++) if (!(x[k] < m.bound && oid[x[k]]) && x[k] != wgvar && ni < 240) ifc[ni++] = x[k];
-            uint32_t add[] = {arena, recs, pc, in_wg, in_nwg, pv_a, pv_b, pv_c, pv_taskidx, new_wgvar, lidvar};
+            for (size_t k = 3 + sw; k < len; k++) if (!(x[k] < m.bound && oid[x[k]]) && x[k] != wgvar && !(payload_idx && x[k] == payload) && ni < 240) ifc[ni++] = x[k];
+            uint32_t add[] = {arena, recs, pc, in_wg, in_nwg, pv_a, pv_b, pv_c, pv_taskidx, new_wgvar, lidvar, pv_payload, pv_payload_limit};
             for (size_t k = 0; k < sizeof add / 4; k++) if (add[k]) { int dup = 0; for (uint32_t j = 0; j < ni; j++) dup |= ifc[j] == add[k]; if (!dup) ifc[ni++] = add[k]; }
             uint32_t pre[2] = {EMGLCompute, emu_main};
             sb_str_ins(&O, OpEntryPoint, pre, 2, (const char *)(x + 3), ifc, ni);
@@ -543,6 +595,7 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
             sb_put(&O, x[0]); sb_put(&O, emu_main); sb_raw(&O, x + 2, len - 2); continue;
         }
         if ((op == OpName || op == OpMemberName) && x[1] < m.bound && oid[x[1]]) continue;
+        if (payload_idx && op == OpName && (x[1] == payload || (x[1] < m.bound && payload_idx[x[1]]))) continue;
         if (op == OpDecorate || op == OpDecorateId || op == OpDecorateString) {
             uint32_t t = x[1];
             if (t < m.bound && oid[t]) continue;
@@ -557,7 +610,7 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
         if (op == OpTypeFunction || type_decl(op) || op == OpConstant || op == OpVariable || (op >= 41 && op <= 52) || op == OpUndef || op == OpLine || op == OpNoLine || op == OpExtInst) {
             // The declarations: first the annotations made here, once, before the first type (the decorations section ends where the types begin)
             if (A.n) { sb_raw(&O, A.w, A.n); A.n = 0; }
-            if (op == OpVariable && x[3] == SCOutput) continue;
+            if (op == OpVariable && (x[3] == SCOutput || (payload_idx && x[2] == payload))) continue;
             if (op == OpVariable && x[2] == wgvar) continue;
             if (op == OpTypePointer && x[2] == SCTaskPayload) { INS(&O, OpTypePointer, x[1], SCWorkgroup, x[3]); continue; }
             if (op == OpVariable && x[3] == SCTaskPayload) { sb_put(&O, x[0]); sb_put(&O, x[1]); sb_put(&O, x[2]); sb_put(&O, SCWorkgroup); sb_raw(&O, x + 4, len - 4); continue; }
@@ -572,6 +625,17 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
     for (size_t i = m.first_fn; i < m.n;) {
         uint32_t op = m.w[i] & 0xffff, len = m.w[i] >> 16; const uint32_t *x = m.w + i;
         i += len;
+        if (payload_idx && (op == OpAccessChain || op == OpInBoundsAccessChain) && x[2] < m.bound && payload_idx[x[2]]) continue;
+        if (payload_idx && op == OpLoad && x[3] < m.bound && payload_idx[x[3]]) {
+            fn_t f = {&B, &O};
+            uint32_t index = payload_idx[x[3]];
+            if (scalar_kind(&m, m.rtype[index]) == 'i') index = op1(&f, OpBitcast, B.t_u32, index);
+            uint32_t use = op2(&f, OpULessThan, B.t_bool, index, ld(&f, B.t_u32, pv_payload_limit));
+            uint32_t address = op2(&f, OpIAdd, B.t_u32, ld(&f, B.t_u32, pv_payload), index);
+            uint32_t value = ld(&f, B.t_u32, chain2(&f, p_sb_u32, arena, c0, sel(&f, B.t_u32, use, address, c0)));
+            INS(&O, OpSelect, x[1], x[2], use, value, c0);
+            continue;
+        }
         if (op == OpFunction) {
             plane_lut_t P;
             if (vka_memu_plane_lut() && plane_lut_match(&m, i - len, &L, ov, nov, B.t_u32, &P)) {
@@ -824,7 +888,13 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
                 own = sel(&f, B.t_u32, istask, op2(&f, OpISub, B.t_u32, flat, ot),
                           op2(&f, OpIAdd, B.t_u32, flat, first));
             }
-            if (payload) {   // words past the task's own (or every word without a task) read 0
+            if (payload_idx) {
+                uint32_t wt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_WT));
+                uint32_t pl = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_PAYLOAD));
+                INS(&O, OpStore, pv_payload, op2(&f, OpIAdd, B.t_u32, pl, op2(&f, OpIMul, B.t_u32, t, wt)));
+                wt = sel(&f, B.t_u32, op2(&f, OpULessThan, B.t_bool, wt, cu(&B, L.payload_words)), wt, cu(&B, L.payload_words));
+                INS(&O, OpStore, pv_payload_limit, sel(&f, B.t_u32, istask, wt, c0));
+            } else if (payload) {   // words past the task's own (or every word without a task) read 0
                 uint32_t wt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_WT)), pl = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_PAYLOAD));
                 uint32_t src0 = op2(&f, OpIAdd, B.t_u32, pl, op2(&f, OpIMul, B.t_u32, t, wt));
                 uint32_t lid = ld(&f, B.t_u32, lidvar);
@@ -876,11 +946,11 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
         uint32_t *o = malloc((O.n + B.T.n) * 4); if (!o) FAIL("out of memory");
         memcpy(o, O.w, tpos * 4); memcpy(o + tpos, B.T.w, B.T.n * 4); memcpy(o + tpos + B.T.n, O.w + tpos, (O.n - tpos) * 4);
         o[3] = B.next; *out_nw = O.n + B.T.n;
-        free(O.w); free(A.w); free(B.T.w); free(F.w); free(ch); free(oid); free(wgch); mod_free(&m);
+        free(O.w); free(A.w); free(B.T.w); free(F.w); free(ch); free(oid); free(wgch); free(payload_idx); mod_free(&m);
         return o;
     }
 fail:
-    free(O.w); free(A.w); free(B.T.w); free(F.w); free(ch); free(oid); free(wgch); mod_free(&m);
+    free(O.w); free(A.w); free(B.T.w); free(F.w); free(ch); free(oid); free(wgch); free(payload_idx); mod_free(&m);
     return NULL;
 }
 

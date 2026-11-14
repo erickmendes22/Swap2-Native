@@ -6,6 +6,7 @@ on:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
       - dm/gfx/tools/tests/test_memu_coalesced_readback.py
+      - dm/gfx/tools/tests/test_memu_direct_payload.py
       - dm/gfx/tools/tests/test_oot_short_task_search.py
       - dm/gfx/tools/tests/test_oot_render_enable_boundaries.py
       - dm/gfx/tools/tests/test_oot_compute_hdr_vrs.py
@@ -151,6 +152,10 @@ jobs:
         # The golden-module hash test belongs to the OLD default bytes,
         # not to an intentionally different shader compile-time variant.
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_memu_coalesced_readback.py -k test_gpu_exports_and_generated_vertex_reader -v
+      - name: Verify direct read-only payloads on Vulkan
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_memu_direct_payload.py -v
       - name: Verify scalar component compute retile on the GPU
         env:
           MEMU_TEST_VULKAN: '1'

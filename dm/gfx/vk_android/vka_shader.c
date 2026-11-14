@@ -1176,7 +1176,8 @@ static int ocarina_hot_shader_slot(uint64_t key) {
         UINT64_C(0x066f5daf12e43c71), UINT64_C(0xefaa4fa6a80ba719),
         UINT64_C(0x5ad65c0eefd09c7f), UINT64_C(0x9e6b00b050e30801),
         UINT64_C(0x1e4d2630d24846d0), // 720p heavy scene fragment
-        UINT64_C(0x00ce4088af2c8e12)  // lighter scene control fragment
+        UINT64_C(0x00ce4088af2c8e12), // lighter scene control fragment
+        UINT64_C(0x19f99e925937b038) // build165 heavy scene variant (~3 ms block)
     };
     for (size_t i = 0; i < sizeof keys / sizeof keys[0]; ++i)
         if (key == keys[i]) return (int)i;
@@ -1404,11 +1405,19 @@ int vka_shader_lib_has(uint64_t key) { pthread_mutex_lock(&g_mu); int ok = lib_l
 int vka_shader_memu_key(uint64_t key) {
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
     if (!ok || vka_shlib_find(library_for_key(key), key)) return 0;
-    static const uint64_t tag[5] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
-        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL};
-    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 5; i++) {
+    static const uint64_t tag[9] = {
+        VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_TASK_SHORT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_GL,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_GL
+    };
+    for (int old_payload = 0; old_payload < 2; old_payload++)
+    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 9; i++) {
         uint64_t layout = vka_memu_layout_tag() ^ (old_layout ? VKA_MEMU_KEY_COALESCED : 0);
-        uint64_t original = key ^ tag[i] ^ layout;
+        uint64_t original = key ^ tag[i] ^ layout ^ (old_payload ? VKA_MEMU_KEY_DIRECT_PAYLOAD : 0);
         const dmsh_vk_entry *e = vka_shlib_find(library_for_key(original), original);
         if (e && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS) && (i < 3 || e->stage == DMSH_VK_STAGE_MS)) return 1;
     }

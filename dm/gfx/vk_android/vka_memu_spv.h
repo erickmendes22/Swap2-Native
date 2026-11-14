@@ -38,6 +38,13 @@ static inline int vka_memu_short_task_search(void) {
     const char *v = getenv("DM_VK_MEMU_SHORT_TASK_SEARCH");
     return v && !strcmp(v, "1");
 }
+// 1 admits large read-only payloads; 2 is a developer fixture mode for all
+// sizes. Startup-only, with an independent derived compute pipeline key.
+static inline int vka_memu_direct_payload(void) {
+    const char *v = getenv("DM_VK_MEMU_DIRECT_PAYLOAD");
+    return v && (!strcmp(v, "1") || !strcmp(v, "2"));
+}
+uint32_t vka_memu_direct_payload_words(const uint32_t *w, size_t nw);
 // Bounds-checked direct plane scatter; 0 restores the original branch ladder.
 int vka_memu_plane_lut(void);
 

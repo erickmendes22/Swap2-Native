@@ -26,8 +26,8 @@ class VegetationOptimization(unittest.TestCase):
         methods = "\n".join(pieces)
         self.assertEqual(len(pieces), 18)
         activity = (JAVA / "GameActivity.java").read_text()
-        env = "\n".join(re.findall(r'            if \(Prefs.OCARINA_TITLE.equals\(id\)\) env.add\("DM_VK_(?:VEGETATION|MEMU_PLANE_LUT|MEMU_COALESCED|MEMU_SHORT_TASK_SEARCH|OOT_CS_RETILE|OOT_FRAGMENT_AST|PARTIAL_UPLOAD|UNUSED_COLOR|ATTACHMENT_PARTS)=[^\n]+', activity))
-        self.assertEqual(env.count("env.add"), 9)
+        env = "\n".join(re.findall(r'            if \(Prefs.OCARINA_TITLE.equals\(id\)\) env.add\("DM_VK_(?:VEGETATION|MEMU_PLANE_LUT|MEMU_COALESCED|MEMU_SHORT_TASK_SEARCH|MEMU_DIRECT_PAYLOAD|OOT_CS_RETILE|OOT_FRAGMENT_AST|PARTIAL_UPLOAD|UNUSED_COLOR|ATTACHMENT_PARTS)=[^\n]+', activity))
+        self.assertEqual(env.count("env.add"), 10)
         settings = (JAVA / "GameSettings.java").read_text()
         for name in ("vegetationOptimized", "vegetationContiguous", "shortTaskSearch"):
             self.assertNotIn(".toggle(a, Prefs." + name, settings)
@@ -60,16 +60,16 @@ public class Probe extends Context {
     p.environment(id);
     check(p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
     check(p.env.contains("DM_VK_MEMU_COALESCED=1") && p.env.contains("DM_VK_MEMU_SHORT_TASK_SEARCH=1"));
-    check(p.env.contains("DM_VK_OOT_CS_RETILE=1"));
+    check(p.env.contains("DM_VK_OOT_CS_RETILE=1") && p.env.contains("DM_VK_MEMU_DIRECT_PAYLOAD=1"));
     check(p.env.contains("DM_VK_OOT_FRAGMENT_AST=1"));
     Prefs.fragmentOptimized(p, id, false); p.environment(id);
     check(p.env.contains("DM_VK_OOT_FRAGMENT_AST=0") && p.env.contains("DM_VK_OOT_CS_RETILE=1") && p.env.contains("DM_VK_VEGETATION=1"));
     Prefs.fragmentOptimized(p, id, true); p.environment(id);
     check(p.env.contains("DM_VK_OOT_FRAGMENT_AST=1"));
     Prefs.computeOptimized(p, id, false); p.environment(id);
-    check(p.env.contains("DM_VK_OOT_CS_RETILE=0") && p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
+    check(p.env.contains("DM_VK_MEMU_DIRECT_PAYLOAD=0") && p.env.contains("DM_VK_OOT_CS_RETILE=0") && p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
     Prefs.computeOptimized(p, id, true); p.environment(id);
-    check(p.env.contains("DM_VK_OOT_CS_RETILE=1"));
+    check(p.env.contains("DM_VK_OOT_CS_RETILE=1") && p.env.contains("DM_VK_MEMU_DIRECT_PAYLOAD=1"));
     Prefs.vegetationContiguous(p, id, true); p.environment(id);
     check(p.env.contains("DM_VK_MEMU_COALESCED=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1") && p.env.contains("DM_VK_VEGETATION=1"));
     Prefs.vegetationContiguous(p, id, false);

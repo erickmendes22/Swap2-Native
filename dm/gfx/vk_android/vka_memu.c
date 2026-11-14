@@ -70,11 +70,13 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
     if (have) return have;
     char err[256] = ""; size_t nb = 0, fn = 0, on = 0;
     uint32_t *w = vka_shader_memu_words(s, &nb, err, sizeof err);
+    uint32_t direct_words = w ? vka_memu_direct_payload_words(w, nb / 4) : 0;
     uint32_t *fz = w ? vka_spv_spec_freeze(w, nb / 4, DMSH_VK_SPEC_GL_DEPTH, (uint32_t)gl, &fn) : NULL;   // (folded: Qualcomm's lanes read 0 in a compute module with a specialization constant)
     uint32_t *o = w ? vka_memu_cs(fz ? fz : w, fz ? fn : nb / 4, &on, err, sizeof err) : NULL;
     VkShaderModule mod = o ? make_module(o, on) : VK_NULL_HANDLE;
     free(w); free(fz); free(o);
     if (!mod) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("%s shader %016llx: its compute form not made (%s); its draws are skipped", stage_name(s->e->stage), (unsigned long long)s->key, err[0] ? err : "vkCreateShaderModule failed"); return NULL; }
+    if (direct_words) VLOG("mesh %016llx direct read-only payload ACTIVE: %u shared words and one emulation barrier omitted/group; guest barriers retained", (unsigned long long)s->key, direct_words);
     dmsh_vk_entry *e = malloc(sizeof *e); *e = d->ce; e->key ^= gl ? VKA_MEMU_KEY_GL : 0;
     e->flags &= (uint16_t)~DMSH_VK_F_GL_DEPTH;   // (the depth convention is in the module)
     vka_shader *v = derive(s, e, mod, 1);
@@ -295,9 +297,10 @@ vka_shader *vka_memu_by_key(uint64_t key) {
         VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT,
         VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_GL
     };
+    for (int old_payload = 0; old_payload < 2; old_payload++)
     for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 9; i++) {
         uint64_t layout = vka_memu_layout_tag() ^ (old_layout ? VKA_MEMU_KEY_COALESCED : 0);
-        uint64_t k = key ^ tag[i] ^ layout;
+        uint64_t k = key ^ tag[i] ^ layout ^ (old_payload ? VKA_MEMU_KEY_DIRECT_PAYLOAD : 0);
         if (!vka_shader_lib_has(k)) continue;
         vka_shader *s = vka_shader_by_key(k); if (!s || !s->e || s->e->stage < DMSH_VK_STAGE_TS) continue;
         if (i >= 3 && s->e->stage != DMSH_VK_STAGE_MS) continue;

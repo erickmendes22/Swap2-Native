@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Immutable mesh payload copies](../../../docs/reference/rendering.md#immutable-mesh-payload-copied-into-every-emulated-workgroup).
+
 - [Exact-layout pool bindings remain valid](../../../docs/reference/rendering.md#exact-layout-pool-bindings-remain-valid): avoid duplicate texture/feedback binds with conservative invalidation.
 - [Idle command encoder occupies a CPU](../../../docs/reference/threads.md#idle-command-encoder-occupies-a-cpu): separate driver-call wall time from thread CPU and park an empty queue.
 
@@ -1246,3 +1248,13 @@ Installs over the supplied4226d12 baseline. No device FPS/core-usage result
 exists yet for this candidate; compare the same heavy outdoor point with the
 approved cave-correction switch OFF. New logs expose encoder total thread CPU,
 actual projected-snapshot selection and pool-bind emit/skip counts.
+
+### Build165 device result and next GPU candidate (2026-11-14)
+
+User log193331 identifies165. The user reports lower CPU load and steadier frame delivery but no heavy-scene FPS gain. Heavy GPU p50 remains19.52–19.88ms across windows1500–3000; do not count lighter tail windows as a gain. Hundreds of exact pool-set repeats are omitted but this is not a measured GPU-time improvement. Keep the CPU improvements.
+
+Frame2401 has1079 timestamps:21.27ms sampled GPU,12.75ms passes,4.14ms identified ordinary compute; foliage mesh2.982ms and task0.476ms. These categories overlap profiler intervals; do not sum them as independent totals. The heavy16-draw graphics chunk now identifies fragment19f99e925937b038 (~2.997ms), already using2x2 VRS. It is not the previously optimized1e4d AST variant. Add source-only capture for19f99 without changing its active shader; its source is not present in the earlier supplied59-shader capture.
+
+New GPU candidate: immutable large mesh payload reads. Captured mesh eb021183bf9b0092 declares1024 payload words. Its original converted module copies4KiB into shared memory per workgroup and inserts one emulation barrier. The strict direct-read transform selects this capture, removes the shared payload and its copy/barrier, and passes Vulkan1.3 validation. Mesh3439's64-word payload remains original in production mode; fed302 has no payload. See the general entry for guards and cache identity. Existing Optimize compute (test) controls this candidate alongside the already-present compute retile; OFF restores both original compute paths. Vegetation settings and CPU encoder mode remain independent.
+
+GPU fixture outputs are byte-identical over the complete arena for24 combinations of8/64/1024-word payloads, both layouts, absent/empty/short/full producers and duplicate prefixes, with alternating repeated timestamp runs and synchronization validation. Large-fixture direct/full software ratios were0.734–0.928; small cases were mixed, hence the>=256 production restriction. This is neither a captured game replay nor Adreno speed evidence. Phone GPU/FPS gain and visual validation remain pending. Preserve approved fast cave-OFF behavior, all original guest shaders/geometry/query results, resolution/VRS, inter-dispatch dependencies and CPU improvements. No full prepared42k-shader rebuild.

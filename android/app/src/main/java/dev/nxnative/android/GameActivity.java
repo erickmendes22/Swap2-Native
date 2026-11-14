@@ -392,6 +392,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_POOL_FB_DIRECT=" + (Prefs.poolFeedbackDirect(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FRAGMENT_AST=" + (Prefs.fragmentOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_CS_RETILE=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_DIRECT_PAYLOAD=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_PARTIAL_UPLOAD=" + (Prefs.partialTextureUploads(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_UNUSED_COLOR=" + (Prefs.unusedColorTargets(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_ATTACHMENT_PARTS=" + (Prefs.attachmentWriteScopes(this, id) ? "1" : "0"));

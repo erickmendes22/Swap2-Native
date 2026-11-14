@@ -332,6 +332,7 @@ class CoalescedReadback(unittest.TestCase):
         classify = function(VK / "vka_shader.c", "int vka_shader_memu_key(")
         source = self.work / "keys.c"
         source.write_text(r'''
+#define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <pthread.h>
 #include "vka_memu.h"
@@ -359,6 +360,8 @@ int main(void) {
     const uint64_t tags[5] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
         VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL};
     entry.stage = DMSH_VK_STAGE_MS; original.e = &entry;
+    for (int payload_mode = 0; payload_mode < 2; payload_mode++) {
+    setenv("DM_VK_MEMU_DIRECT_PAYLOAD", payload_mode ? "1" : "0", 1);
     for (lut_enabled = 0; lut_enabled < 2; lut_enabled++) for (enabled = 0; enabled < 2; enabled++) for (int i = 0; i < 5; i++) {
         uint64_t key = base ^ tags[i] ^ vka_memu_layout_tag();
         assert(vka_memu_by_key(key) == (i == 2 ? &vs : &cs[i == 1 || i == 4]));
@@ -368,6 +371,11 @@ int main(void) {
         assert(vka_shader_memu_key(key));
         assert(vka_memu_by_key(key ^ VKA_MEMU_KEY_COALESCED)->key == active);
         assert(vka_shader_memu_key(key ^ VKA_MEMU_KEY_COALESCED));
+        if (i != 2) {
+            assert(vka_memu_by_key(key ^ VKA_MEMU_KEY_DIRECT_PAYLOAD)->key == active);
+            assert(vka_shader_memu_key(key ^ VKA_MEMU_KEY_DIRECT_PAYLOAD));
+        }
+    }
     }
     assert(!vka_shader_memu_key(base));
     return 0;
