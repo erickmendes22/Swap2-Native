@@ -39,7 +39,7 @@ class OcarinaGraphicsGPUProfile(unittest.TestCase):
     def test_missing_raster_shader_sources_captured_once_with_existing_shdump(self):
         cap = SHADER[SHADER.index("static int ocarina_hot_shader_slot("):
                      SHADER.index("static int capture_matches(")]
-        keys = re.findall(r"UINT64_C\\(0x([0-9a-f]{16})\\)", cap)
+        keys = re.findall(r"UINT64_C[(]0x([0-9a-f]{16})[)]", cap)
         self.assertEqual(len(keys), len(set(keys)))
         self.assertLess(len(keys), 32)  # unsigned done bitmask has exactly 32 bits.
         for key in ("a566b7687b712ff3", "a1d325b7a1c81256",
