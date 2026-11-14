@@ -9,6 +9,7 @@
 #ifndef VKA_DEPTH_FS_STUB_SPV_H
 #define VKA_DEPTH_FS_STUB_SPV_H
 #include <stdint.h>
+#define VKA_OOT_DEPTH_FS_STUB_VARIANT 253u
 static const uint32_t VKA_DEPTH_FS_STUB_SPV[] = {
     UINT32_C(0x07230203), UINT32_C(0x00010000), 0, 5, 0,
     UINT32_C(0x00020011), 1,                // OpCapability Shader
