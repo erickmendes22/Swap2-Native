@@ -55,4 +55,41 @@ static double cave_run(int w,int h,int local,uint64_t *counts,uint8_t *output){
  vkCmdEndRenderPass(cb);vkCmdWriteTimestamp(cb,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,timer,1);barrier_all(cb);void*mapped;size_t bytes=(size_t)w*h*4;VkBuffer dst=buffer(bytes*2,VK_BUFFER_USAGE_TRANSFER_DST_BIT,&mapped);for(int i=0;i<2;i++){VkBufferImageCopy copy={.bufferOffset=i*bytes,.imageSubresource={i?VK_IMAGE_ASPECT_DEPTH_BIT:VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={w,h,1}};vkCmdCopyImageToBuffer(cb,i?di:ci,VK_IMAGE_LAYOUT_GENERAL,dst,1,&copy);}
  VK(vkEndCommandBuffer(cb));VkSubmitInfo submit={VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&cb};VK(vkQueueSubmit(q,1,&submit,VK_NULL_HANDLE));VK(vkQueueWaitIdle(q));VK(vkGetQueryPoolResults(dev,query,0,N,N*8,counts,8,VK_QUERY_RESULT_64_BIT));memcpy(output,mapped,bytes*2);uint64_t ts[2];VK(vkGetQueryPoolResults(dev,timer,0,2,16,ts,8,VK_QUERY_RESULT_64_BIT));return (ts[1]-ts[0])*tick/1e6;
 }
-int main(void){if(!init())return 77;V.dev=dev;vk.vkCreateRenderPass=vkCreateRenderPass;vk.vkCreateFramebuffer=vkCreateFramebuffer;const int sizes[][2]={{64,64},{960,540}};for(int s=0;s<2;s++){int w=sizes[s][0],h=sizes[s][1];size_t n=(size_t)w*h*8;uint8_t*a=malloc(n),*b=malloc(n),*c=malloc(n);uint64_t qa[N],qb[N],qc[N];double ta=cave_run(w,h,0,qa,a),tb=cave_run(w,h,1,qb,b),tc=cave_run(w,h,2,qc,c);CHECK(!memcmp(a,b,n)&&!memcmp(b,c,n),"colour/depth pixels mismatch");CHECK(!memcmp(qa,qb,sizeof qa)&&!memcmp(qb,qc,sizeof qb),"real query sample counts mismatch");int zero=0,nonzero=0;for(int i=0;i<N;i++)if(qa[i])nonzero++;else zero++;CHECK(zero&&nonzero,"test lacks hidden/visible samples");printf("cave parity %dx%d: pixels+depth+%d precise query counts exact; zero=%d positive=%d; physical depth pass instances %d unchanged; 96 unused colour loads/stores omitted; GPU baseline %.3f, no-colour %.3f, no-colour+depth-stage %.3f ms (software ICD only)\n",w,h,N,zero,nonzero,N+1,ta,tb,tc);free(a);free(b);free(c);}return fails?1:0;}
+static double median3(double a,double b,double c){
+ if(a>b){double t=a;a=b;b=t;}
+ if(b>c){double t=b;b=c;c=t;}
+ if(a>b){double t=a;a=b;b=t;}
+ return b;
+}
+int main(void){
+ if(!init())return 77;
+ V.dev=dev;vk.vkCreateRenderPass=vkCreateRenderPass;vk.vkCreateFramebuffer=vkCreateFramebuffer;
+ const int sizes[][2]={{64,64},{960,540}};
+ for(int size=0;size<2;size++){
+  int w=sizes[size][0],h=sizes[size][1];
+  size_t bytes=(size_t)w*h*8;
+  uint8_t*output[3]={malloc(bytes),malloc(bytes),malloc(bytes)};
+  uint64_t counts[3][N];
+  double timings[3][3]={0};
+  int order[3][3]={{0,1,2},{2,0,1},{1,2,0}};
+  for(int rep=0;rep<3;rep++){
+   for(int k=0;k<3;k++){
+    int variant=order[rep][k];
+    timings[variant][rep]=cave_run(w,h,variant,counts[variant],output[variant]);
+   }
+   CHECK(!memcmp(output[0],output[1],bytes)&&!memcmp(output[1],output[2],bytes),"colour/depth pixels mismatch");
+   CHECK(!memcmp(counts[0],counts[1],sizeof counts[0])&&
+         !memcmp(counts[1],counts[2],sizeof counts[1]),"real query sample counts mismatch");
+  }
+  int zero=0,nonzero=0;
+  for(int i=0;i<N;i++)if(counts[0][i])nonzero++;else zero++;
+  CHECK(zero&&nonzero,"test lacks hidden/visible samples");
+  double ta=median3(timings[0][0],timings[0][1],timings[0][2]);
+  double tb=median3(timings[1][0],timings[1][1],timings[1][2]);
+  double tc=median3(timings[2][0],timings[2][1],timings[2][2]);
+  printf("cave parity %dx%d: pixels+depth+%d precise query counts exact; zero=%d positive=%d; physical depth pass instances %d unchanged; 96 unused colour loads/stores omitted; GPU median3 baseline %.3f, no-colour %.3f, no-colour+depth-stage %.3f ms (software ICD only)\\n",
+        w,h,N,zero,nonzero,N+1,ta,tb,tc);
+  free(output[0]);free(output[1]);free(output[2]);
+ }
+ return fails?1:0;
+}
