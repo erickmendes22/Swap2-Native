@@ -12,16 +12,24 @@ typedef struct {VkImageCreateFlags cflags;VkImageUsageFlags usage;struct{VkForma
 #define VLOG(...) ((void)0)
 #define VRED_ONCE(...) fprintf(stderr,__VA_ARGS__)
 #include "vka_renderpass_cache.h"
+#include "vka_depth_fs_stub_spv.h"
 enum {N=192};
 static VkShaderModule mod(const char *name){FILE*f=fopen(getenv(name),"rb");if(!f)exit(3);fseek(f,0,SEEK_END);long n=ftell(f);rewind(f);uint32_t*b=malloc(n);if(fread(b,1,n,f)!=(size_t)n)exit(3);fclose(f);VkShaderModuleCreateInfo ci={VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,.codeSize=n,.pCode=b};VkShaderModule m;VK(vkCreateShaderModule(dev,&ci,NULL,&m));free(b);return m;}
+static VkShaderModule depth_nop(void) {
+ VkShaderModuleCreateInfo ci={VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+   .codeSize=sizeof VKA_DEPTH_FS_STUB_SPV,.pCode=VKA_DEPTH_FS_STUB_SPV};
+ VkShaderModule m;
+ VK(vkCreateShaderModule(dev,&ci,NULL,&m));
+ return m;
+}
 static VkPipeline pipeline(VkPipelineLayout layout,VkRenderPass rp,int mode,int w,int h,int colors,int omit_fs){
- VkPipelineShaderStageCreateInfo sh[2]={{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=mod("CAVE_VERT"),.pName="main"},{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_FRAGMENT_BIT,.module=mod("CAVE_FRAG"),.pName="main"}};
+ VkPipelineShaderStageCreateInfo sh[2]={{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_VERTEX_BIT,.module=mod("CAVE_VERT"),.pName="main"},{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,.stage=VK_SHADER_STAGE_FRAGMENT_BIT,.module=omit_fs?depth_nop():mod("CAVE_FRAG"),.pName="main"}};
  VkPipelineVertexInputStateCreateInfo vi={VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};VkPipelineInputAssemblyStateCreateInfo ia={VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
  VkViewport viewport={0,0,w,h,0,1};VkRect2D rect={{0,0},{w,h}};VkPipelineViewportStateCreateInfo vp={VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,.viewportCount=1,.pViewports=&viewport,.scissorCount=1,.pScissors=&rect};
  VkPipelineRasterizationStateCreateInfo rs={VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,.polygonMode=VK_POLYGON_MODE_FILL,.lineWidth=1};VkPipelineMultisampleStateCreateInfo ms={VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,.rasterizationSamples=VK_SAMPLE_COUNT_1_BIT};
  VkPipelineDepthStencilStateCreateInfo ds={VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,.depthTestEnable=VK_TRUE,.depthWriteEnable=mode==0||mode==3,.depthCompareOp=mode==2?VK_COMPARE_OP_EQUAL:VK_COMPARE_OP_LESS_OR_EQUAL};
  VkPipelineColorBlendAttachmentState att={.colorWriteMask=(mode==1||mode==3)?0:15};VkPipelineColorBlendStateCreateInfo bs={VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,.attachmentCount=colors,.pAttachments=colors?&att:NULL};VkDynamicState dynamic=VK_DYNAMIC_STATE_SCISSOR;VkPipelineDynamicStateCreateInfo dy={VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,.dynamicStateCount=1,.pDynamicStates=&dynamic};
- VkGraphicsPipelineCreateInfo ci={VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=omit_fs?1u:2u,.pStages=sh,.pVertexInputState=&vi,.pInputAssemblyState=&ia,.pViewportState=&vp,.pRasterizationState=&rs,.pMultisampleState=&ms,.pDepthStencilState=&ds,.pColorBlendState=&bs,.pDynamicState=&dy,.layout=layout,.renderPass=rp};VkPipeline p;VK(vkCreateGraphicsPipelines(dev,VK_NULL_HANDLE,1,&ci,NULL,&p));return p;
+ VkGraphicsPipelineCreateInfo ci={VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=2,.pStages=sh,.pVertexInputState=&vi,.pInputAssemblyState=&ia,.pViewportState=&vp,.pRasterizationState=&rs,.pMultisampleState=&ms,.pDepthStencilState=&ds,.pColorBlendState=&bs,.pDynamicState=&dy,.layout=layout,.renderPass=rp};VkPipeline p;VK(vkCreateGraphicsPipelines(dev,VK_NULL_HANDLE,1,&ci,NULL,&p));return p;
 }
 static void barrier_all(VkCommandBuffer cb){VkMemoryBarrier b={VK_STRUCTURE_TYPE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_MEMORY_WRITE_BIT,.dstAccessMask=VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT};vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,1,&b,0,NULL,0,NULL);}
 static double cave_run(int w,int h,int local,uint64_t *counts,uint8_t *output){
