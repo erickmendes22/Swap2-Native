@@ -1959,6 +1959,11 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     int depth_fs_stub = 0;
     if (sh[1] && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
         VKA_ENV("DM_VK_OOT_DEPTH_FS_ELIDE", 1) &&
+        // Keep the visually verified 162 fast-cave configuration EXACT:
+        // with the explicit cave pass split OFF, do not substitute any
+        // fragment module, even if the synthetic Vulkan test allows it.
+        // Qualcomm-specific scene stability is the device-level contract.
+        VKA_ENV("DM_VK_OQ_SPLIT_PASS", 0) != 0 &&
         VKA_ENV("DM_VK_UNUSED_COLOR", 0) &&
         has_rt && rt && rt->depth &&
         !d->chmask.mask && !d->ms.a2c && !d->tf_on &&
