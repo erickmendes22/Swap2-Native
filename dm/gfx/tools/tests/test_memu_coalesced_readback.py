@@ -134,6 +134,8 @@ class CoalescedReadback(unittest.TestCase):
         lib.vka_memu_layout_of.argtypes = [C.POINTER(U32), C.c_size_t, C.POINTER(Layout), C.c_char_p, C.c_size_t]
         lib.vka_memu_cs.argtypes = [C.POINTER(U32), C.c_size_t, C.POINTER(C.c_size_t), C.c_char_p, C.c_size_t]
         lib.vka_memu_cs.restype = C.POINTER(U32)
+        lib.vka_memu_cs_taskless.argtypes = lib.vka_memu_cs.argtypes
+        lib.vka_memu_cs_taskless.restype = C.POINTER(U32)
         lib.vka_memu_vs.argtypes = [C.POINTER(Layout), C.POINTER(C.c_size_t), C.c_char_p, C.c_size_t]
         lib.vka_memu_vs.restype = C.POINTER(U32)
         lib.vka_memu_rec_mesh.argtypes = [C.POINTER(Layout), C.POINTER(U32)]
@@ -157,6 +159,61 @@ class CoalescedReadback(unittest.TestCase):
     @staticmethod
     def write_words(path, words):
         path.write_bytes(struct.pack(f"<{len(words)}I", *words))
+
+    @unittest.skipUnless(os.environ.get("MEMU_TEST_VULKAN") == "1", "enable Vulkan software readback")
+    def test_taskless_gpu_producer_matches_full_shader_bit_for_bit(self):
+        """Execute BOTH modules on real Vulkan, compare every arena word.
+
+        The original task/no-task shader is a full independent oracle for
+        a no-task record. Shader simplification must preserve not only the
+        visible vertices but payload zeroing, primitive indices and all
+        untouched sentinel words; no output is silently skipped.
+        """
+        runner = self.work / "dispatch-taskless"
+        subprocess.run([self.cc, "-O1", "-Wall", "-Wextra", "-Werror", "-I",
+                        str(ROOT / "dm/third_party/vulkan-headers/include"),
+                        str(ROOT / "dm/host/tests/t_android_memu_dispatch.c"),
+                        "-Wl,-l:libvulkan.so.1", "-o", str(runner)], check=True)
+        for enabled in (0, 1):
+            for tag in ("MESH_TRI", "MESH_PTS"):
+                words = self.fixtures[tag]
+                layout, old, _ = self.convert(words, enabled)
+                buf = (U32 * len(words))(*words)
+                n, err = C.c_size_t(), C.create_string_buffer(256)
+                with patch.dict(os.environ, {"DM_VK_MEMU_COALESCED": str(enabled)}):
+                    generated = self.lib.vka_memu_cs_taskless(buf, len(words), C.byref(n), err, 256)
+                self.assertTrue(generated, err.value)
+                new = list(generated[:n.value])
+                self.libc.free(generated)
+                self.assertLess(len(new), len(old))
+                for kind, code in (("old", old), ("taskless", new)):
+                    module = self.work / f"{tag}-{enabled}-{kind}.spv"
+                    self.write_words(module, code)
+                    subprocess.run(["spirv-val", "--target-env", "vulkan1.3", str(module)], check=True)
+                rec = (U32 * 32)()
+                self.lib.vka_memu_rec_mesh(C.byref(layout), rec)
+                count = 4
+                rec[12], rec[21], rec[24] = 7, 0, count
+                rec[13] &= ~1  # No task; original and specialized shader must agree.
+                rec[14], rec[22], rec[23] = 8, 128, 64
+                rec[25] = rec[15] * 3
+                rec[26] = rec[25] + rec[15] * count
+                arena = [(i * 1664525 + 1013904223) & 0xffffffff
+                         for i in range(rec[26] + rec[16] * count + 1024)]
+                rp, ap, out = (self.work / name for name in
+                               ("taskless-rec.bin", "taskless-arena.bin", "taskless-out.bin"))
+                self.write_words(rp, rec); self.write_words(ap, arena)
+                outputs = {}
+                for kind in ("old", "taskless"):
+                    shader = self.work / f"{tag}-{enabled}-{kind}.spv"
+                    subprocess.run([str(runner), str(shader), str(rp), str(ap),
+                                    str(out), "2", "2", "1"],
+                                   check=True, capture_output=True)
+                    outputs[kind] = out.read_bytes()
+                self.assertEqual(outputs["old"], outputs["taskless"],
+                                 (tag, enabled, "all output/sentinel words"))
+                self.assertNotEqual(outputs["old"], ap.read_bytes(),
+                                    (tag, enabled, "GPU produced no work"))
 
     def test_default_modules_are_byte_identical_to_build118(self):
         # Recorded from c0397be0's actual converter before this change.
