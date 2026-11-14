@@ -135,9 +135,9 @@ static void compare(vka_img *im,const tex_t *t) {
 int main(void) {
 #ifdef PARTIAL_GPU
     if(!init())return 77;
-    const int formats[]={0x37};
+    const int formats[]={0x25};
 #else
-    const int formats[]={0x37,0x41,0x4b,0x4f,0x79};
+    const int formats[]={0x25,0x41,0x4b,0x4d,0x79};
 #endif
     nvn_gob_switch2=1;
     for(unsigned fi=0;fi<sizeof(formats)/sizeof(formats[0]);fi++) {
