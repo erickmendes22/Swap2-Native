@@ -1,14 +1,14 @@
 name: Swap2-Native Ocarina 0.1.6 Android APK
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test]
+    branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, experiment/ocarina-masked-gpu-158-from157]
     paths:
       - ci/ocarina-ios-ready.txt
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ocarina-v11-ios-apk
+  group: ocarina-gpu-masked-158-apk
   cancel-in-progress: true
 jobs:
   validate:
@@ -81,6 +81,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_bar_keep.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cave_walls.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cave_original_observer.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_memu_coalesced_readback.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_query_batched.py'
           python3 dm/tools/tests/test_ndsr_standin.py OcarinaLargeNdsr
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_scoped_uniform_barrier.py'
@@ -312,7 +313,7 @@ jobs:
       - name: Upload signed 0.1.2 build and any signing warning
         uses: actions/upload-artifact@v4
         with:
-          name: Swap2-Native-Ocarina-0.1.6-Update
+          name: Swap2-Native-Ocarina-158-GPU-Masked-Update
           path: |
             android/app/out/swap2-native-ocarina-0.1.6.apk
             android/app/out/ASSINATURA-INCOMPATIVEL.txt
