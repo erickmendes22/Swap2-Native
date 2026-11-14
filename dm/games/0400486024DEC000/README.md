@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Optional GPU producer dependencies after isolated commands](../../../docs/reference/rendering.md#optional-gpu-producer-dependencies-after-isolated-commands): independent copy/clear/compute producer scopes, real Vulkan parity and conservative fallback.
+
 - [Constant component reads rejected by virtual compute retiling](../../../docs/reference/shaders.md#constant-component-reads-rejected-by-virtual-compute-retiling): the actual `9e6b` capture uses six scalar input pointers; the existing optimization never activated for it.
 
 - [Unchanged driver inputs rebuilt per draw](../../../docs/reference/rendering.md#unchanged-driver-inputs-rebuilt-per-draw): port Banana Native input revisions and vertex caches, with production C equivalence and invalidation tests.
@@ -1103,9 +1105,10 @@ above remains disabled because its timing did not establish a gain.
 ### Further producer-scope reductions / candidate162 (2026-11-14)
 
 The161 device runs explicitly used DM_VK_OOT_FPS_BOOST=0, even when selective
-synchronization was ON. Consequently buffer fills and buffer/image transfers
-still took the legacy full barrier behind the quality-changing FPS Boost
-switch. Three further synchronization reductions now accompany the clean
+synchronization was ON. This is an OLD INTERNAL flag forced to0 by the
+launcher, NOT a button in161; the actual HDR VRS menu uses a separate flag.
+Consequently buffer fills and buffer/image transfers still took the legacy
+full barrier behind an obsolete flag that the normal launcher never enables. Three further synchronization reductions now accompany the clean
 preparation dedup above, under the existing independent selective-sync switch:
 
 1. Pure buffer fills/copies and image/buffer/image transfers can take the

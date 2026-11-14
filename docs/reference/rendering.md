@@ -1444,3 +1444,11 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
   Physical Adreno timing remains open. A separate index-compaction experiment
   passed GPU pixel/occlusion parity but is withheld because removing work did
   not establish a consistent complete-interval speed improvement.
+
+
+### Optional GPU producer dependencies after isolated commands
+
+- **Symptom:** GPU transfers still take full dependencies with selective synchronization enabled; profiling stops before the end of the frame.
+- **Cause:** Pure transfers were coupled to the obsolete internal FPS Boost flag (forced off by the Android launcher), and ungrouped compute completions used a small shader allowlist. The sparse timestamp pool also exhausted2048 marks before the heavy frame ended.
+- **Fix:** Under the independent selective-sync flag, isolated transfers and whole-image clears publish TRANSFER writes, rectangular clears publish attachment writes, and completed compute plus setup copies publish COMPUTE+TRANSFER writes. ALL_COMMANDS read/write destination access is retained. Previous render/compute producers are published at their pass/group boundary before these commands; indirect/spill launch still flushes a pending group. Explicit guest and spill inter-dispatch barriers remain. Unknown/diagnostic cases retain the original full path. A clean texture-preparation phase may omit its second identical full dependency, while the initial host/previous-submission dependency always remains. No additional GPU work or visibility approximation is required. The sparse profiler capacity is8192 marks with an explicit incomplete warning and still runs on only one frame per300. GPU fixtures execute actual production policies against shared-memory compute, indirect arguments, transfer chains and complete colour/depth readback; physical phone-time benefit remains unmeasured.
+- **Found on:** [Ocarina candidate162 producer-scope reductions](../../dm/games/0400486024DEC000/README.md#further-producer-scope-reductions--candidate162-2026-11-14).

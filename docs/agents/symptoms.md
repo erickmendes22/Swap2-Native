@@ -658,6 +658,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - APK134 fails with classic passes and the command encoder enabled; its simple direct-driver GPU fixture passes. → [Cached Vulkan render passes](../reference/rendering.md#cached-vulkan-render-passes)
 - a true-only synthetic stream batches better, but a real → [Render-enable boundaries in compute mesh preparation](../reference/rendering.md#render-enable-boundaries-in-compute-mesh-preparation)
 - Ocarina VRS is selected, but the known two-target RGBA16F pass → [HDR shading rate lost after mesh-to-compute routing](../reference/rendering.md#hdr-shading-rate-lost-after-mesh-to-compute-routing)
+- GPU transfers still take full dependencies with selective synchronization enabled; profiling stops before the end of the frame. → [Optional GPU producer dependencies after isolated commands](../reference/rendering.md#optional-gpu-producer-dependencies-after-isolated-commands)
 
 ## Shaders
 

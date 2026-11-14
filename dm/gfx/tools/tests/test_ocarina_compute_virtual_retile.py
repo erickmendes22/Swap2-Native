@@ -252,7 +252,9 @@ class VirtualRetile(unittest.TestCase):
         self.assertNotIn('dp->x == 8 && dp->y == 9 && dp->z == 12',DRAW)
         self.assertIn('9e6b00b050e30801\t{"local":[8,4,4],"shared":0}',FACTS)
         self.assertIn('9ed48d1011f1b48b\t{"local":[8,8,8],"shared":18432}',FACTS)
-        self.assertIn('sh[5]->key == UINT64_C(0x9ed48d1011f1b48b)',DRAW)
+        helper= DRAW[DRAW.index('static void dispatch_write_barrier('):DRAW.index('static void dispatch_argument_barrier(')]
+        self.assertIn('key == UINT64_C(0x9ed48d1011f1b48b)',helper)
+        self.assertIn('!spill && !indirect &&',helper)
         self.assertIn('vka_compute_write_barrier(g_cb)',DRAW)
         self.assertNotIn('sh[5]->key == UINT64_C(0x9e6b00b050e30801) && VKA_ENV("DM_VK_OOT_FPS_BOOST"',DRAW)
 

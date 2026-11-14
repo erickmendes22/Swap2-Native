@@ -270,7 +270,7 @@ void mtl_set_frame(uint64_t f) {
               (g_ub_shadows-shadow0)/n, (g_ub_flushed-flushed0)/n);
           deferred0=g_ub_deferred; shadow0=g_ub_shadows;
           flushed0=g_ub_flushed; afterbar0=g_ub_after_guest_bar; }
-        { static uint64_t cb0; VLOG("Ocarina compute 9e6b: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (DM_VK_OOT_CS_SYNC=0 restores full)",
+        { static uint64_t cb0; VLOG("Vulkan compute dependencies: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (compute groups and selected dispatch completions)",
               (vka_n_compute_bar - cb0) / n); cb0 = vka_n_compute_bar; }
         { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
           if (total != overlap0) VLOG("iOS compute dispatch overlap: %.1f full GPU barriers removed/frame; every non-dispatch NVN command still flushes", (total-overlap0)/n);
@@ -1112,7 +1112,7 @@ void vka_clear_outside(const vka_pclear *c) {
         // Whole-image commands write in TRANSFER; clear_rect uses only
         // attachment clears. It cannot run a guest shader or write buffers.
         if (transfer) vka_transfer_write_barrier(g_cb);
-        else vka_attachment_parts_barrier(g_cb, c->ci >= 0, c->ci < 0);
+        else vka_attachment_parts_barrier_at(g_cb, c->ci >= 0, c->ci < 0, __FILE_NAME__, __LINE__);
         g_selective_clear_deps++;
     } else vka_barrier(g_cb);
 }

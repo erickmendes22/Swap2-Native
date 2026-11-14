@@ -13,7 +13,6 @@ static int vka_nan_on(void){return nan_scan;}
 #include "clear_barriers.inc"
 #define vka_barrier(cb) vka_barrier_at(cb,__FILE__,__LINE__)
 #define vka_transfer_write_barrier(cb) vka_transfer_write_barrier_at(cb,__FILE__,__LINE__)
-#define vka_attachment_parts_barrier(cb,c,d) vka_attachment_parts_barrier_at(cb,c,d,__FILE__,__LINE__)
 #define NVN_TEXTURE_TARGET_3D 99
 // Match exactly the production function's used fields; the clear_rect adapter
 // records real Vulkan attachment clears for the production fallback branch.
