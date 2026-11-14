@@ -90,8 +90,9 @@ int main(int argc,char**argv) {
 
     def test_real_translated_spirv_safety_matrix(self):
         glslang=shutil.which("glslangValidator")
+        glslc=shutil.which("glslc")
         cc=shutil.which("cc") or shutil.which("clang")
-        self.assertTrue(glslang and cc, "requires glslangValidator and cc")
+        self.assertTrue((glslang or glslc) and cc, "requires glslangValidator or NDK glslc, and cc")
         with tempfile.TemporaryDirectory() as t:
             d=Path(t)
             harness=d/"check.c";exe=d/"check"
@@ -124,8 +125,11 @@ int main(int argc,char**argv) {
                 ("storage_store",BAD_STORE,0),("storage_atomic",BAD_ATOMIC,0)]:
                 glsl=d/(name+".frag");spv=d/(name+".spv")
                 glsl.write_text(source)
-                proc=subprocess.run([glslang,"-V","--target-env","vulkan1.1",
-                   "-S","frag","-o",str(spv),str(glsl)],capture_output=True,text=True)
+                cmd=([glslang,"-V","--target-env","vulkan1.1",
+                     "-S","frag","-o",str(spv),str(glsl)] if glslang else
+                     [glslc,"--target-env=vulkan1.1","-fshader-stage=frag",
+                     "-o",str(spv),str(glsl)])
+                proc=subprocess.run(cmd,capture_output=True,text=True)
                 self.assertEqual(proc.returncode,0,proc.stdout+proc.stderr)
                 result=subprocess.run([str(exe),str(spv),str(safe)],
                    capture_output=True,text=True)
