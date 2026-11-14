@@ -14,7 +14,7 @@ typedef struct vka_memu_sh {
     vka_memu_layout L;
     uint32_t nsb;                    // its storage buffer descriptors (with the emulation's two: within maxPerStageDescriptorStorageBuffers)
     dmsh_vk_entry ce, ve;            // the entries of its compute form (the stage compute) and of its vertex shader (no binding)
-    struct vka_shader *cs[2], *vs;
+    struct vka_shader *cs[2], *cs_taskless[2], *vs;
 } vka_memu_sh;
 #define VKA_MEMU_KEY_CS 0x4d454d555f43535full   // a compute form's key: the shader's key XOR this (XOR VKA_MEMU_KEY_GL for GL depth): no library key
 #define VKA_MEMU_KEY_GL 0x00000000474c3130ull
@@ -22,6 +22,7 @@ typedef struct vka_memu_sh {
 #define VKA_MEMU_KEY_COALESCED 0x434f414c45534345ull
 #define VKA_MEMU_KEY_PLANE_LUT 0x504c414e455f4c55ull
 #define VKA_MEMU_KEY_TASK_SHORT 0x53484f525454534bull
+#define VKA_MEMU_KEY_TASKLESS 0x544c4553535f4353ull // separate Vulkan/SPIR-V pipeline key; never aliases original mesh CS
 // Must distinguish compiled mesh SPIR-V and its persistent Vulkan pipeline
 // identity when choosing the new task index search; never use old cache.
 
@@ -36,7 +37,8 @@ static inline uint64_t vka_memu_cs_tag(int stage) {
          (vka_memu_short_task_search() ? VKA_MEMU_KEY_TASK_SHORT : 0)) : 0;
 }
 vka_memu_sh *vka_memu_of(struct vka_shader *s);                 // NULL: s cannot be drawn through compute (logged)
-struct vka_shader *vka_memu_cs_of(struct vka_shader *s, int gl); // its compute form, NULL = not made (logged)
+struct vka_shader *vka_memu_cs_of(struct vka_shader *s, int gl);
+struct vka_shader *vka_memu_cs_taskless_of(struct vka_shader *s, int gl); // only call with NO bound task shader // its compute form, NULL = not made (logged)
 struct vka_shader *vka_memu_vs_of(struct vka_shader *s);         // its vertex shader (a mesh shader's), NULL = not made
 struct vka_shader *vka_memu_by_key(uint64_t key);                // a compute form or vertex shader by its key (the prewarm list), NULL = none
 // 0 when the generated vertex shader vs (vka_memu_vs_of) leaves an input of pixel shader fs unwritten, a pipeline Vulkan does not allow (VUID-RuntimeSpirv-OpEntryPoint-08743;
