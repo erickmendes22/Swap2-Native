@@ -22,7 +22,7 @@ static VkPhysicalDevice physical;
 static buffer make_buffer(const void *data, size_t size) {
     buffer b = {.size = size};
     VkBufferCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = size, .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .size = size, .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
     VK_OK(vkCreateBuffer(device, &ci, NULL, &b.buffer));
     VkMemoryRequirements req; vkGetBufferMemoryRequirements(device, b.buffer, &req);
@@ -118,6 +118,11 @@ int main(int argc, char **argv) {
     uint32_t push[4] = {0, (uint32_t)(nr / 128), (uint32_t)(na / 4), 0};
     vkCmdPushConstants(command, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, push);
     uint32_t groups[3]; for (int i = 0; i < 3; i++) groups[i] = (uint32_t)strtoul(argv[5+i], NULL, 10);
+    // Same shader, same storage and number of workgroups: the sole A/B
+    // variable is the GPU command's direct vs indirect argument source.
+    const int indirect = getenv("MEMU_TEST_INDIRECT") && strcmp(getenv("MEMU_TEST_INDIRECT"), "0");
+    buffer dispatch_args = {0};
+    if (indirect) dispatch_args = make_buffer(groups, sizeof groups);
     const char *repeat_env = getenv("MEMU_TEST_REPEATS");
     uint32_t repeats = repeat_env ? (uint32_t)strtoul(repeat_env, NULL, 10) : 1;
     if (!repeats || repeats > 256) return 2;
@@ -132,7 +137,8 @@ int main(int argc, char **argv) {
         VK_OK(vkCreateQueryPool(device, &qp, NULL, &query));
         // Warm JIT/cache state before measuring. Repeated dispatches are
         // ordered for their WAW/RAW hazards, including the arena readback.
-        vkCmdDispatch(command, groups[0], groups[1], groups[2]);
+        if (indirect) vkCmdDispatchIndirect(command, dispatch_args.buffer, 0);
+        else vkCmdDispatch(command, groups[0], groups[1], groups[2]);
         vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &between, 0, NULL, 0, NULL);
         vkCmdResetQueryPool(command, query, 0, 2);
@@ -141,7 +147,8 @@ int main(int argc, char **argv) {
     for (uint32_t i = 0; i < repeats; i++) {
         if (i) vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &between, 0, NULL, 0, NULL);
-        vkCmdDispatch(command, groups[0], groups[1], groups[2]);
+        if (indirect) vkCmdDispatchIndirect(command, dispatch_args.buffer, 0);
+        else vkCmdDispatch(command, groups[0], groups[1], groups[2]);
     }
     if (query) vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, query, 1);
     VkMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -166,6 +173,7 @@ int main(int argc, char **argv) {
     vkDestroyPipeline(device, pipeline, NULL); vkDestroyShaderModule(device, shader, NULL);
     vkDestroyPipelineLayout(device, layout, NULL); vkDestroyDescriptorSetLayout(device, set_layout, NULL);
     for (int i = 0; i < 3; i++) free_buffer(&buf[i]);
+    if (indirect) free_buffer(&dispatch_args);
     vkDestroyDevice(device, NULL); vkDestroyInstance(instance, NULL);
     free(spv); free(records); free(arena); return 0;
 }
