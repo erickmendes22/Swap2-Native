@@ -35,6 +35,12 @@ uint32_t *vka_spv_img_retype(const uint32_t *w, size_t nw, const vka_spv_imgsel 
 // The caller must launch twice as many groups in Z. 1 = safe rewrite applied.
 int vka_spv_oot_cs_retile(uint32_t *w, size_t nw, char *why, size_t whylen);
 
+// A deliberately narrow proof: one straight-line fragment entry point,
+// constant user-colour stores only. Unknown operations, builtins, reads,
+// discard, specialization and memory side effects are refused. The caller
+// must also prove that ALL colour writes and alpha-to-coverage are disabled.
+int vka_spv_constant_colour_only(const uint32_t *w, size_t nw);
+
 /* Ocarina-specific virtualized 8x4x4 -> 8x4x2 compute retile.
  * Caller frees the returned SPIR-V words. All original workgroup builtins
  * are reconstructed from GlobalInvocationId at the exact 8x9x12 dispatch.

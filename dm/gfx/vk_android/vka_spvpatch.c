@@ -18,6 +18,78 @@ enum { OpExtInst = 12, OpName = 5, OpMemberName = 6, OpEntryPoint = 15, OpTypeIn
 enum { DecLocation = 30, SCInput = 1, DecSpecId = 1, OpSpecConstant = 50, OpConstantNull = 46, OpConstantFalse = 42, OpSpecConstantTrue = 48, OpSpecConstantFalse = 49, OpSpecConstantComposite = 51, OpSpecConstantOp = 52 };
 
 typedef struct { uint32_t *w; size_t n, cap; } vec_t;
+
+int vka_spv_constant_colour_only(const uint32_t *w, size_t nw) {
+    if (!w || nw < 5 || w[0] != 0x07230203 || !w[3] || w[3] > 1048576) return 0;
+    // 1 = declared constant; 2 = pointer rooted in a user output.
+    uint32_t bound = w[3], entry = 0;
+    unsigned char *kind = calloc(bound, 1);
+    if (!kind) return 0;
+    int ok = 0, body = 0, functions = 0, labels = 0, returned = 0, stores = 0;
+    for (size_t i = 5; i < nw;) {
+        uint32_t n = w[i] >> 16, op = w[i] & 65535;
+        const uint32_t *a = w + i;
+        if (!n || n > nw - i) goto done;
+        if (body) {
+            if (op == 248 && n == 2 && !labels++ && !returned) { /* OpLabel */ }
+            else if ((op == 65 || op == 66) && n >= 5 && labels == 1 && !returned) {
+                if (a[2] >= bound || a[3] >= bound || kind[a[3]] != 2) goto done;
+                for (uint32_t j = 4; j < n; j++) if (a[j] >= bound || kind[a[j]] != 1) goto done;
+                kind[a[2]] = 2;
+            } else if (op == 62 && n == 3 && labels == 1 && !returned) {
+                if (a[1] >= bound || a[2] >= bound || kind[a[1]] != 2 || kind[a[2]] != 1) goto done;
+                stores++;
+            } else if (op == 253 && n == 1 && labels == 1 && !returned) returned = 1;
+            else if (op == 56 && n == 1 && returned) body = 0;
+            else goto done;
+        } else {
+            if (functions) goto done; // Nothing after the sole function.
+            switch (op) {
+            case 15: // OpEntryPoint Fragment <function> "main" ...
+                if (n < 5 || a[1] != 4 || entry || !a[2] || a[2] >= bound) goto done;
+                entry = a[2];
+                break;
+            case 16: // OriginUpperLeft only; no depth, interlock or early-test modes.
+                if (n != 3 || a[1] != entry || a[2] != 7) goto done;
+                break;
+            case 71:
+                if (n < 3 || a[2] == 11) goto done; // BuiltIn
+                break;
+            case 72:
+                if (n < 4 || a[3] == 11) goto done;
+                break;
+            case 41: case 42: case 43: case 44: case 46:
+                if (n < 3 || a[2] >= bound) goto done;
+                if (op == 44) for (uint32_t j = 3; j < n; j++)
+                    if (a[j] >= bound || kind[a[j]] != 1) goto done;
+                kind[a[2]] = 1;
+                break;
+            case 59:
+                // Unused Uniform declarations are emitted by the translator.
+                // No load or pointer into them is admitted by the body above.
+                if (n != 4 || a[2] >= bound || (a[3] != 2 && a[3] != 3)) goto done;
+                if (a[3] == 3) kind[a[2]] = 2;
+                break;
+            case 54:
+                if (n != 5 || !entry || a[2] != entry) goto done;
+                body = 1; functions++;
+                break;
+            case 0: case 2: case 3: case 4: case 5: case 6: case 7:
+            case 10: case 11: case 14: case 17:
+            case 19: case 20: case 21: case 22: case 23: case 24:
+            case 28: case 29: case 30: case 32: case 33:
+                break; // Only declarations/debug metadata; no executed code.
+            default: goto done;
+            }
+        }
+        i += n;
+    }
+    ok = functions == 1 && !body && returned && stores;
+done:
+    free(kind);
+    return ok;
+}
+
 static int put(vec_t *v, uint32_t x) {
     if (v->n == v->cap) { size_t c = v->cap ? 2 * v->cap : 4096; uint32_t *p = realloc(v->w, c * 4); if (!p) return 0; v->w = p; v->cap = c; }
     v->w[v->n++] = x; return 1;

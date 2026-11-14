@@ -1033,3 +1033,32 @@ be described as eliminating the remaining query/depth store/reload workload.
 Do not re-enable proxy results, forced visibility or failed155 in-pass
 depth barriers. Save this measured result before any further optimization;
 no new APK is justified solely by these tiny timing differences.
+
+
+### Depth fragment elision experiment (2026-11-14, not enabled)
+
+The captured00ce4088af2c8e12 fragment module contains only four constant-white
+user-colour component stores. It does not read textures, discard fragments,
+write FragDepth/SampleMask or write memory. Removing its fragment stage when
+ALL colour writes and alpha-to-coverage are disabled could eliminate work
+without adding compute, query readbacks, GPU predicates or pass boundaries.
+A general conservative SPIR-V proof now accepts constant user-colour stores
+only and rejects unknown operations, specialization, reads and builtins.
+This is a tested experiment, NOT enabled in runtime pipeline creation.
+
+CPU tests accept scalar-component stores with an unused support UBO and
+reject discard, FragDepth, SampleMask, early-test execution modes, atomics,
+sampling, specialization, vertex stages, malformed/truncated modules and
+unknown executed operations. Real Vulkan software-ICD tests compare full
+colour+depth bytes and192 precise query counts at64x64 and960x540 for all
+seven combinations of fragment-stage removal and existing attachment options.
+All193 original physical passes remain. Alpha-discard colour passes retain
+their fragment stage. All comparisons and synchronization validation pass.
+
+Warmed alternating GPU-time pairs do NOT demonstrate a stable improvement:
+at960x540 the isolated FS-only change has worse aggregate central timing in
+this run; with both attachment options, signs vary across pairs. The software
+ICD is not Adreno and these numbers are not Android FPS predictions. Do NOT
+use a cold first-run comparison (48-88ms in preliminary runs) as a speedup.
+No APK or runtime enablement is justified by this experiment alone. Continue
+with actual work elimination while retaining157's real-query cave fix.
