@@ -99,7 +99,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         if (!resolve(mp, 6, &ts, &bad) || !resolve(mp, 7, &ms, &bad) || bad || !ms) return;
         vka_memu_sh *mi = vka_memu_of(ms), *ti = ts ? vka_memu_of(ts) : NULL;
         if (!mi || (ts && !ti)) return;
-        E->ts = ts; E->ms = ms; E->vs = vka_memu_vs_of(ms); E->mcs = vka_memu_cs_of(ms, !vka_depth_zero()); E->tcs = ts ? vka_memu_cs_of(ts, 0) : NULL;
+        E->ts = ts; E->ms = ms; E->vs = vka_memu_vs_of(ms); E->mcs = ts ? vka_memu_cs_of(ms, !vka_depth_zero()) : vka_memu_cs_taskless_of(ms, !vka_depth_zero()); E->tcs = ts ? vka_memu_cs_of(ts, 0) : NULL;
         if (!E->vs || !E->mcs || (ts && !E->tcs)) return;
         vka_shader *c5[VKA_NSTAGE] = {0};
         c5[5] = E->mcs; if (!vka_layout_of(c5, 1, &E->ml) || !(E->mp = vka_cs_pipeline(E->mcs, &E->ml))) return;
