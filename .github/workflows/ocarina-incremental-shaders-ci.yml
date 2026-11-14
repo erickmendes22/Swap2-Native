@@ -28,6 +28,7 @@ on:
       - 'dm/tools/tests/test_android_shaderzip.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_alu_cse.py'
       - 'dm/gfx/tools/tests/test_ocarina_graphics_barrier_scopes.py'
+      - 'dm/gfx/tools/tests/test_ocarina_cave_off_162_regression.py'
       - 'dm/gfx/tools/tests/test_ocarina_postpass_barrier_dedup.py'
       - 'dm/gfx/tools/tests/test_ocarina_attachment_stage_dependencies.py'
       - 'dm/gfx/vk_android/vka_shader.c'
@@ -132,6 +133,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_cold_build_memory.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_alu_cse.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_barrier_scopes.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_cave_off_162_regression.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_postpass_barrier_dedup.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_attachment_stage_dependencies.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c
