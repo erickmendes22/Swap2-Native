@@ -150,6 +150,37 @@ int main(void) {
         CHECK(bind == 2, "the arena and the records bound at VKA_MEMU_ARENA_BINDING / _REC_BINDING");
         free(o);
     }
+    {   // Exact same original Ocarina mesh shader and arena stores, but
+        // generated only for records with no bound task shader. This is
+        // a completely separate derived shader key/pipeline.
+        size_t base_n = 0, no_task_n = 0, task_n = 0;
+        uint32_t *base = vka_memu_cs(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4, &base_n, err, sizeof err);
+        uint32_t *no_task = vka_memu_cs_taskless(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4, &no_task_n, err, sizeof err);
+        uint32_t *task = vka_memu_cs(MEMU_TASK, sizeof MEMU_TASK / 4, &task_n, err, sizeof err);
+        CHECK(base && no_task && task, "taskless specialization converts standard mesh and leaves task module untouched (%s)", err);
+        if (base && no_task) {
+            CHECK(model_of(no_task, no_task_n) == 5 && no_task_n < base_n,
+                  "no-task mesh is smaller: %zu -> %zu words (%.2f%% fewer)",
+                  base_n, no_task_n, base_n ? 100.0*(base_n-no_task_n)/base_n:0);
+            CHECK(count_op(base, base_n, 250) > count_op(no_task, no_task_n, 250),
+                  "no-task shader avoids the runtime task offset search branch (%d -> %d)",
+                  count_op(base, base_n, 250), count_op(no_task, no_task_n, 250));
+            CHECK(count_op(base, base_n, 62) == count_op(no_task, no_task_n, 62),
+                  "no-task shader retains identical output and payload writes (%d -> %d)",
+                  count_op(base, base_n, 62), count_op(no_task, no_task_n, 62));
+            CHECK(count_op(base, base_n, 228) == count_op(no_task, no_task_n, 228),
+                  "original mesh atomics unchanged");
+            CHECK(validate(base, base_n, "mesh_default_original"),
+                  "original mesh shader valid");
+            CHECK(validate(no_task, no_task_n, "mesh_taskless_only"),
+                  "taskless specialized mesh shader valid");
+            printf("Synthetic taskless GPU code: %zu -> %zu words, OpLoad %d -> %d, OpBranchConditional %d -> %d, OpStore %d -> %d\n",
+                   base_n,no_task_n,count_op(base,base_n,61),count_op(no_task,no_task_n,61),
+                   count_op(base,base_n,250),count_op(no_task,no_task_n,250),
+                   count_op(base,base_n,62),count_op(no_task,no_task_n,62));
+        }
+        free(base); free(no_task); free(task);
+    }
     {   // The foliage output-vector optimization must reduce real SPIR-V
         // instructions while preserving the exact number of scalar arena
         // writes, pixel/primitive indices and Vulkan 1.3 validity. Compare
