@@ -231,7 +231,7 @@ void vka_rp_set_queue_origin(int on) { g_queue_origin_ll = on != 0; }
 void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 // Replay statistics every 300 frames (DM_VK_STATS=0: none): what a frame costs the GPU in passes and barriers (each pass loads and stores its attachments on a tiler), and the
 // CPU per draw (recording: mtl_sub_begin to vkEndCommandBuffer)
-extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
+extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar, vka_n_memu_interphase_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
 static uint64_t g_ub_copy_cmds, g_ub_copy_regions;  // actual Vulkan copy commands versus independently staged inline regions
 static uint64_t g_ub_deferred, g_ub_shadows, g_ub_flushed, g_ub_after_guest_bar; // in-pass deferred updates, snapshots, saves after retained guest barriers
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
@@ -260,7 +260,7 @@ void mtl_set_frame(uint64_t f) {
           flushed0=g_ub_flushed; afterbar0=g_ub_after_guest_bar; }
         { static uint64_t cb0; VLOG("Ocarina compute 9e6b: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (DM_VK_OOT_CS_SYNC=0 restores full)",
               (vka_n_compute_bar - cb0) / n); cb0 = vka_n_compute_bar; }
-        { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
+        { static uint64_t mi0; VLOG("Ocarina mesh staging: %.1f compute/transfer -> compute+indirect intermediate barriers/frame; final mesh -> graphics/transfer barrier unchanged (DM_VK_MEMU_INTERPHASE_SCOPE=0 restores former destination)",\n              (vka_n_memu_interphase_bar - mi0) / n); mi0 = vka_n_memu_interphase_bar; }\n        { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
           if (total != overlap0) VLOG("iOS compute dispatch overlap: %.1f full GPU barriers removed/frame; every non-dispatch NVN command still flushes", (total-overlap0)/n);
           overlap0 = total; }
         { char pb[400]; void vka_draw_prof(char *b, size_t n, double draws); vka_draw_prof(pb, sizeof pb, (double)(g_stat_draws - d0)); if (pb[0]) VLOG("draw path per draw (us): %s", pb);
