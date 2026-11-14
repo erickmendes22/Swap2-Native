@@ -132,6 +132,81 @@ void vka_memu_varying_stats(uint64_t *draws, uint64_t *words) {
     if (draws) *draws = g_memu_varying_draws;
     if (words) *words = g_memu_varying_words_saved;
 }
+
+vka_shader *vka_memu_cs_for_fs(vka_shader *mesh, int gl, vka_shader *fragment) {
+    vka_shader *fallback = vka_memu_cs_of(mesh, gl);
+    if (!fallback || strcmp(DM_GAME_ID, "0400486024DEC000") ||
+        !VKA_ENV("DM_VK_OOT_VARYING_PRUNE", 1)) return fallback;
+    vka_memu_sh *d = vka_memu_of(mesh);
+    if (!d || d->L.task) return fallback;
+    uint64_t all = vka_memu_vs_locs(&d->L), used = 0;
+    if (!all || !vka_memu_pixel_mask(fragment, &used) ||
+        (used & ~all) || used == all || __builtin_popcountll(all & ~used) < 2)
+        return fallback;
+    gl = gl && (mesh->e->flags & DMSH_VK_F_GL_DEPTH) ? 1 : 0;
+    pthread_mutex_lock(&g_mu);
+    int slot = -1;
+    for (int i = 0; i < 16; i++) {
+        if (d->masked_cs[i].cs[gl] && d->masked_cs[i].mask == used) {
+            vka_shader *v = d->masked_cs[i].cs[gl];
+            pthread_mutex_unlock(&g_mu);
+            return v;
+        }
+        if (slot < 0 && !d->masked_cs[i].cs[0] && !d->masked_cs[i].cs[1])
+            slot = i;
+        if (d->masked_cs[i].mask == used &&
+            (d->masked_cs[i].cs[0] || d->masked_cs[i].cs[1]))
+            slot = i;
+    }
+    pthread_mutex_unlock(&g_mu);
+    if (slot < 0) return fallback;
+    char err[256] = ""; size_t bytes = 0, frozen_n = 0, mod_n = 0;
+    uint32_t *raw = vka_shader_memu_words(mesh, &bytes, err, sizeof err);
+    uint32_t *frozen = raw ? vka_spv_spec_freeze(raw, bytes / 4, DMSH_VK_SPEC_GL_DEPTH, (uint32_t)gl, &frozen_n) : NULL;
+    uint32_t *spv = raw ? vka_memu_cs_masked(frozen ? frozen : raw,
+                                frozen ? frozen_n : bytes / 4, used,
+                                &mod_n, err, sizeof err) : NULL;
+    VkShaderModule mod = spv ? make_module(spv, mod_n) : VK_NULL_HANDLE;
+    free(raw); free(frozen); free(spv);
+    if (!mod) {
+        static _Atomic int n;
+        if (atomic_fetch_add(&n, 1) < 4)
+            VRED("Ocarina masked mesh compute for %016llx failed (%s), full module retained",
+                 (unsigned long long)mesh->key, err[0] ? err : "VkShaderModule");
+        return fallback;
+    }
+    dmsh_vk_entry *entry = malloc(sizeof *entry);
+    if (!entry) { vk.vkDestroyShaderModule(V.dev, mod, NULL); return fallback; }
+    *entry = d->ce;
+    entry->key ^= (gl ? VKA_MEMU_KEY_GL : 0) ^ VKA_MEMU_KEY_CS_MASKED ^ used;
+    entry->flags &= (uint16_t)~DMSH_VK_F_GL_DEPTH;
+    vka_shader *v = derive(mesh, entry, mod, 1);
+    pthread_mutex_lock(&g_mu);
+    slot = -1;
+    for (int i = 0; i < 16; i++) {
+        if (d->masked_cs[i].cs[gl] && d->masked_cs[i].mask == used) {
+            vka_shader *prior = d->masked_cs[i].cs[gl];
+            pthread_mutex_unlock(&g_mu);
+            vk.vkDestroyShaderModule(V.dev, mod, NULL); free(entry); free(v);
+            return prior;
+        }
+        if (d->masked_cs[i].mask == used &&
+            (d->masked_cs[i].cs[0] || d->masked_cs[i].cs[1]))
+            slot = i;
+        if (slot < 0 && !d->masked_cs[i].cs[0] && !d->masked_cs[i].cs[1])
+            slot = i;
+    }
+    if (slot >= 0) {
+        d->masked_cs[slot].mask = used;
+        d->masked_cs[slot].cs[gl] = v;
+    }
+    pthread_mutex_unlock(&g_mu);
+    if (slot < 0) {
+        vk.vkDestroyShaderModule(V.dev, mod, NULL); free(entry); free(v);
+        return fallback;
+    }
+    return v;
+}
 vka_shader *vka_memu_vs_for_fs(vka_shader *mesh, vka_shader *fragment) {
     vka_shader *fallback = vka_memu_vs_of(mesh);
     if (!fallback || !VKA_ENV("DM_VK_OOT_VARYING_PRUNE", 1)) return fallback;
