@@ -272,6 +272,7 @@ static int rt_same(const p_set_rt *a, int ha, const p_set_rt *b, int hb) {
 // Game barriers (OP_BARRIER) that came with a pass open: taken inside it (DM_VK_BAR_KEEP), ended it at once, ended it later at a draw that needed it (bar_hazard)
 static uint64_t g_bar_in, g_bar_kept, g_bar_late, g_bar_duplicate_avoided;
 static uint64_t g_rp_scoped, g_rp_graphics, g_rp_full, g_rp_pending_attachment;
+static uint64_t g_rp_depth_only; // subset of attachment-scoped barriers with only depth/stencil writes
 static uint64_t g_rp_readonly_barriers_avoided; // no attachment or shader writes; no producer to publish
 static uint64_t g_rp_postub_barriers_saved;
 static int g_rp_force_full; // OP_BARRIER has stricter guest-visible ordering than an ordinary pass transition
@@ -381,7 +382,14 @@ void vka_rp_end(void) {
     } else {
         if (pending_attachment) g_rp_pending_attachment++;
         if (reused) g_rp_postub_barriers_saved++;
-        else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }
+        else if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
+                 R.cave_dwrite && !R.cave_cwrite) {
+            // In the heavy scene ~823 pass ends/frame have NO colour writes.
+            // Keep the same real pass boundary, depth write visibility and
+            // all later consumers. Only non-producer COLOR_OUTPUT is omitted.
+            g_rp_scoped++; g_rp_depth_only++;
+            vka_depth_write_barrier(g_cb);
+        } else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }
     }
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
     if (vka_nan_on()) vka_nan_pass(g_cb, R.cim, R.clv, R.cl0, R.nci);
