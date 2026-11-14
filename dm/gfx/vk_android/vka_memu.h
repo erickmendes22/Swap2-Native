@@ -15,10 +15,14 @@ typedef struct vka_memu_sh {
     uint32_t nsb;                    // its storage buffer descriptors (with the emulation's two: within maxPerStageDescriptorStorageBuffers)
     dmsh_vk_entry ce, ve;            // the entries of its compute form (the stage compute) and of its vertex shader (no binding)
     struct vka_shader *cs[2], *vs;
+    struct { uint64_t mask; struct vka_shader *cs[2]; } masked_cs[16];
+    struct { uint64_t mask; struct vka_shader *vs; } masked_vs[16];
 } vka_memu_sh;
-#define VKA_MEMU_KEY_CS 0x4d454d555f43535full   // a compute form's key: the shader's key XOR this (XOR VKA_MEMU_KEY_GL for GL depth): no library key
+#define VKA_MEMU_KEY_CS 0x4d454d555f43535full
+#define VKA_MEMU_KEY_CS_MASKED 0x4d4553485f435350ull // fragment-correct producer output cache key   // a compute form's key: the shader's key XOR this (XOR VKA_MEMU_KEY_GL for GL depth): no library key
 #define VKA_MEMU_KEY_GL 0x00000000474c3130ull
 #define VKA_MEMU_KEY_VS 0x4d454d555f56535full
+#define VKA_MEMU_KEY_VS_MASKED 0x4d4553485f564152ull // unique derived pipeline identity for actual FS input mask
 #define VKA_MEMU_KEY_COALESCED 0x434f414c45534345ull
 #define VKA_MEMU_KEY_PLANE_LUT 0x504c414e455f4c55ull
 #define VKA_MEMU_KEY_TASK_SHORT 0x53484f525454534bull
@@ -36,8 +40,10 @@ static inline uint64_t vka_memu_cs_tag(int stage) {
          (vka_memu_short_task_search() ? VKA_MEMU_KEY_TASK_SHORT : 0)) : 0;
 }
 vka_memu_sh *vka_memu_of(struct vka_shader *s);                 // NULL: s cannot be drawn through compute (logged)
-struct vka_shader *vka_memu_cs_of(struct vka_shader *s, int gl); // its compute form, NULL = not made (logged)
-struct vka_shader *vka_memu_vs_of(struct vka_shader *s);         // its vertex shader (a mesh shader's), NULL = not made
+struct vka_shader *vka_memu_cs_of(struct vka_shader *s, int gl);
+struct vka_shader *vka_memu_cs_for_fs(struct vka_shader *mesh, int gl, struct vka_shader *fragment); // its compute form, NULL = not made (logged)
+struct vka_shader *vka_memu_vs_of(struct vka_shader *s);
+struct vka_shader *vka_memu_vs_for_fs(struct vka_shader *mesh, struct vka_shader *fragment);         // its vertex shader (a mesh shader's), NULL = not made
 struct vka_shader *vka_memu_by_key(uint64_t key);                // a compute form or vertex shader by its key (the prewarm list), NULL = none
 // 0 when the generated vertex shader vs (vka_memu_vs_of) leaves an input of pixel shader fs unwritten, a pipeline Vulkan does not allow (VUID-RuntimeSpirv-OpEntryPoint-08743;
 // Qualcomm's driver answers VK_ERROR_UNKNOWN): no mesh draw pairs them, so a prewarm record of the pair is stale (vka_pso.c). 1 otherwise, or when it cannot tell
