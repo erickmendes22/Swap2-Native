@@ -180,6 +180,38 @@ int main(void) {
             free(original); free(full); free(masked);
         }
     }
+    {   // The actual mesh-compute producer must no longer write outputs
+        // that the bound FS does not consume. Position, indices, culling
+        // and all used locations are unchanged. The original ALL-bit module
+        // must remain IDENTICAL down to its last SPIR-V word.
+        const uint32_t *modules[2] = {MEMU_MESH_TRI, MEMU_MESH_PTS};
+        size_t counts[2] = {sizeof MEMU_MESH_TRI / 4, sizeof MEMU_MESH_PTS / 4};
+        for (int mode = 0; mode < 2; mode++) {
+            size_t nf = 0, np = 0, na = 0;
+            uint32_t *full = vka_memu_cs(modules[mode], counts[mode], &nf, err, sizeof err);
+            uint32_t *same = vka_memu_cs_masked(modules[mode], counts[mode],
+                                                  UINT64_MAX, &na, err, sizeof err);
+            uint32_t *pruned = vka_memu_cs_masked(modules[mode], counts[mode],
+                                                    0, &np, err, sizeof err);
+            CHECK(full && same && pruned, "mesh GPU producer module %s made (%s)",
+                  mode ? "points" : "triangles", err);
+            if (full && same && pruned) {
+                CHECK(na == nf && !memcmp(full, same, nf * 4),
+                      "all-output producer shader preserves original bytes exactly");
+                CHECK(count_op(full, nf, 62) > count_op(pruned, np, 62),
+                      "pruned producer removes actual GPU storage-output writes (%d -> %d)",
+                      count_op(full, nf, 62), count_op(pruned, np, 62));
+                CHECK(model_of(pruned, np) == 5,
+                      "selective output module still dispatches mesh as Vulkan compute");
+                CHECK(validate(pruned, np, mode ? "gpu_mesh_producer_pts_pruned" : "gpu_mesh_producer_tri_pruned"),
+                      "real mesh producer remains valid Vulkan without dead output planes");
+                printf("GPU producer output stores %s: %d -> %d SPIR-V OpStore, original unchanged\n",
+                       mode ? "points" : "triangles",
+                       count_op(full, nf, 62), count_op(pruned, np, 62));
+            }
+            free(full); free(same); free(pruned);
+        }
+    }
     // The conversions
     convert(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4, 0, "mesh_tri", &L);
     convert(MEMU_MESH_PTS, sizeof MEMU_MESH_PTS / 4, 0, "mesh_pts", &L);
