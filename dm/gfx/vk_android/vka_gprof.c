@@ -27,13 +27,16 @@ static uint64_t g_first_vs, g_first_mesh, g_first_task;
 static uint32_t g_first_units, g_first_instances, g_first_indirect;
 static char g_compute[DESC];
 static int g_compute_new;
-// Timestamp 16 consecutive graphics draws inside the pass, on sampled frames
-// ONLY, without changing resolution, blending, depth, shader, attachments or
-// the normal draw sequence. The old GPU profiler knew only pass totals and
-// could not distinguish a costly fragment shader from attachment load/store.
-// Only the legacy 683x384 and handheld 640x360 / 960x540 scene passes are sampled; no extra GPU commands on 299/300
-// frames. Attribution to a key requires >=12 of 16 draws using it.
-enum { GFX_CHUNK = 16 };
+// GPU-only diagnosis for Ocarina foliage: split the prior 16-draw GPU
+// timestamp intervals into four-draw intervals on the ONE sampled GPU frame.
+// The 16-draw intervals falsely associated a 2.4 ms raster interval with
+// one fragment key even when that key was only 5 of its 16 draws. More precise
+// intervals separate actual GPU raster costs from coincident draws and
+// attachment/tile load-store. This records NO additional graphics commands,
+// pipelines, draws or barriers on ordinary (299/300) frames; normal GPU work
+// and output pixels are identical. The existing 2048-query guard remains.
+// >=3 of 4 draws is the existing 75%-dominance threshold.
+enum { GFX_CHUNK = 4 };
 static uint64_t g_gfx_keys[GFX_CHUNK];
 static unsigned g_gfx_n;
 static int g_gfx_enabled;
