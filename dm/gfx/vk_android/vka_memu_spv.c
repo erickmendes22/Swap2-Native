@@ -874,7 +874,8 @@ fail:
 }
 
 // ---------- The vertex shader ----------
-uint32_t *vka_memu_vs(const vka_memu_layout *L, size_t *out_nw, char *err, size_t errn) {
+static uint32_t *vka_memu_vs_impl(const vka_memu_layout *L, uint64_t used_locations,
+                                    size_t *out_nw, char *err, size_t errn) {
     bld_t B; memset(&B, 0, sizeof B); sb_t A = {0}, O = {0}, F = {0};
     err[0] = 0;
     if (L->task || !L->max_v || !L->max_p || L->vw < 4) { snprintf(err, errn, "not a mesh layout"); return NULL; }
@@ -888,8 +889,13 @@ uint32_t *vka_memu_vs(const vka_memu_layout *L, size_t *out_nw, char *err, size_
     uint32_t pos = gvar(&B, p_out_v4, SCOutput); INS(&A, OpDecorate, pos, DecBuiltIn, BIPosition); INS(&A, OpDecorate, pos, DecInvariant);
     uint32_t psz = 0; if (L->points) { psz = gvar(&B, p_out_f, SCOutput); INS(&A, OpDecorate, psz, DecBuiltIn, BIPointSize); }
     uint32_t vo[32], po[32];
-    for (int k = 0; k < L->nvloc; k++) { vo[k] = gvar(&B, p_out_v4, SCOutput); INS(&A, OpDecorate, vo[k], DecLocation, L->vloc[k]); }
-    for (int k = 0; k < L->nploc; k++) { po[k] = gvar(&B, p_out_v4, SCOutput); INS(&A, OpDecorate, po[k], DecLocation, L->ploc[k]); }
+    memset(vo, 0, sizeof vo); memset(po, 0, sizeof po);
+    for (int k = 0; k < L->nvloc; k++) if (used_locations & (UINT64_C(1) << L->vloc[k])) {
+        vo[k] = gvar(&B, p_out_v4, SCOutput); INS(&A, OpDecorate, vo[k], DecLocation, L->vloc[k]);
+    }
+    for (int k = 0; k < L->nploc; k++) if (used_locations & (UINT64_C(1) << L->ploc[k])) {
+        po[k] = gvar(&B, p_out_v4, SCOutput); INS(&A, OpDecorate, po[k], DecLocation, L->ploc[k]);
+    }
     uint32_t c0 = cu(&B, 0), t_fnv = ty(&B, OpTypeFunction, B.t_void, 0, 0, 1), main_ = B.next++;
     uint32_t f2 = cf(&B, 2.0f), f1 = cf(&B, 1.0f), fh = cf(&B, 0.5f);
     fn_t f = {&B, &F};
@@ -929,7 +935,9 @@ uint32_t *vka_memu_vs(const vka_memu_layout *L, size_t *out_nw, char *err, size_
     { uint32_t v = B.next++; INS(&F, OpCompositeConstruct, B.t_v4f, v, pc_[0], pc_[1], pc_[2], pc_[3]); INS(&F, OpStore, pos, v); }
     if (psz) INS(&F, OpStore, psz, L->point_size ? FWORD(op2(&f, OpIAdd, B.t_u32, vb, cu(&B, 4 * (L->coalesced ? L->max_v : 1)))) : f1);
     for (int k = 0; k < L->nvloc + L->nploc; k++) {
-        int prim = k >= L->nvloc; uint32_t base = prim ? pb : vb, o = prim ? (L->points ? 1u : 3u) + (uint32_t)L->cull + 4u * (uint32_t)(k - L->nvloc) : 4u + (uint32_t)L->point_size + 4u * (uint32_t)k;
+        int prim = k >= L->nvloc;
+        if (!(used_locations & (UINT64_C(1) << (prim ? L->ploc[k - L->nvloc] : L->vloc[k])))) continue;
+        uint32_t base = prim ? pb : vb, o = prim ? (L->points ? 1u : 3u) + (uint32_t)L->cull + 4u * (uint32_t)(k - L->nvloc) : 4u + (uint32_t)L->point_size + 4u * (uint32_t)k;
         uint32_t c4[4]; for (uint32_t c = 0; c < 4; c++) c4[c] = FWORD(op2(&f, OpIAdd, B.t_u32, base, cu(&B, (o + c) * (L->coalesced && !prim ? L->max_v : 1))));
         uint32_t v = B.next++; INS(&F, OpCompositeConstruct, B.t_v4f, v, c4[0], c4[1], c4[2], c4[3]); INS(&F, OpStore, prim ? po[k - L->nvloc] : vo[k], v);
     }
@@ -941,13 +949,25 @@ uint32_t *vka_memu_vs(const vka_memu_layout *L, size_t *out_nw, char *err, size_
     INS(&O, OpCapability, CapShader);
     INS(&O, OpMemoryModel, 0, 1);
     { uint32_t ifc[72]; uint32_t ni = 0; ifc[ni++] = vid; ifc[ni++] = pos; if (psz) ifc[ni++] = psz;
-      for (int k = 0; k < L->nvloc; k++) ifc[ni++] = vo[k]; for (int k = 0; k < L->nploc; k++) ifc[ni++] = po[k];
+      for (int k = 0; k < L->nvloc; k++) if (vo[k]) ifc[ni++] = vo[k];
+      for (int k = 0; k < L->nploc; k++) if (po[k]) ifc[ni++] = po[k];
       uint32_t pre[2] = {EMVertex, main_}; sb_str_ins(&O, OpEntryPoint, pre, 2, "main", ifc, ni); }
     sb_raw(&O, A.w, A.n); sb_raw(&O, B.T.w, B.T.n); sb_raw(&O, F.w, F.n);
     if (O.oom || A.oom || B.T.oom || F.oom) { snprintf(err, errn, "out of memory"); free(O.w); free(A.w); free(B.T.w); free(F.w); return NULL; }
     O.w[3] = B.next; *out_nw = O.n;
     free(A.w); free(B.T.w); free(F.w);
     return O.w;
+}
+
+// Original module is the exact unmodified compatibility baseline, including
+// every varying the mesh shader declared. Runtime specialization is selected
+// ONLY when the actual bound pixel shader has a fully parsed SPIR-V input mask.
+uint32_t *vka_memu_vs(const vka_memu_layout *L, size_t *out_nw, char *err, size_t errn) {
+    return vka_memu_vs_impl(L, UINT64_MAX, out_nw, err, errn);
+}
+uint32_t *vka_memu_vs_masked(const vka_memu_layout *L, uint64_t used_locations,
+                             size_t *out_nw, char *err, size_t errn) {
+    return vka_memu_vs_impl(L, used_locations, out_nw, err, errn);
 }
 
 // ---------- The pixel shader of per-primitive inputs ----------
