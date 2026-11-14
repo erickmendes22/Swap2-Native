@@ -1,7 +1,7 @@
 name: Ocarina incremental shaders (tests only)
 on:
   push:
-    branches: [wip-ocarina-incremental-shader-updates, ocarina-v11-ios-perf-from-v101]
+    branches: [wip-ocarina-incremental-shader-updates, ocarina-v11-ios-perf-from-v101, experiment/ocarina-gpu-direct-dispatch]
     paths:
       - 'scripts/ocarina_shader_hot_delta.py'
       - 'scripts/build_ocarina_hot_shaders.py'
@@ -32,6 +32,8 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_attachment_stage_dependencies.py'
       - 'dm/gfx/vk_android/vka_shader.c'
       - 'dm/gfx/vk_android/vka_memu*'
+      - 'dm/host/tests/t_android_memu_dispatch.c'
+      - 'dm/gfx/tools/tests/test_ocarina_gpu_direct_dispatch.py'
       - 'dm/gfx/vk_android/vka_pso.c'
       - 'dm/gfx/vk_android/vka_ndsr.c'
       - 'dm/gfx/vk_android/vka_present.c'
@@ -202,6 +204,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_early_occlusion.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_occlusion_fast.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_dispatch_overlap.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_gpu_direct_dispatch.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_720p_upscale_real_gpu.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_mesh_prewarm.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_hot_shader_overlay.py'
