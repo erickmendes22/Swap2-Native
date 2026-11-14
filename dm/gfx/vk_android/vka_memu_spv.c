@@ -468,7 +468,9 @@ static void plane_lut_emit(fn_t *f, const mod_t *m, const vka_memu_layout *L,
 
 // ---------- Task / mesh as compute ----------
 typedef struct { uint32_t var; uint32_t idx[6]; int n; } chain_t;
-uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
+static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
+                                   uint64_t used_locations,
+                                   size_t *out_nw, char *err, size_t errn) {
     mod_t m; bld_t B; memset(&B, 0, sizeof B); sb_t A = {0}, F = {0}, O = {0};
     chain_t *ch = NULL; uint32_t *oid = NULL;   // oid: per id, 1 + the output it is (an output variable or a chain into one), 0 none
     uint8_t *wgch = NULL;   // per id: a chain into the workgroup ID variable (retyped as Private)
@@ -607,6 +609,15 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
         if (op == OpEmitMeshTasksEXT) { uint32_t r = B.next++; INS(&O, OpFunctionCall, B.t_void, r, task_out, x[1]); INS(&O, OpReturn); continue; }
         if (op == OpStore && len >= 3 && x[1] < m.bound && oid[x[1]]) {
             const outvar *o = &ov[oid[x[1]] - 1];
+            // A mesh output is never read back inside the original guest
+            // module: layout_read rejects OpLoad/CopyMemory/FunctionCall on
+            // outputs. If the actual pixel shader has NO input for this
+            // location, its global arena writes are dead. Elide the
+            // producer's 4× SSBO stores, not merely consumer VS loads.
+            // Position, indices, primitive cull and all used varyings stay.
+            if ((o->kind == K_VLOC || o->kind == K_PLOC) &&
+                !(used_locations & (UINT64_C(1) << m.loc[o->id])))
+                continue;
             chain_t c = ch[x[1]];
             if (!c.var || c.n < 1) FAIL("a store into a whole output");
             fn_t f = {&B, &O};
@@ -871,6 +882,17 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
 fail:
     free(O.w); free(A.w); free(B.T.w); free(F.w); free(ch); free(oid); free(wgch); mod_free(&m);
     return NULL;
+}
+
+// Compatibility module never changes; external 42k shader library, helpers,
+// arena and pipeline cache keys retain their original ABI. Specialization is
+// opt-in only for a fully parsed actual bound fragment shader's input mask.
+uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn);
+}
+uint32_t *vka_memu_cs_masked(const uint32_t *w, size_t nw, uint64_t used_locations,
+                             size_t *out_nw, char *err, size_t errn) {
+    return vka_memu_cs_impl(w, nw, used_locations, out_nw, err, errn);
 }
 
 // ---------- The vertex shader ----------
