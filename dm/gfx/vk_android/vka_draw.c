@@ -247,7 +247,7 @@ static struct {
     uint32_t cnl[8], dnl; VkExtent2D cext[8], dext;      // each attachment's layers and level size (clears in the pass must cover what they would outside it)
     int swrite;                                          // a draw of the pass wrote memory (storage buffers or images, raw global stores, a geometry shader's claim)
     int awrite;                                          // an actual colour/depth/stencil write or clear occurred; depth-test-only occlusion passes stay read-only
-    int cave_cwrite, cave_dwrite; // diagnostic only; never used to change rendering
+    int cave_cwrite, cave_dwrite; // tracks actual colour/depth writes; depth-dirty protects cave pass splitting
     int bar_pending;                                     // a game barrier came inside the pass and was taken there (vka_rp_game_barrier): the draws after it are checked (bar_hazard)
 } R;
 // Clears waiting for the pass of their targets (vka_rp_clear), in order: the next draw over the same targets opens its pass with them (loadOp CLEAR, or vkCmdClearAttachments),
@@ -309,6 +309,9 @@ int vka_rp_can_defer_ub(uint64_t addr, uint64_t size) {
     return 1;
 }
 int vka_rp_has_depth(void) { return R.on && (R.df || R.sf); }
+// Only force a depth-attachment store/reload after this pass has written
+// depth or stencil. Pure depth-test occlusion queries remain in the pass.
+int vka_rp_cave_depth_dirty(void) { return R.on && R.cave_dwrite; }
 static uint64_t g_cave_original_splits, g_cave_unused_color, g_cave_depth_readonly;
 void vka_rp_cave_end(void) {
     // Observations only: every report still executes the original pass end.
