@@ -1151,3 +1151,14 @@ per300. Normal frames still add no profiling commands. A capacity hit logs
 INCOMPLETE explicitly, so a partial sum cannot be presented as the complete
 frame or a fragment-only cost. Exclude the sampled frame from FPS comparisons.
 The constant-colour fragment-stage elision experiment stays disabled.
+
+Candidate162 validation completion: all196 tests in the production APK
+source-level regression preflight pass locally. Android NDK28.2 source checks
+for vka_tex/vka_exec/vka_draw/vka_gprof and the complete GPU correctness job
+passed on a2bd9aa (Actions43631118672). The source-contract tests now locate
+the actual inline-uniform helper rather than asserting a global count that
+incorrectly forbade additional scoped clear dependencies. No extra menu
+button was introduced; legacy internal FPS Boost is forced0, separate from
+the visible VRS control. Build162 combines the new changes above with the
+existing3 independent controls and keeps package/signing/shader ABI unchanged.
+Device correctness and phone GPU-time/FPS remain pending user testing.

@@ -10,6 +10,7 @@ consumer access. Guest OP_BARRIER and mixed-producer paths keep full barriers.
 from pathlib import Path
 import re
 import unittest
+from dm.gfx.tools.tests.test_depth_pass_optimizations import function
 
 ROOT = Path(__file__).resolve().parents[4]
 TEX = (ROOT / "dm/gfx/vk_android/vka_tex.c").read_text()
@@ -27,7 +28,7 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         self.assertIn("if (!batch_on) ub_flush(ub);", update)
         self.assertIn("g_ub_pending[g_ub_np++]", update)
         self.assertNotIn("vka_barrier(g_cb)", update)
-        self.assertEqual(EXEC.count("vka_transfer_write_barrier(g_cb)"), 1)
+        self.assertEqual(function(EXEC, "static void ub_flush(").count("vka_transfer_write_barrier(g_cb)"), 1)
         self.assertIn('static void boost_transfer_barrier(VkCommandBuffer cb)', EXEC)
         self.assertIn('VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0', EXEC)
         self.assertIn('else vka_barrier(cb);', EXEC)
@@ -83,7 +84,7 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
             self.assertIn("VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT", TEX)
 
     def test_visible_counters_no_new_option(self):
-        self.assertIn("Vulkan scoped upload dependencies:", EXEC)
+        self.assertIn("Vulkan scoped transfer dependencies:", EXEC)
         self.assertIn("vka_n_transfer_bar - tb0", EXEC)
         self.assertIn("vka_transfer_write_barrier_at", HEADER)
         self.assertNotIn("DM_VK_UPDATE_BARRIER", EXEC)
