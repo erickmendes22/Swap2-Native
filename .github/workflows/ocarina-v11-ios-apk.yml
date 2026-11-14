@@ -43,6 +43,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_cpu_written_serials.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_retired_pool_images.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_partial_texture_upload.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_depth_pass_optimizations.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pipeline_retirement.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_banana_runtime.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_vegetation_supplement.py'

@@ -314,6 +314,7 @@ int vka_rp_has_depth(void) { return R.on && (R.df || R.sf); }
 // depth or stencil. Pure depth-test occlusion queries remain in the pass.
 int vka_rp_cave_depth_dirty(void) { return R.on && R.cave_dwrite; }
 static int g_unused_color_refused;
+static uint64_t g_unused_color_passes, g_unused_color_views, g_attachment_part_passes;
 static uint64_t g_cave_original_splits, g_cave_unused_color, g_cave_depth_readonly;
 void vka_rp_cave_end(void) {
     // Observations only: every report still executes the original pass end.
@@ -385,9 +386,10 @@ void vka_rp_end(void) {
         if (reused) g_rp_postub_barriers_saved++;
         else {
             g_rp_scoped++;
-            if (!strcmp(DM_GAME_ID, "0400486024DEC000") && VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0))
+            if (!strcmp(DM_GAME_ID, "0400486024DEC000") && VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0)) {
+                g_attachment_part_passes++;
                 vka_attachment_parts_barrier_at(g_cb, R.cave_cwrite, R.cave_dwrite, __FILE_NAME__, __LINE__);
-            else vka_attachment_write_barrier(g_cb);
+            } else vka_attachment_write_barrier(g_cb);
         }
     }
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
@@ -537,6 +539,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d, int omi
         if (clean && bound) {
             for (int i = 0; i < n; i++) ca[i].imageView = VK_NULL_HANDLE;
             R.color_omitted = 1;
+            g_unused_color_passes++; g_unused_color_views += (unsigned)bound;
         }
     }
     VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = R.area, .layerCount = layers, .colorAttachmentCount = (uint32_t)n, .pColorAttachments = ca,
@@ -613,6 +616,12 @@ int vka_rp_game_barrier(uint32_t bits) {
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
     static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0, reused0, ro0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
+    static uint64_t omit0, views0, parts0;
+    if (g_unused_color_passes != omit0 || g_attachment_part_passes != parts0)
+        VLOG("GPU optional optimizations: %.1f unused-colour passes/frame; %.1f colour load/store pairs omitted/frame; %.1f selective attachment memory barriers/frame",
+             (g_unused_color_passes-omit0)/frames, (g_unused_color_views-views0)/frames,
+             (g_attachment_part_passes-parts0)/frames);
+    omit0=g_unused_color_passes; views0=g_unused_color_views; parts0=g_attachment_part_passes;
     static uint64_t cave0, color0, depth0;
     if (g_cave_original_splits != cave0)
         VLOG("Ocarina original cave path: %.1f physical query pass ends/frame; %.1f bind unused colour targets; %.1f do not write depth (diagnostic only)", (g_cave_original_splits-cave0)/frames, (g_cave_unused_color-color0)/frames, (g_cave_depth_readonly-depth0)/frames);
@@ -1997,6 +2006,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
             k.att[i] = (typeof(k.att[i])){1, (uint8_t)bfac(b.src_rgb), (uint8_t)bfac(b.dst_rgb), (uint8_t)bop(b.eq_rgb), (uint8_t)bfac(b.src_a), (uint8_t)bfac(b.dst_a), (uint8_t)bop(b.eq_a), (uint8_t)m};
         }
     }
+    // Null colour views must not ask Vulkan to blend an UNDEFINED format.
+    // All write masks were proven zero before opening this pass; keep the
+    // original fragment variant/alpha test, but no colour blend/logic state.
+    if (R.color_omitted) { memset(k.att, 0, sizeof k.att); k.logic_en = 0; }
     // Only mark an attachment producer when a draw CAN write it. Many
     // Ocarina occlusion-query draws only depth-test against existing depth
     // and have all colour writes disabled. Tracking this is necessary to

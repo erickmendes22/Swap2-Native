@@ -523,3 +523,11 @@ Build160: HookLink/nxnative partial texture reload adapted to Vulkan.
 - Preserve initial/full-dirty parallel uploads and full fallback for sparse/linear/MSAA/depth/rebased/zero-shared resources, diagnostics, unmapped guest memory and pending GPU writes. Plan all copies before any GPU command; racing CPU writes remain visible next check.
 - Production C/full-deswizzle oracle:5000 layer/mip comparisons across RGBA/BC1/BC5/BC7/ASTC. Actual Vulkan readback:840 exact comparisons with Khronos validation.55.7MB and26.8MB copy payload eliminated in fixtures; no phone FPS guarantee.
 - Keep157 cave fix, prepared shader library/ABI, version0.1.6, com.swap2native.ootv11ios, persistent a1c468aff0b99e28 signer and a single update APK through this workflow.
+
+Build161 COMBINED package requested by user; supersedes partial-only160.
+- Three independent menu toggles (default ON): partial texture uploads, unused-colour targets in depth-only passes, selective attachment memory synchronization. Explicit0/1 native rollback for each.
+- Remove the three existing foliage optimization buttons. Plane LUT/coalesced layout/short task search automatically follow main vegetation ON/OFF, ignoring stale per-feature preferences.
+- Null colour views keep original area/layers/samples, shader variants and VRS classification via an internal format tag, without pipeline-key structure or shader-library ABI change. Pending clears/discards,alpha-to-coverage,MSAA,classic passes,shader writers fall back; later colour writes/clears restore full targets. A driver-refused optional pipeline falls back to the original pass/draw.
+- Selective cache scopes preserve EXACT original execution stages and every destination consumer; explicit barriers and query/depth-dirty pass ends remain unchanged.
+- Actual Vulkan/Khronos synchronization validation: colour+depth+192precise queries identical for all four depth-option combinations at64x64 and960x540; all193physical passes retained.96colour load/store pairs eliminated.24affected regressions pass; partial-upload5000CPU/840GPU comparisons pass. No claimed phone FPS before measurement.
+- One signed update APK, package com.swap2native.ootv11ios, same a1c468aff0b99e28 signer, higher versionCode, prepared42k shader library retained.

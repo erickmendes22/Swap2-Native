@@ -20,6 +20,8 @@ on:
       - dm/host/tests/t_android_mesh_invariant.c
       - dm/gfx/vk_android/selftest/mesh_invariant.mesh
       - dm/gfx/vk_android/vka_shader.c
+      - dm/gfx/tools/tests/test_depth_pass_optimizations.py
+      - dm/gfx/vk_android/selftest/depth_pass_gpu.c
       - dm/gfx/tools/tests/test_partial_texture_upload.py
       - dm/host/tests/t_android_partial_upload.c
       - dm/gfx/vk_android/vka_tex.c
@@ -78,6 +80,12 @@ jobs:
           MEMU_TEST_VULKAN: '1'
           VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
         run: python3 -m unittest discover -s dm/tools/tests -p test_cave_query_gpu.py -v
+      - name: Verify optional depth-pass formats and memory scopes on Vulkan
+        env:
+          MEMU_TEST_VULKAN: '1'
+          VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+          VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_depth_pass_optimizations.py -v
       - name: Verify partial texture uploads against full deswizzle and Vulkan readback
         env:
           MEMU_TEST_VULKAN: '1'

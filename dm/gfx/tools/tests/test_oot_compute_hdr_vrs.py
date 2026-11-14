@@ -38,13 +38,14 @@ class ComputeHdrVrs(unittest.TestCase):
 #include <assert.h>
 #include <stdio.h>
 #define VKA_NSTAGE 8
+#define VK_FORMAT_UNDEFINED 0
 #define VK_FORMAT_R16G16B16A16_SFLOAT 97
 #define VK_FORMAT_B10G11R11_UFLOAT_PACK32 122
 typedef struct { uint64_t key; int memu; } vka_shader;
 typedef struct { uint32_t ncolor, cfmt[8]; } vka_gkey;
 static uint64_t layout;
 static uint64_t vka_memu_layout_tag(void) { return layout; }
-''' + definitions + '\n' + function('oot_profiled_mesh_hdr') + r'''
+''' + definitions + '\n' + '\n'.join(line for line in (ROOT / 'dm/gfx/vk_android/vka.h').read_text().splitlines() if line.startswith('#define VKA_COLOR_')) + '\n' + function('oot_profiled_mesh_hdr') + r'''
 int main(void) {
     vka_shader fs = {UINT64_C(0x5ad65c0eefd09c7f), 0};
     vka_shader ts = {UINT64_C(0xefaa4fa6a80ba719), 0};
@@ -63,6 +64,10 @@ int main(void) {
         if (coalesced) assert(vs.key == UINT64_C(0x086551b608e12c6b));
         sh[0] = &vs; sh[6] = sh[7] = 0;
         assert(oot_profiled_mesh_hdr(sh, &k, 0));
+        k.cfmt[0] |= VKA_COLOR_OMITTED; k.cfmt[1] |= VKA_COLOR_OMITTED;
+        assert(oot_profiled_mesh_hdr(sh, &k, 0));
+        assert(VKA_COLOR_RENDER(k.cfmt[0]) == 0 && VKA_COLOR_ORIGINAL(k.cfmt[0]) == 97);
+        k.cfmt[0] = k.cfmt[1] = 97;
         assert(!oot_profiled_mesh_hdr(sh, &k, 1));
         vs.key ^= 1; assert(!oot_profiled_mesh_hdr(sh, &k, 0)); vs.key ^= 1;
         vs.memu = 0; assert(!oot_profiled_mesh_hdr(sh, &k, 0));

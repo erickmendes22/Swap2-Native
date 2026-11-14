@@ -18,7 +18,7 @@ class PostUbBarrier(unittest.TestCase):
         self.assertIn('DM_VK_OOT_POSTUB_BAR_DEDUP',s)
         self.assertIn('g_rp_full++; vka_barrier(g_cb);',s)
         self.assertIn('g_rp_graphics++; vka_graphics_write_barrier(g_cb);',s)
-        self.assertIn('g_rp_scoped++; vka_attachment_write_barrier(g_cb);',s)
+        self.assertIn('else vka_attachment_write_barrier(g_cb);',s)
         self.assertIn('g_rp_force_full',s)
 
     def test_real_flush_orders_copies_and_all_consumers(self):

@@ -14,13 +14,25 @@ class VegetationOptimization(unittest.TestCase):
     @unittest.skipUnless(shutil.which("java"), "JDK required")
     def test_setting_switches_only_plane_scatter_with_full_foliage_retained(self):
         prefs = (JAVA / "Prefs.java").read_text()
-        methods = "\n".join(re.findall(r"    static (?:boolean|void) (?:fullVegetation|vegetationOptimized|vegetationContiguous|computeOptimized|fragmentOptimized)\([^\n]+", prefs))
-        self.assertEqual(methods.count("static "), 10)
+        names = ("fullVegetation", "vegetationOptimized", "vegetationContiguous", "computeOptimized",
+                 "fragmentOptimized", "shortTaskSearch", "partialTextureUploads", "unusedColorTargets", "attachmentWriteScopes")
+        pieces = []
+        for match in re.finditer(r"    static (?:boolean|void) (?:" + "|".join(names) + r")\(", prefs):
+            opening = prefs.index("{", match.start()); depth = 1
+            for i in range(opening + 1, len(prefs)):
+                depth += (prefs[i] == "{") - (prefs[i] == "}")
+                if depth == 0:
+                    pieces.append(prefs[match.start():i + 1]); break
+        methods = "\n".join(pieces)
+        self.assertEqual(len(pieces), 18)
         activity = (JAVA / "GameActivity.java").read_text()
-        env = "\n".join(re.findall(r'            if \(Prefs.OCARINA_TITLE.equals\(id\)\) env.add\("DM_VK_(?:VEGETATION|MEMU_PLANE_LUT|MEMU_COALESCED|OOT_CS_RETILE|OOT_FRAGMENT_AST)=[^\n]+', activity))
-        self.assertEqual(env.count("env.add"), 5)
+        env = "\n".join(re.findall(r'            if \(Prefs.OCARINA_TITLE.equals\(id\)\) env.add\("DM_VK_(?:VEGETATION|MEMU_PLANE_LUT|MEMU_COALESCED|MEMU_SHORT_TASK_SEARCH|OOT_CS_RETILE|OOT_FRAGMENT_AST|PARTIAL_UPLOAD|UNUSED_COLOR|ATTACHMENT_PARTS)=[^\n]+', activity))
+        self.assertEqual(env.count("env.add"), 9)
         settings = (JAVA / "GameSettings.java").read_text()
-        self.assertIn(".toggle(a, Prefs.vegetationOptimized(a, id), (b, on) -> Prefs.vegetationOptimized(a, id, on))", settings)
+        for name in ("vegetationOptimized", "vegetationContiguous", "shortTaskSearch"):
+            self.assertNotIn(".toggle(a, Prefs." + name, settings)
+        for name in ("partialTextureUploads", "unusedColorTargets", "attachmentWriteScopes"):
+            self.assertIn(".toggle(a, Prefs." + name, settings)
         source = '''import java.util.*;
 class Context {}
 class Store {
@@ -47,7 +59,7 @@ public class Probe extends Context {
     Probe p = new Probe(); String id = Prefs.OCARINA_TITLE;
     p.environment(id);
     check(p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
-    check(p.env.contains("DM_VK_MEMU_COALESCED=0"));
+    check(p.env.contains("DM_VK_MEMU_COALESCED=1") && p.env.contains("DM_VK_MEMU_SHORT_TASK_SEARCH=1"));
     check(p.env.contains("DM_VK_OOT_CS_RETILE=1"));
     check(p.env.contains("DM_VK_OOT_FRAGMENT_AST=1"));
     Prefs.fragmentOptimized(p, id, false); p.environment(id);
@@ -62,9 +74,18 @@ public class Probe extends Context {
     check(p.env.contains("DM_VK_MEMU_COALESCED=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1") && p.env.contains("DM_VK_VEGETATION=1"));
     Prefs.vegetationContiguous(p, id, false);
     Prefs.vegetationOptimized(p, id, false); p.environment(id);
-    check(p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=0"));
+    check(p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1") && p.env.contains("DM_VK_MEMU_COALESCED=1"));
     Prefs.fullVegetation(p, id, false); Prefs.vegetationOptimized(p, id, true); p.environment(id);
-    check(p.env.contains("DM_VK_VEGETATION=0") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
+    check(p.env.contains("DM_VK_VEGETATION=0") && p.env.contains("DM_VK_MEMU_PLANE_LUT=0") && p.env.contains("DM_VK_MEMU_COALESCED=0") && p.env.contains("DM_VK_MEMU_SHORT_TASK_SEARCH=0"));
+    Prefs.fullVegetation(p, id, true); Prefs.shortTaskSearch(p, id, false); p.environment(id);
+    check(p.env.contains("DM_VK_MEMU_SHORT_TASK_SEARCH=1"));
+    check(p.env.contains("DM_VK_PARTIAL_UPLOAD=1") && p.env.contains("DM_VK_UNUSED_COLOR=1") && p.env.contains("DM_VK_ATTACHMENT_PARTS=1"));
+    Prefs.partialTextureUploads(p, id, false); p.environment(id);
+    check(p.env.contains("DM_VK_PARTIAL_UPLOAD=0") && p.env.contains("DM_VK_UNUSED_COLOR=1") && p.env.contains("DM_VK_ATTACHMENT_PARTS=1"));
+    Prefs.unusedColorTargets(p, id, false); p.environment(id);
+    check(p.env.contains("DM_VK_UNUSED_COLOR=0") && p.env.contains("DM_VK_ATTACHMENT_PARTS=1"));
+    Prefs.attachmentWriteScopes(p, id, false); p.environment(id);
+    check(p.env.contains("DM_VK_ATTACHMENT_PARTS=0"));
     check(Prefs.vegetationOptimized(p, "another-title"));
     p.environment("another-title"); check(p.env.isEmpty());
   }

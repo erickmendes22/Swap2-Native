@@ -955,3 +955,41 @@ failure reopens/draws the original pass and disables omission for the run.
 Menu: three independent new toggles; vegetation plane LUT, coalesced layout
 and short task lookup follow fullVegetation, ignoring their old preferences.
 No final APK trigger until GPU/query parity and launcher regressions pass.
+
+
+### Build161 combined GPU package: validation complete (2026-11-14)
+
+Supersedes the WIP status above. Three independent menu switches, default
+ON: partial texture uploads; unused-colour omission in eligible depth
+passes; selective attachment memory synchronization. Every switch exports
+its own explicit0/1 rollback environment value. Restart applies changes.
+The three OLD vegetation switches are removed. Plane LUT, coalesced arena
+and short task lookup automatically follow the main vegetation toggle and
+ignore stale per-feature preferences, as explicitly requested by the user.
+
+Production policy covers96 omission states plus all four cache-scope
+combinations: preserve original area/layers/samples/formats, reject clears,
+discards,MSAA and absent depth. Actual VRS predicate preserves classifications
+with tagged/null formats; output formats are UNDEFINED at Vulkan only.
+The high format tag changes no pipeline-key structure or prepared shader ABI.
+
+Real Vulkan dynamic rendering, Khronos synchronization validation: all four
+ON/OFF combinations of the two depth options have identical colour pixels,
+D32 bytes and192PRECISE visibility counts, including alpha discard, EQUAL
+passes, hidden/visible samples and actual depth writes. All193physical pass
+instances retained. Runs at64x64 and960x540 pass. Software GPU timings are
+mixed; they are NOT an Android FPS guarantee.96unused colour load/store
+pairs are physically omitted per optimized fixture. Memory dependencies
+keep EXACT original execution stages and ALL_COMMANDS read/write destination;
+only availability of the unwritten attachment type is removed. Explicit NVN
+barriers and shader writers retain their original handling.
+
+Launcher JVM checks execute actual preference methods/environment lines:
+three independent switches and defaults, legacy values ignored, foliage
+OFF/ON routing, unrelated games unaffected.24 affected GPU policy/VRS/
+cave/attachment regressions pass; earlier partial upload5000 CPU/840 GPU
+comparisons also pass. New log line reports actual omitted passes/views and
+selected memory barriers per frame, so selection is measurable on device.
+Build160 contains only partial uploads and MUST NOT be the delivered build.
+Next on-device comparison uses161 against159 in the heavy outdoor area;
+never the cave as a performance reference.
