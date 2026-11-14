@@ -1,7 +1,7 @@
 name: Ocarina V10.1 Android APK
 on:
   push:
-    branches: [ocarina-v10-shader-gpu]
+    branches: [ocarina-v10-shader-gpu, test/swap2-cave-depth-dirty-only-157]
   workflow_dispatch:
 permissions:
   contents: read
@@ -64,19 +64,19 @@ jobs:
           ./gradlew --no-daemon \
             -PnxGames=0400486024DEC000 \
             -PnxPlay=true \
-            -PnxVersion=0.1.1-oot-v10.1 \
+            -PnxVersion=0.1.1-oot-cave157 \
             -PnxPackStage="$RUNNER_TEMP/oot-v10/stage" apk
           ./gradlew --no-daemon \
             -PnxGames=0400486024DEC000 \
             -PnxApp=ootv10 \
             -PnxLabel="Swap2 Ocarina V10.1" \
-            -PnxVersion=0.1.1-oot-v10.1 \
+            -PnxVersion=0.1.1-oot-cave157 \
             -PnxPackStage="$RUNNER_TEMP/oot-v10/stage" apk
           ls -lh out/*.apk
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: Swap2-Ocarina-V10.1-APK
+          name: Swap2-Ocarina-Cave157-APK
           path: android/app/out/*.apk
           if-no-files-found: error
           retention-days: 14
