@@ -1235,3 +1235,14 @@ encoder), actual Vulkan consumers, encoder/snapshot tests and incremental
 shader/ABI workflows passed on GitHub (43646931434/43646931375). Candidate165
 packages those changes together. Keep native4226d12 as the supplied log's
 baseline and all fast cave-OFF guards. No phone gain is claimed before testing.
+
+Candidate165 delivered build metadata: source52068b5d24a7, Android workflow
+43647403294/run172, APK job132608498936 and validate132608155310 both SUCCESS.
+One artifact14134429614 (Swap2-Native-Ocarina-0.1.6-Update,26026688 bytes).
+Manifest verified com.swap2native.ootv11ios, versionName0.1.6, versionCode172.
+Built signing SHA256 verified exactly
+ a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad.
+Installs over the supplied4226d12 baseline. No device FPS/core-usage result
+exists yet for this candidate; compare the same heavy outdoor point with the
+approved cave-correction switch OFF. New logs expose encoder total thread CPU,
+actual projected-snapshot selection and pool-bind emit/skip counts.
