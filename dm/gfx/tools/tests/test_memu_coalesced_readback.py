@@ -247,7 +247,7 @@ int vka_memu_coalesced(void) { return enabled; }
 int vka_memu_plane_lut(void) { return lut_enabled; }
 static const uint64_t base = 0x123456789abcdef0ull;
 static dmsh_vk_entry entry;
-static vka_shader original, cs[2], vs;
+static vka_shader original, cs[2], cs_taskless[2], vs;
 static int lib_load(void) { return 1; }
 static void *library_for_key(uint64_t key) { (void)key; return NULL; }
 static const dmsh_vk_entry *vka_shlib_find(void *lib, uint64_t key) { (void)lib; return key == base ? &entry : NULL; }
@@ -257,6 +257,13 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
     assert(s == &original);
     cs[gl].key = base ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^ vka_memu_cs_tag(entry.stage) ^ (gl ? VKA_MEMU_KEY_GL : 0);
     return &cs[gl];
+}
+vka_shader *vka_memu_cs_taskless_of(vka_shader *s, int gl) {
+    assert(s == &original);
+    cs_taskless[gl].key = base ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^
+                          vka_memu_cs_tag(entry.stage) ^ VKA_MEMU_KEY_TASKLESS ^
+                          (gl ? VKA_MEMU_KEY_GL : 0);
+    return &cs_taskless[gl];
 }
 vka_shader *vka_memu_vs_of(vka_shader *s) { assert(s == &original); vs.key = base ^ VKA_MEMU_KEY_VS ^ vka_memu_layout_tag(); return &vs; }
 ''' + decode + "\n" + classify + r'''
@@ -273,6 +280,14 @@ int main(void) {
         assert(vka_shader_memu_key(key));
         assert(vka_memu_by_key(key ^ VKA_MEMU_KEY_COALESCED)->key == active);
         assert(vka_shader_memu_key(key ^ VKA_MEMU_KEY_COALESCED));
+    }
+    for (lut_enabled = 0; lut_enabled < 2; lut_enabled++) for (enabled = 0; enabled < 2; enabled++) for (int gl = 0; gl < 2; gl++) {
+        uint64_t k = base ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^
+                     vka_memu_cs_tag(entry.stage) ^ VKA_MEMU_KEY_TASKLESS ^
+                     (gl ? VKA_MEMU_KEY_GL : 0);
+        assert(vka_shader_memu_key(k));
+        assert(vka_memu_by_key(k) == &cs_taskless[gl]);
+        assert(cs_taskless[gl].key == k);
     }
     assert(!vka_shader_memu_key(base));
     return 0;
