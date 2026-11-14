@@ -108,6 +108,25 @@ vka_shader *vka_memu_vs_of(vka_shader *s) {
 // Cache parsed fragment masks by shader identity in TLS. This is purely to
 // prevent re-decompressing SPIR-V for each draw; it does not change the render
 // thread's guest command sequence, descriptor bindings or pipeline ordering.
+// Shared by mesh *producer* and generated vertex *consumer*. It is not
+// enough to optimize VS alone: compute-shader stores of dead vec4 output
+// planes are the actual GPU memory traffic we want to eliminate.
+static int vka_memu_pixel_mask(const vka_shader *fragment, uint64_t *used) {
+    *used = 0;
+    if (!fragment) return 1;
+    static __thread struct { const vka_shader *shader; uint64_t mask; int ok; } cache[128];
+    unsigned pos = (unsigned)(((uintptr_t)fragment >> 4) & 127u);
+    if (cache[pos].shader == fragment) {
+        *used = cache[pos].mask;
+        return cache[pos].ok;
+    }
+    char err[160] = ""; size_t n = 0;
+    uint32_t *spv = vka_shader_memu_words((vka_shader *)fragment, &n, err, sizeof err);
+    int ok = spv && vka_memu_fs_input_locs(spv, n / 4, used);
+    free(spv);
+    cache[pos] = (typeof(cache[pos])){fragment, *used, ok};
+    return ok;
+}
 static uint64_t g_memu_varying_draws, g_memu_varying_words_saved;
 void vka_memu_varying_stats(uint64_t *draws, uint64_t *words) {
     if (draws) *draws = g_memu_varying_draws;
@@ -120,23 +139,7 @@ vka_shader *vka_memu_vs_for_fs(vka_shader *mesh, vka_shader *fragment) {
     if (!d || d->L.task) return fallback;
     uint64_t all = vka_memu_vs_locs(&d->L), used = 0;
     if (!all) return fallback;
-    if (fragment) {
-        // Stable key is insufficient when the user changes shader libraries:
-        // key the TLS entry by the actual in-memory shader, not by a hash.
-        static __thread struct { const vka_shader *shader; uint64_t mask; int ok; } cache[128];
-        unsigned pos = (unsigned)(((uintptr_t)fragment >> 4) & 127u);
-        if (cache[pos].shader == fragment) {
-            if (!cache[pos].ok) return fallback;
-            used = cache[pos].mask;
-        } else {
-            char err[160] = ""; size_t n = 0;
-            uint32_t *spv = vka_shader_memu_words(fragment, &n, err, sizeof err);
-            int ok = spv && vka_memu_fs_input_locs(spv, n / 4, &used);
-            free(spv);
-            cache[pos] = (typeof(cache[pos])){fragment, used, ok};
-            if (!ok) return fallback;
-        }
-    }
+    if (!vka_memu_pixel_mask(fragment, &used)) return fallback;
     if ((used & ~all) || used == all) return fallback;
     // A single deleted vec4 may not overcome an extra pipeline variant.
     // Only enable when >=2 vec4 planes = >=8 GPU SSBO loads per vertex
