@@ -106,6 +106,7 @@ int main(void) {
     g_memu_depth = 0; batched = 0; S.rc_skip = 0;
     assert(memu_walk((const uint8_t*)&all_on[0], MEMU_ADD) == 3);
     assert(batched == 3 && states[0] == 10 && states[1] == 10 && states[2] == 10);
+    assert(g_memu_noop_enable_merged == 2);
     // Conditional and disabled modes retain the old strict boundary.
     record conditional[] = {{OP_DRAW,16,5}, {OP_RENDER_COND,16,1},
                             {OP_DRAW,16,5}, {OP_END,16,0}};
@@ -119,6 +120,7 @@ int main(void) {
     veg_on = 1; batching_on = 0; batched = 0;
     assert(memu_walk((const uint8_t*)&all_on[0], MEMU_ADD) == 1);
     batching_on = 1;
+    assert(g_memu_noop_enable_merged == 2);
     // The existence probe remains side-effect-free and sees first mesh draw.
     batched = 0; assert(memu_walk((const uint8_t*)&inner[0], -1) == 1);
     assert(batched == 0);
