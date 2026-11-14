@@ -1,7 +1,7 @@
 name: Mesh compute correctness (no APK)
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113]
+    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113, experiment/ocarina-masked-gpu-158-from157]
     paths:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
@@ -88,6 +88,10 @@ jobs:
         env:
           MEMU_TEST_VULKAN: '1'
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_memu_*.py' -v
+      - name: Benchmark real GPU mesh attribute stores with equal surviving data
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gpu_masked_write_benchmark.py -v
       - name: Verify Vulkan GPU readback under short task index search
         env:
           MEMU_TEST_VULKAN: '1'
