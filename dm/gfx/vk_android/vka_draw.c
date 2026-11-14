@@ -247,6 +247,7 @@ static struct {
     uint32_t cnl[8], dnl; VkExtent2D cext[8], dext;      // each attachment's layers and level size (clears in the pass must cover what they would outside it)
     int swrite;                                          // a draw of the pass wrote memory (storage buffers or images, raw global stores, a geometry shader's claim)
     int awrite;                                          // an actual colour/depth/stencil write or clear occurred; depth-test-only occlusion passes stay read-only
+    int color_omitted; // every colour image is physically unbound; formats/area retain the original targets
     int cave_cwrite, cave_dwrite; // tracks actual colour/depth writes; depth-dirty protects cave pass splitting
     int bar_pending;                                     // a game barrier came inside the pass and was taken there (vka_rp_game_barrier): the draws after it are checked (bar_hazard)
 } R;
@@ -312,6 +313,7 @@ int vka_rp_has_depth(void) { return R.on && (R.df || R.sf); }
 // Only force a depth-attachment store/reload after this pass has written
 // depth or stencil. Pure depth-test occlusion queries remain in the pass.
 int vka_rp_cave_depth_dirty(void) { return R.on && R.cave_dwrite; }
+static int g_unused_color_refused;
 static uint64_t g_cave_original_splits, g_cave_unused_color, g_cave_depth_readonly;
 void vka_rp_cave_end(void) {
     // Observations only: every report still executes the original pass end.
@@ -381,7 +383,12 @@ void vka_rp_end(void) {
     } else {
         if (pending_attachment) g_rp_pending_attachment++;
         if (reused) g_rp_postub_barriers_saved++;
-        else { g_rp_scoped++; vka_attachment_write_barrier(g_cb); }
+        else {
+            g_rp_scoped++;
+            if (!strcmp(DM_GAME_ID, "0400486024DEC000") && VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0))
+                vka_attachment_parts_barrier_at(g_cb, R.cave_cwrite, R.cave_dwrite, __FILE_NAME__, __LINE__);
+            else vka_attachment_write_barrier(g_cb);
+        }
     }
     R.on = 0; vka_tex_feedback(NULL, NULL, 0);
     if (vka_nan_on()) vka_nan_pass(g_cb, R.cim, R.clv, R.cl0, R.nci);
@@ -422,7 +429,9 @@ int vka_classic_rp(void) {
     return on>0;
 }
 #include "vka_renderpass_cache.h"
-static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
+static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d, int omit_color) {
+    if (R.on && R.color_omitted && !omit_color) vka_rp_end();
+    omit_color = omit_color && !PC.n && !vka_classic_rp();
     if (R.on) { if (!g_pass_keep || rt_same(rt, has_rt, &R.rt, R.has_rt)) return 1; vka_rp_end(); }   // a new SET_RT of other targets ends the pass at its first draw (exec does not)
     if (PC.n && !rt_same(rt, has_rt, &PC.rt, 1)) pc_flush();                             // clears of other targets: done before
     VkRenderingAttachmentInfo ca[8], da = {0}, sa; uint32_t w = UINT32_MAX, h = UINT32_MAX, layers = UINT32_MAX, samples = 0;
@@ -514,6 +523,22 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d) {
     #undef INAREA
     #undef WHOLE
     vka_tex_feedback(fb_im, fb_lv, nfb);
+    // Compute the original area/layers/samples and preserve feedback/format
+    // classification BEFORE dropping unused colour views. Keep every depth
+    // store/reload and every real query unchanged. Any clear/discard/MSAA or
+    // alpha-to-coverage stays on the original pass; a later colour writer
+    // reopens the original targets before its first draw.
+    if (omit_color && (dp || sp) && R.samples == 1 && n > 0) {
+        int clean = 1, bound = 0;
+        for (int i = 0; i < n; i++) if (ca[i].imageView) {
+            bound++;
+            if (ca[i].loadOp != VK_ATTACHMENT_LOAD_OP_LOAD || ca[i].storeOp != VK_ATTACHMENT_STORE_OP_STORE) clean = 0;
+        }
+        if (clean && bound) {
+            for (int i = 0; i < n; i++) ca[i].imageView = VK_NULL_HANDLE;
+            R.color_omitted = 1;
+        }
+    }
     VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = R.area, .layerCount = layers, .colorAttachmentCount = (uint32_t)n, .pColorAttachments = ca,
                           .pDepthAttachment = dp, .pStencilAttachment = sp};
     if (vka_gp_active) {   // DM_VK_GPUPROF: what the pass is, for the step it ends
@@ -641,7 +666,7 @@ void vka_rp_prep_clear(const p_set_rt *rt, int has_rt) {
 int vka_rp_clear(const p_set_rt *rt, int has_rt, const vka_dstate *d, const vka_pclear *c) {
     (void)d;
     if (!g_cb || !has_rt || !draws_on()) return 0;
-    if (R.on && !rt_same(rt, has_rt, &R.rt, R.has_rt)) return 0;
+    if (R.on && (!rt_same(rt, has_rt, &R.rt, R.has_rt) || (R.color_omitted && c->ci >= 0))) return 0;
     if (!R.on) {
         if (PC.n && (!rt_same(rt, has_rt, &PC.rt, 1) || PC.n == NPC)) pc_flush();
         if (!PC.n) PC.rt = *rt;
@@ -1911,7 +1936,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     vka_span mi = {0};   // an indirect mesh draw's Vulkan record, made outside the pass (mesh_ind_args)
     if (mesh && dw->ind && !mesh_ind_args(dw->ind, sh[6] ? V.task_groups : V.mesh_groups, &mi))
         SKIP("indirect mesh draw: its record at %#llx is not aligned placed guest RAM (or no scratch memory): skipped", (unsigned long long)dw->ind);
-    if (!rp_begin(rt, has_rt, d)) SKIPQ();
+    const int omit_color = has_rt && rt->depth && !d->chmask.mask && !d->ms.a2c &&
+        !draw_writes(sh, d) && !vka_nan_on() && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        !g_unused_color_refused && VKA_ENV("DM_VK_UNUSED_COLOR", 0);
+    if (!rp_begin(rt, has_rt, d, omit_color)) SKIPQ();
     if (!R.swrite && draw_writes(sh, d)) R.swrite = 1;   // (a game barrier in this pass from now on ends it: vka_rp_game_barrier)
     d->b.samples = R.samples;
     vka_gkey k; memset(&k, 0, V.vin_dyn ? offsetof(vka_gkey, va) : sizeof k);   // (va, vb: only without vertex input dynamic state, vin_build; the pipeline lookup reads no further then)
@@ -1949,7 +1977,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     k.fs_variant = (uint8_t)variant; k.gs_fx = g_claim_words != 0;
     int src1_used = 0;
     for (uint32_t i = 0; i < R.ncolor; i++) {
-        k.cfmt[i] = R.cf[i];
+        k.cfmt[i] = R.cf[i] | (R.color_omitted && R.cf[i] ? VKA_COLOR_OMITTED : 0);
         if (!R.cf[i]) continue;
         uint32_t m = d->chmask.mask >> (4 * i) & 0xf;
         int written = fs && (fs->e->fout_mask >> i & 1);
@@ -1988,6 +2016,17 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     if (!mesh) vin_build_kept(d, sh[0], &k);
     PT(4);
     VkPipeline p = vka_gfx_pipeline(sh, &lay, &k);
+    if (!p && R.color_omitted) {
+        // A driver refusing the optional depth-only format variant must
+        // still draw the ORIGINAL pass, not drop geometry or query samples.
+        g_unused_color_refused = 1;
+        vka_rp_end();
+        if (!rp_begin(rt, has_rt, d, 0)) SKIPQ();
+        for (uint32_t i = 0; i < k.ncolor; i++) k.cfmt[i] = VKA_COLOR_ORIGINAL(k.cfmt[i]);
+        if (!d->rast_discard && ((R.df && d->ds.dt && d->ds.dw) || (R.sf && d->ds.st)))
+            R.awrite = R.cave_dwrite = 1;
+        p = vka_gfx_pipeline(sh, &lay, &k);
+    }
     if (!p) SKIPQ();
     if (!DY.valid || !g_dyn_filter || DY.pipe != p) { vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p); DY.pipe = p; VB.vin_stale = 1; }
     if (vka_nan_on()) vka_nan_draw(mesh ? sh[7]->key : sh[0]->key, fs ? fs->key : 0);

@@ -290,7 +290,7 @@ static int vkf_int_class(uint32_t f) {
 static void fout_masks(const vka_shader *fs, const vka_gkey *k, uint32_t *um, uint32_t *sm) {
     *um = *sm = 0;
     for (uint32_t i = 0; i < k->ncolor && i < 8; i++) {
-        int c = vkf_int_class(k->cfmt[i]);
+        int c = vkf_int_class(VKA_COLOR_ORIGINAL(k->cfmt[i]));
         if (c && (fs->e->fout_mask >> i & 1) && (fs->e->fout_types >> (2 * i) & 3) == DMSH_VK_TYPE_FLOAT) { if (c == 1) *um |= 1u << i; else *sm |= 1u << i; }
     }
 }
@@ -301,8 +301,8 @@ static void fout_masks(const vka_shader *fs, const vka_gkey *k, uint32_t *um, ui
 // dispatch changes geometry, not this fragment shader's shading-rate contract.
 static int oot_profiled_mesh_hdr(vka_shader *const sh[VKA_NSTAGE], const vka_gkey *k, int mesh) {
     int targets = k->ncolor == 2 &&
-                  k->cfmt[0] == VK_FORMAT_R16G16B16A16_SFLOAT &&
-                  k->cfmt[1] == VK_FORMAT_R16G16B16A16_SFLOAT;
+                  VKA_COLOR_ORIGINAL(k->cfmt[0]) == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                  VKA_COLOR_ORIGINAL(k->cfmt[1]) == VK_FORMAT_R16G16B16A16_SFLOAT;
     if (!targets || !sh[1] || sh[1]->key != UINT64_C(0x5ad65c0eefd09c7f)) return 0;
     int native = mesh && sh[6] && sh[7] &&
                  sh[6]->key == UINT64_C(0xefaa4fa6a80ba719) &&
@@ -384,7 +384,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
         if (!mesh || (base[i] != VK_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY && base[i] != VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE)) P->dyn[nd++] = base[i];
     if (!k->vin_static && !mesh) P->dyn[nd++] = VK_DYNAMIC_STATE_VERTEX_INPUT_EXT;
     P->dy = (VkPipelineDynamicStateCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, .dynamicStateCount = nd, .pDynamicStates = P->dyn};
-    for (int i = 0; i < k->ncolor; i++) P->cf[i] = (VkFormat)k->cfmt[i];
+    for (int i = 0; i < k->ncolor; i++) P->cf[i] = (VkFormat)VKA_COLOR_RENDER(k->cfmt[i]);
     P->ri = (VkPipelineRenderingCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO, .colorAttachmentCount = k->ncolor, .pColorAttachmentFormats = P->cf,
                                             .depthAttachmentFormat = (VkFormat)k->dfmt, .stencilAttachmentFormat = (VkFormat)k->sfmt};
     P->tess = !mesh && (sh[3] || sh[4]); P->mesh = mesh;
@@ -442,7 +442,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     // postprocess, depth-only, multicolor or unverified Mesh/Task passes.
     int extended_scene_hdr = game_oot && hotpass_profile >= 2 &&
                              extended_hot && !mesh && k->ncolor == 1 &&
-                             k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
+                             VKA_COLOR_ORIGINAL(k->cfmt[0]) == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
                              k->dfmt == VK_FORMAT_D32_SFLOAT;
     // The Nov 11 Redmagic 4x4 A/B produced >=128 VRS pipelines, severe
     // scene pixelation and no useful GPU-time reduction. The broad HDR
@@ -452,7 +452,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     // on matching HDR targets (and the exact validated Mesh/Task triple).
     // No SDR UI/video, unrelated R16 render targets, depth-only or MSAA.
     int profiled_hdr = (k->ncolor > 0 &&
-                        k->cfmt[0] == VK_FORMAT_B10G11R11_UFLOAT_PACK32) ||
+                        VKA_COLOR_ORIGINAL(k->cfmt[0]) == VK_FORMAT_B10G11R11_UFLOAT_PACK32) ||
                        profiled_mesh_hdr;
     if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0 &&

@@ -748,4 +748,11 @@
     <string name="s2_oot_classic_passes_note">Uses the Banana render-pass cache when supported. Restart to apply. Disable to compare with the previous rendering path.</string>
     <string name="s2_keep_cave_walls">Keep cave walls (Qualcomm)</string>
     <string name="s2_keep_cave_walls_note">Experimental correction for flickering walls and rocks. May increase GPU load. Off by default; restart to apply. Qualcomm only.</string>
+
+    <string name="s2_gpu_partial_upload">Partial texture uploads</string>
+    <string name="s2_gpu_partial_upload_note">Updates only changed texture layers and levels to reduce transfers while loading scenery. Restart the game to apply.</string>
+    <string name="s2_gpu_unused_color">Reduce depth-pass bandwidth</string>
+    <string name="s2_gpu_unused_color_note">Avoids loading colour targets in depth passes that cannot change them. Keeps depth and visibility tests. Restart the game to apply.</string>
+    <string name="s2_gpu_attachment_parts">Selective GPU synchronization</string>
+    <string name="s2_gpu_attachment_parts_note">Publishes only the attachment data that changed, keeping command order. Restart the game to apply.</string>
 </resources>

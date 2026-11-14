@@ -171,6 +171,9 @@ final class GameSettings {
             Prefs.of(a).edit()
                     .remove(Prefs.gameKey("oot_mesh_route", id))
                     .remove(Prefs.gameKey("oot_short_task_search", id))
+                    .remove(Prefs.gameKey("gpu_partial_upload", id))
+                    .remove(Prefs.gameKey("gpu_unused_color", id))
+                    .remove(Prefs.gameKey("gpu_attachment_parts", id))
                     .remove(Prefs.gameKey("oot_hidden_layers", id))
                     .remove(Prefs.gameKey("oot_skip_heavy_fs", id))
                     .remove(Prefs.gameKey("pause_return", id)).commit();
@@ -232,22 +235,18 @@ final class GameSettings {
                             (b, on) -> Prefs.hiddenLayersOff(a, id, on));
             hiddenLayers.value("Omite os shaders 5684f5e6 e 47eb514f. Pode faltar ceu, neblina ou objetos. Desligado por padrao; reinicie o jogo.");
             box.addView(hiddenLayers.view);
-            Ui.Setting vegetationOptimization = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_vegetation_optimized), null)
-                    .toggle(a, Prefs.vegetationOptimized(a, id), (b, on) -> Prefs.vegetationOptimized(a, id, on));
-            vegetationOptimization.value(a.getString(R.string.s2_vegetation_optimized_note));
-            box.addView(vegetationOptimization.view);
-            Ui.Setting contiguous = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_vegetation_contiguous), null)
-                    .toggle(a, Prefs.vegetationContiguous(a, id), (b, on) -> Prefs.vegetationContiguous(a, id, on));
-            contiguous.value(a.getString(R.string.s2_vegetation_contiguous_note));
-            box.addView(contiguous.view);
-            Ui.Setting taskSearch = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Busca rápida de tasks na GPU (teste)", null)
-                    .toggle(a, Prefs.shortTaskSearch(a, id),
-                            (b, on) -> Prefs.shortTaskSearch(a, id, on));
-            taskSearch.value("Reduz de 17 para 8 consultas aos offsets de task quando existem até 256 tasks. "
-                    + "Mantém o algoritmo original para tarefas maiores; opção experimental desligada por padrão. "
-                    + "Reinicie o jogo para comparar FPS e tempo GPU.");
-            box.addView(taskSearch.view);
+            Ui.Setting partialTextureUploads = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_partial_upload), null)
+                    .toggle(a, Prefs.partialTextureUploads(a, id), (button, on) -> Prefs.partialTextureUploads(a, id, on));
+            partialTextureUploads.value(a.getString(R.string.s2_gpu_partial_upload_note));
+            box.addView(partialTextureUploads.view);
+            Ui.Setting unusedColorTargets = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_unused_color), null)
+                    .toggle(a, Prefs.unusedColorTargets(a, id), (button, on) -> Prefs.unusedColorTargets(a, id, on));
+            unusedColorTargets.value(a.getString(R.string.s2_gpu_unused_color_note));
+            box.addView(unusedColorTargets.view);
+            Ui.Setting attachmentWriteScopes = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_attachment_parts), null)
+                    .toggle(a, Prefs.attachmentWriteScopes(a, id), (button, on) -> Prefs.attachmentWriteScopes(a, id, on));
+            attachmentWriteScopes.value(a.getString(R.string.s2_gpu_attachment_parts_note));
+            box.addView(attachmentWriteScopes.view);
             Ui.Setting compute = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_compute_optimized), null)
                     .toggle(a, Prefs.computeOptimized(a, id), (b, on) -> Prefs.computeOptimized(a, id, on));
             compute.value(a.getString(R.string.s2_compute_optimized_note));

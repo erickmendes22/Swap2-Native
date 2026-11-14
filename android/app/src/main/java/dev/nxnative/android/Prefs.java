@@ -134,19 +134,15 @@ final class Prefs {
     static void ocarinaMeshRoute(Context c, String titleId, int mode) { /* retired */ }
     static boolean fullVegetation(Context c, String titleId) { return of(c).getBoolean(gameKey("full_vegetation", titleId), true); }
     static void fullVegetation(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on).commit(); }
-    static boolean vegetationOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_optimized", titleId), true); }
+    static boolean vegetationOptimized(Context c, String titleId) { return fullVegetation(c, titleId); }
     static void vegetationOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_optimized", titleId), on).commit(); }
-    // GPU-side task->mesh index search: default OFF until on-device FPS
-    // confirms an improvement over the 17-step shader.
-    static boolean shortTaskSearch(Context c, String titleId) {
-        return OCARINA_TITLE.equals(titleId) &&
-               of(c).getBoolean(gameKey("oot_short_task_search", titleId), false);
-    }
+    // Vegetation optimizations are automatic; ignore legacy per-feature toggles.
+    static boolean shortTaskSearch(Context c, String titleId) { return fullVegetation(c, titleId); }
     static void shortTaskSearch(Context c, String titleId, boolean on) {
         if (OCARINA_TITLE.equals(titleId))
             of(c).edit().putBoolean(gameKey("oot_short_task_search", titleId), on).commit();
     }
-    static boolean vegetationContiguous(Context c, String titleId) { return of(c).getBoolean(gameKey("vegetation_contiguous", titleId), false); }
+    static boolean vegetationContiguous(Context c, String titleId) { return fullVegetation(c, titleId); }
     // Experimental zero-copy GPU texture ID feedback. Preserve legacy
     // bitmap copy/clear by default until same-device A/B is confirmed.
     static boolean poolFeedbackDirect(Context c, String titleId) {
@@ -160,6 +156,12 @@ final class Prefs {
     static boolean computeOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("compute_optimized", titleId), true); }
     static void computeOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("compute_optimized", titleId), on).commit(); }
     static void vegetationContiguous(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_contiguous", titleId), on).commit(); }
+    static boolean partialTextureUploads(Context c, String titleId) { return of(c).getBoolean(gameKey("gpu_partial_upload", titleId), true); }
+    static void partialTextureUploads(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("gpu_partial_upload", titleId), on).commit(); }
+    static boolean unusedColorTargets(Context c, String titleId) { return of(c).getBoolean(gameKey("gpu_unused_color", titleId), true); }
+    static void unusedColorTargets(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("gpu_unused_color", titleId), on).commit(); }
+    static boolean attachmentWriteScopes(Context c, String titleId) { return of(c).getBoolean(gameKey("gpu_attachment_parts", titleId), true); }
+    static void attachmentWriteScopes(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("gpu_attachment_parts", titleId), on).commit(); }
     /** RAM saver per game: large guest texture pools use files in the private cache. */
     static boolean ramSaver(Context c, String titleId) { return of(c).getBoolean(gameKey("ram_saver", titleId), false); }
     static void ramSaver(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("ram_saver", titleId), on).commit(); }

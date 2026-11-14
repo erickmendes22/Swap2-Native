@@ -741,4 +741,11 @@
     <string name="s2_oot_classic_passes_note">Usa o cache de passes do Banana quando suportado. Reinicie para aplicar. Desative para comparar com o caminho anterior.</string>
     <string name="s2_keep_cave_walls">Manter paredes de cavernas (Qualcomm)</string>
     <string name="s2_keep_cave_walls_note">Correção experimental para paredes e pedras que piscam. Pode aumentar a carga da GPU. Desligado por padrão; reinicie para aplicar. Apenas Qualcomm.</string>
+
+    <string name="s2_gpu_partial_upload">Uploads parciais de texturas</string>
+    <string name="s2_gpu_partial_upload_note">Atualiza apenas camadas e níveis alterados para reduzir transferências ao carregar o cenário. Reinicie o jogo para aplicar.</string>
+    <string name="s2_gpu_unused_color">Poupar tráfego em passes de profundidade</string>
+    <string name="s2_gpu_unused_color_note">Evita carregar cores em passes de profundidade que não podem alterá-las. Mantém os testes de profundidade e visibilidade. Reinicie o jogo para aplicar.</string>
+    <string name="s2_gpu_attachment_parts">Sincronização seletiva da GPU</string>
+    <string name="s2_gpu_attachment_parts_note">Publica apenas os dados de renderização que mudaram, mantendo a ordem dos comandos. Reinicie o jogo para aplicar.</string>
 </resources>

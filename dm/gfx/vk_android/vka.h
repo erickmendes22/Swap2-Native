@@ -317,6 +317,7 @@ void vka_barrier_at(VkCommandBuffer cb, const char *file, int line);   // a full
 void vka_graphics_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // all graphics shader/attachments -> all later consumers
 void vka_compute_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // compute + transfer producers -> all later consumers
 void vka_transfer_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // after a buffer copy: transfer write -> any later consumer
+void vka_attachment_parts_barrier_at(VkCommandBuffer cb, int color, int depth, const char *file, int line);
 void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // after an attachment-only render pass: fragment attachment writes -> any later consumer
 void vka_graphics_read_barrier_at(VkCommandBuffer cb, const char *file, int line); // read-only pass: execution-only WAR dependency, no cache memory flush
 #define vka_attachment_write_barrier(cb) vka_attachment_write_barrier_at(cb, __FILE_NAME__, __LINE__)
@@ -426,6 +427,12 @@ int vka_shader_img_retyped(vka_shader *s, const vka_imgrt *rt);              // 
 int vka_shlib_check_all(const vka_shlib *L);   // every module and compute pipeline of L made (DM_VK_SHLIB_CHECK=1): the failures
 int vka_static(VkDeviceSize n, VkDeviceSize align, vka_span *out);   // host-visible memory for the process's life (c1 bytes, the support and zero buffers)
 
+// Internal pipeline-key tag: retain original format for shader variants/VRS,
+// but use UNDEFINED for a colour attachment deliberately left unbound.
+// No structure-size, prepared-shader ABI or prewarm-key layout change.
+#define VKA_COLOR_OMITTED UINT32_C(0x80000000)
+#define VKA_COLOR_ORIGINAL(f) ((f) & ~VKA_COLOR_OMITTED)
+#define VKA_COLOR_RENDER(f) (((f) & VKA_COLOR_OMITTED) ? VK_FORMAT_UNDEFINED : (f))
 // ---------- Pipelines (vka_pso.c) ----------
 typedef struct {   // what a graphics pipeline is made from beyond its shaders and layout: zero-filled, then compared bytewise
     uint32_t cfmt[8], dfmt, sfmt;     // attachment formats (VK_FORMAT_UNDEFINED = none)

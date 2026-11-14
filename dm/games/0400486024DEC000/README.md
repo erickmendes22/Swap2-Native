@@ -933,3 +933,25 @@ validation; unchanged layers/mips retain their exact bytes. Fixture totals
 avoid55.7MB of deswizzle/upload in the CPU cases and26.8MB of actual Vulkan
 copy payload. These are work-elimination measurements, not phone FPS claims.
 CI now runs these tests; full Android compile remains pending.
+
+
+### User steering: combine three optional GPU changes (2026-11-14, WIP)
+
+Do NOT deliver the partial-upload-only160 artifact. User requested about
+three performance optimizations with independent menu switches in one build,
+plus automatic existing vegetation optimizations without separate buttons.
+New code pending validation: partial uploads; physically unbound unused
+colour targets in single-sample dynamic depth passes (zero colour masks,
+no shader writes/alpha-to-coverage/clears/discards); source cache scopes for
+actual colour/depth writes (EXACT original execution stages/destinations).
+
+Colour omission keeps original render area/layers/samples, feedback hazards,
+shader variants and VRS classification. Pipeline-key format tag changes no
+struct/shader ABI; actual Vulkan formats are UNDEFINED only for null views.
+A later colour writer/clear restores full targets first. Optional pipeline
+failure reopens/draws the original pass and disables omission for the run.
+157 depth dirty/query pass ends are unchanged. GPU parity still pending.
+
+Menu: three independent new toggles; vegetation plane LUT, coalesced layout
+and short task lookup follow fullVegetation, ignoring their old preferences.
+No final APK trigger until GPU/query parity and launcher regressions pass.
