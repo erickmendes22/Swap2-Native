@@ -40,7 +40,8 @@ static inline uint64_t vka_memu_cs_tag(int stage) {
          (vka_memu_short_task_search() ? VKA_MEMU_KEY_TASK_SHORT : 0)) : 0;
 }
 vka_memu_sh *vka_memu_of(struct vka_shader *s);                 // NULL: s cannot be drawn through compute (logged)
-struct vka_shader *vka_memu_cs_of(struct vka_shader *s, int gl); // its compute form, NULL = not made (logged)
+struct vka_shader *vka_memu_cs_of(struct vka_shader *s, int gl);
+struct vka_shader *vka_memu_cs_for_fs(struct vka_shader *mesh, int gl, struct vka_shader *fragment); // its compute form, NULL = not made (logged)
 struct vka_shader *vka_memu_vs_of(struct vka_shader *s);
 struct vka_shader *vka_memu_vs_for_fs(struct vka_shader *mesh, struct vka_shader *fragment);         // its vertex shader (a mesh shader's), NULL = not made
 struct vka_shader *vka_memu_by_key(uint64_t key);                // a compute form or vertex shader by its key (the prewarm list), NULL = none
