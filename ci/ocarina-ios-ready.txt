@@ -7,3 +7,11 @@ Build162 combined GPU producer-dependency candidate; continue from approved157/c
 - All196 production source regression tests pass locally. GitHub Android NDK28.2 syntax compile and full GPU correctness suite passed on a2bd9aa; update the stale uniform-counter source assertions without weakening the dependency contract.
 - Sparse profiling capacity8192 on one frame per300; explicit INCOMPLETE warning on exhaustion. No additional instrumentation in normal frames. The constant-colour fragment-stage elision experiment remains disabled.
 - One signed update APK, package com.swap2native.ootv11ios; same a1c468aff0b99e28 signer, higher versionCode, prepared42k shader library/ABI retained. Physical phone FPS improvement is UNMEASURED; this is a candidate for controlled heavy-scene selective-sync ON/OFF comparison, never a cave performance reference.
+
+
+Build 163 signed continuation — preserve 162 fast cave-OFF visual result, 2026-11-14:
+- User tested commit 67f92dd, file 0400486024DEC000-20261114-172311.log. Confirmed Qualcomm Adreno 891.14 with DM_VK_OQ_SPLIT_PASS=0, DM_VK_UNUSED_COLOR=1, DM_VK_ATTACHMENT_PARTS=1 and no cave-wall flicker per user. This is the preferred cave configuration, NOT a heavy-scene performance benchmark.
+- Keep OQ reset, reporting order, depth-dirty guard and physical pass split OFF behavior unchanged. No shader substitution, no query proxies, no forced depth store/reload. Preserve 162 unused-colour, selective attachment, transfer/compute producers, original driver and renderer flags.
+- Add tested CPU mesh-command snapshot optimization (commit 336f234), removing redundant guest-list walks, and its original fallback. The GPU shaderless/stub experiment stays isolated on the separate experiment branch and is gated OFF when DM_VK_OQ_SPLIT_PASS=0; DO NOT merge it into this signed 163 test.
+- New production regression test test_ocarina_cave_off_162_regression.py runs in incremental CI and V11 APK validation, both source pathways passing. No Android-device FPS claims for new CPU optimization; compare on same heavy outdoor camera, not cave area.
+- Package com.swap2native.ootv11ios; one signed APK; fingerprint must exactly match a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad; monotonically higher versionCode.
