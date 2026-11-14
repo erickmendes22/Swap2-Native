@@ -24,3 +24,13 @@ Build165 continuation from user164/native4226d12 — CPU and GPU command reducti
 - Full Android source compile plus GPU correctness and incremental workflows passed on65c3aad (Actions43646931434,43646931375);212 local source/docs/CPU regressions passed. Existing classic encoder wrap/copy/order negative-control tests and cave-OFF regression passed.
 - REQUIRED: keep the approved162/164 fast cave-OFF rendering: DM_VK_OQ_SPLIT_PASS=0, original fragment programs and depth/colour policy; no shaderless replacement/proxy query/forced store/reload. No resolution/VRS change, no extra GPU dispatch/query/copy, no host/guest affinity remapping, no full prepared-shader rebuild.
 - One signed update APK only: com.swap2native.ootv11ios; signer exactly a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad; monotonically higher versionCode. CPU/GPU/FPS on the phone remain pending controlled same-heavy-scene testing.
+
+
+Build166 GPU payload candidate from tested c926b4b, 2026-11-14:
+- User confirms165 lowers CPU load/stabilizes delivery but does not improve heavy-scene GPU time or FPS. Preserve165 CPU fixes and the approved162 cave-OFF rendering.
+- Large immutable mesh payloads: strict direct-load proof replaces the1024-word shared copy and its emulation barrier. Captured eb021 has five load sites in a loop-free function called once per invocation:32 lanes need up to160 direct reads instead of1024 copy reads plus shared loads. No added dispatch, query, copy or inter-dispatch barrier; all guest barriers and geometry remain.
+- Production only admits>=256 words and recognized plain uint loads. Small, aliased, qualified, writable or escaped payload forms keep the original conversion. Separate derived compute cache identity; historical prewarm recipes and external42k shader ABI retained.
+- Existing Optimize compute (test) ON enables this candidate and existing retile; OFF restores both. No extra toggle, CPU scheduling/affinity, resolution, VRS or foliage setting change. Phone speed/visual result still unmeasured.
+- Complete Vulkan arena readback exact in24 combinations, zero/short/absent/full producers and empty task prefixes. Source/guard/cache/JVM/cave-OFF/docs tests pass. GitHub native compile + GPU correctness43650550801 and incremental43650550819 both SUCCESS.
+- Capture new hot scene fragment19f99 source only; do not replace its rendering. Existing1e4d AST remains unchanged.
+- One signed com.swap2native.ootv11ios update APK, same signer a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad and higher versionCode than172. No full prepared shader rebuild.
