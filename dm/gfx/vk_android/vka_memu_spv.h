@@ -53,6 +53,7 @@ void vka_memu_rec_mesh(const vka_memu_layout *L, uint32_t rec[32]);
 // its own workgroup memory, and stores its vertices and primitives into the arena where it stored its outputs (no OpSetMeshOutputsEXT). Its workgroup index is the one
 // the program reads as WorkgroupId (CtaId): its index among its task's mesh workgroups, or, without a task, the draw's first workgroup plus its own index (task: the same)
 uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn);
+uint32_t *vka_memu_cs_taskless(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn); // exact no-task record path
 // The vertex shader that draws a mesh layout's arena words: indexed (VertexIndex = the arena vertex) or expanded (VertexIndex = slot x DRAWV + primitive x corners +
 // corner), with Position (Invariant), PointSize for points, every per-vertex location, and every per-primitive location as an output of each of its corners. Set 0
 // binding VKA_MEMU_ARENA_BINDING. malloc'd (*out_nw words), NULL with the reason in err
