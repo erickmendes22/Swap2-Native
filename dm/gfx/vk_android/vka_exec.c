@@ -260,7 +260,9 @@ void mtl_set_frame(uint64_t f) {
           flushed0=g_ub_flushed; afterbar0=g_ub_after_guest_bar; }
         { static uint64_t cb0; VLOG("Ocarina compute 9e6b: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (DM_VK_OOT_CS_SYNC=0 restores full)",
               (vka_n_compute_bar - cb0) / n); cb0 = vka_n_compute_bar; }
-        { static uint64_t mi0; VLOG("Ocarina mesh staging: %.1f compute/transfer -> compute+indirect intermediate barriers/frame; final mesh -> graphics/transfer barrier unchanged (DM_VK_MEMU_INTERPHASE_SCOPE=0 restores former destination)",\n              (vka_n_memu_interphase_bar - mi0) / n); mi0 = vka_n_memu_interphase_bar; }\n        { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
+        { static uint64_t mi0; VLOG("Ocarina mesh staging: %.1f compute/transfer -> compute+indirect intermediate barriers/frame; final mesh -> graphics/transfer barrier unchanged (DM_VK_MEMU_INTERPHASE_SCOPE=0 restores former destination)",
+              (vka_n_memu_interphase_bar - mi0) / n); mi0 = vka_n_memu_interphase_bar; }
+        { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
           if (total != overlap0) VLOG("iOS compute dispatch overlap: %.1f full GPU barriers removed/frame; every non-dispatch NVN command still flushes", (total-overlap0)/n);
           overlap0 = total; }
         { char pb[400]; void vka_draw_prof(char *b, size_t n, double draws); vka_draw_prof(pb, sizeof pb, (double)(g_stat_draws - d0)); if (pb[0]) VLOG("draw path per draw (us): %s", pb);
