@@ -33,7 +33,9 @@ class DescriptorDedupTests(unittest.TestCase):
         self.assertIn('VKA_ENV("DM_VK_POOL_SLOT_DEDUP", 1)', SRC)
         self.assertIn("int kind = w[nw].dstBinding == 2 ? 1 : 0;", SRC)
         self.assertIn("if (!unchanged) {", SRC)
-        self.assertIn("if (nw == BATCH) { vk.vkUpdateDescriptorSets", SRC)
+        self.assertIn("if (nw == BATCH) { pool_update_descriptors", SRC)
+        self.assertIn("vk.vkUpdateDescriptorSets(V.dev, n, writes, 0, NULL);", SRC)
+        self.assertIn("atomic_fetch_add_explicit(&g_pool_descriptor_revision, 1, memory_order_release);", SRC)
         self.assertIn("free(g_pool_written); g_pool_written = NULL;", SRC)
 
     def test_sampler_and_storage_are_distinct_slots(self):

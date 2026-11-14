@@ -46,6 +46,9 @@ static _Atomic uint64_t g_pwant;          // the tail the producer waits for
 static _Atomic(VkCommandBuffer) g_ecb;
 static _Atomic int g_running = -1;        // the record the encoder thread is in (-1: none), for the stall line    // the command buffer whose calls are deferred (NULL: none)
 static int g_up;                           // 1 thread running, -1 failed
+static clockid_t g_cpu_clock;
+static int g_cpu_clock_ok;
+static uint64_t g_cpu_last;
 static uint64_t g_n_calls, g_n_direct, g_n_waits, g_wait_ns; static _Atomic uint64_t g_busy_ns;   // statistics (vka_enc_stats)
 static _Atomic uint64_t g_wait_all;   // cumulative: the replay thread's waits for the encoder (vka_enc_waits, the [longframe] line)
 uint64_t vka_enc_waits(void) { return atomic_load(&g_wait_all); }
@@ -474,6 +477,13 @@ static int up(void) {
     g_ring = malloc(RING);
     pthread_t th;
     if (!g_ring || pthread_create(&th, NULL, enc_main, NULL)) { VRED("cannot start the command encoder thread: the replay thread records directly"); g_up = -1; return 0; }
+    if (!pthread_getcpuclockid(th, &g_cpu_clock)) {
+        struct timespec cpu;
+        if (!clock_gettime(g_cpu_clock, &cpu)) {
+            g_cpu_last = (uint64_t)cpu.tv_sec * 1000000000ull + cpu.tv_nsec;
+            g_cpu_clock_ok = 1;
+        }
+    }
     pthread_detach(th); g_up = 1;
     VLOG("command encoder: the replay thread's Vulkan commands are recorded on a thread of their own (DM_VK_ENC=0: on the replay thread)");
     return 1;
@@ -507,8 +517,20 @@ int vka_enc_call(void (*fn)(const void *), const void *arg, size_t n) {
 void vka_enc_switch(VkCommandBuffer cb) { atomic_store(&g_ecb, cb); flush_pub(); }   // (the part's submit handed over at once)
 void vka_enc_stats(char *b, size_t n, double frames) {   // per frame
     if (!g_n_calls || frames <= 0) { if (n) b[0] = 0; return; }
-    snprintf(b, n, "command encoder per frame: %.0f calls (%.0f made directly to keep order), busy %.2f ms; the replay thread waited %.2f ms (%.1f times)", g_n_calls / frames, g_n_direct / frames,
-             atomic_exchange(&g_busy_ns, 0) / 1e6 / frames, g_wait_ns / 1e6 / frames, g_n_waits / frames);
+    // Driver-call wall time excludes the idle loop. A separate CPU clock
+    // distinguishes actual encoder CPU consumption from queue-empty polling.
+    // Sampled only with the existing300-frame statistics, never per command.
+    char cpu_text[64] = "";
+    if (g_cpu_clock_ok) {
+        struct timespec cpu;
+        if (!clock_gettime(g_cpu_clock, &cpu)) {
+            uint64_t now = (uint64_t)cpu.tv_sec * 1000000000ull + cpu.tv_nsec;
+            snprintf(cpu_text, sizeof cpu_text, "; thread CPU %.2f ms", (now-g_cpu_last)/1e6/frames);
+            g_cpu_last = now;
+        }
+    }
+    snprintf(b, n, "command encoder per frame: %.0f calls (%.0f made directly to keep order), busy %.2f ms; the replay thread waited %.2f ms (%.1f times)%s", g_n_calls / frames, g_n_direct / frames,
+             atomic_exchange(&g_busy_ns, 0) / 1e6 / frames, g_wait_ns / 1e6 / frames, g_n_waits / frames, cpu_text);
     g_n_calls = g_n_direct = g_n_waits = g_wait_ns = 0;
 }
 #endif

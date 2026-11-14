@@ -74,7 +74,11 @@ final class GraphicsOptions {
     }
     static int encoderIdle(Context c) { return clamp(Prefs.of(c).getInt("encoder_idle", 0), 0, 1); }
     static int encoderIdle(Context c, String id) {
-        return clamp(Prefs.of(c).getInt(Prefs.gameKey("encoder_idle", id), encoderIdle(c)), 0, 1);
+        // Ocarina's replay is substantially longer than actual encoder work.
+        // Park an empty ring instead of occupying a prime core between bursts.
+        // An explicit per-game0 retains the original polling policy.
+        int fallback = Prefs.OCARINA_TITLE.equals(id) ? 1 : encoderIdle(c);
+        return clamp(Prefs.of(c).getInt(Prefs.gameKey("encoder_idle", id), fallback), 0, 1);
     }
     static int hotpassVrs(Context c, String id) {
         // A moderate per-fragment rate is separate from the old FPS Boost,

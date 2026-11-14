@@ -163,6 +163,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - the main thread waits forever on a job's done event at boot while every worker sleeps, two of them on one event (`main+0x1426c` waiting on `Job::m_doneEvent`); 4 of 6 Mac runs. → [One auto-clear event shared by a pool's workers](../reference/threads.md#one-auto-clear-event-shared-by-a-pools-workers)
 - abort in `os::WaitSystemEvent` under `oe::PopNotificationMessage` (The Legend of Zelda: Link's Awakening); one guest thread at about 1000 ms/s on the iPhone only, the phone hot, CPU energy 5–7 W (Monster Hunter Rise's `MessageSuperviseThread`, priority 32, in the `[nvn] threads` lines). → [The oe notification event and its queue](../reference/threads.md#the-oe-notification-event-and-its-queue)
 - Paper Mario: The Thousand-Year Door 1.0.1 stays black before its first frame. The main thread stops at `main+0x32796c`, after starting `SYS_Notification`; the priority-28 notifier is in `oe::PopNotificationMessage`, while the priority-44 main thread waits for its same-core wake handoff. → [Native HLE waits release the guest core](../reference/threads.md#native-hle-waits-release-the-guest-core)
+- Prime CPU cores remain near100% while the encoder reports only a few milliseconds of actual-call wall time per frame. → [Idle command encoder occupies a CPU](../reference/threads.md#idle-command-encoder-occupies-a-cpu)
 
 ## Services and SDK calls
 
@@ -659,6 +660,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - a true-only synthetic stream batches better, but a real → [Render-enable boundaries in compute mesh preparation](../reference/rendering.md#render-enable-boundaries-in-compute-mesh-preparation)
 - Ocarina VRS is selected, but the known two-target RGBA16F pass → [HDR shading rate lost after mesh-to-compute routing](../reference/rendering.md#hdr-shading-rate-lost-after-mesh-to-compute-routing)
 - GPU transfers still take full dependencies with selective synchronization enabled; profiling stops before the end of the frame. → [Optional GPU producer dependencies after isolated commands](../reference/rendering.md#optional-gpu-producer-dependencies-after-isolated-commands)
+- Texture/feedback descriptor pools are bound repeatedly despite an unchanged layout and identical sets; task/mesh CPU replay copies inactive stage bindings. → [Exact-layout pool bindings remain valid](../reference/rendering.md#exact-layout-pool-bindings-remain-valid)
 
 ## Shaders
 

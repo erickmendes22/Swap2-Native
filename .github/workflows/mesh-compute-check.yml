@@ -12,6 +12,14 @@ on:
       - dm/gfx/vk_android/vka_pso.c
       - dm/gfx/tools/tests/test_memu_plane_lut.py
       - dm/gfx/tools/tests/test_banana_input_caches.py
+      - dm/gfx/tools/tests/test_memu_snapshot_rows.py
+      - dm/host/tests/t_memu_snapshot_rows.c
+      - dm/gfx/tools/tests/test_pool_bind_cache.py
+      - dm/gfx/vk_android/vka_pool_bind_cache.h
+      - dm/gfx/vk_android/selftest/pool_bind_gpu.c
+      - dm/gfx/tools/tests/test_encoder_idle_cost.py
+      - dm/host/tests/t_android_encoder_idle.c
+      - dm/tools/tests/test_ocarina_encoder_idle_default.py
       - dm/gfx/tools/tests/test_ocarina_mesh_native_hybrid.py
       - dm/gfx/tools/tests/test_ocarina_mesh_caller_lookahead.py
       - dm/gfx/tools/tests/test_ocarina_vegetation_fast_path.py
@@ -76,6 +84,14 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write('VK_ICD_FILENAMES=' + paths[0] + '\n')
           PY
+      - name: Verify task mesh row snapshots and actual encoder idle CPU/order
+        run: python3 -m unittest dm.gfx.tools.tests.test_memu_snapshot_rows dm.gfx.tools.tests.test_encoder_idle_cost dm.tools.tests.test_ocarina_encoder_idle_default -v
+      - name: Verify exact layout pool binding cache with actual GPU consumers
+        env:
+          MEMU_TEST_VULKAN: '1'
+          VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+          VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+        run: python3 -m unittest dm.gfx.tools.tests.test_pool_bind_cache -v
       - name: Validate SGSR1 pixels against independent Banana reference
         run: python3 -m unittest discover -s dm/tools/tests -p test_ndsr_sgsr_gpu.py -v
       - name: Exercise real encoder ring ordering and copied arguments
@@ -193,4 +209,4 @@ jobs:
             -Idm/host/rt -Idm/host -Idm/gfx/nvn/include \
             -Idm/third_party/vulkan-headers/include \
             dm/gfx/vk_android/vka_tex.c dm/gfx/vk_android/vka_exec.c \
-            dm/gfx/vk_android/vka_draw.c dm/gfx/vk_android/vka_gprof.c
+            dm/gfx/vk_android/vka_draw.c dm/gfx/vk_android/vka_gprof.c dm/gfx/vk_android/vka_enc.c

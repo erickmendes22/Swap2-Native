@@ -2224,6 +2224,15 @@ static samp_par *g_sreg; static int g_nsreg;
 static int *g_sdirty; static int g_nsd, g_sdcap;
 static uint8_t *g_sdflag;
 static VkDescriptorSetLayout g_dsl; static VkDescriptorPool g_dpool; static VkDescriptorSet g_set;
+static _Atomic uint64_t g_pool_descriptor_revision;
+uint64_t vka_pool_descriptor_revision(void) {
+    return atomic_load_explicit(&g_pool_descriptor_revision, memory_order_acquire);
+}
+static void pool_update_descriptors(uint32_t n, const VkWriteDescriptorSet *writes) {
+    vk.vkUpdateDescriptorSets(V.dev, n, writes, 0, NULL);
+    atomic_fetch_add_explicit(&g_pool_descriptor_revision, 1, memory_order_release);
+}
+
 static uint32_t g_ntex_slots, g_nsamp_slots, g_nimg_slots;
 typedef struct { samp_par p; int iv; VkSampler s; } samp_ent; static samp_ent *g_samp; static int g_nsamp;
 static VkSampler (*g_sres)[2]; static int g_nsres;   // the sampler of each registered ID ([1]: its integer view twin), found once per registration (sampler_of searches every distinct sampler)
@@ -2296,7 +2305,7 @@ static int pfb_avail(void) {
             } else {
                 VkDescriptorBufferInfo bi = {g_pfb_map.buf, g_pfb_map.off, PFB_BYTES};
                 VkWriteDescriptorSet w = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_pfb_set, .dstBinding = VKA_POOL_FB_BINDING, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi};
-                vk.vkUpdateDescriptorSets(V.dev, 1, &w, 0, NULL);
+                pool_update_descriptors(1, &w);
                 // The original single-bitmap path stays available even
                 // when direct-ring allocation fails or all eight slots
                 // are still waiting on GPU fences. Only allocate these
@@ -2324,7 +2333,7 @@ static int pfb_avail(void) {
                                 .pBufferInfo = &info[i]
                             };
                         }
-                        vk.vkUpdateDescriptorSets(V.dev, PFB_RING, writes, 0, NULL);
+                        pool_update_descriptors(PFB_RING, writes);
                         g_pfb_direct_on = 1;
                         VLOG("texture pool feedback: direct ring enabled, %u immutable host-coherent slot descriptors; fallback preserves original copy+clear path", PFB_RING);
                     } else {
@@ -3378,7 +3387,7 @@ int vka_tex_prepare(VkCommandBuffer cb) {
                 nw++;
             }
         }
-        if (nw == BATCH) { vk.vkUpdateDescriptorSets(V.dev, (uint32_t)nw, w, 0, NULL); nw = 0; }
+        if (nw == BATCH) { pool_update_descriptors((uint32_t)nw, w); nw = 0; }
     }
     g_ntd = 0;
     for (int k = 0; k < g_nsd; k++) {
@@ -3387,10 +3396,10 @@ int vka_tex_prepare(VkCommandBuffer cb) {
         VkSampler s = sampler_of(&g_sreg[id], 0); if (!s) continue;
         ii[nw] = (VkDescriptorImageInfo){s, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
         w[nw] = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = g_set, .dstBinding = 1, .dstArrayElement = (uint32_t)id, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER, .pImageInfo = &ii[nw]};
-        if (++nw == BATCH) { vk.vkUpdateDescriptorSets(V.dev, (uint32_t)nw, w, 0, NULL); nw = 0; }
+        if (++nw == BATCH) { pool_update_descriptors((uint32_t)nw, w); nw = 0; }
     }
     g_nsd = 0;
-    if (nw) vk.vkUpdateDescriptorSets(V.dev, (uint32_t)nw, w, 0, NULL);
+    if (nw) pool_update_descriptors((uint32_t)nw, w);
     pthread_mutex_unlock(&g_tmu);
 #undef PREP_GPU
     return gpu_work;

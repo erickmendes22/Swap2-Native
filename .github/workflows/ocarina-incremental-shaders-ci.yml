@@ -134,6 +134,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_alu_cse.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_barrier_scopes.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_cave_off_162_regression.py -v
+          python3 -m unittest dm.gfx.tools.tests.test_memu_snapshot_rows dm.tools.tests.test_ocarina_encoder_idle_default -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_postpass_barrier_dedup.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_attachment_stage_dependencies.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c

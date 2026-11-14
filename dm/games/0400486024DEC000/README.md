@@ -63,6 +63,9 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Exact-layout pool bindings remain valid](../../../docs/reference/rendering.md#exact-layout-pool-bindings-remain-valid): avoid duplicate texture/feedback binds with conservative invalidation.
+- [Idle command encoder occupies a CPU](../../../docs/reference/threads.md#idle-command-encoder-occupies-a-cpu): separate driver-call wall time from thread CPU and park an empty queue.
+
 - [Optional GPU producer dependencies after isolated commands](../../../docs/reference/rendering.md#optional-gpu-producer-dependencies-after-isolated-commands): independent copy/clear/compute producer scopes, real Vulkan parity and conservative fallback.
 
 - [Constant component reads rejected by virtual compute retiling](../../../docs/reference/shaders.md#constant-component-reads-rejected-by-virtual-compute-retiling): the actual `9e6b` capture uses six scalar input pointers; the existing optimization never activated for it.
@@ -1162,3 +1165,67 @@ button was introduced; legacy internal FPS Boost is forced0, separate from
 the visible VRS control. Build162 combines the new changes above with the
 existing3 independent controls and keeps package/signing/shader ABI unchanged.
 Device correctness and phone GPU-time/FPS remain pending user testing.
+
+
+### User164 log184118: serial CPU work and full GPU profile (2026-11-14)
+
+The user calls this APK164. Its actual native source identifies4226d127fb4c,
+launcher4226d12+dirty, expected a1c468aff0b99e28 signer. This matches the current
+published branch head (labelled163/versionCode171); use the verified native
+source, not the stale label. New screenshot shows48.5FPS, cores6/7 at99-100%
+and cores0-5 at19-22%. The image cannot attribute physical cores to threads.
+No DM_VK_AFF_ALL/REPLAY override appears in this log.
+
+Steady heavy-scene windows ending1500/1800/2100/2400/2700/3000 have frame-p50
+20.04/20.09/20.09/20.09/20.08/20.27ms and GPU-p50
+19.63/19.71/19.75/19.75/19.73/19.89ms. Replay records~16ms/frame;
+encoder actual-call wall time~3.1ms/frame with~14800 calls and no reported
+futex wait from the producer. That does NOT measure the encoder's idle-loop
+CPU time. Default200us queue-empty polling can keep it runnable between bursts.
+Later portions change scene/draw counts; do not pool those as the same camera.
+
+At sampled2401,1100 timestamps cover21.91ms with13.19ms graphics passes,
+4.20ms identified ordinary compute and the separately labelled task/mesh
+intervals. The4.20ms at the completion-barrier site is COMPUTE work, not proof
+of4.20ms wasted barriers. A3.139ms16-draw chunk is dominated by1e4d; it is NOT
+fragment-only time. Optimized1e4d AST and2x2 VRS are actually ACTIVE already;
+do not reapply them as new optimizations. Mesh output masking still selects0.
+Cave split is0; retain this approved fast cave-OFF rendering property.
+
+WIP continuation after164 (device FPS still unmeasured):
+
+- Stage-row snapshot capture copies task/mesh bindings and common driver bytes
+  plus all remaining state/revisions:32456 ->9416 bytes/captured draw (71.0%
+  fewer copied bytes, NOT71% less total CPU). Runtime static assertions protect
+  the stage layout.4096 randomized states produce49152 identical real driver
+  banks and8192 identical real descriptor walks. Host copy-only timing is
+  ~0.25-0.30us versus~0.77-0.96us; do not project it to whole-game FPS.
+- Exact-layout, descriptor-revision-aware set1/set2 memo removes repeated pool+feedback bind calls
+  while preserving set0, descriptor updates, feedback-slot changes, command-
+  buffer resets, direct helper layout changes and separate graphics/compute
+  bind points. All pool/feedback table writes advance a revision, so even
+  same-handle descriptor updates force the original rebind. Both shader output and feedback are exact in a real Vulkan
+  test with incompatible push-range layouts and GPU-modified buffer contents:
+ 128bind calls ->35 in this fixture. This is NOT the phone's measured hit rate.
+- Ocarina's default encoder idle policy parks an empty ring through the existing
+  futex path. Explicit per-game encoder_idle=0 retains polling; other titles'
+  defaults remain. Six alternating runs of the actual ring preserve256000
+  commands each: encoder CPU218-272ms with200us polling versus11.5-14.4ms with
+  polling off, with no host-workload wall-time regression. These are host ring
+  measurements, not phone percentages. A sampled encoder CPU-clock statistic
+  now distinguishes thread CPU from actual-call wall time in the next log.
+
+No guest scheduling/affinity, shader library/ABI, graphics/compute workgroup,
+visibility result, cave split flag, depth/colour pass policy or prepared shader
+is changed. New runtime logs report actual snapshot and pool-binding selection.
+Phone gain and core utilization must be measured; no promised60FPS.
+
+
+After164 local validation:212 source/docs/CPU regression tests pass (one
+real-Vulkan case skipped in that CPU-only invocation). Separate real Vulkan
+pool output/feedback tests pass with Khronos synchronization validation;
+real encoder order/ring-wrap/poisoned-argument tests and their negative control
+pass. The launcher idle-default methods/environment line execute successfully
+on the JVM, including explicit polling rollback and unrelated-game defaults.
+The next checkpoint requires complete Android source compilation and CI GPU
+validation before packaging a signed install-over candidate.

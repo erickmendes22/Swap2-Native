@@ -241,3 +241,11 @@ The yield back-off (`DM_YIELD_BACKOFF`) and the rewriter's spin waits (`patch_ns
 - **Fix:** `dm_thread_native_wait` marks the blocked native-wait interval under the scheduler lock and drops the inherited handoff. `PopNotificationMessage` enters that state while holding the queue mutex, waits, and restores runnable state after reacquiring the mutex. Ordinary native execution is still runnable.
 - **Found on:** [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md#startup).
 - **Check:** the original PR #291 reproducer on upstream `1402ded2` blocks until its watchdog exits with code 99. `make -C dm/host/tests GAME=0100ECD018EBE000 notify-scheduler` now uses real `CreateThread`, `StartThread`, wait-for-exit and close SVCs; only the assembly transition to a guest stack is replaced by a C test entry. The original notification HLE strands `StartThread` until the watchdog exits with code 99. The fixed HLE passes 100 runs in each scheduling mode, including a wake without a queued message, runnable-state restoration and delivery of focus notification 15. The full host test suite (`make -C dm/host/tests GAME=0100ECD018EBE000 run`) also passes with CoreAudio access. The game's note records its separate Mac startup comparison and iPhone report.
+
+
+### Idle command encoder occupies a CPU
+
+- **Symptom:** Prime CPU cores remain near100% while the encoder reports only a few milliseconds of actual-call wall time per frame.
+- **Cause:** The encoder can poll an empty command ring for200us between bursts. Its existing busy metric excludes that idle loop, so it cannot establish total thread CPU consumption or identify physical-core placement.
+- **Fix:** Ocarina defaults to the existing futex parking policy for an empty ring, respecting an explicit per-game polling rollback. Keep serialization, publication, ring wrap and wakeup ordering unchanged. Sample the encoder thread CPU clock only in the existing statistics cadence, alongside the old actual-call wall metric. Six host workload runs preserve256000 commands each and reduce idle CPU without a wall-time regression, but do not establish the phone's gain. Do not force host/guest affinity from a utilization screenshot.
+- **Found on:** [Ocarina user164 log184118](../../dm/games/0400486024DEC000/README.md#user164-log184118-serial-cpu-work-and-full-gpu-profile-2026-11-14).

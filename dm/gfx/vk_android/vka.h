@@ -312,6 +312,7 @@ VkImageView vka_view(vka_img *im, VkFormat fmt, VkImageViewType type, VkImageAsp
 int vka_tex_prepare(VkCommandBuffer cb);            // at submit begin: dirty CPU textures re-uploaded, descriptors written; 1 if GPU work may have been recorded
 void vka_tex_uploads(VkCommandBuffer cb);
 VkDescriptorSet vka_bindless_set(void);
+uint64_t vka_pool_descriptor_revision(void); // completed texture/feedback table updates, including same-handle writes
 VkDescriptorSetLayout vka_bindless_layout(void);
 void vka_barrier_at(VkCommandBuffer cb, const char *file, int line);   // a full memory barrier (the replay orders every transfer op after the previous one)
 void vka_graphics_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // all graphics shader/attachments -> all later consumers

@@ -6,6 +6,7 @@
 // tessellation's patch size, texel buffers, viewport swizzles other than a y flip
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_pool_bind_cache.h"
 #include "vka_selftest_spv.h"   // SPV_MESHCOUNT_COMP (mesh_ind_args)
 #include "vka_ndsr.h"
 #include "vka_ndsr_sampler.h"           // vka_ndsr_pipeline (vka_dispatch)
@@ -29,6 +30,9 @@ static int g_vin_skip = 1;
 static uint64_t g_vin_kept, g_vin_built, g_vb_kept, g_vb_bound;
 uint64_t vka_n_rp;   // render passes the draws opened (vka_exec.c replay statistics)
 static uint64_t g_draws, g_skipped, g_dispatches;
+static uint64_t g_pool_bind_emit, g_pool_bind_reuse;
+static vka_pool_bind_cache g_pool_bind[2];
+static VkPipelineLayout g_set0_layout[2];
 static int g_dispatch_overlap_pending;
 static uint64_t g_dispatch_overlap_skipped;
 uint64_t vka_frame(void);  // also used by the fail-closed SGSR chain frame tracker
@@ -650,6 +654,10 @@ void vka_rp_bar_stats(char *b, size_t n, double frames) {
              (g_unused_color_passes-omit0)/frames, (g_unused_color_views-views0)/frames,
              (g_attachment_part_passes-parts0)/frames);
     omit0=g_unused_color_passes; views0=g_unused_color_views; parts0=g_attachment_part_passes;
+    static uint64_t pe0, pr0;
+    if (g_pool_bind_emit != pe0 || g_pool_bind_reuse != pr0)
+        VLOG("GPU pool bindings: %.1f emitted, %.1f exact repeats omitted/frame; feedback and layout changes retained", (g_pool_bind_emit-pe0)/frames, (g_pool_bind_reuse-pr0)/frames);
+    pe0=g_pool_bind_emit; pr0=g_pool_bind_reuse;
     static uint64_t cave0, color0, depth0;
     if (g_cave_original_splits != cave0)
         VLOG("Ocarina original cave path: %.1f physical query pass ends/frame; %.1f bind unused colour targets; %.1f do not write depth (diagnostic only)", (g_cave_original_splits-cave0)/frames, (g_cave_unused_color-color0)/frames, (g_cave_depth_readonly-depth0)/frames);
@@ -1342,6 +1350,13 @@ static VkSampler g_ndsr_linear_sampler;
 static uint16_t g_ndsr_linear_binding;
 static VkDescriptorImageInfo g_ndsr_linear_info;
 static int sets_push(const vka_layout *lay, VkPipelineBindPoint bp, int any_pool) {
+    int pool_slot = bp == VK_PIPELINE_BIND_POINT_COMPUTE;
+    // Exact layout provenance of the previously bound set0, for BOTH
+    // allocated and pushed descriptors. Direct helpers and command-buffer
+    // changes clear this provenance; incompatible layouts force a rebind.
+    vka_pool_bind_prepare(&g_pool_bind[pool_slot], lay->layout,
+                          g_set0_layout[pool_slot] == lay->layout);
+
     if (bp == VK_PIPELINE_BIND_POINT_COMPUTE && g_ndsr_linear_sampler)
         vka_ndsr_linear_write(g_w.w,g_w.n,g_ndsr_linear_binding,g_ndsr_linear_sampler,&g_ndsr_linear_info);
     uint64_t t2_ = g_prof ? cntvct() : 0;
@@ -1355,11 +1370,22 @@ static int sets_push(const vka_layout *lay, VkPipelineBindPoint bp, int any_pool
         if (g_w.n) vk.vkUpdateDescriptorSets(V.dev, g_w.n, g_w.w, 0, NULL);
         vk.vkCmdBindDescriptorSets(g_cb, bp, lay->layout, 0, 1, &set, 0, NULL);
     }
+    g_set0_layout[pool_slot] = lay->layout;
     if (g_prof) g_ps[2] += cntvct() - t2_;
     if (any_pool) vka_tex_pfb_draw();   // (its pool reads are reported: this submission copies the bitmap out, vka_tex.c "Texture pool reads")
     if (any_pool) {   // set 1 the pool, and in the same call set 2 the pool reads' bitmap when they are reported (vka_tex.c "Texture pool reads")
         VkDescriptorSet ps[2] = {vka_bindless_set(), vka_pfb_set()};
-        if (ps[0]) vk.vkCmdBindDescriptorSets(g_cb, bp, lay->layout, 1, ps[1] ? 2 : 1, ps, 0, NULL); else VRED_ONCE("a shader reads the texture pool and there is no pool set");
+        if (ps[0]) {
+            int same = 0;
+            vka_pool_bind_revision(&g_pool_bind[pool_slot], vka_pool_descriptor_revision());
+            if (VKA_ENV("DM_VK_POOL_BIND_DEDUP", 1) && !vka_nan_on())
+                same = vka_pool_bind_same(&g_pool_bind[pool_slot], lay->layout, ps, ps[1] ? 2 : 1);
+            else g_pool_bind[pool_slot].valid = 0;
+            if (!same) {
+                vk.vkCmdBindDescriptorSets(g_cb, bp, lay->layout, 1, ps[1] ? 2 : 1, ps, 0, NULL);
+                g_pool_bind_emit++;
+            } else g_pool_bind_reuse++;
+        } else { g_pool_bind[pool_slot].valid = 0; VRED_ONCE("a shader reads the texture pool and there is no pool set"); }
     }
     return 1;
 }
@@ -1555,7 +1581,7 @@ static void ib_bind(VkBuffer b, VkDeviceSize o, VkIndexType t) {
     if (IB.valid && g_vb_filter && IB.b == b && IB.o == o && IB.t == t) return;
     vk.vkCmdBindIndexBuffer(g_cb, b, o, t); IB.valid = 1; IB.b = b; IB.o = o; IB.t = t;
 }
-void vka_dyn_invalidate(void) { DY.valid = 0; VB.valid = 0; IB.valid = 0; g_pd[0].n = g_pd[1].n = 0; }
+void vka_dyn_invalidate(void) { DY.valid = 0; VB.valid = 0; IB.valid = 0; g_pd[0].n = g_pd[1].n = 0; g_pool_bind[0].valid = g_pool_bind[1].valid = 0; g_set0_layout[0] = g_set0_layout[1] = VK_NULL_HANDLE; }
 #define PT(i) do { if (g_prof) { uint64_t t_ = cntvct(); if ((i) > 0 && g_pt_ph == (i) - 1) g_pt[(i) > 0 ? (i) - 1 : 0] += t_ - g_pt_last; g_pt_last = t_; g_pt_ph = (i); } } while (0)
 void vka_draw_prof(char *b, size_t n, double draws) {
     if (!g_prof || draws <= 0) { if (n) b[0] = 0; return; }
@@ -1622,7 +1648,7 @@ static int mesh_ind_args(uint64_t ind, uint32_t maxg, vka_span *out) {
         vk.vkCmdPushDescriptorSetKHR(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_mc_lay, 0, 2, w);
         vk.vkCmdPushConstants(g_cb, g_mc_lay, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc, pc);
         vk.vkCmdDispatch(g_cb, 1, 1, 1);
-        g_pd[1].n = 0;   // the dispatches' last push is no longer bound (push_same)
+        g_pd[1].n = 0; g_pool_bind[1].valid = 0; g_set0_layout[1] = VK_NULL_HANDLE;   // the dispatches' last push is no longer bound (push_same)
     } else { VkBufferCopy c = {o, out->off, 4}; vk.vkCmdCopyBuffer(g_cb, b, out->buf, 1, &c); }
     vka_barrier(g_cb);
     return 1;

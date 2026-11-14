@@ -25,6 +25,27 @@ static memu_ent *g_memu_cur;
 // barriers, task/mesh ordering or occlusion query boundaries are changed.
 // The array is NOT zeroed on every batch: only MB.e[i].ok entries are read.
 static vka_dstate g_memu_draw_snapshot[MEMU_MAX];
+// Only task/mesh stages consume these snapshots. Keep all common driver
+// bytes and all non-binding state/revisions, but do not copy six inactive
+// graphics/compute binding rows for every captured draw. vka_walk and
+// vka_drv_fill select exactly the supplied NVN stage (6 or7).
+static void memu_snapshot_capture(vka_dstate *dst, const vka_dstate *src) {
+    _Static_assert(VKA_NSTAGE == 8, "review snapshot stages after stage ABI changes");
+    _Static_assert(offsetof(vka_bstate, push) == sizeof src->b.ubo + sizeof src->b.ssbo +
+                   sizeof src->b.tex + sizeof src->b.samp + sizeof src->b.img,
+                   "capture new binding fields before push");
+    memcpy(&dst->b.ubo[6], &src->b.ubo[6], 2 * sizeof src->b.ubo[0]);
+    memcpy(&dst->b.ssbo[6], &src->b.ssbo[6], 2 * sizeof src->b.ssbo[0]);
+    memcpy(&dst->b.tex[6], &src->b.tex[6], 2 * sizeof src->b.tex[0]);
+    memcpy(&dst->b.samp[6], &src->b.samp[6], 2 * sizeof src->b.samp[0]);
+    memcpy(&dst->b.img[6], &src->b.img[6], 2 * sizeof src->b.img[0]);
+    memcpy((char *)&dst->b + offsetof(vka_bstate, push),
+           (const char *)&src->b + offsetof(vka_bstate, push),
+           sizeof src->b - offsetof(vka_bstate, push));
+    memcpy((char *)dst + offsetof(vka_dstate, bst),
+           (const char *)src + offsetof(vka_dstate, bst),
+           sizeof *src - offsetof(vka_dstate, bst));
+}
 int vka_memu_snapshot_on(void) {
     return !strcmp(DM_GAME_ID, "0400486024DEC000") &&
            VKA_ENV("DM_VK_MEMU_SNAPSHOT", 1) != 0;
@@ -71,7 +92,7 @@ static void memu_helper(int dist) {
     for (uint32_t i = 0; i < 3; i++) w[i] = (VkWriteDescriptorSet){VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstBinding = i, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &bi[i]};
     vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, dist ? pd : ps);
     vk.vkCmdPushDescriptorSetKHR(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, pl, 0, 3, w);
-    g_pd[1].n = 0;   // (another layout's push: the replay's last compute push is forgotten)
+    g_pd[1].n = 0; g_pool_bind[1].valid = 0; g_set0_layout[1] = VK_NULL_HANDLE;   // (another layout's push: the replay's last compute push is forgotten)
     uint32_t pc[4] = {0, (uint32_t)MB.o.n, MB.cap, 0};
     vk.vkCmdPushConstants(g_cb, pl, VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, pc);
     vk.vkCmdDispatch(g_cb, dist ? (uint32_t)MB.o.n : ((uint32_t)MB.o.n + 63) / 64, 1, 1);
@@ -148,7 +169,14 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
             VkBufferCopy c = {o, MB.rec.off + ((VkDeviceSize)E->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_COUNT) * 4, 8}; vk.vkCmdCopyBuffer(g_cb, b, MB.rec.buf, 1, &c);
         } else { r[VKA_MEMU_R_COUNT] = dw->count > 0 ? (uint32_t)dw->count : 0; r[VKA_MEMU_R_FIRST] = dw->first > 0 ? (uint32_t)dw->first : 0; }
         E->indexed = mi->L.indexed; E->points = mi->L.points;
-        if (vka_memu_snapshot_on()) g_memu_draw_snapshot[ei] = *d;
+        if (vka_memu_snapshot_on()) {
+            memu_snapshot_capture(&g_memu_draw_snapshot[ei], d);
+            static int noted;
+            if (!noted++) {
+                size_t unused = 6 * (sizeof d->b.ubo[0] + sizeof d->b.ssbo[0] + sizeof d->b.tex[0] + sizeof d->b.samp[0] + sizeof d->b.img[0]);
+                VLOG("mesh snapshot rows ACTIVE: %zu -> %zu bytes/captured draw; same task/mesh inputs and GPU commands", sizeof *d, sizeof *d-unused);
+            }
+        }
         E->ok = 1;
         if (E->tcs) {
             MB.task_draws++;
