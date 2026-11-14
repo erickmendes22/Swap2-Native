@@ -1229,3 +1229,9 @@ pass. The launcher idle-default methods/environment line execute successfully
 on the JVM, including explicit polling rollback and unrelated-game defaults.
 The next checkpoint requires complete Android source compilation and CI GPU
 validation before packaging a signed install-over candidate.
+
+After164 checkpoint65c3aad: full Android source compilation (including the
+encoder), actual Vulkan consumers, encoder/snapshot tests and incremental
+shader/ABI workflows passed on GitHub (43646931434/43646931375). Candidate165
+packages those changes together. Keep native4226d12 as the supplied log's
+baseline and all fast cave-OFF guards. No phone gain is claimed before testing.
