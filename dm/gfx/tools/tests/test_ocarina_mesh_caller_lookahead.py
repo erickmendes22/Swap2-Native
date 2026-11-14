@@ -121,6 +121,29 @@ int main(void) {
     assert(memu_walk((const uint8_t*)&all_on[0], MEMU_ADD) == 1);
     batching_on = 1;
     assert(g_memu_noop_enable_merged == 2);
+    // Synthetic Ocarina-sized foliage segment: 80 mesh draws in twenty
+    // groups separated by redundant SetRenderEnable(true) only. This tests
+    // the actual production memu_walk, not a reimplementation of its logic.
+    // It is a GPU batching-work indicator, NOT a device FPS prediction.
+    record many[101]; int q = 0;
+    for (int group = 0; group < 20; group++) {
+        for (int i = 0; i < 4; i++) many[q++] = (record){OP_DRAW,16,5};
+        if (group != 19) many[q++] = (record){OP_RENDER_COND,16,2};
+    }
+    many[q++] = (record){OP_END,16,0};
+    assert(q == 100);
+    g_memu_depth = 0; S.d.state = 10; S.rc_skip = 0;
+    batching_on = 1; batched = 0;
+    assert(memu_walk((const uint8_t*)many, MEMU_ADD) == 80);
+    assert(batched == 80);
+    batching_on = 0; batched = 0;
+    assert(memu_walk((const uint8_t*)many, MEMU_ADD) == 4);
+    assert(batched == 4);
+    veg_on = 0; batching_on = 1; batched = 0;
+    assert(memu_walk((const uint8_t*)many, MEMU_ADD) == 4);
+    assert(batched == 4);
+    veg_on = 1;
+    puts("synthetic 80 foliage mesh draws: 20 -> 1 prep batches (no GPU result/FPS claim)");
     // The existence probe remains side-effect-free and sees first mesh draw.
     batched = 0; assert(memu_walk((const uint8_t*)&inner[0], -1) == 1);
     assert(batched == 0);
