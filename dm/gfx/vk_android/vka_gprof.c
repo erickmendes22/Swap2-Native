@@ -29,8 +29,8 @@ static char g_compute[DESC];
 static int g_compute_new;
 // GPU-only diagnosis for Ocarina foliage: split the prior 16-draw GPU
 // timestamp intervals into four-draw intervals on the ONE sampled GPU frame.
-// The 16-draw intervals falsely associated a 2.4 ms raster interval with
-// one fragment key even when that key was only 5 of its 16 draws. More precise
+// The 16-draw intervals reported a 2.4 ms raster interval where the
+// most common fragment key was only 5 of 16 draws (not an attribution). More precise
 // intervals separate actual GPU raster costs from coincident draws and
 // attachment/tile load-store. This records NO additional graphics commands,
 // pipelines, draws or barriers on ordinary (299/300) frames; normal GPU work
