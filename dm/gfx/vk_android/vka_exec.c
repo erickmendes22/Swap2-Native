@@ -402,7 +402,11 @@ static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_P
     // Banana Native dc7c420 (#210): store/reload the depth attachment after
     // an active counted query. Do not split empty reports, colour-only passes,
     // other titles or other drivers. The exact driver fault remains open.
-    const int split = g_oq_split_pass && g_oq_open && vka_rp_has_depth();
+    // Preserve the Qualcomm depth store/reload workaround for written
+    // depth, but do not force a new physical pass after a read-only query.
+    // Queries still end and reports still post in their original order.
+    const int split = g_oq_split_pass && g_oq_open &&
+                      vka_rp_has_depth() && vka_rp_cave_depth_dirty();
     oq_close();   // (draws after it begin a new query)
     post((pop){4, (uint32_t)g_oq_fresh, g_oq_lost, t, ad, g_oq_seg0, g_oq_head});
     g_oq_lost_epoch_total += g_oq_lost;
