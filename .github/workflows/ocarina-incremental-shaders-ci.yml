@@ -1,7 +1,7 @@
 name: Ocarina incremental shaders (tests only)
 on:
   push:
-    branches: [wip-ocarina-incremental-shader-updates, ocarina-v11-ios-perf-from-v101]
+    branches: [wip-ocarina-incremental-shader-updates, ocarina-v11-ios-perf-from-v101, experiment/ocarina-162-cpu-gpu-balanced]
     paths:
       - 'scripts/ocarina_shader_hot_delta.py'
       - 'scripts/build_ocarina_hot_shaders.py'
@@ -132,6 +132,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_cold_build_memory.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_alu_cse.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_barrier_scopes.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_memu_snapshot_cpu.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_postpass_barrier_dedup.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_attachment_stage_dependencies.py -v
           cc -D_GNU_SOURCE -std=gnu11 -fsyntax-only dm/gfx/vk_android/vka_shlib.c
