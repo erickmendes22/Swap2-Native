@@ -1404,13 +1404,24 @@ int vka_shader_lib_has(uint64_t key) { pthread_mutex_lock(&g_mu); int ok = lib_l
 int vka_shader_memu_key(uint64_t key) {
     pthread_mutex_lock(&g_mu); int ok = lib_load(); pthread_mutex_unlock(&g_mu);
     if (!ok || vka_shlib_find(library_for_key(key), key)) return 0;
-    static const uint64_t tag[5] = {VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
-        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL};
-    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 5; i++) {
+    static const uint64_t tag[9] = {
+        VKA_MEMU_KEY_CS, VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_GL, VKA_MEMU_KEY_VS,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_GL,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_TASK_SHORT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_GL,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT,
+        VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_GL
+    };
+    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 18; i++) {
+        int taskless = i >= 9, j = i % 9;
+        if (taskless && j == 2) continue;
         uint64_t layout = vka_memu_layout_tag() ^ (old_layout ? VKA_MEMU_KEY_COALESCED : 0);
-        uint64_t original = key ^ tag[i] ^ layout;
+        uint64_t original = key ^ tag[j] ^ layout ^ (taskless ? VKA_MEMU_KEY_TASKLESS : 0);
         const dmsh_vk_entry *e = vka_shlib_find(library_for_key(original), original);
-        if (e && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS) && (i < 3 || e->stage == DMSH_VK_STAGE_MS)) return 1;
+        if (e && (e->stage == DMSH_VK_STAGE_TS || e->stage == DMSH_VK_STAGE_MS) &&
+            (!taskless || e->stage == DMSH_VK_STAGE_MS) &&
+            (j < 3 || e->stage == DMSH_VK_STAGE_MS)) return 1;
     }
     return 0;
 }
