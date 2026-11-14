@@ -146,6 +146,22 @@ void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int l
         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
 }
+// Depth-only producer dependency for an Ocarina physical occlusion split.
+// A draw pass with no colour clear or colour shader output can only publish
+// depth/stencil attachment writes; keep ALL_COMMANDS readers and writers as
+// consumers. The original combined colour/depth dependency remains the
+// fallback for all other passes. No rendering/queries are removed.
+uint64_t vka_n_depth_only_bar;
+void vka_depth_write_barrier_at(VkCommandBuffer cb, const char *file, int line) {
+    vka_n_depth_only_bar++;
+    VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+    vk.vkCmdPipelineBarrier(cb,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+    if (vka_gp_active) vka_gp_mark(cb, file, line);
+}
 // A pass that truly did not write any colour/depth/stencil attachment or
 // shader memory still READS depth, shaders' descriptor buffers and sampled
 // textures. It must finish those reads before a later pass/transfer overwrites
