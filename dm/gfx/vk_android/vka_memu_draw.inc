@@ -17,7 +17,11 @@
 #include "vka_memu_order.h"
 enum { MEMU_MAX = VKA_MEMU_ORDER_MAX };
 typedef struct { int ok, rec, indexed, points; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; } memu_ent;
-static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws; } MB;
+// Snapshot at MEMU_ADD: TASK and MESH consume exactly the replay state at
+// their respective draws. Copy it ONCE instead of re-walking all parent lists
+// and state records two more times after GPU setup. Same CPU-side resource
+// bindings and same GPU dispatch order; snapshots live only through this batch.
+static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_dstate st[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws; } MB;
 static memu_ent *g_memu_cur;
 // The record being replayed: its entry (the next of its record from the batch's cursor, taken), NULL when the batch has none left for it
 void vka_memu_cur(const uint8_t *p) { int i = vka_memu_order_take(&MB.o, p); g_memu_cur = i < 0 ? NULL : &MB.e[i]; }
@@ -92,6 +96,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         if (MB.live < 0) return;
         int ei = vka_memu_order_add(&MB.o, p); if (ei < 0) return;
         memu_ent *E = &MB.e[ei]; memset(E, 0, sizeof *E); E->rec = ei;
+        memcpy(&MB.st[ei], d, sizeof MB.st[ei]); // the exact state from MEMU_ADD's actual guest command walk
         uint32_t *r = (uint32_t *)(MB.rec.ptr + (size_t)E->rec * VKA_MEMU_REC_WORDS * 4); memset(r, 0, VKA_MEMU_REC_WORDS * 4);
         vka_shader *ts = NULL, *ms = NULL; unsigned bad = 0;
         const prog_t *mp = d->bst[7];   // (as draw_body: the fragment stage's program when it has a mesh shader)
@@ -143,4 +148,15 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
     case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X, MB.e[idx].ms ? MB.e[idx].ms->key : 0); break;
     case MEMU_END: memu_phase_barrier(); vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
     }
+}
+
+// Execute the two GPU-dispatch phases from the first walk's per-draw snapshots.
+// The original walker is still used for existence and ADD, so every hard
+// boundary (OP_BARRIER, OP_RENDER_COND, SET_RT etc.) and nested OP_CALL remains
+// byte-for-byte equivalent. Unlike a speculative memo, no cached state escapes
+// the current batch or submission; no shader library or GPU pipeline changes.
+void vka_memu_replay_phase(int phase) {
+    if (phase != MEMU_TASK && phase != MEMU_MESH) return;
+    for (int i = 0, n = MB.o.n; i < n; i++)
+        vka_memu_batch(phase, &MB.st[i], NULL, NULL, i);
 }
