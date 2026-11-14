@@ -1,11 +1,12 @@
 name: Mesh compute correctness (no APK)
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113]
+    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113, experiment/ocarina-gpu-output-store-benchmark]
     paths:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
       - dm/gfx/tools/tests/test_memu_coalesced_readback.py
+      - dm/gfx/tools/tests/test_ocarina_gpu_output_store_benchmark.py
       - dm/gfx/tools/tests/test_oot_short_task_search.py
       - dm/gfx/tools/tests/test_oot_render_enable_boundaries.py
       - dm/gfx/tools/tests/test_oot_compute_hdr_vrs.py
@@ -90,6 +91,10 @@ jobs:
         # The golden-module hash test belongs to the OLD default bytes,
         # not to an intentionally different shader compile-time variant.
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_memu_coalesced_readback.py -k test_gpu_exports_and_generated_vertex_reader -v
+      - name: Benchmark actual Vulkan Foliage.Product plane-scalar vs packed-vec4 global memory stores (no APK)
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_gpu_output_store_benchmark.py' -v
       - name: Verify scalar component compute retile on the GPU
         env:
           MEMU_TEST_VULKAN: '1'
