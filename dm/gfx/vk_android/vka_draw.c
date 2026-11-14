@@ -11,6 +11,7 @@
 #include "vka_ndsr_sampler.h"           // vka_ndsr_pipeline (vka_dispatch)
 #include "vka_hidden_layers.h"   // exact experimental Ocarina fragment discard keys
 #include "vka_depth_fs_elide.h"   // strict side-effect/coverage-proof for depth-only FS omission
+#include "vka_depth_fs_stub_spv.h" // preserves fragment stage for real occlusion counts
 #include "../nvn/nvn_mtl.h"
 #include "../../host/plat/plat.h"
 #include "vka_memu_abi.h"
@@ -1823,7 +1824,7 @@ static int oot_depth_fs_eligible(vka_shader *fs) {
     }
     return cache[i].safe;
 }
-static uint64_t g_oot_depth_fs_elided;
+static uint64_t g_oot_depth_fs_replaced;
 void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
@@ -1948,6 +1949,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     // This cannot remove a draw and preserves the Build157 cave query work.
     // The verified Ocarina unused-colour path still determines the attachment
     // configuration. Fail closed on alpha-test variants, MSAA or diagnostics.
+    int depth_fs_stub = 0;
     if (sh[1] && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
         VKA_ENV("DM_VK_OOT_DEPTH_FS_ELIDE", 1) &&
         VKA_ENV("DM_VK_UNUSED_COLOR", 0) &&
@@ -1958,11 +1960,14 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         (!(sh[1]->e->flags & DMSH_VK_F_ALPHA_TEST) ||
           d->color.alpha_func == NVN_ALPHA_FUNC_ALWAYS) &&
         oot_depth_fs_eligible(sh[1])) {
-        sh[1] = NULL;
-        if (++g_oot_depth_fs_elided == 1 ||
-            !(g_oot_depth_fs_elided & 4095u))
-            VLOG("Ocarina depth-only fragment shader omitted on %llu draws (geometry, depth and occlusion unchanged)",
-                 (unsigned long long)g_oot_depth_fs_elided);
+        // Do NOT drop the fragment stage: the real Vulkan counter parity
+        // fixture proved that no-FS pipelines can change sample counts.
+        // Substitute a valid empty Fragment SPIR-V module in the pipeline.
+        depth_fs_stub = 1;
+        if (++g_oot_depth_fs_replaced == 1 ||
+            !(g_oot_depth_fs_replaced & 4095u))
+            VLOG("Ocarina depth-only fragment ALU replaced on %llu draws; fragment stage and occlusion preserved",
+                 (unsigned long long)g_oot_depth_fs_replaced);
     }
 
     PT(1);
@@ -2061,6 +2066,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         for (uint32_t i = 0; i < R.ncolor; i++) if (R.cf[i] && (R.ckind[i] == 1 || R.ckind[i] == 2) && (fs->e->fout_mask >> i & 1) && (fs->e->fout_types >> (2 * i) & 3) == DMSH_VK_TYPE_FLOAT) { if (R.ckind[i] == 1) fu |= 1u << i; else fsm |= 1u << i; }
         if ((fu | fsm) && vka_shader_fout_retyped((vka_shader *)fs, fu, fsm)) variant = VKA_FS_RETYPE;
     }
+    if (depth_fs_stub) variant = VKA_OOT_DEPTH_FS_STUB_VARIANT;
     k.fs_variant = (uint8_t)variant; k.gs_fx = g_claim_words != 0;
     int src1_used = 0;
     for (uint32_t i = 0; i < R.ncolor; i++) {
