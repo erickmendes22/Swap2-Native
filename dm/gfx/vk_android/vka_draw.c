@@ -1794,12 +1794,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
             memu_e = memu_find();
             if (!memu_e) { vka_memu_n_skip++; SKIP("mesh draw through compute that the look-ahead did not prepare: skipped"); }
             if (!memu_e->ok) { g_skipped++;  return; }   // (logged where its shaders were refused)
-            // Select only VS output locations consumed by the REAL bound
-            // fragment shader; preserves position, index buffer, depth and
-            // exactly the same fragment shader. Unknown inputs use original.
-            sh[0] = vka_memu_vs_for_fs(memu_e->ms, sh[1]);
-            if (!sh[0]) sh[0] = memu_e->vs;
-            sh[6] = sh[7] = NULL; mesh = 0;
+            // The mesh lookahead prepared both producer and consumer with
+            // the identical pixel-input mask (or BOTH original modules).
+            // Never change a vertex consumer after its compute producer ran.
+            sh[0] = memu_e->vs; sh[6] = sh[7] = NULL; mesh = 0;
         }
     } else {
         for (int st = 0; st < 5; st++) if (!resolve(d->bst[st], st, &sh[st], &bad)) SKIP("draw skipped: no shader library");
