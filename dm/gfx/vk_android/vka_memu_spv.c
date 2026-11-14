@@ -468,7 +468,7 @@ static void plane_lut_emit(fn_t *f, const mod_t *m, const vka_memu_layout *L,
 
 // ---------- Task / mesh as compute ----------
 typedef struct { uint32_t var; uint32_t idx[6]; int n; } chain_t;
-uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
+static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn, int taskless_only) {
     mod_t m; bld_t B; memset(&B, 0, sizeof B); sb_t A = {0}, F = {0}, O = {0};
     chain_t *ch = NULL; uint32_t *oid = NULL;   // oid: per id, 1 + the output it is (an output variable or a chain into one), 0 none
     uint8_t *wgch = NULL;   // per id: a chain into the workgroup ID variable (retyped as Private)
@@ -695,8 +695,17 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
         } else {
             // With a task: the task t whose first mesh workgroup is the last one not past this one (a branchless binary search of the offsets; a task without mesh
             // workgroups shares the next one's offset and loses to it), and this one's index among t's; t's payload into the workgroup's own
-            uint32_t flags = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_FLAGS));
-            uint32_t istask = op2(&f, OpINotEqual, B.t_bool, op2(&f, OpBitwiseAnd, B.t_u32, flags, cu(&B, VKA_MEMU_F_TASK)), c0);
+            // A taskless-only specialization is selected only by a batch with
+            // no bound task shader. Keep the ordinary generated module exactly
+            // unchanged for every other draw, including task-associated mesh.
+            // The old dynamic flag branch is no longer necessary in this
+            // variant; no vertex/primitive stores, payload contents or draws
+            // are removed. Workgroup payload must still initialize to zeros.
+            uint32_t false_bool = 0;
+            if (taskless_only) { false_bool = B.next++; INS(&B.T, OpConstantFalse, B.t_bool, false_bool); }
+            uint32_t flags = taskless_only ? c0 : ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_FLAGS));
+            uint32_t istask = taskless_only ? false_bool :
+                op2(&f, OpINotEqual, B.t_bool, op2(&f, OpBitwiseAnd, B.t_u32, flags, cu(&B, VKA_MEMU_F_TASK)), c0);
             // The vast majority of Ocarina's supplemental foliage draws
             // have NO task shader (~12,288 of 14,264 compute batches in the
             // reference 720p run). Previously each mesh workgroup STILL
@@ -710,6 +719,10 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
             // DM_VK_MEMU_FAST_TASKLESS=0 retains old branchless SPIR-V to
             // isolate any driver bug; no shader-library ABI changes.
             uint32_t t;
+            if (taskless_only) {
+                own = op2(&f, OpIAdd, B.t_u32, flat, first);
+                t = c0;
+            } else {
             const char *fast_env = getenv("DM_VK_MEMU_FAST_TASKLESS");
             if (!fast_env || strcmp(fast_env, "0")) {
                 uint32_t task_label = B.next++, plain_label = B.next++, merge_label = B.next++;
@@ -813,6 +826,7 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
                 own = sel(&f, B.t_u32, istask, op2(&f, OpISub, B.t_u32, flat, ot),
                           op2(&f, OpIAdd, B.t_u32, flat, first));
             }
+            } // taskless-only path bypasses the dynamic task-offset search
             if (payload) {   // words past the task's own (or every word without a task) read 0
                 uint32_t wt = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_WT)), pl = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_PAYLOAD));
                 uint32_t src0 = op2(&f, OpIAdd, B.t_u32, pl, op2(&f, OpIMul, B.t_u32, t, wt));
@@ -871,6 +885,15 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
 fail:
     free(O.w); free(A.w); free(B.T.w); free(F.w); free(ch); free(oid); free(wgch); mod_free(&m);
     return NULL;
+}
+
+// Preserve the original exported entry point and its byte-identical SPIR-V.
+uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
+    return vka_memu_cs_impl(w, nw, out_nw, err, errn, 0);
+}
+// Only usable when no task program is bound at the DRAW being prepared.
+uint32_t *vka_memu_cs_taskless(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
+    return vka_memu_cs_impl(w, nw, out_nw, err, errn, 1);
 }
 
 // ---------- The vertex shader ----------
