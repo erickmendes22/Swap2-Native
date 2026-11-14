@@ -1176,7 +1176,20 @@ static int ocarina_hot_shader_slot(uint64_t key) {
         UINT64_C(0x066f5daf12e43c71), UINT64_C(0xefaa4fa6a80ba719),
         UINT64_C(0x5ad65c0eefd09c7f), UINT64_C(0x9e6b00b050e30801),
         UINT64_C(0x1e4d2630d24846d0), // 720p heavy scene fragment
-        UINT64_C(0x00ce4088af2c8e12)  // lighter scene control fragment
+        UINT64_C(0x00ce4088af2c8e12), // lighter scene control fragment
+        // Captured GPU timestamps: a 2.4ms group contained only 5/16 a566
+        // draws, so its own actual GPU time is UNKNOWN. Capture original
+        // program source for a source-verified raster optimization, not an
+        // unsafe draw cut or an assumption that topfs owns the whole group.
+        UINT64_C(0xa566b7687b712ff3),
+        UINT64_C(0xa1d325b7a1c81256),
+        UINT64_C(0x9f36b8ee91e736c6),
+        UINT64_C(0x438955b0098580f7),
+        UINT64_C(0x09bdc3e13d9f2461),
+        UINT64_C(0x47e804143a060733),
+        UINT64_C(0xe0eb0a0126fac432),
+        UINT64_C(0xe55bcc53f003046a),
+        UINT64_C(0xf14f0f8863871723)
     };
     for (size_t i = 0; i < sizeof keys / sizeof keys[0]; ++i)
         if (key == keys[i]) return (int)i;
