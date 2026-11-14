@@ -1,7 +1,7 @@
 name: Mesh compute correctness (no APK)
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113]
+    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113, experiment/ocarina-162-cpu-gpu-balanced]
     paths:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
@@ -14,6 +14,7 @@ on:
       - dm/gfx/tools/tests/test_banana_input_caches.py
       - dm/gfx/tools/tests/test_ocarina_mesh_native_hybrid.py
       - dm/gfx/tools/tests/test_ocarina_mesh_caller_lookahead.py
+      - dm/gfx/tools/tests/test_ocarina_memu_snapshot_cpu.py
       - dm/gfx/tools/tests/test_ocarina_vegetation_fast_path.py
       - dm/gfx/vk_android/vka_dev.c
       - dm/gfx/tools/tests/test_ocarina_mesh_route_ab.py
