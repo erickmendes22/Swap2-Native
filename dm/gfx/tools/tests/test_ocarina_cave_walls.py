@@ -22,7 +22,8 @@ class CaveWalls(unittest.TestCase):
 #include <string.h>
 typedef struct { uint32_t kind, mode, v, t; uint64_t ad, q0, q1; } pop;
 static int g_oqs_rep, g_oqs_nores, g_oq_count, g_oq_fresh, g_oq_open;
-static int g_oq_split_pass, g_cb, enabled, depth, inspect, splits;
+static int g_oq_split_pass, g_cb, enabled, depth, inspect, splits, g_oq;
+static uint64_t g_oq_visible;
 static uint32_t g_oq_lost;
 static uint64_t g_oq_head, g_oq_seg0, g_oq_lost_epoch_total, g_oq_last_report_head;
 static char events[8]; static int n; static pop posted;

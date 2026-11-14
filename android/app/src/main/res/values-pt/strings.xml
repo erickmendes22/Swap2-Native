@@ -740,5 +740,5 @@
     <string name="s2_oot_classic_passes">Passes em cache (Qualcomm)</string>
     <string name="s2_oot_classic_passes_note">Usa o cache de passes do Banana quando suportado. Reinicie para aplicar. Desative para comparar com o caminho anterior.</string>
     <string name="s2_keep_cave_walls">Manter paredes de cavernas (Qualcomm)</string>
-    <string name="s2_keep_cave_walls_note">Evita paredes e pedras desaparecendo nas áreas afetadas. Desligado por padrão. Pode reduzir o FPS; reinicie para aplicar. Sem efeito no Turnip.</string>
+    <string name="s2_keep_cave_walls_note">Mantém a geometria visível sem dividir os passes por consultas de oclusão. Pode desenhar objetos encobertos. Desligado por padrão; reinicie. Apenas Qualcomm.</string>
 </resources>

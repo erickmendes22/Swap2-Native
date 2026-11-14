@@ -629,3 +629,51 @@ synthetic store elimination did not activate on this scene. Do not describe
 that candidate as a measured gain. This run exports `DM_VK_VEGETATION=1`;
 that is the recorded configuration of this file, not an assumption about
 the user's separate vegetation-OFF comparisons.
+
+
+### Cave-wall split cost and conservative visibility candidate (2026-11-14)
+
+Build152 A/B uploads `091037` (ON) and `091132` (OFF), Adreno 840 /
+Qualcomm891.14, show comparable ~2400 draws but radically different passes:
+
+| Metric | Split ON, frame1200 | OFF, frame1800 |
+| --- | ---: | ---: |
+| Frame p50 | 33.29 ms | 20.52 ms |
+| GPU p50 | 32.05 ms | 20.17 ms |
+| Draws/frame | 2399 | 2405 |
+| Passes/frame | 1835 | 149 |
+
+The option is not cave-local: it splits after every counted depth query.
+The ON sample saturates the 2048 timestamp slots before the frame ends, so
+its profiler's 12.91 ms partial sum is NOT total GPU time or a speedup.
+The ordinary-frame timing above is authoritative. Scoped dependencies alone
+did not make per-query attachment store/reload inexpensive on this device.
+
+**Candidate, device validation pending:** the existing optional setting now
+requests `DM_VK_OOT_CAVE_VISIBLE=1`. For Ocarina on Qualcomm only, this avoids
+the hardware query/depth interaction rather than flushing attachments at every
+query. No query pool, GPU begin/end queries, query readbacks or query-driven
+pass splits are generated. Visibility comparisons on these reports keep
+drawing conservatively, including after fence completion. This may increase
+overdraw; it is NOT exact sample-count emulation, nor a proven driver fix.
+
+Guest CPU readers receive cumulative positive draw proxies, snapshotted at
+the report and published by the original completion path. RESET resets this
+value; reports do not. A constant1 was rejected because before/after reports
+would compare equal and could falsely hide geometry. Skipped/unavailable
+draws count positive too. Timestamp reports and explicit render-disable
+remain independent. Reusing an occlusion address for a timestamp removes its
+old conservative tag, rehashing collisions without losing other addresses.
+
+OFF retains real-query behavior. `DM_VK_OCCLUSION=0` still explicitly selects
+the old unsupported-query fallback. An advanced `DM_VK_OQ_SPLIT_PASS=1`
+override selects the original measured wall-preserving split workaround,
+even with the new opt-in on. The launcher emits split=0 by default. No new
+user control, shader-chain change, resolution reduction or preparation.
+
+Production-code tests execute reset/draw/report, deferred publication, both
+render-condition modes, explicit disable, timestamp address reuse and 5000
+colliding marker addresses. 1800 query pairs issue exactly zero GPU query
+or split calls. Existing real-query order/batching tests pass. These checks
+prove work elimination and counter/control-flow properties, not cave image
+correctness or Adreno FPS: both must be tested on the affected scene.
