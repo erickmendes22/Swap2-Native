@@ -10,6 +10,7 @@
 #include "vka_ndsr.h"
 #include "vka_ndsr_sampler.h"           // vka_ndsr_pipeline (vka_dispatch)
 #include "vka_hidden_layers.h"   // exact experimental Ocarina fragment discard keys
+#include "vka_depth_fs_elide.h"   // strict side-effect/coverage-proof for depth-only FS omission
 #include "../nvn/nvn_mtl.h"
 #include "../../host/plat/plat.h"
 #include "vka_memu_abi.h"
@@ -1796,6 +1797,33 @@ static int oot_skip_hidden_fs(const vka_shader *fs) {
              (unsigned long long)fs->key, (unsigned long long)n, layers, heavy);
     return 1;
 }
+// Remove only a provably colour-only fragment program from a pass that
+// already has colour writes disabled. Unlike skipping a draw, the vertex /
+// compute geometry, depth test/write, occlusion queries and pass splits stay.
+// An unknown shader, output builtin, atomic, discard, image store or
+// side-effect binding ALWAYS retains the original fragment shader.
+static int oot_depth_fs_eligible(vka_shader *fs) {
+    if (!fs || !fs->e || fs->e->stage != DMSH_VK_STAGE_FS) return 0;
+    for (unsigned i = 0; i < fs->e->bind_count; i++) {
+        const dmsh_vk_bind *b = &fs->b[i];
+        if ((b->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC | DMSH_VK_BF_NOSLOT)) ||
+            b->kind == DMSH_VK_KIND_GMEM_LOG || b->kind == DMSH_VK_KIND_UNKNOWN)
+            return 0;
+    }
+    // Cache the source-level SPIR-V proof only. Cache collisions recheck.
+    static __thread struct { const vka_shader *fs; int safe; } cache[128];
+    unsigned i = (unsigned)(((uintptr_t)fs >> 4) & 127u);
+    if (cache[i].fs != fs) {
+        char err[128] = ""; size_t nbytes = 0;
+        uint32_t *spv = vka_shader_memu_words(fs, &nbytes, err, sizeof err);
+        int safe = spv && (nbytes % 4u) == 0 &&
+                   vka_depth_fs_spv_safe(spv, nbytes / 4u);
+        free(spv);
+        cache[i] = (typeof(cache[0])){fs, safe};
+    }
+    return cache[i].safe;
+}
+static uint64_t g_oot_depth_fs_elided;
 void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
@@ -1914,6 +1942,28 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         else VRED_ONCE("geometry shader %016llx writes memory in an %s draw: drawn without the claim, its writes repeated by the device's runs of each primitive", (unsigned long long)sh[2]->key, ind ? "indirect" : "instanced");
     }
     if (expand && ind) SKIP("an indirect draw of quads or a line loop is not on Vulkan yet: skipped");
+
+    // A depth-only draw's FS is redundant only after verifying the complete
+    // translated SPIR-V has no coverage, depth or guest-visible side effects.
+    // This cannot remove a draw and preserves the Build157 cave query work.
+    // The verified Ocarina unused-colour path still determines the attachment
+    // configuration. Fail closed on alpha-test variants, MSAA or diagnostics.
+    if (sh[1] && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_DEPTH_FS_ELIDE", 1) &&
+        VKA_ENV("DM_VK_UNUSED_COLOR", 0) &&
+        has_rt && rt && rt->depth &&
+        !d->chmask.mask && !d->ms.a2c && !d->tf_on &&
+        !d->rast_discard && !vka_nan_on() &&
+        !vka_classic_rp() && !g_unused_color_refused &&
+        (!(sh[1]->e->flags & DMSH_VK_F_ALPHA_TEST) ||
+          d->color.alpha_func == NVN_ALPHA_FUNC_ALWAYS) &&
+        oot_depth_fs_eligible(sh[1])) {
+        sh[1] = NULL;
+        if (++g_oot_depth_fs_elided == 1 ||
+            !(g_oot_depth_fs_elided & 4095u))
+            VLOG("Ocarina depth-only fragment shader omitted on %llu draws (geometry, depth and occlusion unchanged)",
+                 (unsigned long long)g_oot_depth_fs_elided);
+    }
 
     PT(1);
     // The last draw's shaders' layout (layouts live as long as the device): the layout table's lock and hash a draw
