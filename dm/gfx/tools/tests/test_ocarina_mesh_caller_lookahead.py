@@ -36,7 +36,9 @@ class MeshCallerLookahead(unittest.TestCase):
 #include <stdio.h>
 #include <string.h>
 #define DM_GAME_ID "0400486024DEC000"
-#define VKA_ENV(key, def) (def)
+static int veg_on = 1, batching_on = 1;
+#define VKA_ENV(key, def) (!strcmp((key), "DM_VK_VEGETATION") ? veg_on : \
+    !strcmp((key), "DM_VK_OOT_RC_TRUE_BATCH") ? batching_on : (def))
 #define NVN_PRIM_MESH 5
 enum { OP_END=0, OP_CALL=1, OP_JUMP=2, OP_DRAW=3, OP_BIND_PROGRAM=4, OP_SET_RT=5, OP_DRAW_IDX=6, OP_RENDER_COND=7, OP_COUNT_=8 };
 enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_END };
@@ -53,7 +55,7 @@ static _Thread_local int g_memu_depth;
 static uint64_t g_memu_parent_resumes, g_memu_nested_batches;
 static uint64_t g_memu_boundary_op[OP_COUNT_ + 1];
 static int batched, states[32];
-static int memu_allowed(uint32_t op) { return op != OP_SET_RT; }
+static int memu_allowed(uint32_t op) { return op != OP_SET_RT && op != OP_RENDER_COND; }
 static const p_draw *draw_rec(const void *arg, uint32_t size, p_draw *tmp) {
     (void)size; (void)tmp; return (const p_draw *)arg;
 }
@@ -68,7 +70,7 @@ static void vka_memu_batch(int phase, const vka_dstate *s, const p_draw *d, cons
     assert(batched < 32);
     states[batched++] = s->state;
 }
-""" + "static int " + body(SRC, 'memu_walk') + r"""
+""" + "static int " + body(SRC, 'memu_noop_enable') + "\nstatic int " + body(SRC, 'memu_walk') + r"""
 int main(void) {
     // Called list: draw@10, end; parent: draw@20, end.
     record inner[] = {{OP_DRAW,16,5}, {OP_END,16,0}};
@@ -94,6 +96,28 @@ int main(void) {
     batched = 0; S.d.state = 10;
     assert(memu_walk((const uint8_t*)&inner[0], MEMU_ADD) == 2);
     assert(batched == 2 && states[0] == 10 && states[1] == 30);
+    // Mode=2 is SetRenderEnable(true): cross it while already enabled, and
+    // preserve the exact replay state's mesh draw order. The 16-byte record
+    // carries mode in the first four bytes of arg.
+    record all_on[] = {{OP_DRAW,16,5}, {OP_RENDER_COND,16,2},
+                       {OP_DRAW,16,5}, {OP_RENDER_COND,16,2},
+                       {OP_DRAW,16,5}, {OP_END,16,0}};
+    g_memu_depth = 0; batched = 0; S.rc_skip = 0;
+    assert(memu_walk((const uint8_t*)&all_on[0], MEMU_ADD) == 3);
+    assert(batched == 3 && states[0] == 10 && states[1] == 10 && states[2] == 10);
+    // Conditional and disabled modes retain the old strict boundary.
+    record conditional[] = {{OP_DRAW,16,5}, {OP_RENDER_COND,16,1},
+                            {OP_DRAW,16,5}, {OP_END,16,0}};
+    record off[] = {{OP_DRAW,16,5}, {OP_RENDER_COND,16,3},
+                    {OP_DRAW,16,5}, {OP_END,16,0}};
+    batched = 0; assert(memu_walk((const uint8_t*)&conditional[0], MEMU_ADD) == 1);
+    batched = 0; assert(memu_walk((const uint8_t*)&off[0], MEMU_ADD) == 1);
+    // Vegetation-OFF baseline and env rollback remain untouched.
+    veg_on = 0; batched = 0;
+    assert(memu_walk((const uint8_t*)&all_on[0], MEMU_ADD) == 1);
+    veg_on = 1; batching_on = 0; batched = 0;
+    assert(memu_walk((const uint8_t*)&all_on[0], MEMU_ADD) == 1);
+    batching_on = 1;
     // The existence probe remains side-effect-free and sees first mesh draw.
     batched = 0; assert(memu_walk((const uint8_t*)&inner[0], -1) == 1);
     assert(batched == 0);
@@ -119,7 +143,10 @@ int main(void) {
         self.assertIn('g_memu_depth = depth; // child returned:', exec_src)
         walk = body(SRC, 'memu_walk')
         self.assertIn('for (int i = 0; i < nret; i++) ret[i] = g_memu_caller[i];',walk)
-        self.assertIn('if (!memu_allowed(h.op) || h.size < 8) {',walk)
+        self.assertIn('!memu_allowed(h.op) && !memu_noop_enable(h.op, a, h.size)',walk)
+        self.assertIn('g_memu_noop_enable_merged++',walk)
+        self.assertIn('case OP_RENDER_COND: S.rc_skip = rc_eval(a); break;', SRC)
+        self.assertIn('&& !memu_noop_enable(h.op, a, h.size)', SRC)
         self.assertIn('g_memu_boundary_op[h.op]++',walk)
 
 
