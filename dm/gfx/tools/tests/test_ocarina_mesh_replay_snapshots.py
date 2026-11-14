@@ -83,7 +83,7 @@ static void vka_memu_batch(int phase, const vka_dstate *d,
         trace[count++] = (gpu_cmd){phase,idx,d->state};
     }
 }
-""" + "static int " + function(EXEC, "memu_walk") + "\n" + function(MEMU, "vka_memu_replay_phase") + r"""
+""" + "static int " + function(EXEC, "memu_walk") + "\nvoid " + function(MEMU, "vka_memu_replay_phase") + r"""
 int main(void) {
     record nested[] = {
         {OP_BIND_PROGRAM,16,30}, {OP_DRAW,16,5},
