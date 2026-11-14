@@ -139,6 +139,79 @@ int main(void) {
     CHECK(rec[VKA_MEMU_R_VSTRIDE] == 32 * 5 + 32 * 6 && rec[VKA_MEMU_R_VSTRIDE] == rec[VKA_MEMU_R_PSTRIDE] && rec[VKA_MEMU_R_DRAWV] == 32 && (rec[VKA_MEMU_R_FLAGS] & VKA_MEMU_F_INTERLEAVED), "interleaved record words");
     CHECK(vka_memu_layout_of(MEMU_TASK, sizeof MEMU_TASK / 4, &L, err, sizeof err) && L.task && L.payload_words == 8, "task layout (%s)", err);
     CHECK(!vka_memu_layout_of(MEMU_FS_PRIM, sizeof MEMU_FS_PRIM / 4, &L, err, sizeof err), "a pixel shader is no task or mesh module");
+    {   // GPU vertex-fetch specialization: exact same arena layout, mesh
+        // producer and draw index. The fragment-program mask removes only
+        // definitely unused consumer Location variables and their four
+        // global-memory loads per vec4. Position, point size, primitive
+        // indices and output values at used locations stay unmodified.
+        const uint32_t *modules[2] = {MEMU_MESH_TRI, MEMU_MESH_PTS};
+        size_t counts[2] = {sizeof MEMU_MESH_TRI / 4, sizeof MEMU_MESH_PTS / 4};
+        for (int mode = 0; mode < 2; mode++) {
+            vka_memu_layout shape;
+            CHECK(vka_memu_layout_of(modules[mode], counts[mode], &shape, err, sizeof err),
+                  "selective vertex-fetch fixture layout (%s)", err);
+            size_t original_n = 0, masked_n = 0, full_n = 0;
+            uint32_t *original = vka_memu_vs(&shape, &original_n, err, sizeof err);
+            uint32_t *full = vka_memu_vs_masked(&shape, UINT64_MAX, &full_n, err, sizeof err);
+            uint32_t *masked = vka_memu_vs_masked(&shape, 0, &masked_n, err, sizeof err);
+            CHECK(original && full && masked, "masked vertex modules emitted for %s (%s)", mode ? "points":"triangles", err);
+            if (original && full && masked) {
+                CHECK(original_n == full_n && !memcmp(original, full, original_n * 4),
+                      "the original vertex path must stay BYTE-IDENTICAL when mask=ALL");
+                uint32_t nloc = shape.nvloc + shape.nploc;
+                CHECK(count_dec(original, original_n, 30) == (int)nloc &&
+                      count_dec(masked, masked_n, 30) == 0,
+                      "all %u unused fragment varying output locations removed, vertex POSITION unchanged", nloc);
+                CHECK(count_op(original, original_n, 61) ==
+                      count_op(masked, masked_n, 61) + 4 * (int)nloc,
+                      "GPU arena reads eliminated: %d -> %d (exactly 4 per missing vec4)",
+                      count_op(original, original_n, 61), count_op(masked, masked_n, 61));
+                CHECK(count_op(original, original_n, 62) ==
+                      count_op(masked, masked_n, 62) + (int)nloc,
+                      "GPU output writes eliminated: %d -> %d",
+                      count_op(original, original_n, 62), count_op(masked, masked_n, 62));
+                CHECK(validate(masked, masked_n, mode ? "memu_vs_pts_masked" : "memu_vs_tri_masked"),
+                      "fragment-masked producer/consumer pipeline vertex module is Vulkan-valid");
+                printf("GPU selective fetch %s: %d -> %d GPU SSBO reads, %d -> %d output stores\n",
+                       mode ? "points" : "triangles",
+                       count_op(original, original_n, 61), count_op(masked, masked_n, 61),
+                       count_op(original, original_n, 62), count_op(masked, masked_n, 62));
+            }
+            free(original); free(full); free(masked);
+        }
+    }
+    {   // The actual mesh-compute producer must no longer write outputs
+        // that the bound FS does not consume. Position, indices, culling
+        // and all used locations are unchanged. The original ALL-bit module
+        // must remain IDENTICAL down to its last SPIR-V word.
+        const uint32_t *modules[2] = {MEMU_MESH_TRI, MEMU_MESH_PTS};
+        size_t counts[2] = {sizeof MEMU_MESH_TRI / 4, sizeof MEMU_MESH_PTS / 4};
+        for (int mode = 0; mode < 2; mode++) {
+            size_t nf = 0, np = 0, na = 0;
+            uint32_t *full = vka_memu_cs(modules[mode], counts[mode], &nf, err, sizeof err);
+            uint32_t *same = vka_memu_cs_masked(modules[mode], counts[mode],
+                                                  UINT64_MAX, &na, err, sizeof err);
+            uint32_t *pruned = vka_memu_cs_masked(modules[mode], counts[mode],
+                                                    0, &np, err, sizeof err);
+            CHECK(full && same && pruned, "mesh GPU producer module %s made (%s)",
+                  mode ? "points" : "triangles", err);
+            if (full && same && pruned) {
+                CHECK(na == nf && !memcmp(full, same, nf * 4),
+                      "all-output producer shader preserves original bytes exactly");
+                CHECK(count_op(full, nf, 62) > count_op(pruned, np, 62),
+                      "pruned producer removes actual GPU storage-output writes (%d -> %d)",
+                      count_op(full, nf, 62), count_op(pruned, np, 62));
+                CHECK(model_of(pruned, np) == 5,
+                      "selective output module still dispatches mesh as Vulkan compute");
+                CHECK(validate(pruned, np, mode ? "gpu_mesh_producer_pts_pruned" : "gpu_mesh_producer_tri_pruned"),
+                      "real mesh producer remains valid Vulkan without dead output planes");
+                printf("GPU producer output stores %s: %d -> %d SPIR-V OpStore, original unchanged\n",
+                       mode ? "points" : "triangles",
+                       count_op(full, nf, 62), count_op(pruned, np, 62));
+            }
+            free(full); free(same); free(pruned);
+        }
+    }
     // The conversions
     convert(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4, 0, "mesh_tri", &L);
     convert(MEMU_MESH_PTS, sizeof MEMU_MESH_PTS / 4, 0, "mesh_pts", &L);
