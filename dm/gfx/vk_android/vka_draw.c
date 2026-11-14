@@ -31,6 +31,7 @@ static int g_vin_skip = 1;
 static uint64_t g_vin_kept, g_vin_built, g_vb_kept, g_vb_bound;
 uint64_t vka_n_rp;   // render passes the draws opened (vka_exec.c replay statistics)
 static uint64_t g_draws, g_skipped, g_dispatches;
+static uint64_t g_oot_depth_fs_replaced; // depth-only candidate draws (same scene and query semantics)
 static int g_dispatch_overlap_pending;
 static uint64_t g_dispatch_overlap_skipped;
 uint64_t vka_frame(void);  // also used by the fail-closed SGSR chain frame tracker
@@ -652,6 +653,13 @@ void vka_rp_bar_stats(char *b, size_t n, double frames) {
              (g_unused_color_passes-omit0)/frames, (g_unused_color_views-views0)/frames,
              (g_attachment_part_passes-parts0)/frames);
     omit0=g_unused_color_passes; views0=g_unused_color_views; parts0=g_attachment_part_passes;
+    // Log even ZERO selections: a shader variant that never executes is not
+    // an optimization. Compare this with real GPU p50 in the heavy scene.
+    static uint64_t fs0;
+    if (!strcmp(DM_GAME_ID, "0400486024DEC000"))
+        VLOG("Ocarina depth-only fragment specialization: %.2f candidate draws/frame (fragment stage retained)",
+             (g_oot_depth_fs_replaced - fs0)/frames);
+    fs0 = g_oot_depth_fs_replaced;
     static uint64_t cave0, color0, depth0;
     if (g_cave_original_splits != cave0)
         VLOG("Ocarina original cave path: %.1f physical query pass ends/frame; %.1f bind unused colour targets; %.1f do not write depth (diagnostic only)", (g_cave_original_splits-cave0)/frames, (g_cave_unused_color-color0)/frames, (g_cave_depth_readonly-depth0)/frames);
@@ -1824,7 +1832,6 @@ static int oot_depth_fs_eligible(vka_shader *fs) {
     }
     return cache[i].safe;
 }
-static uint64_t g_oot_depth_fs_replaced;
 void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
