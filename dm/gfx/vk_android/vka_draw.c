@@ -50,6 +50,34 @@ void vka_dispatch_overlap_flush(void) {
     g_dispatch_overlap_pending = 0;
 }
 uint64_t vka_dispatch_overlap_skips(void) { return g_dispatch_overlap_skipped; }
+static uint64_t g_dispatch_selective_deps, g_dispatch_arg_deps;
+void vka_dispatch_sync_counts(uint64_t *compute, uint64_t *args) {
+    if (compute) *compute = g_dispatch_selective_deps;
+    if (args) *args = g_dispatch_arg_deps;
+}
+// A completed dispatch (including host spill and indirect launch) writes only
+// through COMPUTE and setup TRANSFER commands. Graphics work was published
+// before dispatch began. Preserve its full later-consumer scope and every
+// spill inter-dispatch/guest barrier; narrow only this completion dependency.
+static void dispatch_write_barrier(VkCommandBuffer cb, int spill, int indirect, uint64_t key) {
+    int selective = VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0) && !vka_nan_on();
+    int legacy = !strcmp(DM_GAME_ID, "0400486024DEC000") && !spill && !indirect &&
+        VKA_ENV("DM_VK_OOT_CS_SYNC", 1) &&
+        (key == UINT64_C(0x9e6b00b050e30801) || key == UINT64_C(0x9ed48d1011f1b48b));
+    if (selective || legacy) {
+        vka_compute_write_barrier(cb);
+        if (selective) g_dispatch_selective_deps++;
+    } else vka_barrier(cb);
+}
+static void dispatch_argument_barrier(VkCommandBuffer cb) {
+    // Before these copies, indirect/spill dispatches flush any pending group.
+    // Only the two copies into c0 occur since that dependency.
+    if (VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0) && !vka_nan_on()) {
+        vka_transfer_write_barrier(cb);
+        g_dispatch_arg_deps++;
+    } else vka_barrier(cb);
+}
+
 // iOS V19 (cheemu21/kid-with-sword-remake, commit 5da2b49) identified
 // the fourth/last 0.25-scale chain shader d99fbeeb53d38847. The first
 // three programs do feature extraction/network/blend, before the last
@@ -2347,7 +2375,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     if (dp->ind && c0.buf) {   // the group counts the GPU wrote, into c0's dispatch words before the dispatch reads them (nvn_mtl.m g_c0_dim_buf); NVN2 reads them at c0 + 4 too
         VkBufferCopy c[2] = {{io, c0.off + DMSH_C0_DISPATCH, 12}, {io, c0.off + DMSH_C0_DISPATCH_NVN2, 12}};
         vk.vkCmdCopyBuffer(g_cb, ib, c0.buf, d->b.nvn2 ? 2 : 1, c);
-        vka_barrier(g_cb);
+        dispatch_argument_barrier(g_cb);
     }
     // DM_VK_DISPATCH_LOG=1: one line per dispatch (its index in the submission's run of dispatches since the last log reset, key, groups, workgroup, shared memory, flags);
     // DM_VK_DISPATCH_SKIP=<from>[,<to>]: dispatches from..to (default: to the end) are recorded without their vkCmdDispatch, to find the one that writes a wrong picture
@@ -2405,18 +2433,7 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         g_dispatch_overlap_skipped++;
     } else {
         g_dispatch_overlap_pending = 0;
-        // Profiled hot Ocarina compute dispatches have only compute/transfer
-        // producer writes. Retain ALL_COMMANDS visibility for every later
-        // graphics/compute/transfer consumer, but remove unrelated graphics
-        // producer stages from the post-dispatch barrier. This applies
-        // without FPS Boost and leaves indirect/spill dispatches unchanged.
-        if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
-            !sb && !dp->ind && VKA_ENV("DM_VK_OOT_CS_SYNC", 1) &&
-            (sh[5]->key == UINT64_C(0x9e6b00b050e30801) ||
-             sh[5]->key == UINT64_C(0x9ed48d1011f1b48b)))
-            vka_compute_write_barrier(g_cb);
-        else
-            vka_barrier(g_cb); // the final dispatch publishes all grouped writes
+        dispatch_write_barrier(g_cb, sb != 0, dp->ind != 0, sh[5]->key);
     }
     if (chain_part == 3 && p && !dp->ind && oot_sgsr_chain_on()) {
         // Mark as proven only AFTER descriptor binding and Vulkan dispatch.

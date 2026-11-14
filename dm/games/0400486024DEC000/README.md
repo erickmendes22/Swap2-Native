@@ -1098,3 +1098,53 @@ on texture/descriptor preparation. Do not claim an FPS figure or build a
 standalone APK for this small change; carry it into the next combined
 performance candidate after validation. The fragment-elision experiment
 above remains disabled because its timing did not establish a gain.
+
+
+### Further producer-scope reductions / candidate162 (2026-11-14)
+
+The161 device runs explicitly used DM_VK_OOT_FPS_BOOST=0, even when selective
+synchronization was ON. Consequently buffer fills and buffer/image transfers
+still took the legacy full barrier behind the quality-changing FPS Boost
+switch. Three further synchronization reductions now accompany the clean
+preparation dedup above, under the existing independent selective-sync switch:
+
+1. Pure buffer fills/copies and image/buffer/image transfers can take the
+   existing TRANSFER_WRITE -> ALL_COMMANDS dependency with FPS Boost OFF.
+   Both bounce-copy dependencies remain. No change to VRS/resolution/shading.
+2. Whole external colour/depth clears publish TRANSFER writes. Rectangular
+   attachment clears publish only their colour or depth attachment writes.
+   Every cleared rectangle/value/layer and every pass boundary is retained.
+   Masked stencil draws and standalone ClearTexture retain their old paths.
+3. Ungrouped compute completion (including indirect/spill completion) publishes
+   COMPUTE+TRANSFER writes to ALL later consumers. Indirect argument copies
+   publish TRANSFER writes. Pending compute groups are still flushed before
+   an indirect/spill launch; spill's inter-dispatch and all explicit guest
+   barriers remain. Ordinary overlap groups already used a scoped completion
+   before this change: do NOT claim those as a new optimization.
+
+Previously published graphics writes are ordered at their pass end; compute
+is flushed before transfers/non-compute records. Thus these producer-only
+choices never discard an unpublished prior graphics producer. Conservative
+full fallbacks remain with the switch OFF and for NaN diagnostics (the older
+FPS Boost transfer and two-key compute policies remain compatible). No new
+queries, compute dispatches, copies, rendering passes or visibility guesses
+are introduced. The157 cave/query/clothing paths are unchanged. Additional
+per-frame counters expose ACTUAL selection of each new path, not just enablement.
+
+Actual production dependency functions/policies run in real Vulkan fixtures:
+32 combinations of selective OFF/ON, legacy Boost OFF/ON, direct/indirect,
+spill-policy OFF/ON and NaN diagnostic fallback produce exact4096-byte outputs
+through shared-memory compute -> transfer -> compute. GPU-written indirect
+arguments are consumed correctly. Counter assertions require that the new
+paths actually replace full barriers when selected. Eight colour+depth GPU
+checks at64x64 and960x540 cover full-image transfer clears, partial attachment
+clears and preservation of untouched pixels, with exact results. Khronos
+synchronization validation reports no errors in either fixture. These prove
+ordering/content, NOT an Adreno FPS gain; phone timing remains unmeasured.
+
+The sparse GPU profiler previously exhausted2048 timestamps around13ms into
+a~22ms GPU frame. Its pool now allows8192 timestamps on the ONE sampled frame
+per300. Normal frames still add no profiling commands. A capacity hit logs
+INCOMPLETE explicitly, so a partial sum cannot be presented as the complete
+frame or a fragment-only cost. Exclude the sampled frame from FPS comparisons.
+The constant-colour fragment-stage elision experiment stays disabled.

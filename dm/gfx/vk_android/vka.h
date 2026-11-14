@@ -505,6 +505,7 @@ int vka_rp_clear(const p_set_rt *rt, int has_rt, const vka_dstate *d, const vka_
 void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di);
 void vka_dispatch(vka_dstate *d, const p_dispatch *dp);
 void vka_dispatch_overlap_flush(void);
+void vka_dispatch_sync_counts(uint64_t *compute, uint64_t *args);
 uint64_t vka_dispatch_overlap_skips(void);
 // Whether the game is a Switch 2 one (NVN2: its compute reads the group counts at c0 + DMSH_C0_DISPATCH_NVN2): dm_sdk_ounce() unless set (the replayer sets it from the capture)
 int vka_nvn2(void);

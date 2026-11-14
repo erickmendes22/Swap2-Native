@@ -27,6 +27,7 @@ typedef struct { int kind; uint32_t mode, v, type; uint64_t addr, q0, q1; } pop;
 static pop *g_post; static int g_npost, g_postcap;
 static uint64_t g_frame, g_stat_ops, g_stat_draws, g_stat_skipped;
 static uint64_t g_prepare_barriers_removed;
+static uint64_t g_selective_transfer_deps, g_selective_clear_deps;
 // The first NVN opcode stopping a mesh->compute batch. Record only on the
 // MEMU_ADD walk (not once per task/mesh replay). Never relax the barrier;
 // report which guest dependency costs us additional GPU pass splits.
@@ -253,7 +254,13 @@ void mtl_set_frame(uint64_t f) {
           if (g_prepare_barriers_removed != prep0)
               VLOG("GPU submission preparation: %.1f duplicate full barriers removed/frame; initial host/previous-submission dependency retained", (g_prepare_barriers_removed-prep0)/n);
           prep0 = g_prepare_barriers_removed; }
-        { static uint64_t tb0; VLOG("Vulkan scoped upload dependencies: %.1f transfer-write -> ALL_COMMANDS barriers/frame (replacing full barriers only after inline uniform copies)", (vka_n_transfer_bar - tb0) / n); tb0 = vka_n_transfer_bar; }
+        { static uint64_t tx0, cl0, cs0, arg0; uint64_t cs, args;
+          vka_dispatch_sync_counts(&cs, &args);
+          if (g_selective_transfer_deps != tx0 || g_selective_clear_deps != cl0 || cs != cs0 || args != arg0)
+              VLOG("GPU selective synchronization: %.1f transfer operations, %.1f external clears, %.1f ungrouped compute completions, %.1f indirect argument copies/frame; original consumers retained",
+                  (g_selective_transfer_deps-tx0)/n, (g_selective_clear_deps-cl0)/n, (cs-cs0)/n, (args-arg0)/n);
+          tx0=g_selective_transfer_deps; cl0=g_selective_clear_deps; cs0=cs; arg0=args; }
+        { static uint64_t tb0; VLOG("Vulkan scoped transfer dependencies: %.1f transfer-write -> ALL_COMMANDS barriers/frame (inline updates and selective transfer operations)", (vka_n_transfer_bar - tb0) / n); tb0 = vka_n_transfer_bar; }
         { static uint64_t c0, r0; VLOG("inline uniform GPU batching: %.1f staged copy regions -> %.1f vkCmdCopyBuffer calls/frame (%.1f commands removed; disjoint destination ranges only; DM_VK_UB_BATCH=0 disables)",
               (g_ub_copy_regions-r0)/n, (g_ub_copy_cmds-c0)/n, (g_ub_copy_regions-r0-g_ub_copy_cmds+c0)/n);
           c0=g_ub_copy_cmds; r0=g_ub_copy_regions; }
@@ -927,13 +934,16 @@ static void buf_fill(uint64_t dst, uint64_t n, uint32_t value) {
         vk.vkCmdFillBuffer(g_cb, b, o, k & ~3ull, value); dst += k; n -= k;
     }
 }
-// Preserve the old all-stage producer for FPS Boost OFF (A/B baseline).
-// With FPS Boost ON, buffer fills and image/buffer copies write exclusively
-// through TRANSFER, so the destination scope remains broad but its producer
-// no longer waits for unrelated draw/compute stages.
+// These operations produce writes only through TRANSFER. Earlier render/
+// compute work was already published when its pass/group ended. Keep every
+// later consumer in ALL_COMMANDS, without draining unrelated producers again.
+// Selective synchronization must work independently of quality-changing VRS.
 static void boost_transfer_barrier(VkCommandBuffer cb) {
-    if (VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0) vka_transfer_write_barrier(cb);
-    else vka_barrier(cb);
+    if (VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 ||
+        (VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0) && !vka_nan_on())) {
+        vka_transfer_write_barrier(cb);
+        g_selective_transfer_deps++;
+    } else vka_barrier(cb);
 }
 // Inline uniform updates often arrive together (Ocarina: 80 per frame).
 // Stage their contents in the same original order, but use ONE transfer command
@@ -1086,17 +1096,25 @@ static int clear_in_pass(const vka_pclear *c) {
 }
 void vka_clear_outside(const vka_pclear *c) {
     vka_img *im = c->im; VkClearValue val = c->out;
+    int transfer = 0;
     if (c->ci >= 0) {
         int is3d = im->d.target == NVN_TEXTURE_TARGET_3D, some = is3d && (c->l0 || c->nl < vka_img_slices(im, c->lv));   // some of a 3D texture's slices: through a 2D-array view of them
         if (c->whole && c->fmt == im->f.vk && !some) {
             VkImageSubresourceRange rg = {VK_IMAGE_ASPECT_COLOR_BIT, c->lv, 1, is3d ? 0 : c->l0, is3d ? 1 : c->nl};
+            transfer = 1;
             vk.vkCmdClearColorImage(g_cb, im->img, VK_IMAGE_LAYOUT_GENERAL, &val.color, 1, &rg);
         } else clear_rect(im, c->fmt, VK_IMAGE_ASPECT_COLOR_BIT, c->lv, c->l0, c->nl, c->rc, &val);
     } else {
-        if (c->whole) { VkImageSubresourceRange rg = {c->asp, c->lv, 1, c->l0, c->nl}; vk.vkCmdClearDepthStencilImage(g_cb, im->img, VK_IMAGE_LAYOUT_GENERAL, &val.depthStencil, 1, &rg); }
+        if (c->whole) { transfer = 1; VkImageSubresourceRange rg = {c->asp, c->lv, 1, c->l0, c->nl}; vk.vkCmdClearDepthStencilImage(g_cb, im->img, VK_IMAGE_LAYOUT_GENERAL, &val.depthStencil, 1, &rg); }
         else clear_rect(im, im->f.vk, c->asp, c->lv, c->l0, c->nl, c->rc, &val);
     }
-    vka_barrier(g_cb);
+    if (VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0) && !vka_nan_on()) {
+        // Whole-image commands write in TRANSFER; clear_rect uses only
+        // attachment clears. It cannot run a guest shader or write buffers.
+        if (transfer) vka_transfer_write_barrier(g_cb);
+        else vka_attachment_parts_barrier(g_cb, c->ci >= 0, c->ci < 0);
+        g_selective_clear_deps++;
+    } else vka_barrier(g_cb);
 }
 static void clear_color(const p_clear_color *c) {
     vka_rp_prep_clear(&S.rt, S.has_rt);

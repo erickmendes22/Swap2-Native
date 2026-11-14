@@ -10,7 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { NQ = 2048, DESC = 256, SHADERS = 64 };
+// The heavy scene regularly exhausted2048 marks before its final passes.
+// Only one frame in300 is sampled; ordinary frames still emit zero marks.
+enum { NQ = 8192, DESC = 256, SHADERS = 64 };
 typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint64_t gfx_key; uint8_t mesh_stage, gfx_block, gfx_draws, gfx_top; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
 static gp_mark g_m[NQ]; static int g_n;
 static VkQueryPool g_qp; static int g_ok = -1; static double g_tick_ns;
@@ -181,6 +183,7 @@ static void report(void) {
         } else if (!strncmp(g_m[i].desc, "compute ", 8)) { compute += ms; ncompute++; } else if (g_m[i].ops > g_m[i - 1].ops || g_m[i].draws > g_m[i - 1].draws) xfer += ms; else bare += ms;
         if (g_m[i - 1].kind == 1) first += ms;
     }
+    if (g_n >= NQ) VLOG("gpu prof INCOMPLETE: timestamp capacity %u reached; this is a partial frame, never the complete GPU frame cost", (unsigned)NQ);
     VLOG("gpu prof: frame %llu: %d timestamps, %.2f ms GPU: passes %.2f ms (%d), clears / copies / dispatches %.2f ms, steps with nothing recorded (barriers, uploads, writebacks) %.2f ms",
          (unsigned long long)g_frame, g_n, tot, pass, npass, xfer, bare);
     VLOG("gpu prof: identified compute %.2f ms (%d dispatch intervals), other transfers %.2f ms", compute, ncompute, xfer);

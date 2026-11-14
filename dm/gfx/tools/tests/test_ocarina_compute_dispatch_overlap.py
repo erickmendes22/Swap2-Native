@@ -102,7 +102,11 @@ class ComputeOverlap(unittest.TestCase):
 
     def test_original_guarded_barriers_remain(self):
         self.assertIn('vka_compute_write_barrier(g_cb);', DRAW)
-        self.assertIn('vka_barrier(g_cb); // the final dispatch publishes all grouped writes', DRAW)
+        self.assertIn('dispatch_write_barrier(g_cb, sb != 0, dp->ind != 0, sh[5]->key);', DRAW)
+        helper = DRAW[DRAW.index('static void dispatch_write_barrier('):DRAW.index('static void dispatch_argument_barrier(')]
+        self.assertIn('!spill && !indirect &&', helper)
+        self.assertIn('VKA_ENV("DM_VK_OOT_CS_SYNC", 1)', helper)
+        self.assertIn('} else vka_barrier(cb);', helper)
         self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);', EXEC)
 
 

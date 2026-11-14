@@ -754,5 +754,5 @@
     <string name="s2_gpu_unused_color">Reduce depth-pass bandwidth</string>
     <string name="s2_gpu_unused_color_note">Avoids loading colour targets in depth passes that cannot change them. Keeps depth and visibility tests. Restart the game to apply.</string>
     <string name="s2_gpu_attachment_parts">Selective GPU synchronization</string>
-    <string name="s2_gpu_attachment_parts_note">Publishes changed attachment data and avoids duplicate barriers when texture preparation records no GPU work. Keeps command order. Restart the game to apply.</string>
+    <string name="s2_gpu_attachment_parts_note">Narrows dependencies after rendering, copies, clears and compute; avoids duplicate barriers when texture preparation records no GPU work. Keeps command order and original quality. Restart the game to apply.</string>
 </resources>

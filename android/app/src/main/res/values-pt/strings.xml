@@ -747,5 +747,5 @@
     <string name="s2_gpu_unused_color">Poupar tráfego em passes de profundidade</string>
     <string name="s2_gpu_unused_color_note">Evita carregar cores em passes de profundidade que não podem alterá-las. Mantém os testes de profundidade e visibilidade. Reinicie o jogo para aplicar.</string>
     <string name="s2_gpu_attachment_parts">Sincronização seletiva da GPU</string>
-    <string name="s2_gpu_attachment_parts_note">Publica os dados de renderização que mudaram e evita barreiras duplicadas quando a preparação das texturas não grava trabalho na GPU. Mantém a ordem dos comandos. Reinicie o jogo para aplicar.</string>
+    <string name="s2_gpu_attachment_parts_note">Reduz a sincronização após renderização, cópias, limpezas e compute; evita barreiras duplicadas quando a preparação das texturas não grava trabalho na GPU. Mantém a ordem e a qualidade original. Reinicie o jogo para aplicar.</string>
 </resources>
