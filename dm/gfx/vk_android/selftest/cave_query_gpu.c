@@ -43,7 +43,7 @@ static double cave_run(int w,int h,int local,uint64_t *counts,uint8_t *output){
  vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,0,0,NULL,0,NULL,2,images);vkCmdResetQueryPool(cb,query,0,N);vkCmdResetQueryPool(cb,timer,0,2);vkCmdWriteTimestamp(cb,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,timer,0);
  VkRenderPassAttachmentBeginInfo ab={VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO,.attachmentCount=2,.pAttachments=views};VkClearValue clear[2]={{.color.float32={0,0,0,1}},{.depthStencil={1,0}}};VkRenderPassBeginInfo rb={VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,.pNext=&ab,.renderPass=rp[0],.framebuffer=fb[0],.renderArea={{0,0},{w,h}},.clearValueCount=2,.pClearValues=clear};vkCmdBeginRenderPass(cb,&rb,VK_SUBPASS_CONTENTS_INLINE);
  for(int i=0;i<N;i++){
-  int mode=i%4==0?0:i%4==1?2:i%4==2?1:3;float pc[8]={(i%7)/7.0f,0.5f,0.75f,1,mode==1?(i%4==2?0.8f:0.1f):0.2f,i%5==0?1:0,0,0};
+  int mode=i%4==0?0:i%4==1?2:i%4==2?1:3;float pc[8]={(i%7)/7.0f,0.5f,0.75f,1,mode==1?(i%4==2?0.8f:0.1f):0.2f,mode==3?0.0f:(i%5==0?1.0f:0.0f),0,0};
   VkRect2D sc={{(i/4%4)*(w/4),(i/16%4)*(h/4)},{w/4,h/4}};vkCmdSetScissor(cb,0,1,&sc);vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_GRAPHICS,p[mode]);vkCmdPushConstants(cb,lay,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,32,pc);vkCmdBeginQuery(cb,query,i,VK_QUERY_CONTROL_PRECISE_BIT);vkCmdDraw(cb,3,1,0,0);vkCmdEndQuery(cb,query,i);
   // Keep every original physical depth pass end. Only a read-only query's
   // masked-out colour attachment is omitted in the research variant.
