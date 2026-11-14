@@ -364,7 +364,8 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
         // per-primitive FS interface. The regular module is intentionally
         // flattened for mesh->compute's arena vertex draws. They must not
         // share one VkShaderModule even when the source shader key is equal.
-        if (mesh && fs && k->fs_variant != VKA_OOT_DEPTH_FS_STUB_VARIANT && V.memu && (s->e->flags & DMSH_VK_F_MESH_PRIM)) {
+        if (mesh && fs && V.memu && (s->e->flags & DMSH_VK_F_MESH_PRIM) &&
+            k->fs_variant != VKA_OOT_DEPTH_FS_STUB_VARIANT) {
             if (k->fs_variant == VKA_FS_RETYPE && (fu | fsm))
                 mod = vka_shader_native_mesh_fout_module(s, fu, fsm);
             else
