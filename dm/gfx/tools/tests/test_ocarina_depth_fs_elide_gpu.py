@@ -51,11 +51,42 @@ class DepthFsElision(unittest.TestCase):
         self.assertIn('d->color.alpha_func == NVN_ALPHA_FUNC_ALWAYS',DRAW)
         self.assertIn('b->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC | DMSH_VK_BF_NOSLOT)',DRAW)
         self.assertIn('!g_unused_color_refused',DRAW)
-        self.assertIn('sh[1] = NULL;',DRAW)
+        self.assertIn('depth_fs_stub = 1;',DRAW)
+        self.assertIn('variant = VKA_OOT_DEPTH_FS_STUB_VARIANT;',DRAW)
+        self.assertNotIn('sh[1] = NULL;',DRAW)
+        PSO=(VK/"vka_pso.c").read_text()
+        self.assertIn('oot_depth_stub_module()',PSO)
+        self.assertIn('k->fs_variant == VKA_OOT_DEPTH_FS_STUB_VARIANT',PSO)
         # The original occlusion splitting and original draw path are intact.
         self.assertIn('vka_rp_cave_depth_dirty()', (VK/"vka_exec.c").read_text())
         self.assertIn('vka_oq_pass_end();',DRAW)
         self.assertIn('vk.vkCmdDraw',DRAW)
+
+    def test_stub_is_valid_vulkan_fragment_stage(self):
+        cc=shutil.which("cc") or shutil.which("clang")
+        validator=shutil.which("spirv-val")
+        self.assertTrue(cc and validator)
+        with tempfile.TemporaryDirectory() as t:
+            d=Path(t);c=d/"dump.c";out=d/"stub.spv";exe=d/"dump"
+            c.write_text(r"""
+#include <stdio.h>
+#include "vka_depth_fs_stub_spv.h"
+int main(int argc,char**argv) {
+ if(argc!=2)return 2;
+ FILE*f=fopen(argv[1],"wb");if(!f)return 3;
+ if(fwrite(VKA_DEPTH_FS_STUB_SPV,1,sizeof VKA_DEPTH_FS_STUB_SPV,f)!=
+    sizeof VKA_DEPTH_FS_STUB_SPV)return 4;
+ fclose(f);return 0;
+}
+""")
+            b=subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror",
+                "-I",str(VK),str(c),"-o",str(exe)],
+                capture_output=True,text=True)
+            self.assertEqual(b.returncode,0,b.stderr)
+            subprocess.run([str(exe),str(out)],check=True)
+            b=subprocess.run([validator,"--target-env","vulkan1.1",str(out)],
+                capture_output=True,text=True)
+            self.assertEqual(b.returncode,0,b.stdout+b.stderr)
 
     def test_real_translated_spirv_safety_matrix(self):
         glslang=shutil.which("glslangValidator")
