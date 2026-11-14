@@ -855,3 +855,30 @@ read that heavy-scene log, compare stabilized FPS/GPU time to12:26:39, and
 check `GPU fragment-masked draws` before choosing the next GPU change.
 Do not regenerate156, reopen the fixed cave investigation, or infer a
 phone gain from the synthetic store benchmark.
+
+
+### Build158 device capture131245 / task-pair investigation (2026-11-14)
+
+The supplied131245 log is4574f56 with the expected signer/package. Steady
+reports43.9 then43.4FPS; this does not demonstrate improvement over the
+previously reported157 reference43.9FPS. Every mesh summary reports ZERO
+GPU fragment-masked draws. The selector excludes every draw with a preceding
+task shader (`!ts`), even though the masked APIs specialize the mesh stage
+only and keep the task payload, distribution and layout intact.
+
+WIP: remove only that selector exclusion, retaining paired fallback and
+original task modules. Expand real GPU producer/consumer readback to the
+task-fed mesh case, empty middle-task prefix and unchanged task payload.
+Do not change cave depth-dirty splits, shader ABI or launch options.
+
+832physical query pass ends/frame remain,822of which bind unused colour.
+This is a larger bandwidth candidate, but runtime omission is NOT enabled:
+it must preserve VRS classification, effective render area/layers/samples,
+alpha coverage, clear/discard consumption and later colour writes.
+
+Profiling is truncated at2048timestamps. Sampled graphics chunk6.51-6.54ms
+and mesh compute0.53-0.66ms are partial-frame data, not complete-frame costs.
+Normal longframes show GPU approximately22ms. Zero-grid dispatch profiling
+shows artificial costs because the ALREADY EXISTING no-op shortcut is
+disabled during GPU profiling; ordinary frames already omit that work.
+Do not claim another ordinary-frame speedup by reapplying it.
