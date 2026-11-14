@@ -28,6 +28,7 @@ on:
       - 'dm/tools/tests/test_android_shaderzip.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_alu_cse.py'
       - 'dm/gfx/tools/tests/test_ocarina_graphics_barrier_scopes.py'
+      - 'dm/gfx/tools/tests/test_ocarina_memu_snapshot_cpu.py'
       - 'dm/gfx/tools/tests/test_ocarina_postpass_barrier_dedup.py'
       - 'dm/gfx/tools/tests/test_ocarina_attachment_stage_dependencies.py'
       - 'dm/gfx/vk_android/vka_shader.c'
