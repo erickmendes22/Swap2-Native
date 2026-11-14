@@ -179,78 +179,84 @@ class CoalescedReadback(unittest.TestCase):
                         "-Wl,-l:libvulkan.so.1", "-o", str(runner)], check=True)
         for tag, original in self.fixtures.items():
             for coalesced in (0, 1):
-                with patch.dict(os.environ, {"DM_VK_MEMU_COALESCED": str(coalesced)}):
-                    layout, cs_full, vs_full = self.convert(original, coalesced)
-                    # Triangles use location 0, not location 2; point shader
-                    # needs only PointSize and Position (no primitive varyings).
-                    mask = 1 if tag == "MESH_TRI" else 0
-                    fixture = (U32 * len(original))(*original)
-                    size = C.c_size_t(); error = C.create_string_buffer(256)
-                    mcs = self.lib.vka_memu_cs_masked(fixture, len(original),
-                            mask, C.byref(size), error, 256)
-                    self.assertTrue(mcs, error.value)
-                    cs_masked = list(mcs[:size.value]); self.libc.free(mcs)
-                    mvs = self.lib.vka_memu_vs_masked(C.byref(layout), mask,
-                            C.byref(size), error, 256)
-                    self.assertTrue(mvs, error.value)
-                    vs_masked = list(mvs[:size.value]); self.libc.free(mvs)
-                    self.assertLess(len(cs_masked),len(cs_full))
-                    self.assertLess(len(vs_masked),len(vs_full))
-                    for name, mod in (("baseline",cs_full),("pruned",cs_masked),
-                                      ("vsfull",vs_full),("vsmasked",vs_masked)):
-                        self.write_words(self.work/f"gpu-{name}.spv",mod)
-                        subprocess.run(["spirv-val","--target-env","vulkan1.3",
-                                        str(self.work/f"gpu-{name}.spv")],check=True)
-                    record = (U32 * 32)()
-                    self.lib.vka_memu_rec_mesh(C.byref(layout), record)
-                    count = 4
-                    record[12], record[21], record[24] = 7, 0, count
-                    record[14], record[22], record[23] = 8, 128, 64
-                    record[25] = record[15] * 3
-                    record[26] = record[25] + (record[15]*count if layout.indexed
-                                               else layout.max_v*layout.vw)
-                    initial = [0x7fc12345] * (record[26] + record[16]*count + 1024)
-                    rp, ap, out = (self.work/n for n in
-                                   ("gpu-mask-rec.bin","gpu-mask-arena.bin","gpu-mask-out.bin"))
-                    times = {"baseline":[], "pruned":[]}
-                    outputs = {}
-                    for round_i in range(3):
-                        for kind in (("baseline","pruned") if round_i%2==0
-                                     else ("pruned","baseline")):
-                            self.write_words(rp,record);self.write_words(ap,initial)
-                            env=dict(os.environ,MEMU_TEST_REPEATS="32")
-                            proc=subprocess.run([str(runner),
-                                str(self.work/f"gpu-{kind}.spv"),str(rp),
-                                str(ap),str(out),"2","2","1"],
-                                env=env,check=True,capture_output=True,text=True)
-                            times[kind].append(json.loads(proc.stdout.strip().splitlines()[-1])
-                                               ["gpu_ns_per_dispatch"])
-                            arena=list(struct.unpack(f"<{out.stat().st_size//4}I",
-                                                     out.read_bytes()))
-                            vm=vs_full if kind=="baseline" else vs_masked
-                            pixels=[]
-                            for group in range(4):
-                                for prim in range(4):
-                                    if layout.indexed:
-                                        idx=arena[record[26]+group*record[16]+prim*3]
-                                    else:
-                                        idx=(record[25]//record[15]+group)*layout.max_p+prim
-                                    src=vertex_outputs(vm,arena,idx)
-                                    # Exact fragment-facing interface plus the
-                                    # fixed-function position/point size.
-                                    pixels.append({k:v for k,v in src.items()
-                                                   if (11,(0,)) in k or (11,(1,)) in k
-                                                   or any(a==30 and (1<<v[0]) & mask
-                                                          for a,v in k if a==30)})
-                            outputs[kind]=pixels
-                    self.assertEqual(outputs["baseline"],outputs["pruned"],
-                                     (tag,coalesced,"fragment-visible GPU values"))
-                    full_time=statistics.median(times["baseline"])
-                    pruned_time=statistics.median(times["pruned"])
-                    print(f"GPU actual mesh producer {tag} coalesced={coalesced}: "
-                          f"full {full_time:.0f}ns vs fragment-pruned {pruned_time:.0f}ns, "
-                          f"pruned/full={pruned_time/full_time:.3f} "
-                          f"(Lavapipe, not Adreno FPS)")
+                for task in ([False, True] if tag == "MESH_TRI" else [False]):
+                    with patch.dict(os.environ, {"DM_VK_MEMU_COALESCED": str(coalesced)}):
+                        layout, cs_full, vs_full = self.convert(original, coalesced)
+                        # Triangles use location 0, not location 2; point shader
+                        # needs only PointSize and Position (no primitive varyings).
+                        mask = 1 if tag == "MESH_TRI" else 0
+                        fixture = (U32 * len(original))(*original)
+                        size = C.c_size_t(); error = C.create_string_buffer(256)
+                        mcs = self.lib.vka_memu_cs_masked(fixture, len(original),
+                                mask, C.byref(size), error, 256)
+                        self.assertTrue(mcs, error.value)
+                        cs_masked = list(mcs[:size.value]); self.libc.free(mcs)
+                        mvs = self.lib.vka_memu_vs_masked(C.byref(layout), mask,
+                                C.byref(size), error, 256)
+                        self.assertTrue(mvs, error.value)
+                        vs_masked = list(mvs[:size.value]); self.libc.free(mvs)
+                        self.assertLess(len(cs_masked),len(cs_full))
+                        self.assertLess(len(vs_masked),len(vs_full))
+                        for name, mod in (("baseline",cs_full),("pruned",cs_masked),
+                                          ("vsfull",vs_full),("vsmasked",vs_masked)):
+                            self.write_words(self.work/f"gpu-{name}.spv",mod)
+                            subprocess.run(["spirv-val","--target-env","vulkan1.3",
+                                            str(self.work/f"gpu-{name}.spv")],check=True)
+                        record = (U32 * 32)()
+                        self.lib.vka_memu_rec_mesh(C.byref(layout), record)
+                        count = 4
+                        record[12], record[21], record[24] = 7, 3 if task else 0, count
+                        record[13] |= 1 if task else 0
+                        record[14], record[22], record[23] = 8, 128, 64
+                        record[25] = record[15] * 3
+                        record[26] = record[25] + (record[15]*count if layout.indexed
+                                                   else layout.max_v*layout.vw)
+                        initial = [0x7fc12345] * (record[26] + record[16]*count + 1024)
+                        initial[64:67] = [0, 2, 2] # middle task emits no meshes
+                        for t in range(3):
+                            initial[128 + 8*t:136 + 8*t] = [0, 100+t, 9+t, 3, 4, 5, 6, 7]
+                        rp, ap, out = (self.work/n for n in
+                                       ("gpu-mask-rec.bin","gpu-mask-arena.bin","gpu-mask-out.bin"))
+                        times = {"baseline":[], "pruned":[]}
+                        outputs = {}
+                        for round_i in range(3):
+                            for kind in (("baseline","pruned") if round_i%2==0
+                                         else ("pruned","baseline")):
+                                self.write_words(rp,record);self.write_words(ap,initial)
+                                env=dict(os.environ,MEMU_TEST_REPEATS="32")
+                                proc=subprocess.run([str(runner),
+                                    str(self.work/f"gpu-{kind}.spv"),str(rp),
+                                    str(ap),str(out),"2","2","1"],
+                                    env=env,check=False,capture_output=True,text=True)
+                                self.assertEqual(proc.returncode,0,proc.stderr+proc.stdout)
+                                times[kind].append(json.loads(proc.stdout.strip().splitlines()[-1])
+                                                   ["gpu_ns_per_dispatch"])
+                                arena=list(struct.unpack(f"<{out.stat().st_size//4}I",
+                                                         out.read_bytes()))
+                                vm=vs_full if kind=="baseline" else vs_masked
+                                pixels=[]
+                                for group in range(4):
+                                    for prim in range(4):
+                                        if layout.indexed:
+                                            idx=arena[record[26]+group*record[16]+prim*3]
+                                        else:
+                                            idx=(record[25]//record[15]+group)*layout.max_p+prim
+                                        src=vertex_outputs(vm,arena,idx)
+                                        # Exact fragment-facing interface plus the
+                                        # fixed-function position/point size.
+                                        pixels.append({k:v for k,v in src.items()
+                                                       if (11,(0,)) in k or (11,(1,)) in k
+                                                       or any(a==30 and (1<<v[0]) & mask
+                                                              for a,v in k if a==30)})
+                                outputs[kind]=pixels
+                        self.assertEqual(outputs["baseline"],outputs["pruned"],
+                                         (tag,coalesced,task,"fragment-visible GPU values"))
+                        full_time=statistics.median(times["baseline"])
+                        pruned_time=statistics.median(times["pruned"])
+                        print(f"GPU actual mesh producer {tag} coalesced={coalesced} task={task}: "
+                              f"full {full_time:.0f}ns vs fragment-pruned {pruned_time:.0f}ns, "
+                              f"pruned/full={pruned_time/full_time:.3f} "
+                              f"(Lavapipe, not Adreno FPS)")
 
     def test_default_modules_are_byte_identical_to_build118(self):
         # Recorded from c0397be0's actual converter before this change.

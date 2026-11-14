@@ -594,3 +594,24 @@ or enabled in this APK. The reproducible source/tests are preserved on
 `research/ocarina-index-compaction-20261113`, commit
 `f571d0bc8ed3774a17317e9b3cf17dcc6b915ae3`. Do not resurrect it as a new
 user-facing option or claim device gains from removed-index counts alone.
+
+
+### Build151AB follow-up: task-associated varying pruning (2026-11-14, experiment only)
+
+New run `084355`, source `62b707e+dirty`, Adreno 840 / 891.14: zero
+fragment-masked selections through frame3000; p50 frame20.60 / GPU20.22 ms.
+Runtime paired selection explicitly excluded any draw with a task shader
+(`!ts`), although the mesh converter already preserves task-payload handling.
+Captured heavy meshes `eb021183bf9b0092`, `fed302d791a4ba43`,
+`3439aaa071d868ae` carry 3200, 128 and 256 bytes of task payload.
+This guard is one exclusion; it does not prove why every selection was zero.
+
+Candidate removes only the caller's task-presence exclusion, retaining paired
+producer/consumer acceptance, full fallback and original task shader. The
+existing real Vulkan regression now includes task-driven triangles, an empty
+middle task and distinct task payloads in scalar and coalesced layouts. All
+fragment-visible values match the full producer/reader. Test timings on the
+software ICD are mixed (task triangle ratios 0.971/0.992; taskless point
+ratios 1.097/1.108). There is no consistent measured speedup and no phone
+measurement. This candidate is preserved for investigation, NOT the next
+performance APK. No library/ABI rebuild or user option is introduced.

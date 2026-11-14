@@ -107,7 +107,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         // arena words; NEVER accept only one half. The shader library and
         // task stage are still untouched. The actual bound fragment program
         // (which need not be the mesh program) supplies the exact input mask.
-        if (!ts && E->vs && E->mcs &&
+        if (E->vs && E->mcs &&
             !strcmp(DM_GAME_ID, "0400486024DEC000") &&
             VKA_ENV("DM_VK_OOT_VARYING_PRUNE", 1)) {
             vka_shader *fs = NULL; unsigned fbad = 0;
