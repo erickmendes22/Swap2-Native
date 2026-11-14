@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          zsh android/ondevice/build.sh "$RUNNER_TEMP/oot-v10" all
+          bash android/ondevice/build.sh "$RUNNER_TEMP/oot-v10" all
       - name: Build Ocarina V10 APK (normal and parallel)
         shell: bash
         run: |
