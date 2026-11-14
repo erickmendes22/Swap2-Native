@@ -122,14 +122,17 @@ vka_shader *vka_memu_by_key(uint64_t key) {
         VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT,
         VKA_MEMU_KEY_CS ^ VKA_MEMU_KEY_PLANE_LUT ^ VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_GL
     };
-    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 9; i++) {
+    for (int old_layout = 0; old_layout < 2; old_layout++) for (int i = 0; i < 18; i++) {
+        int taskless = i >= 9, j = i % 9;
+        if (taskless && j == 2) continue; // vertex shader never taskless-specific
         uint64_t layout = vka_memu_layout_tag() ^ (old_layout ? VKA_MEMU_KEY_COALESCED : 0);
-        uint64_t k = key ^ tag[i] ^ layout;
+        uint64_t k = key ^ tag[j] ^ layout ^ (taskless ? VKA_MEMU_KEY_TASKLESS : 0);
         if (!vka_shader_lib_has(k)) continue;
         vka_shader *s = vka_shader_by_key(k); if (!s || !s->e || s->e->stage < DMSH_VK_STAGE_TS) continue;
-        if (i >= 3 && s->e->stage != DMSH_VK_STAGE_MS) continue;
-        return i == 2 ? vka_memu_vs_of(s) :
-               vka_memu_cs_of(s, i == 1 || i == 4 || i == 6 || i == 8);
+        if ((j >= 3 || taskless) && s->e->stage != DMSH_VK_STAGE_MS) continue;
+        return j == 2 ? vka_memu_vs_of(s) :
+               taskless ? vka_memu_cs_taskless_of(s, j == 1 || j == 4 || j == 6 || j == 8) :
+                          vka_memu_cs_of(s, j == 1 || j == 4 || j == 6 || j == 8);
     }
     return NULL;
 }
