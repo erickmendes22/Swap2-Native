@@ -18,7 +18,8 @@ typedef struct vka_memu_sh {
     struct { uint64_t mask; struct vka_shader *cs[2]; } masked_cs[16];
     struct { uint64_t mask; struct vka_shader *vs; } masked_vs[16];
 } vka_memu_sh;
-#define VKA_MEMU_KEY_CS 0x4d454d555f43535full   // a compute form's key: the shader's key XOR this (XOR VKA_MEMU_KEY_GL for GL depth): no library key
+#define VKA_MEMU_KEY_CS 0x4d454d555f43535full
+#define VKA_MEMU_KEY_CS_MASKED 0x4d4553485f435350ull // fragment-correct producer output cache key   // a compute form's key: the shader's key XOR this (XOR VKA_MEMU_KEY_GL for GL depth): no library key
 #define VKA_MEMU_KEY_GL 0x00000000474c3130ull
 #define VKA_MEMU_KEY_VS 0x4d454d555f56535full
 #define VKA_MEMU_KEY_VS_MASKED 0x4d4553485f564152ull // unique derived pipeline identity for actual FS input mask
