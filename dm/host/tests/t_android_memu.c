@@ -165,9 +165,14 @@ int main(void) {
             CHECK(count_op(base, base_n, 250) > count_op(no_task, no_task_n, 250),
                   "no-task shader avoids the runtime task offset search branch (%d -> %d)",
                   count_op(base, base_n, 250), count_op(no_task, no_task_n, 250));
-            CHECK(count_op(base, base_n, 62) == count_op(no_task, no_task_n, 62),
-                  "no-task shader retains identical output and payload writes (%d -> %d)",
-                  count_op(base, base_n, 62), count_op(no_task, no_task_n, 62));
+            // The short-search variant adds TWO Private OpStore instructions
+            // for the two search branches' saved task index. Both disappear
+            // with the entire unreachable task-search path. Arena and mesh
+            // output stores remain unchanged, including task payload zeros.
+            int private_search_stores = vka_memu_short_task_search() ? 2 : 0;
+            CHECK(count_op(base, base_n, 62) == count_op(no_task, no_task_n, 62) + private_search_stores,
+                  "mesh outputs/payload preserved; only %d task-index Private stores removed (%d -> %d)",
+                  private_search_stores, count_op(base, base_n, 62), count_op(no_task, no_task_n, 62));
             CHECK(count_op(base, base_n, 228) == count_op(no_task, no_task_n, 228),
                   "original mesh atomics unchanged");
             CHECK(validate(base, base_n, "mesh_default_original"),
