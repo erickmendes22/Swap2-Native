@@ -229,8 +229,9 @@ int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layo
 // count proves that we are batching across OP_END/OP_CALL boundaries rather
 // than issuing a new setup/mesh dispatch for each short called list.
 void vka_memu_caller_stats(uint64_t *resumes, uint64_t *nested);
+void vka_memu_direct_stats(uint64_t *task, uint64_t *mesh);
 void vka_memu_stats(char *b, size_t n) {
-    static uint64_t b0, d0, s0, k0, c0, x0, tsmall0, tlarge0, tind0;
+    static uint64_t b0, d0, s0, k0, c0, x0, tsmall0, tlarge0, tind0, direct_task0, direct_mesh0;
     uint64_t sm = vka_memu_task_small - tsmall0,
              lg = vka_memu_task_large - tlarge0,
              id = vka_memu_task_indirect - tind0;
@@ -238,14 +239,19 @@ void vka_memu_stats(char *b, size_t n) {
     tind0 = vka_memu_task_indirect;
     uint64_t cr = 0, nx = 0;
     vka_memu_caller_stats(&cr, &nx);
+    uint64_t direct_task = 0, direct_mesh = 0;
+    vka_memu_direct_stats(&direct_task, &direct_mesh);
+    uint64_t new_task = direct_task - direct_task0, new_mesh = direct_mesh - direct_mesh0;
+    direct_task0 = direct_task; direct_mesh0 = direct_mesh;
     uint64_t nb = vka_memu_n_batches - b0, nd = vka_memu_n_draws - d0, ns = vka_memu_n_splits - s0, nk = vka_memu_n_skip - k0,
              crossings = cr - c0, nested = nx - x0;
     b0 = vka_memu_n_batches; d0 = vka_memu_n_draws; s0 = vka_memu_n_splits; k0 = vka_memu_n_skip; c0 = cr; x0 = nx;
     if (!nb && !nd) { if (n) b[0] = 0; return; }
-    snprintf(b, n, "mesh draws through compute: %llu draws in %llu batches (%.1f a batch), %llu render passes split for one, %llu not prepared; %llu parent-list resumes across %llu nested lookaheads; task mesh draws direct <=256: %llu, direct >256: %llu, indirect: %llu; short GPU task lookup %s", (unsigned long long)nd, (unsigned long long)nb,
+    snprintf(b, n, "mesh draws through compute: %llu draws in %llu batches (%.1f a batch), %llu render passes split for one, %llu not prepared; %llu parent-list resumes across %llu nested lookaheads; task mesh draws direct <=256: %llu, direct >256: %llu, indirect: %llu; short GPU task lookup %s; direct GPU dispatch task %llu mesh %llu", (unsigned long long)nd, (unsigned long long)nb,
              nb ? (double)nd / (double)nb : 0.0, (unsigned long long)ns, (unsigned long long)nk,
              (unsigned long long)crossings, (unsigned long long)nested,
              (unsigned long long)sm, (unsigned long long)lg,
-             (unsigned long long)id, vka_memu_short_task_search() ? "ON" : "OFF");
+             (unsigned long long)id, vka_memu_short_task_search() ? "ON" : "OFF",
+             (unsigned long long)new_task, (unsigned long long)new_mesh);
 }
 #endif
