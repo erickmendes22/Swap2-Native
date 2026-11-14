@@ -57,6 +57,7 @@ uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, s
 // corner), with Position (Invariant), PointSize for points, every per-vertex location, and every per-primitive location as an output of each of its corners. Set 0
 // binding VKA_MEMU_ARENA_BINDING. malloc'd (*out_nw words), NULL with the reason in err
 uint32_t *vka_memu_vs(const vka_memu_layout *L, size_t *out_nw, char *err, size_t errn);
+uint32_t *vka_memu_vs_masked(const vka_memu_layout *L, uint64_t used_locations, size_t *out_nw, char *err, size_t errn);
 // A pixel shader of per-primitive inputs (PerPrimitiveEXT, made Flat by the library build) for a vertex pipeline: the decoration, MeshShadingEXT and SPV_EXT_mesh_shader
 // dropped, every such input flat. malloc'd (*out_nw words); NULL with err empty when the module has none
 uint32_t *vka_memu_fs_flat(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn);
