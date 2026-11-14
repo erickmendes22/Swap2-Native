@@ -111,6 +111,14 @@ class AttachmentDependencyTest(unittest.TestCase):
             # Final mesh->raster cannot use the narrow dependency.
             self.assertNotIn(("mesh", "raster"), edges)
 
+    def test_mesh_scoped_stats_are_valid_c_lines(self):
+        # Reject accidental literal backslash-n tokens outside the C string.
+        # This happened in the first APK job even though source-level tests passed.
+        at = EXEC.index('Ocarina mesh staging:')
+        frag = EXEC[at:EXEC.index('static uint64_t overlap0', at)]
+        self.assertNotIn(chr(92) + 'n', frag)
+        self.assertIn('mi0 = vka_n_memu_interphase_bar;', frag)
+
     def test_no_shader_library_or_new_toggle(self):
         self.assertIn("vka_attachment_write_barrier_at", HEADER)
         self.assertNotIn("DM_VK_RP_SCOPE", DRAW)
