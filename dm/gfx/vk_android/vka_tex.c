@@ -2017,6 +2017,77 @@ static void upload_(vka_img *im, const tex_t *t, VkCommandBuffer cb, uint64_t *n
     static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VLOG("texture serial %llu %ux%u format %#x: %llu bytes uploaded from guest memory", (unsigned long long)t->serial, im->w, im->h, d->format, (unsigned long long)bytes);
 }
 
+// Adapted from nxnative/HookLink d2556cff (MIT, seedds / Roan de Graaf):
+// reload only dirty layer/mip images. Vulkan updates the SAME image in place,
+// so clean images need neither a host read nor a GPU preservation copy.
+// This path only handles ordinary CPU-tracked tiled colour textures; pending
+// GPU writes, sparse/linear/MSAA/depth textures and diagnostics keep full upload.
+static uint64_t g_partial_uploads, g_partial_bytes, g_partial_saved;
+static int upload_images_tracked(vka_img *im, const tex_t *t, VkCommandBuffer cb) {
+    const nvn_texdesc *d = &t->d; const vka_fmt *f = &im->f;
+    uint64_t np = (uint64_t)im->levels * im->layers;
+    if (!VKA_ENV("DM_VK_PARTIAL_UPLOAD", 1) || !im->track || !im->inited ||
+        im->gpu_owned || im->m.z || im->vpool || im->base || im->samples != 1 ||
+        im->depth != 1 || f->kind >= 3 || np < 2 || np > 4096 || vka_nan_on() ||
+        (d->flags & (NVN_TEXTURE_FLAGS_LINEAR | NVN_TEXTURE_FLAGS_LINEAR_RENDER_TARGET | NVN_TEXTURE_FLAGS_SPARSE)) ||
+        !t->mem || dm_guest_unmapped((uintptr_t)t->mem, t->L.size)) return 0;
+    // Never replace the existing GPU-write overlay with stale CPU memory.
+    // Unlike gw_shadow_safe, ANY pending write (including known fills and
+    // inline updates) refuses this direct-memory upload.
+    uint64_t done = vka_done(), addr = (uint64_t)(uintptr_t)t->mem;
+    if (addr > UINT64_MAX - t->L.size) return 0;
+    for (int i = 0; i < g_ngw; i++) {
+        const gw_t *w = &g_gw[i];
+        if ((!w->fence || w->fence > done) && w->lo < addr + t->L.size && addr < w->hi) return 0;
+    }
+    typedef struct { vka_span s; VkBufferImageCopy c; } image_part;
+    image_part *parts = calloc((size_t)np, sizeof *parts);
+    if (!parts) return 0;
+    // Stamp/protect BEFORE planning or reading. A concurrent write after
+    // any clean-image check has a newer stamp and is caught next time.
+    uint64_t t0 = now_ns(), old = im->stamp, stamp = nvn_dirty_now();
+    nvn_dirty_protect(t->mem, t->L.size);
+    uint64_t bytes = 0, total = 0; unsigned count = 0;
+    // Plan everything before recording the first copy. On an allocation or
+    // deswizzle failure the untouched image takes the original full path.
+    for (uint32_t lv = 0; lv < im->levels; lv++) {
+        uint32_t w = im->w >> lv ? im->w >> lv : 1, h = im->h >> lv ? im->h >> lv : 1;
+        uint32_t bx = (w + f->bw - 1) / f->bw, by = (h + f->bh - 1) / f->bh;
+        size_t pitch = (size_t)bx * f->bpb, piece = pitch * by;
+        for (uint32_t ly = 0; ly < im->layers; ly++) {
+            uint64_t off, len; sub_range(d, &t->L, lv, ly, &off, &len);
+            if (!len || off > t->L.size || len > t->L.size - off) { free(parts); return 0; }
+            total += piece;
+            if (!nvn_dirty_since_span(im->span, t->mem + off, len, old)) continue;
+            parts[count].c = (VkBufferImageCopy){0, bx * f->bw, by * f->bh,
+                                {im->aspect, lv, ly, 1}, {0, 0, 0}, {w, h, 1}};
+            count++; bytes += piece;
+        }
+    }
+    // When every image is dirty the existing parallel full deswizzle is faster.
+    if (!count || count == np) { free(parts); return 0; }
+    for (unsigned i = 0; i < count; i++) {
+        image_part *p = &parts[i];
+        uint32_t lv = p->c.imageSubresource.mipLevel, ly = p->c.imageSubresource.baseArrayLayer;
+        size_t pitch = (size_t)((p->c.imageExtent.width + f->bw - 1) / f->bw) * f->bpb;
+        size_t piece = pitch * ((p->c.imageExtent.height + f->bh - 1) / f->bh);
+        if (!vka_scratch(piece, 16, &p->s) || nvn_deswizzle(d, lv, ly, t->mem, p->s.ptr, pitch)) { free(parts); return 0; }
+        p->c.bufferOffset = p->s.off;
+    }
+    for (unsigned i = 0; i < count; i++)
+        vk.vkCmdCopyBufferToImage(cb, parts[i].s.buf, im->img, VK_IMAGE_LAYOUT_GENERAL, 1, &parts[i].c);
+    free(parts);
+    im->stamp = stamp;
+    atomic_fetch_add_explicit(&g_up_ns, now_ns() - t0, memory_order_relaxed);
+    atomic_fetch_add_explicit(&g_up_bytes, bytes, memory_order_relaxed);
+    g_partial_uploads++; g_partial_bytes += bytes; g_partial_saved += total - bytes;
+    if (g_partial_uploads <= 4 || !(g_partial_uploads & (g_partial_uploads - 1)))
+        VLOG("partial texture uploads: %llu reloads, %.2f MB copied, %.2f MB host reads/GPU uploads avoided (last %u/%llu layer/mip images)",
+            (unsigned long long)g_partial_uploads, g_partial_bytes / 1048576.0,
+            g_partial_saved / 1048576.0, count, (unsigned long long)np);
+    return 1;
+}
+
 void mtl_tex_init(const tex_t *t) { (void)t; }
 void mtl_tex_release(tex_t *t) {
     pthread_mutex_lock(&g_tmu);
@@ -3253,6 +3324,7 @@ void vka_tex_prepare(VkCommandBuffer cb) {
             // (the rows path's re-uploads were not counted in g_reup until 2026-11-07: the packaged-textures line's "re-uploads on pool content change" left out every
             // partial re-upload of a linear texture, which read as "the CPU's writes were never seen")
             if (rows && upload_rows_tracked(im, &t, cb, lo, hi)) { g_reup++; lin_note_reup(im, lo, hi, 1); continue; }
+            if (upload_images_tracked(im, &t, cb)) { g_reup++; continue; }
             upload_tracked(im, &t, cb); lin_note_reup(im, lo, hi, 0);
             if (g_reup++ < 8) VLOG("texture serial %llu %ux%u format %#x flags %#x target %d: its storage changed, re-uploaded", (unsigned long long)im->serial, im->w, im->h, im->d.format, im->d.flags, im->d.target);
         }

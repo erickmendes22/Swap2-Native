@@ -893,3 +893,33 @@ is an indicator only, not a phone FPS claim. Build159 enables the previously
 excluded task-fed pair for on-device validation. If the device still reports
 zero selected draws, inspect actual fragment input masks/variant eligibility
 before attempting another store optimization.
+
+
+### HookLink audit and159 capture140939 (2026-11-14, WIP)
+
+Sources: dsi-hub/HookLink b329fa5, engine dsi-hub/nxnative hooklink
+cf2a2fecc, read directly from GitHub/source. Capture140939 confirms159
+b0962d4 and expected signer:41.3 then43.5FPS, zero fragment-masked draws.
+Removing task exclusion did not make this specialization eligible here; do
+not claim a gain or extend the same optimization without new eligibility
+evidence. Preserve157 query/depth policy.
+
+| Upstream mechanism | Android/Vulkan assessment |
+|---|---|
+| d2556cff partial layer/mip reload | Port in progress: retain the Vulkan image, reload only dirty images; no preservation copy for unchanged images |
+| Once-per-submission dirty checks | Already done by vka_tex_prepare at command-buffer preparation, not each sampled-texture lookup |
+| c838a9fe negative archive lookup cache | Metal archive search absent on Vulkan; existing Vulkan pipeline/hash caches serve this role |
+| e45694b7 fixed uniform checks,511a0a2 border corrections | Metal shader/ABI changes; Vulkan translator does not inject those Metal corrections, no equivalent branch removal to port |
+| 707cac9 render-target heap recycle | Metal heaps; Vulkan allocator/reuse is separate. Do not import Metal memory objects or unsafe lossy targets |
+| iOS realtime computation/QoS/workgroup deadlines | Darwin scheduler APIs; cannot execute on Android. Android performance hints are separate |
+| Frame generation/MetalFX | Apple framework, not an Android backend; interpolation is not a real-FPS gain |
+| Event signals not ending rendering | Already retained by Vulkan replay |
+
+Partial upload candidate excludes sparse, linear, MSAA, depth, rebased and
+zero-shared images; pending GPU copies/stores/fills/inline writes take the
+original overlay/full upload. Every copy is planned/deswizzled before any
+command is recorded, fallback retains the old image/stamp. A stamp is taken
+before protection/planning so racing CPU writes are seen next time. Initial
+and wholly dirty textures keep existing parallel upload. Counters report
+actual bytes avoided, no promised steady-scene FPS. Tests are still pending
+at this checkpoint; do not trigger an APK yet.
