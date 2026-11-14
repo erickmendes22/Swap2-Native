@@ -309,6 +309,10 @@ int vka_rp_can_defer_ub(uint64_t addr, uint64_t size) {
     return 1;
 }
 int vka_rp_has_depth(void) { return R.on && (R.df || R.sf); }
+// A cave query needs a forced depth store/reload only after this pass has
+// actually modified depth/stencil. A depth-test-only pass can keep its
+// attachment resident across query reports without changing query results.
+int vka_rp_cave_depth_dirty(void) { return R.on && R.cave_dwrite; }
 static uint64_t g_cave_original_splits, g_cave_unused_color, g_cave_depth_readonly;
 void vka_rp_cave_end(void) {
     // Observations only: every report still executes the original pass end.
