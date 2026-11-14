@@ -43,6 +43,7 @@ class MeshReplaySnapshots(unittest.TestCase):
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #define DM_GAME_ID "0400486024DEC000"
 #define VKA_ENV(key, def) (def)
 #define NVN_PRIM_MESH 5
@@ -51,7 +52,7 @@ enum { MEMU_BEGIN, MEMU_ADD, MEMU_SETUP, MEMU_TASK, MEMU_DIST, MEMU_MESH, MEMU_E
 typedef struct { uint32_t op, size; } op_hdr;
 typedef struct { uint32_t op, size; uint64_t arg; } record;
 typedef struct { int prim, mdi_cnt; } p_draw;
-typedef struct { int state; } vka_dstate;
+typedef struct { int state; uint8_t extra[4092]; } vka_dstate; // ~4 KiB conservative snapshot workload
 static struct { int memu, mesh, task; } V;
 static struct { vka_dstate d; int rc_skip; } S;
 static vka_dstate g_memu_st;
@@ -84,6 +85,10 @@ static void vka_memu_batch(int phase, const vka_dstate *d,
     }
 }
 """ + "static int " + function(EXEC, "memu_walk") + "\nvoid " + function(MEMU, "vka_memu_replay_phase") + r"""
+static unsigned long long ticks(void) {
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
+    return (unsigned long long)t.tv_sec*1000000000ull+(unsigned long long)t.tv_nsec;
+}
 int main(void) {
     record nested[] = {
         {OP_BIND_PROGRAM,16,30}, {OP_DRAW,16,5},
@@ -126,7 +131,29 @@ int main(void) {
         vka_memu_replay_phase(MEMU_MESH);
         assert(count==2 && trace[0].idx==0 && trace[1].idx==0);
     }
-    printf("cached mesh GPU order identical; 2 of 3 CPU-only state walks eliminated; baseline ops=%d cached ops=%d\n",old_stateops,new_stateops);
+    // Wall-time synthetic with original production walker, real nested CALL,
+    // state snapshots padded to a conservative 4 KiB. Counts are stable;
+    // timing is a CPU-host indicator, never evidence of phone GPU FPS.
+    const int rounds=12000;
+    unsigned long long t0=ticks();
+    for(int i=0;i<rounds;i++) {
+        MB.o.n=0;count=0;S.d.state=1;g_memu_depth=0;
+        memu_walk((const uint8_t*)commands,MEMU_ADD);
+        memu_walk((const uint8_t*)commands,MEMU_TASK);
+        memu_walk((const uint8_t*)commands,MEMU_MESH);
+    }
+    unsigned long long t1=ticks();
+    for(int i=0;i<rounds;i++) {
+        MB.o.n=0;count=0;S.d.state=1;g_memu_depth=0;
+        memu_walk((const uint8_t*)commands,MEMU_ADD);
+        vka_memu_replay_phase(MEMU_TASK);
+        vka_memu_replay_phase(MEMU_MESH);
+    }
+    unsigned long long t2=ticks();
+    printf("cached mesh GPU order identical; 2 of 3 CPU-only state walks eliminated; baseline ops=%d cached ops=%d; synthetic baseline=%.3f us/batch, cached=%.3f us/batch, ratio=%.3f (4KiB state)\n",
+           old_stateops,new_stateops,(double)(t1-t0)/(1000.0*rounds),
+           (double)(t2-t1)/(1000.0*rounds),
+           (double)(t1-t0)/(double)(t2-t1));
     return 0;
 }
 """
@@ -136,10 +163,11 @@ int main(void) {
             src=Path(tmp)/"snapshot.c"; exe=Path(tmp)/"snapshot"
             src.write_text(stub)
             subprocess.run([cc,"-std=c11","-O1","-g","-Wall","-Wextra","-Werror",
-                "-Wno-unused-variable","-fsanitize=address,undefined",str(src),"-o",str(exe)],
+                "-Wno-unused-variable","-D_POSIX_C_SOURCE=200809L","-fsanitize=address,undefined",str(src),"-o",str(exe)],
                 check=True,capture_output=True,text=True)
             result=subprocess.run([str(exe)],check=True,capture_output=True,text=True)
             self.assertIn("cached mesh GPU order identical",result.stdout)
+            print(result.stdout.strip())
 
 if __name__ == "__main__":
     unittest.main()
