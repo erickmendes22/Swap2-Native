@@ -8,6 +8,7 @@
 #if defined(__ANDROID__)
 #include "vka.h"
 #include "vka_memu_abi.h"
+#include "vka_depth_fs_stub_spv.h"
 #include "vka_memu.h"
 #include "../nvn/nvn_mtl.h"
 #include <stdlib.h>
@@ -313,6 +314,33 @@ static int oot_profiled_mesh_hdr(vka_shader *const sh[VKA_NSTAGE], const vka_gke
     return native || emulated;
 }
 // 0 = a stage's module is missing (logged by vka_shader_module)
+// One empty but real Fragment SPIR-V stage per Vulkan device. Qualcomm
+// occlusion queries depend on keeping a fragment stage even when its color
+// writes are masked. Module lifetime is device lifetime (as for derived
+// pipelines); if device changes, never reuse a module from another device.
+static pthread_mutex_t g_oot_depth_stub_mu = PTHREAD_MUTEX_INITIALIZER;
+static VkDevice g_oot_depth_stub_dev;
+static VkShaderModule g_oot_depth_stub_mod;
+static VkShaderModule oot_depth_stub_module(void) {
+    pthread_mutex_lock(&g_oot_depth_stub_mu);
+    if (g_oot_depth_stub_dev != V.dev) {
+        g_oot_depth_stub_dev = V.dev;
+        g_oot_depth_stub_mod = VK_NULL_HANDLE;
+    }
+    if (!g_oot_depth_stub_mod && V.dev) {
+        VkShaderModuleCreateInfo ci = {VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = sizeof VKA_DEPTH_FS_STUB_SPV,
+            .pCode = VKA_DEPTH_FS_STUB_SPV};
+        VkResult result = vk.vkCreateShaderModule(V.dev, &ci, NULL, &g_oot_depth_stub_mod);
+        if (result != VK_SUCCESS) {
+            g_oot_depth_stub_mod = VK_NULL_HANDLE;
+            VRED_ONCE("Ocarina depth-only FS stub unsupported; original module selected (%d)", result);
+        }
+    }
+    VkShaderModule mod = g_oot_depth_stub_mod;
+    pthread_mutex_unlock(&g_oot_depth_stub_mu);
+    return mod;
+}
 static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k) {
     memset(P, 0, sizeof *P);
     // Stages: vertex, tess control, tess evaluation, geometry, fragment; the GL depth constant on the last of the first four. A mesh pipeline (NVN2 task and mesh programs,
@@ -328,28 +356,31 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
         vka_shader *s = sh[order[i]]; if (!s) continue;
         int fs = order[i] == 1, gl = k->gl_depth && order[i] == last_pre && (s->e->flags & DMSH_VK_F_GL_DEPTH);
         uint32_t fu = 0, fsm = 0; if (fs && k->fs_variant == VKA_FS_RETYPE) fout_masks(s, k, &fu, &fsm);
-        VkShaderModule mod = order[i] == 0 && (k->vin_u | k->vin_s) ? vka_shader_vin_module(s, k->vin_u, k->vin_s) : order[i] == 2 && k->gs_fx ? vka_shader_gs_module(s)
+        VkShaderModule mod = fs && k->fs_variant == VKA_OOT_DEPTH_FS_STUB_VARIANT ?
+                             oot_depth_stub_module() : order[i] == 0 && (k->vin_u | k->vin_s) ? vka_shader_vin_module(s, k->vin_u, k->vin_s) : order[i] == 2 && k->gs_fx ? vka_shader_gs_module(s)
                            : fs && k->fs_variant == VKA_FS_RETYPE ? (fu | fsm ? vka_shader_fout_module(s, fu, fsm) : vka_shader_module(s, DMSH_VK_MOD_BASE))
                            : vka_shader_module(s, fs ? k->fs_variant : DMSH_VK_MOD_BASE);
         // Hybrid NVN2: a native mesh pipeline requires the ORIGINAL
         // per-primitive FS interface. The regular module is intentionally
         // flattened for mesh->compute's arena vertex draws. They must not
         // share one VkShaderModule even when the source shader key is equal.
-        if (mesh && fs && V.memu && (s->e->flags & DMSH_VK_F_MESH_PRIM)) {
+        if (mesh && fs && k->fs_variant != VKA_OOT_DEPTH_FS_STUB_VARIANT && V.memu && (s->e->flags & DMSH_VK_F_MESH_PRIM)) {
             if (k->fs_variant == VKA_FS_RETYPE && (fu | fsm))
                 mod = vka_shader_native_mesh_fout_module(s, fu, fsm);
             else
                 mod = vka_shader_native_mesh_fs_module(s,
                     k->fs_variant == VKA_FS_RETYPE ? DMSH_VK_MOD_BASE : k->fs_variant);
         }
+        if (!mod && fs && k->fs_variant == VKA_OOT_DEPTH_FS_STUB_VARIANT)
+            mod = vka_shader_module(s, DMSH_VK_MOD_BASE); // exact original fallback, keep the draw
         if (!mod && order[i] == 2 && k->gs_fx) mod = vka_shader_module(s, DMSH_VK_MOD_BASE);   // no module with the claim (logged): the shader as it is
         if (!mod) return 0;
-        if (fs) mod = vka_shader_pfb_pick(mod, k->a2c, P->afunc);
+        if (fs && k->fs_variant != VKA_OOT_DEPTH_FS_STUB_VARIANT) mod = vka_shader_pfb_pick(mod, k->a2c, P->afunc);
         uint32_t n = P->ns++;
         P->ss[n] = (VkPipelineShaderStageCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .stage = (VkShaderStageFlagBits)stage_bit(s->e->stage), .module = mod, .pName = "main",
                                                     .pSpecializationInfo = gl ? &P->spec : fs && P->afunc && (s->e->flags & DMSH_VK_F_ALPHA_TEST) ? &P->aspec : NULL};
         uint32_t pin = (s->e->flags & DMSH_VK_F_SUBGROUP) ? vka_shader_sg_pin(s->e->stage) : 0;   // subgroup shaders of a stage whose size the device varies: pinned to the library's (vka_shader_sg_pin)
-        if (pin) { P->rsg[n] = (VkPipelineShaderStageRequiredSubgroupSizeCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO, .requiredSubgroupSize = pin};
+        if (pin && !(fs && k->fs_variant == VKA_OOT_DEPTH_FS_STUB_VARIANT)) { P->rsg[n] = (VkPipelineShaderStageRequiredSubgroupSizeCreateInfo){VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO, .requiredSubgroupSize = pin};
                    P->ss[n].pNext = &P->rsg[n]; }
     }
     uint32_t nvb = 0, nva = 0, nvd = 0;
