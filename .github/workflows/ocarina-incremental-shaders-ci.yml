@@ -1,7 +1,7 @@
 name: Ocarina incremental shaders (tests only)
 on:
   push:
-    branches: [wip-ocarina-incremental-shader-updates, ocarina-v11-ios-perf-from-v101]
+    branches: [wip-ocarina-incremental-shader-updates, ocarina-v11-ios-perf-from-v101, experiment/ocarina-vegetation-pass-batching]
     paths:
       - 'scripts/ocarina_shader_hot_delta.py'
       - 'scripts/build_ocarina_hot_shaders.py'
