@@ -19,6 +19,17 @@ enum { MEMU_MAX = VKA_MEMU_ORDER_MAX };
 typedef struct { int ok, rec, indexed, points; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; } memu_ent;
 static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws; } MB;
 static memu_ent *g_memu_cur;
+// Capture guest bindings once at the original MEMU_ADD pass. Subsequent
+// MEMU_TASK/MESH stages use these exact per-draw states instead of scanning
+// the entire guest command list two more times. None of the GPU commands,
+// barriers, task/mesh ordering or occlusion query boundaries are changed.
+// The array is NOT zeroed on every batch: only MB.e[i].ok entries are read.
+static vka_dstate g_memu_draw_snapshot[MEMU_MAX];
+int vka_memu_snapshot_on(void) {
+    return !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+           VKA_ENV("DM_VK_MEMU_SNAPSHOT", 1) != 0;
+}
+
 // The record being replayed: its entry (the next of its record from the batch's cursor, taken), NULL when the batch has none left for it
 void vka_memu_cur(const uint8_t *p) { int i = vka_memu_order_take(&MB.o, p); g_memu_cur = i < 0 ? NULL : &MB.e[i]; }
 int vka_memu_on(void) { return V.memu; }
@@ -136,7 +147,9 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
             if (!vka_addr(dw->ind, 8, &b, &o, NULL) || (o & 3)) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("indirect mesh draw record at %#llx not in placed guest RAM: skipped", (unsigned long long)dw->ind); return; }
             VkBufferCopy c = {o, MB.rec.off + ((VkDeviceSize)E->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_COUNT) * 4, 8}; vk.vkCmdCopyBuffer(g_cb, b, MB.rec.buf, 1, &c);
         } else { r[VKA_MEMU_R_COUNT] = dw->count > 0 ? (uint32_t)dw->count : 0; r[VKA_MEMU_R_FIRST] = dw->first > 0 ? (uint32_t)dw->first : 0; }
-        E->indexed = mi->L.indexed; E->points = mi->L.points; E->ok = 1;
+        E->indexed = mi->L.indexed; E->points = mi->L.points;
+        if (vka_memu_snapshot_on()) g_memu_draw_snapshot[ei] = *d;
+        E->ok = 1;
         if (E->tcs) {
             MB.task_draws++;
             // Count the direct task draws eligible for the new 8-step
@@ -166,5 +179,27 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         break;
     case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X, MB.e[idx].ms ? MB.e[idx].ms->key : 0); break;
     case MEMU_END: memu_phase_barrier(); vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
+    }
+}
+
+// Same per-record dispatches as MEMU_TASK and MEMU_MESH branches above.
+// Called only after MEMU_ADD has filled all records and captured the
+// corresponding replay state. The original memu_walk loops remain available
+// as an exact rollback for other games and DM_VK_MEMU_SNAPSHOT=0.
+void vka_memu_batch_snapshot(int phase) {
+    if (!vka_memu_snapshot_on() || MB.live <= 0 || !MB.o.n) return;
+    if (phase != MEMU_TASK && phase != MEMU_MESH) return;
+    for (int i = 0; i < MB.o.n; i++) {
+        memu_ent *E = &MB.e[i];
+        if (!E->ok) continue;
+        const vka_dstate *d = &g_memu_draw_snapshot[i];
+        if (phase == MEMU_TASK) {
+            if (E->tcs)
+                memu_dispatch(d, 6, E->tcs, &E->tl, E->tp, i,
+                              VKA_MEMU_R_TASK_X, E->ts ? E->ts->key : 0);
+        } else {
+            memu_dispatch(d, 7, E->mcs, &E->ml, E->mp, i,
+                          VKA_MEMU_R_MESH_X, E->ms ? E->ms->key : 0);
+        }
     }
 }
