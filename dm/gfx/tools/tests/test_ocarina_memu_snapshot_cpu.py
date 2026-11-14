@@ -103,7 +103,7 @@ static void vka_memu_batch(int phase,const vka_dstate*d,const p_draw*dw,const ui
    memu_dispatch(d,7,ent[idx].mcs,&ent[idx].ml,ent[idx].mp,idx,
                  VKA_MEMU_R_MESH_X,ent[idx].ms?ent[idx].ms->key:0);
 }
-''' + walk + '\n' + snap + r'''
+''' + 'static int ' + walk + '\nvoid ' + snap + r'''
 int main(void){
  // Each state-changing record must be replayed in the original meeting order.
  record child[]={{OP_DRAW,16,5},{OP_BIND_PROGRAM,16,7},
