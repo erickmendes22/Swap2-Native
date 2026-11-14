@@ -516,3 +516,10 @@ Build159: task-fed paired mesh output specialization after158 log131245.
 - Device158 reports43.4-43.9FPS and ZERO selected masked draws; remove the selector's task-presence exclusion, leaving original task payload/distribution modules and records intact.
 - Real Vulkan/Khronos GPU readback passes task-fed/taskless pairs in both layouts; position,32primitive outputs,task prefix/payload preserved.64 production selector cases verify paired fallback; cave and overlap tests pass.
 - Preserve157 depth-dirty cave fix, shader library/ABI, com.swap2native.ootv11ios and persistent a1c468aff0b99e28 signer. Single update APK via this workflow; no unsupported phone FPS claim.
+
+Build160: HookLink/nxnative partial texture reload adapted to Vulkan.
+- Source audit: dsi-hub/HookLink b329fa5, dsi-hub/nxnative hooklink cf2a2fecc; adapt d2556cff dirty layer/mip upload mechanism, credits retained.
+- Keep the same Vulkan image; deswizzle/upload only changed layer/mip images. Clean images take no host read, staging copy or GPU preservation copy.
+- Preserve initial/full-dirty parallel uploads and full fallback for sparse/linear/MSAA/depth/rebased/zero-shared resources, diagnostics, unmapped guest memory and pending GPU writes. Plan all copies before any GPU command; racing CPU writes remain visible next check.
+- Production C/full-deswizzle oracle:5000 layer/mip comparisons across RGBA/BC1/BC5/BC7/ASTC. Actual Vulkan readback:840 exact comparisons with Khronos validation.55.7MB and26.8MB copy payload eliminated in fixtures; no phone FPS guarantee.
+- Keep157 cave fix, prepared shader library/ABI, version0.1.6, com.swap2native.ootv11ios, persistent a1c468aff0b99e28 signer and a single update APK through this workflow.

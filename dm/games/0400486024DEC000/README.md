@@ -923,3 +923,13 @@ before protection/planning so racing CPU writes are seen next time. Initial
 and wholly dirty textures keep existing parallel upload. Counters report
 actual bytes avoided, no promised steady-scene FPS. Tests are still pending
 at this checkpoint; do not trigger an APK yet.
+
+Partial-upload validation: the production C routine against the actual NVN
+layout/deswizzler matches5000 layer/mip comparisons (RGBA,BC1,BC5,BC7,ASTC),
+including shared dirty pages, CPU writes after a clean-image check, pending
+GPU writes, allocation/decode failures and conservative format fallbacks.
+A real Vulkan array/mip image passes840 readback comparisons under Khronos
+validation; unchanged layers/mips retain their exact bytes. Fixture totals
+avoid55.7MB of deswizzle/upload in the CPU cases and26.8MB of actual Vulkan
+copy payload. These are work-elimination measurements, not phone FPS claims.
+CI now runs these tests; full Android compile remains pending.
