@@ -823,3 +823,35 @@ writes; the simplified fixture does not establish all those game cases.
 No further approximate counters, forced visibility or per-query in-pass
 barriers should be enabled as a wall fix. Save each implementation step
 on GitHub before waiting for long checks/builds.
+
+### Current resume baseline: approved157 and candidate158 (2026-11-14)
+
+This supersedes the unresolved cave status in the historical156 notes above.
+The user confirms157 fixes the cave. Commit `b2c5dbe` retains real query
+results and physically ends a queried pass only after depth/stencil writes;
+read-only queries no longer force attachment store/reload. Preserve this
+policy. The cave is a lighter scene and must NOT be a performance benchmark.
+
+Continue from158, commit `4574f563`, on
+`ocarina-v11-ios-perf-from-v101`, workflow `ocarina-v11-ios-apk.yml`.
+Its paired fragment-masked compute producer and vertex consumer remove
+unused mesh output stores and loads, retaining both original stages on
+fallback. The prepared shader library/ABI is unchanged. Keep the single
+`com.swap2native.ootv11ios` update APK and existing signing identity.
+The previous chat reports43.9FPS for157 in heavy capture12:26:39; this is
+continuity context, not a fresh measurement from a locally available log.
+
+Resume verification: production query-policy test passes. All five
+coalesced GPU readback and masked-store benchmark tests pass with Lavapipe
+and Khronos validation enabled. Surviving data matches. The actual converted
+shader timings are mixed (pruned/full0.902 to1.355); the larger synthetic
+eight-to-two-output benchmark improves1.327x/2.353x/2.947x. These timings
+cannot establish an Adreno FPS improvement or justify another release.
+
+The latest158 phone log referenced by the other chat was not available in
+this workspace or returned by current file retrieval. Device performance
+and actual masked-path selection therefore remain unmeasured here. Next:
+read that heavy-scene log, compare stabilized FPS/GPU time to12:26:39, and
+check `GPU fragment-masked draws` before choosing the next GPU change.
+Do not regenerate156, reopen the fixed cave investigation, or infer a
+phone gain from the synthetic store benchmark.
