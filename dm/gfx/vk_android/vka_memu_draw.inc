@@ -16,8 +16,40 @@
 // A draw's entry is the next one of its record in walk order, not the first one of its record (vka_memu_order.h: one look-ahead can meet a record more than once)
 #include "vka_memu_order.h"
 enum { MEMU_MAX = VKA_MEMU_ORDER_MAX };
-typedef struct { int ok, rec, indexed, points; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; } memu_ent;
+typedef struct { int ok, rec, indexed, points; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; uint32_t direct_task_x, direct_mesh_x; } memu_ent;
 static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws; } MB;
+// Eliminate GPU indirect-argument fetch for a *direct*, one-dimensional
+// dispatch only when setup's GPU-generated launch is provably either the
+// exact known x count or ZERO on arena-allocation failure. The converted
+// task/mesh shader guards its first guest instruction with x < NTASK/TOTAL,
+// so in the failed-allocation case the extra workgroups perform no guest
+// shader work and cannot change any arena writes or raster output.
+// Never replace actual guest indirect draws or a dispatch that might have
+// a different x/y launch shape after capacity clipping.
+static uint32_t memu_direct_x(const uint32_t *r, uint32_t cap_words,
+                              uint32_t count, int indirect, int task_stage) {
+    if (indirect || !count) return 0;
+    uint32_t mx = r[VKA_MEMU_R_MAXG];
+    if (!mx) mx = 1;
+    if (mx > 65535u) mx = 65535u;
+    if (count > mx) return 0;
+    uint64_t needed;
+    if (task_stage) {
+        if (!(r[VKA_MEMU_R_FLAGS] & VKA_MEMU_F_TASK)) return 0;
+        needed = (uint64_t)count * ((uint64_t)r[VKA_MEMU_R_WT] + 1u);
+    } else {
+        if (r[VKA_MEMU_R_FLAGS] & VKA_MEMU_F_TASK) return 0;
+        uint64_t per = (r[VKA_MEMU_R_FLAGS] & VKA_MEMU_F_INTERLEAVED) ?
+            r[VKA_MEMU_R_VSTRIDE] : (uint64_t)r[VKA_MEMU_R_VSTRIDE] + r[VKA_MEMU_R_PSTRIDE];
+        needed = (uint64_t)count * (per ? per : 1u);
+    }
+    return needed <= cap_words ? count : 0;
+}
+static uint64_t g_memu_direct_task, g_memu_direct_mesh;
+void vka_memu_direct_stats(uint64_t *task, uint64_t *mesh) {
+    if (task) *task = g_memu_direct_task;
+    if (mesh) *mesh = g_memu_direct_mesh;
+}
 static memu_ent *g_memu_cur;
 // The record being replayed: its entry (the next of its record from the batch's cursor, taken), NULL when the batch has none left for it
 void vka_memu_cur(const uint8_t *p) { int i = vka_memu_order_take(&MB.o, p); g_memu_cur = i < 0 ? NULL : &MB.e[i]; }
@@ -32,7 +64,7 @@ static void memu_write(uint32_t binding, VkBuffer b, VkDeviceSize off, VkDeviceS
 }
 static void memu_bind_arena(void) { memu_write(VKA_MEMU_ARENA_BINDING, MB.arena, 0, VK_WHOLE_SIZE); }
 // A compute form's dispatch: its stage's bindings walked with the replay state of its draw, the arena and the records, its record's index, its indirect arguments
-static void memu_dispatch(const vka_dstate *d, int st, vka_shader *cs, const vka_layout *lay, VkPipeline p, int idx, uint32_t argw, uint64_t original_key) {
+static void memu_dispatch(const vka_dstate *d, int st, vka_shader *cs, const vka_layout *lay, VkPipeline p, int idx, uint32_t argw, uint64_t original_key, uint32_t direct_x) {
     vka_res *r = g_wk.r[5]; int pool = 0; char why[200];
     int n = vka_walk(&d->b, st, cs->e, cs->b, cs->lib->h->ssbo_align, V.sb_align, rd_cb, NULL, r, 512, &pool, why, sizeof why);
     if (n < 0) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 8) VRED("%s shader through compute %016llx: %s; skipped", st == 6 ? "task" : "mesh", (unsigned long long)cs->key, why); return; }
@@ -46,7 +78,13 @@ static void memu_dispatch(const vka_dstate *d, int st, vka_shader *cs, const vka
     uint32_t pc[4] = {(uint32_t)idx, 0, 0, 0};
     vk.vkCmdPushConstants(g_cb, lay->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, VKA_MEMU_PUSH_BYTES, pc);
     vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, p);
-    vk.vkCmdDispatchIndirect(g_cb, MB.rec.buf, MB.rec.off + ((VkDeviceSize)idx * VKA_MEMU_REC_WORDS + argw) * 4);
+    if (direct_x) {
+        vk.vkCmdDispatch(g_cb, direct_x, 1, 1);
+        if (st == 6) ++g_memu_direct_task;
+        else ++g_memu_direct_mesh;
+    } else {
+        vk.vkCmdDispatchIndirect(g_cb, MB.rec.buf, MB.rec.off + ((VkDeviceSize)idx * VKA_MEMU_REC_WORDS + argw) * 4);
+    }
     // The GL/depth converted shader key is XOR-tagged. Log the ORIGINAL
     // NVN2 library source key so the precise GPU hotspot maps to its
     // captured .ctl/.code without ever changing shader compilation.
@@ -112,6 +150,14 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
             if (!vka_addr(dw->ind, 8, &b, &o, NULL) || (o & 3)) { static _Atomic int k; if (atomic_fetch_add(&k, 1) < 4) VRED("indirect mesh draw record at %#llx not in placed guest RAM: skipped", (unsigned long long)dw->ind); return; }
             VkBufferCopy c = {o, MB.rec.off + ((VkDeviceSize)E->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_COUNT) * 4, 8}; vk.vkCmdCopyBuffer(g_cb, b, MB.rec.buf, 1, &c);
         } else { r[VKA_MEMU_R_COUNT] = dw->count > 0 ? (uint32_t)dw->count : 0; r[VKA_MEMU_R_FIRST] = dw->first > 0 ? (uint32_t)dw->first : 0; }
+        // A GPU-capacity failure produces NTASK/TOTAL=0; an exact direct
+        // count otherwise matches both indirect dispatch dimensions. Never
+        // choose direct for dynamic guest draws, tasks' mesh stage or 2D.
+        if (VKA_ENV("DM_VK_OOT_MEMU_DIRECT_GPU", 1)) {
+            uint32_t requested = dw->count > 0 ? (uint32_t)dw->count : 0;
+            E->direct_task_x = ts ? memu_direct_x(r, MB.cap, requested, dw->ind != 0, 1) : 0;
+            E->direct_mesh_x = !ts ? memu_direct_x(r, MB.cap, requested, dw->ind != 0, 0) : 0;
+        }
         E->indexed = mi->L.indexed; E->points = mi->L.points; E->ok = 1;
         if (E->tcs) {
             MB.task_draws++;
@@ -126,7 +172,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
     if (MB.live <= 0 || !MB.o.n) return;
     switch (phase) {
     case MEMU_SETUP: vka_barrier(g_cb); memu_helper(0); memu_phase_barrier(); break;
-    case MEMU_TASK: if (idx < MB.o.n && MB.e[idx].ok && MB.e[idx].tcs) memu_dispatch(d, 6, MB.e[idx].tcs, &MB.e[idx].tl, MB.e[idx].tp, idx, VKA_MEMU_R_TASK_X, MB.e[idx].ts ? MB.e[idx].ts->key : 0); break;
+    case MEMU_TASK: if (idx < MB.o.n && MB.e[idx].ok && MB.e[idx].tcs) memu_dispatch(d, 6, MB.e[idx].tcs, &MB.e[idx].tl, MB.e[idx].tp, idx, VKA_MEMU_R_TASK_X, MB.e[idx].ts ? MB.e[idx].ts->key : 0, MB.e[idx].direct_task_x); break;
     case MEMU_DIST:
         // The setup shader already calls place(R, count) for taskless mesh
         // draws; distribution returns immediately for these records. With
@@ -140,7 +186,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
                      (unsigned long long)bypassed);
         }
         break;
-    case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X, MB.e[idx].ms ? MB.e[idx].ms->key : 0); break;
+    case MEMU_MESH: if (idx < MB.o.n && MB.e[idx].ok) memu_dispatch(d, 7, MB.e[idx].mcs, &MB.e[idx].ml, MB.e[idx].mp, idx, VKA_MEMU_R_MESH_X, MB.e[idx].ms ? MB.e[idx].ms->key : 0, MB.e[idx].direct_mesh_x); break;
     case MEMU_END: memu_phase_barrier(); vka_memu_n_batches++; vka_memu_n_draws += (uint64_t)MB.o.n; break;
     }
 }
