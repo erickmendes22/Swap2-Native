@@ -882,3 +882,14 @@ Normal longframes show GPU approximately22ms. Zero-grid dispatch profiling
 shows artificial costs because the ALREADY EXISTING no-op shortcut is
 disabled during GPU profiling; ordinary frames already omit that work.
 Do not claim another ordinary-frame speedup by reapplying it.
+
+Validation completed: real Vulkan/Khronos paired GPU output checks PASS for
+taskless and task-fed triangles in both storage layouts, including32
+primitives, unchanged task prefix/payload and a position oracle. Production
+selector executes64 combinations and always keeps producer/consumer paired
+and task module untouched on success/fallback. Query policy and compute
+overlap regressions PASS. Software task-fed coalesced timing0.942pruned/full
+is an indicator only, not a phone FPS claim. Build159 enables the previously
+excluded task-fed pair for on-device validation. If the device still reports
+zero selected draws, inspect actual fragment input masks/variant eligibility
+before attempting another store optimization.

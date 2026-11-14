@@ -263,6 +263,53 @@ class CoalescedReadback(unittest.TestCase):
                               f"pruned/full={pruned_time/full_time:.3f} "
                               f"(Lavapipe, not Adreno FPS)")
 
+    def test_task_pair_selection_keeps_original_stages_on_partial_failure(self):
+        source = (VK / "vka_memu_draw.inc").read_text()
+        begin = source.index("        if (E->vs && E->mcs &&")
+        end = source.index("        if (!E->vs || !E->mcs", begin)
+        selector = source[begin:end]
+        harness = r'''
+#include <assert.h>
+#include <string.h>
+#define DM_GAME_ID "0400486024DEC000"
+#define VKA_ENV(key, def) enabled
+ typedef struct { int id; } vka_shader;
+ static vka_shader original_vs, original_cs, masked_vs, masked_cs, task;
+ static int enabled, resolve_ok, bad_bits, vs_ok, cs_ok;
+ static int resolve(const void *p, int stage, vka_shader **f, unsigned *bad) {
+     (void)p; assert(stage == 1); *f = 0; *bad = bad_bits; return resolve_ok;
+ }
+ static vka_shader *vka_memu_vs_for_fs(vka_shader *m, vka_shader *f) {
+     (void)m; (void)f; return vs_ok ? &masked_vs : &original_vs;
+ }
+ static vka_shader *vka_memu_cs_for_fs(vka_shader *m, int gl, vka_shader *f) {
+     (void)m; (void)f; assert(gl == 1); return cs_ok ? &masked_cs : &original_cs;
+ }
+ static int vka_depth_zero(void) { return 0; }
+ int main(void) {
+ for(int has_task=0;has_task<2;has_task++)
+ for(enabled=0;enabled<2;enabled++) for(resolve_ok=0;resolve_ok<2;resolve_ok++)
+ for(bad_bits=0;bad_bits<2;bad_bits++) for(vs_ok=0;vs_ok<2;vs_ok++)
+ for(cs_ok=0;cs_ok<2;cs_ok++) {
+     struct { vka_shader *vs,*mcs,*tcs; } entry = {&original_vs,&original_cs,has_task?&task:0}, *E=&entry;
+     struct { const void *bst[8]; } state = {{0}}, *d=&state;
+     vka_shader *ms=0;
+'''
+        tail = r'''
+     int paired=enabled&&resolve_ok&&!bad_bits&&vs_ok&&cs_ok;
+     assert(E->vs==(paired?&masked_vs:&original_vs));
+     assert(E->mcs==(paired?&masked_cs:&original_cs));
+     assert(E->tcs==(has_task?&task:0));
+ }
+ return 0;
+}
+'''
+        src=self.work/"task-pair.c"; exe=self.work/"task-pair"
+        src.write_text(harness+selector+tail)
+        subprocess.run([self.cc,"-Wall","-Wextra","-Werror","-fsanitize=undefined",
+                        str(src),"-o",str(exe)],check=True,capture_output=True,text=True)
+        subprocess.run([str(exe)],check=True)
+
     def test_default_modules_are_byte_identical_to_build118(self):
         # Recorded from c0397be0's actual converter before this change.
         golden = {

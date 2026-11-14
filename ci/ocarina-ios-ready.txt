@@ -511,3 +511,8 @@ Build 158 GPU masked output specialization (signed current branch, based on appr
 - Port verified paired masked mesh compute producer + vertex consumer: no unsupported shader input removed; original stages used together on fallback.
 - Real Vulkan Lavapipe GPU masked SSBO store benchmark, exact surviving data: 16 workgroups 1.354x, 64 2.090x, 128 2.604x. This is an indicator, not measured phone FPS.
 - Heavy non-cave performance reference: 20261114-122639, 43.9 FPS after stabilization. Do not benchmark performance using the lighter cave capture 12:28:13.
+
+Build159: task-fed paired mesh output specialization after158 log131245.
+- Device158 reports43.4-43.9FPS and ZERO selected masked draws; remove the selector's task-presence exclusion, leaving original task payload/distribution modules and records intact.
+- Real Vulkan/Khronos GPU readback passes task-fed/taskless pairs in both layouts; position,32primitive outputs,task prefix/payload preserved.64 production selector cases verify paired fallback; cave and overlap tests pass.
+- Preserve157 depth-dirty cave fix, shader library/ABI, com.swap2native.ootv11ios and persistent a1c468aff0b99e28 signer. Single update APK via this workflow; no unsupported phone FPS claim.
