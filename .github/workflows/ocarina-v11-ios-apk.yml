@@ -4,7 +4,6 @@ on:
     branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test]
     paths:
       - ci/ocarina-ios-ready.txt
-      - .github/workflows/ocarina-v11-ios-apk.yml
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,8 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: 2e4a5179fe821f1d76e467151ef7bb010abd7946
       - name: Install Zstandard for dictionary-compressed NUP regression
         run: |
           if python3 -c 'from compression import zstd'; then
@@ -134,8 +131,6 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: 2e4a5179fe821f1d76e467151ef7bb010abd7946
       - name: Generate matching shader headers for the actual APK build
         shell: bash
         run: |
