@@ -138,3 +138,5 @@ Build179 validation-fix retry, 2026-11-15:
 - GitHub commit6efa637 updates the fixture, tests both classic/mesh and indexed preparation order, and makes this regression part of incremental CI. Full incremental run43744383935 SUCCESS before this retry.
 - Renderer, optional GPU visibility defaultOFF,178 vegetation correction,177 memory policies, shader library/ABI and package/signature are unchanged from the tested source594ab77.
 - Retry the signed179 update; require an actual successful APK build and matching package, higher versionCode and a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad signer before delivery. Device FPS benefit remains unmeasured.
+
+Build179 retry after complete APK preflight review: cave report fixture now verifies begin/fresh metadata across128 paths; production rendering unchanged.
