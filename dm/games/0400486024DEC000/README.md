@@ -1546,3 +1546,47 @@ stages. Only two pipelines were built on the frame path, so missing-shader
 preparation is not an established explanation for the steady GPU cost.
 Performance investigation remains open; do not attribute a speedup to the
 indirect rendering correction or undo the confirmed RAM improvement.
+
+### Build178 delivery and continued GPU audit (2026-11-15)
+
+Vegetation source correctioncb68a29b; signed APK commitd0cef99a,
+Actions43734047446 SUCCESS, artifact14170355283. Actual package
+`com.swap2native.ootv11ios`, versionCode188, signerSHA256
+`a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad`
+were checked from the finished APK's aapt/apksigner output. Installs over177
+(code187); preserve prepared shaders and RAM policy. Source-correction GPU
+correctness43733910698 and incremental43733910893 also SUCCESS. The user
+requested this vegetation-only correction while performance research continues.
+Device vegetation confirmation and a measured performance improvement remain open.
+
+Continued audit uses the previously supplied `nvn_shdump.zip`, not a new
+collection request. Hash-verify each captured control/code pair; take the
+reviewed task/mesh layout facts from the profile and translate with its pinned
+translator and Vulkan answers (subgroup64, storage alignment64, shared32768).
+This is an isolated geometry survey, never a substitute supplement for import:
+no unverified new mesh/pixel pairing is installed and no external shader ABI
+changes. All55 captured task/mesh programs translate and pass `spirv-val
+--target-env vulkan1.3`. Parse their raw modules with the production
+`vka_memu_layout_of` implementation:
+
+| Audit | Result | Consequence |
+|---|---|---|
+| Mesh versus task stages |50 mesh,5 task|Survey covers captured programs, not all508 supplement entries.|
+| Raster topology|All50 mesh layouts already indexed; none requires primitive-output expansion/cull|Do not propose indexed rendering as a new optimization.|
+| Declared versus emitted mesh outputs|All50 have one constant `OpSetMeshOutputsEXT` matching declared vertex/primitive maxima|No proven smaller static draw limit; clamping would remove real output.|
+| Heavy fragment19f99 AST variants|One pool-array access instrumentation site in each variant|No duplicate same-site feedback elimination opportunity established in these modules; this does not measure feedback runtime cost.|
+
+Examples from the actual parsed mesh layouts: `eb021183bf9b0092`96 vertices/
+32 primitives, `fed302d791a4ba43`128/64, `604134a5262ff670`128/64,
+`3439aaa071d868ae`64/126, `d4171cf9adf0504b`64/126. All already indexed.
+Consequently, no performance option or speculative optimization APK is added
+for these rejected ideas. The measured expensive graphics blocks still require
+work beyond enabling indexing, shrinking declared output counts or removing
+duplicate feedback. Original177 captured frame timings remain the evidence;
+translation/validation success is not a phone benchmark.
+
+HookLink's latest engine storage-write-set optimizationf5c68a8a is Metal
+`nvn_mtl.m`'s16384-slot commit scan. Android's separate `vka_tex_gw_commit`
+has a256-entry raw-write-log ring instead. Blindly porting that Metal change
+would not eliminate the cited Android graphics cost. Reassess applicable
+shared changes individually rather than count a Metal-only edit as a GPU gain.
