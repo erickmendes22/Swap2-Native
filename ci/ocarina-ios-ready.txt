@@ -156,3 +156,11 @@ Build194 GSR2 Banana-profile launcher gate fix, 2026-11-15:
 - GSR2 selection emits DM_VK_OOT_GSR2=1, sets final output filter to bilinear rather than adding redundant SGSR1 and disables the incompatible SGSR1-only chain bypass. Original NDSR fallback remains.
 - JVM test checks six actual profile modes; source regression asserts UI and env gate. Preserve VRS 2x2 choice and 177 RAM / 178 vegetation and original signing identity.
 - Require one signed install-over APK, package com.swap2native.ootv11ios versionCode>193 and same a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad signer, no full game shader prep.
+
+Build195: real GSR2 invocation + motion scale correction (2026-11-15).
+- User Build194 log 0400486024DEC000-20261115-163141.log explicitly records DM_VK_OOT_GSR2=1, but NDSR network 04135bb812a0d66e was handled by SGSR1; no GSR2 pipeline activation anywhere.
+- Root cause: the temporal dispatch used a stale four-shader whitelist, excluding actual 04135bb812a0d66e. Match exact agl NDSR interface, and validate input 640x360 or 960x540 / output 1280x720, preserving NDSR fallback if unsupported.
+- Flow shader originally wrote delta/size UV while convert multiplied by mvs 1 (instead of delta pixels and 1/size), causing wrong motion units on activation; corrected both together, with regression test of PrevUV sign and scale.
+- One lightweight log when a candidate matches, then actual successful pass log; any absence is an unambiguous runtime regression, not a performance result.
+- Keep Build194 profile setting, same VRS preference, RAM/vegetation, shader ABI and existing signer.
+- Build signed install-over com.swap2native.ootv11ios versionCode>194 same a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad certificate. No game shader rebuild.
