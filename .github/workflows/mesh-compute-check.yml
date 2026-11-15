@@ -1,7 +1,7 @@
 name: Mesh compute correctness (no APK)
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113]
+    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113, experiment/ocarina-168-resampling-safety]
     paths:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
@@ -50,6 +50,9 @@ on:
       - dm/gfx/vk_android/selftest/renderpass_gpu.c
       - dm/tools/tests/test_renderpass_cache_gpu.py
       - dm/gfx/vk_android/vka_ndsr*
+      - dm/gfx/vk_android/fsr/ndsr_sgsr.comp
+      - dm/gfx/vk_android/selftest/sgsr_reference.comp
+      - dm/gfx/tools/tests/test_ocarina_168_sgsr_sampling.py
       - dm/gfx/vk_android/fsr/ndsr*
       - dm/gfx/vk_android/selftest/*sgsr*
       - dm/gfx/vk_android/selftest/ndsr_lvp.c
@@ -93,6 +96,8 @@ jobs:
           VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
           VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
         run: python3 -m unittest dm.gfx.tools.tests.test_pool_bind_cache -v
+      - name: Prove lower-resolution SGSR texel mapping and no HDR division by zero
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_168_sgsr_sampling.py -v
       - name: Validate SGSR1 pixels against independent Banana reference
         run: python3 -m unittest discover -s dm/tools/tests -p test_ndsr_sgsr_gpu.py -v
       - name: Exercise real encoder ring ordering and copied arguments
