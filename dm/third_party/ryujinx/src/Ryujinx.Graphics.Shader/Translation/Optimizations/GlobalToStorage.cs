@@ -1046,6 +1046,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             bool cacheLast = true;
             bool fastPool = Environment.GetEnvironmentVariable("DMSH_GMEM_FAST1") == "1";
             bool extendedMap = Environment.GetEnvironmentVariable("DMSH_GMEM_MAP_8192") == "1";
+            bool pageIndex = extendedMap && Environment.GetEnvironmentVariable("DMSH_GMEM_PIDX") == "1";
             Operand selected = fastPool || cacheLast ? Local() : null;
             Operand afterSearch = fastPool || cacheLast ? Label() : null;
             Operand chosen = cacheLast ? Label() : null;
@@ -1120,6 +1121,40 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             context.Copy(selected, hintIndex);
             context.Branch(afterSearch);
             context.MarkLabel(hintMiss);
+            // Optional bounded guest-page index: only after the original
+            // exact-range cache, pool-1 and 2-MiB collision-checked hint miss.
+            // The host appends an immutable index to the existing 8192-entry
+            // map descriptor. Zero count, an uncovered page, or an invalid
+            // candidate always falls back to the original 13-step search.
+            // The runtime index is opt-in; shaders built without this compiler
+            // flag retain their original bindings and search unmodified.
+            if (pageIndex)
+            {
+                Operand page = context.BitwiseOr(
+                    context.ShiftLeft(addrHigh, Const(20)),
+                    context.ShiftRightU32(addrLow, Const(12)));
+                Operand indexHeader = Const(8192 * GmemMapEntryWords);
+                Operand indexBase = MapWord(indexHeader, 0);
+                Operand indexCount = MapWord(indexHeader, 1);
+                Operand offset = context.ISubtract(page, indexBase);
+                Operand covered = context.BitwiseAnd(
+                    context.ICompareLessUnsigned(addrHigh, Const(1 << 12)),
+                    context.BitwiseAnd(
+                        context.ICompareLessOrEqualUnsigned(indexBase, page),
+                        context.ICompareLessUnsigned(offset, indexCount)));
+                Operand indexMiss = Label();
+                context.BranchIfFalse(indexMiss, covered);
+                Operand record = context.IAdd(indexHeader,
+                    context.IAdd(Const(4), offset));
+                Operand candidate = MapWord(record, 0);
+                Operand valid = context.BitwiseAnd(
+                    context.ICompareNotEqual(candidate, Const(0)),
+                    context.ICompareLessUnsigned(candidate, Const(8192)));
+                context.BranchIfFalse(indexMiss, valid);
+                context.Copy(selected, candidate);
+                context.Branch(afterSearch);
+                context.MarkLabel(indexMiss);
+            }
             // The last entry whose start is at or below the address (entry 0 starts at 0, so there always is one)
             Operand index = Const(0);
 
