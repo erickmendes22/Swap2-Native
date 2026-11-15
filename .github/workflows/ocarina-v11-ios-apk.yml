@@ -35,6 +35,7 @@ jobs:
           python3 dm/gfx/tools/vk_abi_migrate.py --check
           python3 -m unittest discover -s dm/tools/tests -p test_ocarina_0185_shared_buffer.py -v
           python3 -m unittest dm.tools.tests.test_android_shader_fileback_default -v
+          python3 -m unittest dm.tools.tests.test_ocarina_app_pool_budget -v
           python3 -m py_compile dm/gfx/tools/vk_abi_migrate.py scripts/ocarina_shader_hot_delta.py
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_abi_migration.py'
           python3 -m unittest discover -s dm/tools/tests -p 'test_android_readiness.py' -v
