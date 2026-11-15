@@ -1,0 +1,52 @@
+name: Ocarina page-index and barriers (research only, no APK)
+on:
+  push:
+    branches: [research/ocarina-page-index-barriers]
+    paths:
+      - .github/workflows/ocarina-memory-research.yml
+      - dm/gfx/research/ocarina_memory/**
+      - dm/gfx/tools/tests/test_ocarina_memory_research.py
+      - docs/research/ocarina-page-index-barriers.md
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-proof:
+    if: github.ref == 'refs/heads/research/ocarina-page-index-barriers'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify production renderer and launcher are unchanged
+        run: git diff --exit-code 29e2fad0ab9e7edca3e0c10f44ce715618bcb8c4 -- android dm/gfx/vk_android dm/third_party dm/games/0400486024DEC000/game.tsv ci/ocarina-ios-ready.txt
+      - name: Install software Vulkan and validation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers libvulkan-dev spirv-tools glslang-tools vulkan-validationlayers
+          python3 - <<'PY'
+          import glob,os
+          paths=glob.glob('/usr/share/vulkan/icd.d/lvp*.json')
+          assert len(paths)==1,paths
+          with open(os.environ['GITHUB_ENV'],'a')as f:f.write('VK_ICD_FILENAMES='+paths[0]+'\n')
+          PY
+      - name: Compare current 8192-entry helpers, direct index and retained-cache index
+        env:
+          MEMU_TEST_VULKAN: '1'
+          VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+          VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+          RESEARCH_RESULTS: page-index-work-counts.json
+        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_memory_research -v
+      - name: Preserve existing production synchronization fixtures
+        env:
+          MEMU_TEST_VULKAN: '1'
+          VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+          VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+        run: python3 -m unittest dm.gfx.tools.tests.test_selective_transfer_compute_gpu dm.gfx.tools.tests.test_depth_pass_optimizations -v
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: research-page-index-work-counts
+          path: page-index-work-counts.json
+          if-no-files-found: warn

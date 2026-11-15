@@ -29,3 +29,33 @@ Using only the4.07ms sampled mesh/task budget: hypothetical reductions10/25/50pe
 - AnkaNative b2c0f4cfc37a8c75fad1d36f3e912ef0820416e4: page-index shader/host tests.
 - FrenklinFish/BananaNative6db28a65764f9661740ed2fd8aba51ed6f73702f: vka_gbar policy.
 - Current production source and user-approved RAM/vegetation/upscale fixes remain on the pinned base.
+
+
+## Expanded isolated prototype (not wired into the app)
+
+`dm/gfx/research/ocarina_memory/` contains an8192-entry GLSL model guarded against changes to the current translator's cache/hint constants, a direct page-index model, and a cache-preserving model. It is a synthetic model of production semantics, not the actual translated game shader and not proof of runtime eligibility. The retained cache stores a page-local range after an index hit; original range-cache hits, pool1 and hints still precede the index. Uncovered pages fall back to the original full13-step search. A zero record never silently substitutes a valid load with zero. New library flags, runtime tables and ABI are deliberately absent.
+
+Local exact-output results, each row over64 invocations including mapped/unmapped loads/stores, pool ends, high-word carries and out-of-window addresses:
+
+| Table | Warm loads | Baseline search probes | Retained-cache index probes | Extra index reads | Probe reduction |
+|---|---|---:|---:|---:|---:|
+| Sparse | No |637|455|49|28.6%|
+| Sparse | Yes |2977|2275|229|23.6%|
+| Full8192 entries | No |637|364|49|42.9%|
+| Full8192 entries | Yes |2899|1820|223|37.2%|
+
+These count executed search steps, not all GPU instructions or bytes. The index introduces dependent reads and potentially live registers; fewer search probes is not a proportional shader speedup. The warm case deliberately alternates pools and is not a measured game cache-hit distribution. Replacing the cache entirely requires320 index lookups in the warm fixture, versus223/229 when it is retained. Therefore investigate the retained-cache form first; do not claim that replacing a zero-read cache hit with an indexed load is always faster.
+
+The four configurations compare every loaded value, warm-load digest, all pool bytes, the write-log page set and sink behavior across all three algorithms. Four corrupted-load negative controls are detected. Software-Vulkan validation must stay clean. The host index test still checks4500 mutation steps/9million random lookups. It mutates an idle index for arithmetic testing; it does not prove safe lifetime of live GPU generations.
+
+Barrier tests execute the original policy and record scopes with this branch's production barrier functions. They include transfer chains, direct/indirect dispatches and timestamp-result copies.32cases preserve4096bytes each. The broken settle dependency must raise synchronization errors. Exhaustive policy proof covers13,451,200 abstract sequences. This is not a complete interception-layer integration; every production work API, especially query copies, must be classified before any runtime adoption.
+
+## Remaining gates
+
+- Translate actual captured helpers to the new model; automatic admission remains0/8 with the unmodified Anka pass. Do not commit proprietary modules.
+- Prove generation immutability, including several mapping changes within one unsubmitted command buffer; reject in-place reuse while any recorded reader exists.
+- Test index memory cap, non-page-aligned pools, partial coverage and original-search fallback in the actual renderer. A9GiB flat window needs18MiB per8-byte index copy before metadata; four copies are72MiB. Prefer a bounded strategy and preserve the confirmed RAM savings.
+- Measure actual cache/hint misses and target-stage GPU time on Adreno before revising the conditional FPS sensitivity. Keep shader math, depth, vegetation and user settings unchanged.
+- The workflow is branch-specific, read-only to GitHub and has no build/sign/publish steps. Its first step verifies the active renderer, translator, profile and launcher are unchanged from the research base.
+
+Reference snapshots retain original comments; `pidx_reference.h`, `pidx_random.c` and the base of `pidx_gpu.c` derive from AnkaNative's pinned MIT sources. The synthetic GPU runner additionally enables maintenance4, uses8192 entries, keeps its window within128MiB descriptor limits, and exports independent work counters. The barrier policy/record scopes and exhaustive checker come from Banana Native (MIT); the policy is identical in FrenklinFish6db28a65764f and local upstreamdc7c4203cee1a4784afb751a8ea8abce6b31acd3. These references are fixtures, never linked by the Android build.
