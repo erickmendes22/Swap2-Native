@@ -124,6 +124,12 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_hot_shader_overlay.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_captured_shaders.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v22_gpu_raw_vector_hints.py'
+          # Page-index host correctness and both shader compilation entrypoints;
+          # fail before compiling the APK if the opt-in integration regresses.
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_page_index_runtime.py' -v
+          cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+            dm/gfx/vk_android/selftest/gmem_pidx.c -o /tmp/ocarina_page_index
+          ASAN_OPTIONS=detect_leaks=1 /tmp/ocarina_page_index
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pack_finalize_atomic.py'
       - uses: actions/setup-dotnet@v4
         with:
