@@ -74,7 +74,10 @@ permissions:
   contents: read
 jobs:
   readback:
-    runs-on: ubuntu-24.04
+    # Use the same glslc toolchain as the signed APK and committed SGSR
+    # header. Ubuntu 24.04 ships glslc 2023.8, while the reference
+    # header was generated/validated with glslc 2026.1 on ubuntu-latest.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Vulkan software driver and validation tools
