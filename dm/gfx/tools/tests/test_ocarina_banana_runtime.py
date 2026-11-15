@@ -96,17 +96,19 @@ int main(void) {
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-enum { OP_DRAW=1, OP_DRAW_IDX=2 };
+enum { OP_DRAW=1, OP_DRAW_IDX=2, NVN_PRIM_MESH=256 };
 typedef struct { int prim; } p_draw;
 typedef struct { int count; } p_draw_idx;
 static struct { int rc_skip,d,rt,has_rt,sc,has_sc; } S;
 static int g_cb=1,g_oq_count,g_oq_lost,g_oqs_skip,g_stat_draws;
-static int prepared,drawn,open_pass,expected_op,expected_calls,predictions;
+static int prepared,drawn,open_pass,expected_op,expected_calls,predictions,invalidated;
 static const uint8_t *expected_record;
 static const void *expected_args;
 static const p_draw *draw_rec(const void *a,unsigned n,p_draw *t) { (void)n;(void)t;return a; }
 static const p_draw_idx *draw_idx_rec(const void *a,unsigned n,p_draw_idx *t) { (void)n;(void)t;return a; }
+static void vka_rc_gpu_invalidate(void) { assert(!prepared);invalidated++; }
 static void memu_before_draw(const uint8_t *p,const p_draw *d) {
+    assert(invalidated==(expected_op==OP_DRAW && ((const p_draw*)expected_args)->prim==NVN_PRIM_MESH));
     assert(p==expected_record && !prepared);
     assert(expected_op==OP_DRAW ? d==expected_args : d==NULL);
     prepared=1;open_pass=0;
@@ -135,7 +137,8 @@ static void replay(int op,const uint8_t *p,const void *a) {
 }
 int main(void) {
     uint8_t record[32]={0};p_draw draw={1};p_draw_idx indexed={3};
-    for(int op=OP_DRAW;op<=OP_DRAW_IDX;op++)for(int initial_open=0;initial_open<=1;initial_open++) {
+    for(int mesh=0;mesh<=1;mesh++)for(int op=OP_DRAW;op<=OP_DRAW_IDX;op++)for(int initial_open=0;initial_open<=1;initial_open++) {
+        draw.prim=mesh?NVN_PRIM_MESH:1;invalidated=0;
         expected_op=op;expected_record=record;expected_args=op==OP_DRAW ? (const void*)&draw : (const void*)&indexed;
         prepared=drawn=predictions=0;open_pass=initial_open;S.rc_skip=0;g_cb=1;
         replay(op,record,expected_args);
@@ -144,7 +147,7 @@ int main(void) {
         replay(op,record,expected_args);assert(!prepared && !drawn);
         S.rc_skip=0;g_cb=0;replay(op,record,expected_args);assert(!prepared && !drawn);
     }
-    assert(g_stat_draws==4);
+    assert(g_stat_draws==8);
     return 0;
 }
 ''')

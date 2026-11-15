@@ -118,6 +118,8 @@ jobs:
             android/app/src/main/java/dev/nxnative/android/GpuRuntimeError.java \
             android/app/src/jvmtest/java/dev/nxnative/android/GpuRuntimeErrorJvmTest.java
           java -cp /tmp/gpu-runtime-jvm dev.nxnative.android.GpuRuntimeErrorJvmTest
+      - name: Verify actual draw replay mesh preparation and invalidation order
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_banana_runtime.py -v
       - name: Python source compile
         run: python3 -m py_compile scripts/ocarina_shader_hot_delta.py scripts/build_ocarina_hot_shaders.py scripts/pack_android.py dm/tools/tests/test_ocarina_shader_delta.py
       - name: Android universal Play without Vulkan preflight
