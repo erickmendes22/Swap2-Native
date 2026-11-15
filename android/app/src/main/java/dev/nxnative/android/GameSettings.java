@@ -248,6 +248,11 @@ final class GameSettings {
             Ui.Setting narrow = new Ui.Setting(a,R.drawable.s2_ic_gauge,a.getString(R.string.s2_narrow_barriers),null)
                 .toggle(a,Prefs.gpuNarrowBarriers(a,id),(button,on)->Prefs.gpuNarrowBarriers(a,id,on));
             narrow.value(a.getString(R.string.s2_narrow_barriers_note));box.addView(narrow.view);
+            Ui.Setting pageIndex = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    a.getString(R.string.s2_gpu_page_index), null)
+                    .toggle(a, Prefs.gpuPageIndex(a, id), (button, on) -> Prefs.gpuPageIndex(a, id, on));
+            pageIndex.value(a.getString(R.string.s2_gpu_page_index_note));
+            box.addView(pageIndex.view);
 
             Ui.Setting unusedColorTargets = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_unused_color), null)
                     .toggle(a, Prefs.unusedColorTargets(a, id), (button, on) -> Prefs.unusedColorTargets(a, id, on));
