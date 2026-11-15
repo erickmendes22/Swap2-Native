@@ -22,6 +22,8 @@ jobs:
           else
             python3 -m pip install --user --break-system-packages backports.zstd==1.8.0
           fi
+      - name: Validate optional GPU visibility defaults and safe counter blocks
+        run: python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.tools.tests.test_ocarina_gpu_visibility_option -v
       - name: Validate shader ABI and internal scene resolution profiles
         shell: bash
         run: |
