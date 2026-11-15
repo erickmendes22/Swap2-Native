@@ -148,7 +148,11 @@ void reconstruct(uvec2 pixel)
 
 	if ( OperationMode!=4)
 	{
-		highp vec2 imgCoord = ((in_TEXCOORD0.xy*ViewportInfo[0].zw)+vec2(-0.5,0.5));
+        // Vulkan image texel (0,0) is centred at UV (0.5/w,0.5/h)
+        // on BOTH axes. The Qualcomm GL-oriented +0.5 Y offset gathered
+        // the row one texel BELOW the sample's own row. This phase shift
+        // appears as scan-line streaks when reconstructed from a smaller scene.
+		highp vec2 imgCoord = ((in_TEXCOORD0.xy*ViewportInfo[0].zw)+vec2(-0.5,-0.5));
 		highp vec2 imgCoordPixel = floor(imgCoord);
 		highp vec2 coord = (imgCoordPixel*ViewportInfo[0].xy);
 		vec2 pl = (imgCoord+(-imgCoordPixel));
@@ -171,8 +175,12 @@ void reconstruct(uvec2 pixel)
 			color.w =color[OperationMode] - mean;
 
 			float sum = (((((abs(left.x)+abs(left.y))+abs(left.z))+abs(left.w))+(((abs(right.x)+abs(right.y))+abs(right.z))+abs(right.w)))+(((abs(upDown.x)+abs(upDown.y))+abs(upDown.z))+abs(upDown.w)));
-			float sumMean = 1.014185e+01/sum;
-			float std = (sumMean*sumMean);
+			// This source is encoded HDR (often sqrt-colour). A tiny contrast sum
+            // must never overflow mediump into INF; INF*0 produces NaNs,
+            // which become bright invalid B10G11R11 pixels after packing.
+            // On ordinary contrast this is byte-identical to the old formula.
+            highp float sumMean = 1.014185e+01/max(highp float(sum),1.0e-4);
+            highp float std = min(sumMean*sumMean, 65504.0);
 
 #if defined(UseEdgeDirection)
 			vec3 data = vec3(std, edgeDirection(left, right));
@@ -192,8 +200,13 @@ void reconstruct(uvec2 pixel)
 			aWY += weightY(pl.x-2.0, pl.y, right.z,data);
 			aWY += weightY(pl.x-1.0, pl.y, right.w,data);
 
-			float finalY = aWY.y/aWY.x;
-			float maxY = max(max(left.y,left.z),max(right.x,right.w));
+            // If Lanczos weights nearly cancel (or any sampled data is
+            // invalid), keep the original sample rather than creating an
+            // isolated HDR sparkle by dividing through zero.
+            if (abs(aWY.x) > 1.0e-5 &&
+                !any(isnan(aWY)) && !any(isinf(aWY))) {
+            float finalY = aWY.y/aWY.x;
+            float maxY = max(max(left.y,left.z),max(right.x,right.w));
 			float minY = min(min(left.y,left.z),min(right.x,right.w));
 			float deltaY = clamp(EdgeSharpness*finalY, minY, maxY) -color.w;
 
@@ -203,6 +216,7 @@ void reconstruct(uvec2 pixel)
 			color.x = max((color.x+deltaY),0.0);   // (Qualcomm: clamp(..., 0.0, 1.0); see above)
 			color.y = max((color.y+deltaY),0.0);
 			color.z = max((color.z+deltaY),0.0);
+            }
 		}
 	}
 
