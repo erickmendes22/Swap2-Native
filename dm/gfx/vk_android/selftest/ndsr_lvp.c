@@ -121,6 +121,10 @@ static int init(void) {
     VkPhysicalDeviceVulkan13Features f13={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,.dynamicRendering=VK_TRUE};
     VkPhysicalDeviceVulkan12Features f12={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,.pNext=&f13,.imagelessFramebuffer=VK_TRUE};
     dc.pNext=&f12;
+#ifdef VKA_RC_COUNTER_REPLAY_TEST
+    f12.drawIndirectCount = VK_TRUE;
+    f.multiDrawIndirect = VK_TRUE;
+#endif
 #endif
 #ifdef VKA_GPU_VISIBILITY_TEST
     if (!have.pipelineStatisticsQuery) return 0;

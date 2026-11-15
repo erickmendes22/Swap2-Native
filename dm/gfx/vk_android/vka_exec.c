@@ -54,13 +54,20 @@ static double ms_now(void) { return (now_ns() % 1000000000000ull) / 1e6; }
 //   kept, at most 64, and tracking stopped silently past that.
 // Over RC_PEND_MAX reports in flight, every condition whose reports the list does not hold reads unknown (draws) until the submission that overflowed is done, and says so once
 typedef struct {
-    uint64_t addr, fence, oq_end, oq_lost, oq_epoch;
+    uint64_t addr, fence, oq_end, oq_lost, oq_epoch, oq_begin, gpu_write_epoch;
+    int oq_fresh;
     int kind;    // 1 timestamp, 2 unsupported counter, 3 counted occlusion
 } rc_rep;        // fence 0 = current recording; query sequence is monotonically increasing
 // For SAME-reset-epoch report pairs a,b: counter equality is equivalent to
 // no samples in the queries between their oq_end positions and no lost draws.
 // This permits no-WAIT early query availability without waiting for a fence.
 static uint64_t g_oq_epoch = 1, g_oq_lost_epoch_total, g_oq_last_report_head;
+static uint64_t g_oq_last_report_begin, g_rc_revision, g_rc_gpu_write_epoch = 1;
+static int g_oq_last_report_fresh;
+static void rc_gpu_sub_begin(void);
+static void rc_gpu_bind(const uint8_t *p);
+static void rc_gpu_written(uint64_t addr, uint64_t bytes);
+static void rc_gpu_stats(double frames);
 static uint64_t g_oq_head_placeholder(void) { return g_oq_last_report_head; }
 static uint64_t g_oq_early_tries, g_oq_early_done, g_oq_early_equal, g_oq_early_unavailable;
 static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal);
@@ -129,6 +136,7 @@ static void rc_occ_add(uint64_t a) {
 // report (kind 3) skips the set: it takes an entry, and its address reads from memory once its submission is done
 enum { RC_MERGE = 64 };
 static void rc_note(uint64_t a, int kind) {
+    g_rc_revision++;
     if (kind == 2) { rc_occ_add(a); if (rc_occ_has(a)) return; }
     for (int i = g_nrcp - 1, k = 0; i >= 0 && !g_rcp[i].fence && k < RC_MERGE; i--, k++) if (g_rcp[i].addr == a) {
         g_rcp[i].kind = kind;
@@ -136,6 +144,9 @@ static void rc_note(uint64_t a, int kind) {
             g_rcp[i].oq_end = g_oq_head_placeholder();
             g_rcp[i].oq_lost = g_oq_lost_epoch_total;
             g_rcp[i].oq_epoch = g_oq_epoch;
+            g_rcp[i].oq_begin = g_oq_last_report_begin;
+            g_rcp[i].oq_fresh = g_oq_last_report_fresh;
+            g_rcp[i].gpu_write_epoch = g_rc_gpu_write_epoch;
         }
         return;
     }
@@ -147,9 +158,13 @@ static void rc_note(uint64_t a, int kind) {
     g_rcp[g_nrcp++] = (rc_rep){.addr = a, .kind = kind,
         .oq_end = kind == 3 ? g_oq_last_report_head : 0,
         .oq_lost = kind == 3 ? g_oq_lost_epoch_total : 0,
-        .oq_epoch = kind == 3 ? g_oq_epoch : 0};
+        .oq_epoch = kind == 3 ? g_oq_epoch : 0,
+        .oq_begin = kind == 3 ? g_oq_last_report_begin : 0,
+        .oq_fresh = kind == 3 ? g_oq_last_report_fresh : 0,
+        .gpu_write_epoch = g_rc_gpu_write_epoch};
     rc_ix_put(a, (uint32_t)(g_nrcp - 1));
     if (g_nrcp > g_rcp_max) g_rcp_max = g_nrcp;
+    rc_gpu_stats(frames);
 }
 static void rc_prune(void) {   // the reports whose submissions are done are in memory now (post_run runs before the fence reads as done)
     uint64_t done = vka_done(); int j = 0;
@@ -222,6 +237,7 @@ static void rc_stats(char *b, size_t n, double frames) {
             g_oq_early_equal / frames, g_oq_early_unavailable / frames);
     g_oq_early_tries = g_oq_early_done = g_oq_early_equal = g_oq_early_unavailable = 0;
     g_rcp_max = g_nrcp;
+    rc_gpu_stats(frames);
 }
 static void oq_stats(char *b, size_t n, double frames);   // (Occlusion queries)
 
@@ -435,6 +451,8 @@ static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_P
     post((pop){4, (uint32_t)g_oq_fresh, g_oq_lost, t, ad, g_oq_seg0, g_oq_head});
     g_oq_lost_epoch_total += g_oq_lost;
     g_oq_last_report_head = g_oq_head;
+    g_oq_last_report_begin = g_oq_seg0;
+    g_oq_last_report_fresh = g_oq_fresh;
     g_oq_seg0 = g_oq_head; g_oq_fresh = 0; g_oq_lost = 0;
     // Use the ordinary end: it preserves all attachments and publishes only
     // their writes unless shader writes/guest barriers require broader scope.
@@ -754,7 +772,7 @@ void vka_exec_hang_report(uint64_t fence) {
 void vka_rp_sub_begin(void) {
     vka_perf_thread(0); vka_ctl_sub();
     { uint64_t f = g_job_frame_set ? g_job_frame : g_frame; if (atomic_load(&g_fstart_f[f % 64]) != f) { atomic_store(&g_fstart[f % 64], now_ns()); atomic_store(&g_fstart_f[f % 64], f); } }
-    g_npost = 0; g_cb = VK_NULL_HANDLE; rc_prune();
+    g_npost = 0; g_cb = VK_NULL_HANDLE; rc_prune(); rc_gpu_sub_begin();
     if (!vka_init()) return;
     vka_gpu_floor();
     if (vka_hung()) { VRED_ONCE("GPU hang: submissions from now on run their effects without the GPU"); return; }   // no command buffer: mtl_sub_commit takes the CPU path
@@ -1599,6 +1617,8 @@ static int overlap_state_record(uint32_t op) {
         return 0;
     }
 }
+#include "vka_rc_gpu.inc"
+
 static void exec(const uint8_t *p, int depth) {
     g_memu_depth = depth; // current recursive caller stack for any mesh scan
     ub_batch *ub = &g_inline_ub;
@@ -1676,11 +1696,13 @@ static void exec(const uint8_t *p, int depth) {
                                                                            (unsigned long long)t, (unsigned long long)(g_stat_draws - g_sub_draws0), g_nx + 1, ms_now());
             break; }
         case OP_FENCE_SYNC: { sync_t *s; memcpy(&s, a, 8); s->fence = g_cur_fence ? g_cur_fence : vka_fence_last() + 1; s->fenced = 1; break; }   // the fence this submission commits with
-        case OP_RENDER_COND: S.rc_skip = rc_eval(a); break;
+        case OP_RENDER_COND: S.rc_skip = rc_eval(a); rc_gpu_bind(p); break;
         case OP_RESET_COUNTER: { uint64_t t; memcpy(&t, a, 8); if (t == NVN_COUNTER_TYPE_SAMPLES_PASSED) oq_reset(); break; }
-        case OP_CLEAR_BUF: if (g_cb) { const p_clear_buf *cb = a; buf_fill(cb->addr, cb->size, cb->value); boost_transfer_barrier(g_cb); } break;
-        case OP_COPY_B2B: if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); buf_copy(s_, d, n); boost_transfer_barrier(g_cb); } break;
+        case OP_CLEAR_BUF: if (g_cb) { const p_clear_buf *cb = a; rc_gpu_written(cb->addr, cb->size); buf_fill(cb->addr, cb->size, cb->value); boost_transfer_barrier(g_cb); } break;
+        case OP_COPY_B2B: if (g_cb) { uint64_t s_, d, n; memcpy(&s_, a, 8); memcpy(&d, (const uint8_t *)a + 8, 8); memcpy(&n, (const uint8_t *)a + 16, 8); rc_gpu_written(d, n); buf_copy(s_, d, n); boost_transfer_barrier(g_cb); } break;
         case OP_UPDATE_UB: g_n_ub++; if (g_cb) {
+            uint64_t rc_dst, rc_bytes; memcpy(&rc_dst, a, 8); memcpy(&rc_bytes, (const uint8_t *)a + 8, 8);
+            rc_gpu_written(rc_dst, rc_bytes);
             uint64_t d, n; memcpy(&d, a, 8); memcpy(&n, (const uint8_t *)a + 8, 8);
             // Command-record memory can be reused by the guest before the
             // pass closes. An in-pass update must snapshot its bytes NOW, at
@@ -1714,13 +1736,14 @@ static void exec(const uint8_t *p, int depth) {
         case OP_CLEAR_DS: if (g_cb) clear_ds(a); break;
         case OP_CLEAR_TEX: if (g_cb) clear_tex(a); break;
         case OP_COPY_B2T: if (g_cb) copy_bt(a, 1); break;
-        case OP_COPY_T2B: if (g_cb) copy_bt(a, 0); break;
+        case OP_COPY_T2B: if (g_cb) { vka_rc_gpu_invalidate(); copy_bt(a, 0); } break;
         case OP_COPY_T2T: if (g_cb) copy_t2t(a); break;
         case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);
             if (g_cb && (bar_covered || !bar_kept)) vka_dispatch_guest_covered();
             else vka_dispatch_overlap_flush();
             break;
         case OP_DRAW: if (!S.rc_skip && g_cb) { p_draw t; const p_draw *dr = draw_rec(a, h.size, &t);
+                          if (dr->prim == NVN_PRIM_MESH) vka_rc_gpu_invalidate();
                           memu_before_draw(p, dr);   // prepare task/mesh compute before opening the raster pass
                           g_stat_draws++; uint64_t sk = oq_sk0();
                           int d = 0; uint32_t colors = !vka_rp_is_open() && h.size >= 8 ? immediate_discards(p + h.size, &d) : 0;
@@ -1736,7 +1759,7 @@ static void exec(const uint8_t *p, int depth) {
                               vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, NULL, draw_idx_rec(a, h.size, &t));
                               vka_rp_predict_discard(0, 0); oq_sk1(sk); }
                           else if (!S.rc_skip && g_oq_count) { g_oq_lost++; g_oqs_skip++; } break;
-        case OP_DISPATCH: if (g_cb) vka_dispatch(&S.d, a); break;
+        case OP_DISPATCH: if (g_cb) { vka_rc_gpu_invalidate(); vka_dispatch(&S.d, a); } break;
         case OP_DRAW_TEX: not_yet(h.op); if (g_oq_count && !S.rc_skip) { g_oq_lost++; g_oqs_skip++; } break;
         default: break;   // state: taken by vka_state_op above
         }

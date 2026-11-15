@@ -1,0 +1,34 @@
+// Current-submission NVN counter pairs, never previous-frame approximations.
+#version 450
+layout(local_size_x=32)in;
+layout(set=0,binding=0,std430)readonly buffer Queries{uvec2 q[];};
+// 12 words/job: A(first,count,lostLo,lostHi), B(...), mode, precise, reserved*2.
+layout(set=0,binding=1,std430)readonly buffer Jobs{uint j[];};
+layout(set=0,binding=2,std430)writeonly buffer Predicates{uint predicate[];};
+layout(push_constant)uniform P{uint jobs;}pc;
+uvec2 add64(uvec2 a,uvec2 b){uint lo=a.x+b.x;return uvec2(lo,a.y+b.y+uint(lo<a.x));}
+struct Counter{uvec2 value;bool positive;};
+Counter counter(uint offset,bool exact_counts){
+ Counter c;c.value=uvec2(j[offset+2],j[offset+3]);c.positive=false;
+ for(uint k=0;k<j[offset+1];k++){
+  uvec2 value=q[j[offset]+k];c.positive=c.positive||any(notEqual(value,uvec2(0)));
+  if(exact_counts)c.value=add64(c.value,value);
+ }
+ return c;
+}
+void main(){
+ uint i=gl_GlobalInvocationID.x;if(i>=pc.jobs)return;
+ uint base=i*12;bool exact_counts=j[base+9]!=0;
+ Counter a=counter(base,exact_counts),b=counter(base+4,exact_counts);
+ bool equal_values;
+ if(exact_counts||(!a.positive&&!b.positive))equal_values=all(equal(a.value,b.value));
+ else{
+  bool az=!a.positive&&all(equal(a.value,uvec2(0)));
+  bool bz=!b.positive&&all(equal(b.value,uvec2(0)));
+  // Non-precise queries promise only zero versus positive. Two positive
+  // counters from different resets have no proven numerical equality.
+  if(!az&&!bz){predicate[i]=1;return;}
+  equal_values=az&&bz;
+ }
+ predicate[i]=(j[base+8]==0?equal_values:!equal_values)?1:0;
+}

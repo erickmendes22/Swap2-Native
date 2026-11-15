@@ -7,6 +7,10 @@ on:
       - dm/gfx/vk_android/selftest/ndsr_lvp.c
       - dm/gfx/vk_android/selftest/conditional_visibility_gpu.c
       - dm/gfx/tools/tests/test_conditional_visibility_gpu.py
+      - dm/gfx/tools/tests/test_rc_gpu_policy.py
+      - dm/gfx/vk_android/vka_rc_gpu*
+      - dm/gfx/vk_android/rc/visibility.comp
+      - dm/gfx/vk_android/selftest/rc_predicate_gpu.c
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,7 +35,7 @@ jobs:
           MEMU_TEST_VULKAN: '1'
           VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
           VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
-        run: python3 -m unittest dm.gfx.tools.tests.test_conditional_visibility_gpu -v
+        run: python3 -m unittest dm.gfx.tools.tests.test_conditional_visibility_gpu dm.gfx.tools.tests.test_rc_gpu_policy -v
       - name: Verify shared fixture still preserves original depth and query behavior
         env:
           MEMU_TEST_VULKAN: '1'

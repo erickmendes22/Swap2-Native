@@ -1630,3 +1630,39 @@ completed. The extension-free indirect alternative avoids requiring an unknown
 conditional-rendering capability from the Android driver. Keep178 unchanged
 while these obligations remain open; no new performance APK is justified by
 this fixture alone.
+
+### GPU visibility integration checkpoint (2026-11-15, experimental/default OFF)
+
+The research branch now connects report metadata, bounded safe-block collection,
+GPU counter comparison and existing Vulkan indirect-count commands. No APK is
+triggered. `DM_VK_GPU_VISIBILITY=0` remains the default while integration tests
+run; no launcher control or shader ABI changes.178 stays the approved version.
+
+Only fresh reset reports with zero lost/untracked draws,16-byte aligned records,
+current uncommitted-submission ownership and bounded closed query ranges are
+admitted. Non-fresh cumulative reports, older submissions, overwritten records,
+missing capabilities, mixed blocks, mesh/tessellation/geometry, transform
+feedback, storage side effects, primitive expansion and nonzero base-instance
+records keep the old path. Collection must see the ENTIRE block end before
+admission. Queries are copied through the real encoder in command order, and
+cannot be host-recycled before the owning submission's completion fence.
+Scratch predicates retire with that same fence. Draw arguments retain their
+original counts, indices, instances and base vertex; the GPU gates only the
+number of indirect commands (0 or1). Explicit buffer writes invalidate overlapping
+counter metadata; unknown storage writes/dispatches invalidate the research epoch.
+
+A critical precision restriction:177 uses non-precise queries. Their positive
+values cannot establish numerical equality across different resets. The GPU
+helper compares actual64-bit counts when precise; otherwise only zero-versus-
+positive decisions, or query-free exact values, are admitted. Two uncertain
+positive counters always retain drawing. Lost query segments never enter this
+path. Do not enable precise queries or compare two arbitrary positive values
+merely to get more culling.
+
+The checked-in production SPIR-V helper passes1208 actual Vulkan cases against
+an independent integer oracle, including distinct high words, carry/wrap,
+zero/positive, two uncertain positive counters, empty reports and both comparison
+modes. Admission C executes100000 generated ownership/range cases. Native Android
+compilation, full-block collection, indirect-count drawing and encoder order
+verification remain required before treating this checkpoint as ready. No
+claim of a device FPS increase or of eliminating all619 unknown blocks is made.

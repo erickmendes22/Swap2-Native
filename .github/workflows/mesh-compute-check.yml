@@ -1,7 +1,7 @@
 name: Mesh compute correctness (no APK)
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113]
+    branches: [research/ocarina-gpu-visibility-after-178, ocarina-v11-ios-perf-from-v101, test/ocarina-qualcomm-mesh-route-ab-20261113, test/oot-gpu-task-index-short-search-20261113, test/oot-memu-render-enable-fuse-20261113]
     paths:
       - dm/gfx/vk_android/vka_memu*
       - dm/gfx/vk_android/memu/**
@@ -69,6 +69,10 @@ on:
       - dm/gfx/vk_android/selftest/*sgsr*
       - dm/gfx/vk_android/selftest/ndsr_lvp.c
       - dm/tools/tests/test_ndsr_sgsr_gpu.py
+      - dm/gfx/vk_android/vka_rc_gpu.inc
+      - dm/gfx/vk_android/vka_rc_gpu_policy.h
+      - dm/gfx/vk_android/vka_rc_gpu_spv.h
+      - dm/gfx/vk_android/rc/visibility.comp
       - dm/gfx/vk_android/vka_draw.c
       - dm/gfx/vk_android/vka_mem.c
       - dm/gfx/vk_android/vka_fd_alias.h

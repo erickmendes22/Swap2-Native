@@ -21,7 +21,7 @@
 #include <errno.h>
 
 #define ENC_FNS(X) \
-    X(vkCmdPipelineBarrier) X(vkCmdCopyBuffer) X(vkCmdUpdateBuffer) X(vkCmdFillBuffer) X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) \
+    X(vkCmdCopyQueryPoolResults) X(vkCmdPipelineBarrier) X(vkCmdCopyBuffer) X(vkCmdUpdateBuffer) X(vkCmdFillBuffer) X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) \
     X(vkCmdCopyImage) X(vkCmdBlitImage) X(vkCmdResolveImage) X(vkCmdClearColorImage) X(vkCmdClearDepthStencilImage) X(vkCmdClearAttachments) \
     X(vkCmdBeginRendering) X(vkCmdEndRendering) X(vkCmdBeginRenderPass) X(vkCmdEndRenderPass) \
     X(vkCmdBindPipeline) X(vkCmdBindDescriptorSets) X(vkCmdBindVertexBuffers2) X(vkCmdBindIndexBuffer) \
@@ -141,6 +141,7 @@ typedef struct { CB_FIELD uint32_t first, n; const VkBuffer *b; const VkDeviceSi
 typedef struct { CB_FIELD VkBuffer b; VkDeviceSize o; VkIndexType t; } r_ib;
 typedef struct { CB_FIELD uint32_t a, b, c, d; int32_t e; uint32_t f; } r_draw;   // draw (a count, b instances, c first, d first instance), indexed (e vertex offset, f first instance), dispatch (vkCmdDispatchBase: base a b c, groups d f e)
 typedef struct { CB_FIELD VkBuffer b; VkDeviceSize o; uint32_t n, st; } r_ind;
+typedef struct { CB_FIELD VkQueryPool pool; uint32_t first, n; VkBuffer dst; VkDeviceSize off, stride; VkQueryResultFlags flags; } r_query_copy;
 typedef struct { CB_FIELD VkBuffer b, count; VkDeviceSize o, co; uint32_t n, st; } r_ind_count;
 typedef struct { CB_FIELD uint32_t first, n; const void *p; } r_vps;   // viewports or scissors
 typedef struct { CB_FIELD uint32_t v[5]; float f[4]; } r_val;               // the one-value states
@@ -269,6 +270,11 @@ static void VKAPI_CALL e_vkCmdDrawIndirect(VkCommandBuffer cb, VkBuffer b, VkDev
 static void VKAPI_CALL e_vkCmdDrawIndexedIndirect(VkCommandBuffer cb, VkBuffer b, VkDeviceSize o, uint32_t n, uint32_t st) {
     DIRECT(vkCmdDrawIndexedIndirect, cb, b, o, n, st); BEGIN(r_ind, E_vkCmdDrawIndexedIndirect, 0); r->b = b; r->o = o; r->n = n; r->st = st; END();
 }
+static void VKAPI_CALL e_vkCmdCopyQueryPoolResults(VkCommandBuffer cb, VkQueryPool pool, uint32_t first, uint32_t n, VkBuffer dst, VkDeviceSize off, VkDeviceSize stride, VkQueryResultFlags flags) {
+    DIRECT(vkCmdCopyQueryPoolResults, cb, pool, first, n, dst, off, stride, flags);
+    BEGIN(r_query_copy, E_vkCmdCopyQueryPoolResults, 0);
+    r->pool = pool; r->first = first; r->n = n; r->dst = dst; r->off = off; r->stride = stride; r->flags = flags; END();
+}
 static void VKAPI_CALL e_vkCmdDrawIndirectCount(VkCommandBuffer cb, VkBuffer b, VkDeviceSize o, VkBuffer count, VkDeviceSize co, uint32_t n, uint32_t st) {
     DIRECT(vkCmdDrawIndirectCount, cb, b, o, count, co, n, st); BEGIN(r_ind_count, E_vkCmdDrawIndirectCount, 0); r->b=b; r->o=o; r->count=count; r->co=co; r->n=n; r->st=st; END();
 }
@@ -380,6 +386,7 @@ static void run(const hdr *h) {
     case E_vkCmdDrawIndexed: { C(r_draw); R.vkCmdDrawIndexed(r->cb, r->a, r->b, r->c, r->e, r->f); break; }
     case E_vkCmdDrawIndirect: { C(r_ind); R.vkCmdDrawIndirect(r->cb, r->b, r->o, r->n, r->st); break; }
     case E_vkCmdDrawIndexedIndirect: { C(r_ind); R.vkCmdDrawIndexedIndirect(r->cb, r->b, r->o, r->n, r->st); break; }
+    case E_vkCmdCopyQueryPoolResults: { C(r_query_copy); R.vkCmdCopyQueryPoolResults(r->cb, r->pool, r->first, r->n, r->dst, r->off, r->stride, r->flags); break; }
     case E_vkCmdDrawIndirectCount: { C(r_ind_count); R.vkCmdDrawIndirectCount(r->cb, r->b, r->o, r->count, r->co, r->n, r->st); break; }
     case E_vkCmdDrawIndexedIndirectCount: { C(r_ind_count); R.vkCmdDrawIndexedIndirectCount(r->cb, r->b, r->o, r->count, r->co, r->n, r->st); break; }
 

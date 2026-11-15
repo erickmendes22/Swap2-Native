@@ -232,6 +232,7 @@ static uint64_t run_visibility(int path, int invert, int alpha, int swap, uint8_
     memcpy(out, read_map, BYTES * 2);
     return invoked;
 }
+#ifndef VKA_RC_COUNTER_REPLAY_TEST
 int main(void) {
     if (!init()) return 77;
     if (!getenv("VIS_NO_NATIVE")) {
@@ -258,3 +259,5 @@ int main(void) {
     }
     return fails ? 1 : 0;
 }
+
+#endif

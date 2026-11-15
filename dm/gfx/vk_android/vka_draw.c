@@ -1502,6 +1502,23 @@ static int resolve(const prog_t *p, int st, vka_shader **out, unsigned *bad) {
     if (ps.bad & (1u << st | VKA_BAD_MISSING)) { *bad |= 1u << st; return 1; }
     *out = ps.sh[st]; return 1;
 }
+// A predicated block must contain only reviewed, side-effect-free classic draws.
+int vka_rc_gpu_state_safe(const vka_dstate *d) {
+    if (d->tf_on || d->rast_discard) return 0;
+    vka_shader *sh[VKA_NSTAGE] = {0}; unsigned bad = 0;
+    for (int stage = 0; stage < 5; stage++) {
+        if (!resolve(d->bst[stage], stage, &sh[stage], &bad) || bad) return 0;
+        if (!sh[stage]) continue;
+        if (stage >= 2) return 0;
+        for (unsigned i = 0; i < sh[stage]->e->bind_count; i++) {
+            const dmsh_vk_bind *b = &sh[stage]->b[i];
+            if ((b->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC)) ||
+                b->kind == DMSH_VK_KIND_GMEM_LOG || b->kind == DMSH_VK_KIND_UNKNOWN) return 0;
+        }
+    }
+    return sh[0] != NULL;
+}
+
 // Vertex input: an attribute per input location the vertex shader reads (Location = NVN attribute index), each from its stream; an input no attribute feeds reads a zero buffer.
 // With VK_EXT_vertex_input_dynamic_state the descriptions are set per draw, else they go into the pipeline key
 static struct { VkVertexInputBindingDescription2EXT b[33]; VkVertexInputAttributeDescription2EXT a[32]; uint32_t nb, na, used, zb; int zero; } VI;
@@ -2127,6 +2144,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         p = vka_gfx_pipeline(sh, &lay, &k);
     }
     if (!p) SKIPQ();
+    if (vka_rc_gpu_enabled() && draw_writes(sh, d)) vka_rc_gpu_invalidate();
     if (!DY.valid || !g_dyn_filter || DY.pipe != p) { vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_GRAPHICS, p); DY.pipe = p; VB.vin_stale = 1; }
     if (vka_nan_on()) vka_nan_draw(mesh ? sh[7]->key : sh[0]->key, fs ? fs->key : 0);
     PT(5);
@@ -2196,6 +2214,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     // The draw. binst (c0 + 0x644 for the stages, vka_bind.c) is the CPU record's base instance, 0 for an indirect draw; vertex shaders read the word from BaseInstance instead
     // (vk_android_spv.py base_instance), which is each indirect draw's own firstInstance and binst for the direct ones; the build reports any other stage that reads it
     uint32_t inst = (uint32_t)((dw ? dw->instances : di->instances) > 0 ? (dw ? dw->instances : di->instances) : 1), binst = d->b.base_instance;
+    VkBuffer rc_count = VK_NULL_HANDLE; VkDeviceSize rc_offset = 0;
+    int rc_gpu = !mesh && !memu_e && !expand && !mdi && !binst &&
+        vka_rc_gpu_predicate(&rc_count, &rc_offset) && vka_rc_gpu_state_safe(d);
+
     if (mesh && dw->ind) vk.vkCmdDrawMeshTasksIndirectEXT(g_cb, mi.buf, mi.off, 1, 12);   // the {count, 1, 1} record mesh_ind_args made
     else if (memu_e) {
         VkDeviceSize ro = MB.rec.off + ((VkDeviceSize)memu_e->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_DRAW) * 4;
@@ -2221,8 +2243,16 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         vk.vkCmdDrawIndexed(g_cb, nout, inst, 0, di ? di->base_vertex : 0, binst);
     } else if (dw) {
         if (ind) { VkBuffer b; VkDeviceSize o; if (!vka_addr(ind, mdi ? (uint64_t)(mdi_max - 1) * mdi_stride + 16 : 16, &b, &o, NULL) || (o & 3)) SKIP("indirect draw arguments at %#llx are not in placed guest RAM: skipped", (unsigned long long)ind);
-                   if (mdi) vk.vkCmdDrawIndirectCount(g_cb, b, o, mdi_buffer, mdi_offset, mdi_max, mdi_stride); else vk.vkCmdDrawIndirect(g_cb, b, o, 1, 16); }
-        else vk.vkCmdDraw(g_cb, (uint32_t)dw->count, inst, (uint32_t)dw->first, binst);
+                   if (mdi) vk.vkCmdDrawIndirectCount(g_cb, b, o, mdi_buffer, mdi_offset, mdi_max, mdi_stride); else if (rc_gpu) vk.vkCmdDrawIndirectCount(g_cb, b, o, rc_count, rc_offset, 1, 16);
+                   else vk.vkCmdDrawIndirect(g_cb, b, o, 1, 16); }
+        else if (rc_gpu) {
+            vka_span args;
+            if (vka_scratch(sizeof(VkDrawIndirectCommand), 4, &args)) {
+                VkDrawIndirectCommand cmd = {(uint32_t)dw->count, inst, (uint32_t)dw->first, binst};
+                memcpy(args.ptr, &cmd, sizeof cmd);
+                vk.vkCmdDrawIndirectCount(g_cb, args.buf, args.off, rc_count, rc_offset, 1, sizeof cmd);
+            } else vk.vkCmdDraw(g_cb, (uint32_t)dw->count, inst, (uint32_t)dw->first, binst);
+        } else vk.vkCmdDraw(g_cb, (uint32_t)dw->count, inst, (uint32_t)dw->first, binst);
     } else {
         VkBuffer ib; VkDeviceSize io; VkIndexType it = di->itype == 0 ? VK_INDEX_TYPE_UINT8 : di->itype == 1 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
         size_t isz = di->itype == 0 ? 1 : di->itype == 1 ? 2 : 4;
@@ -2236,8 +2266,16 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         } else if (!vka_addr(di->ibuf, ind ? isz : isz * (uint64_t)(di->count > 0 ? di->count : 1), &ib, &io, NULL) || io % isz) SKIP("index buffer at %#llx is not in placed guest RAM: skipped", (unsigned long long)di->ibuf);
         ib_bind(ib, io, it);
         if (ind) { VkBuffer b; VkDeviceSize o; if (!vka_addr(ind, mdi ? (uint64_t)(mdi_max - 1) * mdi_stride + 20 : 20, &b, &o, NULL) || (o & 3)) SKIP("indirect draw arguments at %#llx are not in placed guest RAM: skipped", (unsigned long long)ind);
-                   if (mdi) vk.vkCmdDrawIndexedIndirectCount(g_cb, b, o, mdi_buffer, mdi_offset, mdi_max, mdi_stride); else vk.vkCmdDrawIndexedIndirect(g_cb, b, o, 1, 20); }
-        else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
+                   if (mdi) vk.vkCmdDrawIndexedIndirectCount(g_cb, b, o, mdi_buffer, mdi_offset, mdi_max, mdi_stride); else if (rc_gpu) vk.vkCmdDrawIndexedIndirectCount(g_cb, b, o, rc_count, rc_offset, 1, 20);
+                   else vk.vkCmdDrawIndexedIndirect(g_cb, b, o, 1, 20); }
+        else if (rc_gpu) {
+            vka_span args;
+            if (vka_scratch(sizeof(VkDrawIndexedIndirectCommand), 4, &args)) {
+                VkDrawIndexedIndirectCommand cmd = {(uint32_t)di->count, inst, 0, di->base_vertex, binst};
+                memcpy(args.ptr, &cmd, sizeof cmd);
+                vk.vkCmdDrawIndexedIndirectCount(g_cb, args.buf, args.off, rc_count, rc_offset, 1, sizeof cmd);
+            } else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
+        } else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
     }
     if (vka_gp_active)
         vka_gp_draw(sh[0] ? sh[0]->key : 0, sh[1] ? sh[1]->key : 0, sh[7] ? sh[7]->key : 0,

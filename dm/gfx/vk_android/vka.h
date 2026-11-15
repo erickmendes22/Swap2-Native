@@ -32,7 +32,7 @@
     X(vkCreateCommandPool) X(vkAllocateCommandBuffers) X(vkResetCommandBuffer) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) \
     X(vkCreateSemaphore) X(vkDestroySemaphore) X(vkWaitSemaphores) X(vkGetSemaphoreCounterValue) X(vkSignalSemaphore) \
     X(vkCreateFence) X(vkDestroyFence) X(vkWaitForFences) X(vkResetFences) \
-    X(vkCmdPipelineBarrier) X(vkCmdCopyBuffer) X(vkCmdUpdateBuffer) X(vkCmdFillBuffer) X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) \
+    X(vkCmdCopyQueryPoolResults) X(vkCmdPipelineBarrier) X(vkCmdCopyBuffer) X(vkCmdUpdateBuffer) X(vkCmdFillBuffer) X(vkCmdCopyBufferToImage) X(vkCmdCopyImageToBuffer) \
     X(vkCmdCopyImage) X(vkCmdBlitImage) X(vkCmdResolveImage) X(vkCmdClearColorImage) X(vkCmdClearDepthStencilImage) X(vkCmdClearAttachments) \
     X(vkCmdBeginRendering) X(vkCmdEndRendering) \
     X(vkCreateDescriptorSetLayout) X(vkCreateDescriptorPool) X(vkAllocateDescriptorSets) X(vkUpdateDescriptorSets) \
@@ -491,6 +491,10 @@ void vka_rp_discard(const p_set_rt *rt, int has_rt, int color_index); // -1 dept
 void vka_rp_predict_discard(uint32_t colors, int depth); // new-pass only, reset immediately after draw
 int vka_rp_split_ok(const p_set_rt *rt, int has_rt);
 void vka_draw_cb_switch(VkCommandBuffer cb);
+int vka_rc_gpu_enabled(void);
+int vka_rc_gpu_predicate(VkBuffer *buffer, VkDeviceSize *offset);
+int vka_rc_gpu_state_safe(const vka_dstate *state);
+void vka_rc_gpu_invalidate(void);
 void vka_dyn_invalidate(void);                       // the draws' dynamic state is set again in full at the next draw (another pipeline was bound)
 int vka_pass_keep(void);                             // DM_VK_PASS_KEEP=0: a SET_RT ends the pass, as before
 int vka_rp_open_for(const p_set_rt *rt, int has_rt);   // a pass is open over these targets
