@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Overwritten deferred uniform uploads](../../../docs/reference/rendering.md#overwritten-deferred-uniform-uploads): eliminate only fully superseded pass-close GPU copies while retaining per-draw shadows and the complete texture journal. Phone frequency and FPS effect remain unmeasured.
+
 - [Validated shared guest memory disables rendering](../../../docs/reference/rendering.md#validated-shared-guest-memory-disables-rendering).
 
 - [Immutable mesh payload copies](../../../docs/reference/rendering.md#immutable-mesh-payload-copied-into-every-emulated-workgroup).

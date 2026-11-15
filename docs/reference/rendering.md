@@ -1469,6 +1469,14 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Check:** complete GPU arena equality for8/64/1024-word fixtures, both layouts, absent/empty/short/full producers and duplicate task prefixes; baseline module hashes, pointer-escape/volatile fallback and historical cache decoding. Software timings are not phone FPS evidence.
 - **Found on:** [Ocarina Android](../../dm/games/0400486024DEC000/README.md).
 
+### Overwritten deferred uniform uploads
+
+- **Symptom:** pass-close inline uniform uploads can copy the same destination repeatedly even though only the last bytes are observed after the pass.
+- **Cause:** deferred writes must remain complete while recording per-draw shadow snapshots, but the flush also uploads every intermediate version. Repeated overlapping destinations split transfer batches and incur extra transfer commands and publication dependencies.
+- **Fix:** only at pass close, omit a GPU upload whose entire address interval is covered by a single later pending write. Preserve partial overlaps, wrap/zero-size fallbacks, all per-draw snapshots, the complete ordered texture/guest-memory write journal, and all existing pass/consumer dependencies. `DM_VK_UB_DEAD_WRITES=0` restores the original uploads; counters report eliminated uploads and bytes separately from FPS. No shader or library ABI changes.
+- **Check:** the actual production overlay, batcher and flush execute on Vulkan for528 cases, with full512-byte readback, ordered journal hashes, snapshots after each write, both producer scopes and both optimization states. Repeated overwrite fixture uses64 copies originally and1 after elimination. Partial-overlap data-loss and journal-loss negative controls fail. These are correctness/work-count results, not a device FPS measurement.
+- **Found on:** [Ocarina Android](../../dm/games/0400486024DEC000/README.md).
+
 ### Validated shared guest memory disables rendering
 
 - **Symptom:** exported FD memory passes its alias probe and guest pools map successfully, but the renderer reports no placed guest memory and disables draws/dispatches, leaving a black screen.

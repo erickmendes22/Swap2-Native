@@ -236,6 +236,7 @@ void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
 static uint64_t g_ub_copy_cmds, g_ub_copy_regions;  // actual Vulkan copy commands versus independently staged inline regions
 static uint64_t g_ub_deferred, g_ub_shadows, g_ub_flushed, g_ub_after_guest_bar, g_ub_scoped_before_copy; // in-pass deferred updates, snapshots, saves after retained guest barriers
+static uint64_t g_ub_dead_writes, g_ub_dead_bytes;
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
 static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the submission the worker replays (vka_exec_sub_frame)
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
@@ -274,6 +275,10 @@ void mtl_set_frame(uint64_t f) {
           VLOG("Ocarina deferred-uniform GPU dependency: %.1f scoped graphics-to-copy barriers/frame (other pass types retain original full dependency)",
                (g_ub_scoped_before_copy-scoped0)/n);
           scoped0=g_ub_scoped_before_copy; }
+        { static uint64_t writes0, bytes0;
+          VLOG("Vulkan deferred-uniform dead stores: %.1f uploads, %.1f bytes removed/frame; DM_VK_UB_DEAD_WRITES=0 restores all uploads",
+               (g_ub_dead_writes-writes0)/n, (g_ub_dead_bytes-bytes0)/n);
+          writes0=g_ub_dead_writes; bytes0=g_ub_dead_bytes; }
         { static uint64_t cb0; VLOG("Vulkan compute dependencies: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (compute groups and selected dispatch completions)",
               (vka_n_compute_bar - cb0) / n); cb0 = vka_n_compute_bar; }
         { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
@@ -967,6 +972,22 @@ static ub_pass_write g_ub_pending[UB_DEFER_MAX];
 static int g_ub_np;
 static uint64_t g_ub_seq = 1;
 static ub_batch g_inline_ub;
+// Only pass-close GPU uploads may be dead: draws already consumed their
+// per-draw shadow snapshots. Keep every pending write until then. One later
+// write must cover the complete earlier interval; partial overlaps remain in
+// order. Subtraction avoids overflowing a guest end address.
+static int ub_superseded(int i) {
+    const ub_pass_write *w = &g_ub_pending[i];
+    if (!w->size || w->size - 1 > UINT64_MAX - w->addr) return 0;
+    for (int j = i + 1; j < g_ub_np; j++) {
+        const ub_pass_write *later = &g_ub_pending[j];
+        if (!later->size || later->size - 1 > UINT64_MAX - later->addr ||
+            later->addr > w->addr) continue;
+        uint64_t offset = w->addr - later->addr;
+        if (offset <= later->size && w->size <= later->size - offset) return 1;
+    }
+    return 0;
+}
 static int ub_intersect(uint64_t a, uint64_t an, uint64_t b, uint64_t bn) {
     if (!an || !bn) return 0;
     return a <= b ? b - a < an : a - b < bn;
@@ -1050,9 +1071,15 @@ void vka_ub_flush_pass(int attachment_only) {
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
         g_ub_scoped_before_copy++;
     } else vka_barrier(g_cb);
+    const int dead_writes = VKA_ENV("DM_VK_UB_DEAD_WRITES", 1);
     for (int i = 0; i < g_ub_np; i++) {
         const ub_pass_write *w = &g_ub_pending[i];
-        buf_update(&g_inline_ub, w->bytes, w->addr, w->size);
+        if (dead_writes && ub_superseded(i)) {
+            // Preserve the texture/guest-memory journal and its exact order.
+            // Elide only scratch allocation, GPU copy and its dependency.
+            vka_tex_gw_update(w->addr, w->size, w->bytes);
+            g_ub_dead_writes++; g_ub_dead_bytes += w->size;
+        } else buf_update(&g_inline_ub, w->bytes, w->addr, w->size);
         free(w->bytes);
         g_ub_pending[i].bytes = NULL;
     }
