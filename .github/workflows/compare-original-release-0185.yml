@@ -1,0 +1,101 @@
+name: Audit upstream original 0.1.8.5 source (no APK)
+on:
+  push:
+    branches: [ocarina-v11-ios-perf-from-v101]
+    paths:
+      - .github/workflows/compare-original-release-0185.yml
+permissions:
+  contents: read
+jobs:
+  audit-upstream:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download actual upstream release source, not Git tag snapshot
+        run: |
+          curl --fail --location --retry 4 --retry-all-errors --max-time 240             'https://github.com/mamcjr/Swap2-Native/releases/download/v0.1.8.5-beta/swap2-native-0.1.8.5-beta-source.zip'             -o /tmp/original-source.zip
+          echo "SOURCE_BYTES=$(wc -c < /tmp/original-source.zip)"
+      - name: Compare source files without changing our branch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import difflib, hashlib, json, re
+          arc=ZipFile('/tmp/original-source.zip')
+          names=[x for x in arc.namelist() if not x.endswith('/')]
+          known='dm/gfx/vk_android/vka_dev.c'
+          matches=[n for n in names if n.endswith(known)]
+          if not matches: raise RuntimeError('Upstream source does not contain expected Vulkan file')
+          root=matches[0][:-len(known)]
+          print('Archive prefix:',repr(root))
+          output=Path('upstream-audit')
+          output.mkdir(exist_ok=True)
+          candidates=[]
+          differences=[]
+          for item in names:
+            if not item.startswith(root):continue
+            relative=item[len(root):]
+            if not relative or not relative.startswith(('dm/','android/','scripts/')): continue
+            if not relative.endswith(('.c','.h','.m','.java','.py','.md','.json','.yml','.sh','.tsv')): continue
+            ours=Path(relative)
+            if not ours.is_file(): continue
+            if arc.getinfo(item).file_size>750000: continue
+            src=arc.read(item)
+            own=ours.read_bytes()
+            if src!=own: differences.append(relative)
+          key_terms=('vka_memu','vka_dev','vka_draw','vka_exec','vka_tex','vka_pool','vka_shader','vka_pso','vka_ndsr','hle_nvn','dmsh','Texture','Prepare','GameActivity','Prefs','Profile','GameSettings','GraphicsOptions','RamSaver','Mod','Gpu','Nup','LSFG','Window','Driver','Frame','Tools','Shader','Pack')
+          pick=[p for p in differences if any(t.lower() in p.lower() for t in key_terms)]
+          priority=[
+            'dm/gfx/vk_android/vka_dev.c',
+            'dm/gfx/vk_android/vka_mem.c',
+            'dm/gfx/vk_android/vka_pool.c',
+            'dm/gfx/vk_android/vka.h',
+            'dm/gfx/vk_android/vka_gmem.c',
+            'dm/gfx/vk_android/vka_buf.c',
+            'dm/gfx/vk_android/vka_tex.c',
+            'dm/gfx/vk_android/vka_memu.c',
+            'dm/gfx/vk_android/vka_memu_draw.inc',
+            'dm/gfx/vk_android/vka_draw.c',
+            'dm/gfx/vk_android/vka_exec.c',
+            'dm/gfx/vk_android/vka_tex.c',
+            'dm/gfx/vk_android/vka_pso.c',
+            'dm/gfx/nvn/hle_nvn.c',
+            'dm/gfx/tools/vk_android_spv.py',
+            'dm/gfx/tools/shader_split.py',
+            'dm/tools/patch_nso.py',
+            'dm/games/0400486024DEC000/patches.py',
+            'dm/gfx/vk_android/vka_shader.c',
+            'dm/gfx/vk_android/vka_driver.c',
+            'dm/host/rt/game_profile.h',
+            'android/app/src/main/java/dev/nxnative/android/Lsfg.java',
+            'android/app/src/main/java/dev/nxnative/android/PackFind.java',
+            'android/app/src/main/java/dev/nxnative/android/GameActivity.java',
+            'android/app/src/main/java/dev/nxnative/android/GameSettings.java',
+            'android/app/src/main/java/dev/nxnative/android/Prefs.java',
+            'android/app/src/ondevice/java/dev/nxnative/android/PackService.java',
+            'android/app/src/main/java/dev/nxnative/android/Prefs.java',
+            'android/app/src/main/java/dev/nxnative/android/GameSettings.java',
+            'android/app/src/main/java/dev/nxnative/android/GraphicsOptions.java',
+          ]
+          report=['ORIGINAL RELEASE VERSION 0.1.8.5-beta',f'ZIP PREFIX {root!r}',f'ZIP TOTAL FILES {len(names)}',f'COMPARABLE CHANGED FILES {len(differences)}',f'CANDIDATE FILES {len(pick)}']
+          report+=['-- TOP CANDIDATES --']+pick[:160]
+          for relative in priority:
+            item=root+relative
+            if item not in names or not Path(relative).exists(): continue
+            orig=arc.read(item).decode('utf-8',errors='replace').splitlines()
+            ours=Path(relative).read_text(errors='replace').splitlines()
+            diff='\n'.join(difflib.unified_diff(ours,orig,fromfile='fork/'+relative,tofile='original/'+relative,n=2))
+            dst=output/(relative.replace('/','__')+'.diff')
+            dst.write_text(diff[:450000])
+            upstream=output/(relative.replace('/','__')+'.upstream')
+            upstream.write_text('\n'.join(orig)+'\n')
+            report += [f'{relative}: ours={len(ours)} original={len(orig)} diff_chars={len(diff)}']
+          (output/'AUDIT_REPORT.txt').write_text('\n'.join(report)+'\n')
+          print('\n'.join(report[:120]))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swap2-original-0.1.8.5-audit-deep
+          path: upstream-audit/
+          retention-days: 7
