@@ -35,14 +35,16 @@ jobs:
         env:
           MEMU_TEST_VULKAN: '1'
           VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
-          VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+          VK_LAYER_VALIDATE_SYNC: '1'
+          RESEARCH_SYNC_NEW: '1'
           RESEARCH_RESULTS: page-index-work-counts.json
         run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_memory_research -v
       - name: Preserve existing production synchronization fixtures
         env:
           MEMU_TEST_VULKAN: '1'
           VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
-          VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
+          VK_LAYER_VALIDATE_SYNC: '1'
+          RESEARCH_SYNC_NEW: '1'
         run: python3 -m unittest dm.gfx.tools.tests.test_selective_transfer_compute_gpu dm.gfx.tools.tests.test_depth_pass_optimizations -v
       - uses: actions/upload-artifact@v4
         if: always()

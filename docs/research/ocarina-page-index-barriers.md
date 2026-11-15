@@ -59,3 +59,11 @@ Barrier tests execute the original policy and record scopes with this branch's p
 - The workflow is branch-specific, read-only to GitHub and has no build/sign/publish steps. Its first step verifies the active renderer, translator, profile and launcher are unchanged from the research base.
 
 Reference snapshots retain original comments; `pidx_reference.h`, `pidx_random.c` and the base of `pidx_gpu.c` derive from AnkaNative's pinned MIT sources. The synthetic GPU runner additionally enables maintenance4, uses8192 entries, keeps its window within128MiB descriptor limits, and exports independent work counters. The barrier policy/record scopes and exhaustive checker come from Banana Native (MIT); the policy is identical in FrenklinFish6db28a65764f and local upstreamdc7c4203cee1a4784afb751a8ea8abce6b31acd3. These references are fixtures, never linked by the Android build.
+
+## Cache locality and recorded-reader ownership follow-up
+
+The repeated-pool fixture makes200 valid cache hits. A direct index performs320 index reads, whereas the cache-preserving form needs49. Exact output and write-log comparisons still pass for sparse and full tables. This reinforces that fewer binary-search probes alone cannot establish a gain over our existing cache. No phone cache-hit rate is inferred.
+
+The proposed, research-only `index_generation_policy.h` never selects a recorded reader for rewriting, even before it has a fence. It reuses the same immutable generation, otherwise an idle completed buffer, otherwise allocates within its byte cap, otherwise falls back to the original lookup.100000 generated ownership schedules pass. The real reference index builder demonstrates that changing a second buffer preserves the first generation, while an intentional in-place update changes what an old reader would see. This is a host ownership/design proof, not integration into the live Vulkan allocator.
+
+The first Actions attempt correctly failed when the missing-dependency negative control produced no synchronization diagnostic. Its newer validation layer warned about deprecated layer settings; the reason it missed that negative control is not yet established. CI now requests `VK_LAYER_VALIDATE_SYNC=1` without the deprecated enables variable; the older local layer uses its older setting. The negative control remains mandatory; it is not skipped or weakened.

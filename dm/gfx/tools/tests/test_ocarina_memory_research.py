@@ -22,16 +22,21 @@ class Research(unittest.TestCase):
      p=subprocess.run([str(exe),'500',str(seed),str(gran)],capture_output=True,text=True,timeout=120)
      self.assertEqual(p.returncode,0,p.stdout+p.stderr)
    print('4500 index update steps and9000000 address lookups exact')
+ def test_index_generation_ownership_and_memory_cap(self):
+  with tempfile.TemporaryDirectory()as tmp:
+   exe=Path(tmp)/'generations';self.compile(D/'index_generation_test.c',exe)
+   p=subprocess.run([str(exe)],capture_output=True,text=True,timeout=60)
+   self.assertEqual(p.returncode,0,p.stdout+p.stderr);print(p.stdout)
  @unittest.skipUnless(os.getenv('MEMU_TEST_VULKAN')=='1','software Vulkan fixture explicitly enabled')
  def test_current8192_helper_against_page_index_and_cache(self):
   with tempfile.TemporaryDirectory()as tmp:
    d=Path(tmp);exe=d/'run';self.compile(D/'pidx_gpu.c',exe,'-ldl')
    rows=[]
    for full in (False,True):
-    for warm in (False,True):
+    for warm,locality in ((False,'mixed'),(True,'mixed'),(True,'repeated_pool')):
      reference=None
      for mode in ('baseline','page','hybrid'):
-      spv=d/(mode+'.spv');p=spv.with_suffix('.comp');p.write_text(source(mode,warm))
+      spv=d/(mode+'.spv');p=spv.with_suffix('.comp');p.write_text(source(mode,warm,locality=locality))
       c=subprocess.run(['glslangValidator','-V','--target-env','vulkan1.3','-o',str(spv),str(p)],capture_output=True,text=True)
       self.assertEqual(c.returncode,0,c.stdout+c.stderr)
       subprocess.run(['spirv-val','--target-env','vulkan1.3',str(spv)],check=True)
@@ -42,9 +47,9 @@ class Research(unittest.TestCase):
       if reference is None:reference=semantic
       self.assertEqual(semantic,reference,(mode,full,warm))
       work=dict((k,int(v))for k,v in re.findall(r'(cache_hits|searches|search_probes|index_reads)=(\d+)',r.stdout))
-      rows.append(dict(mode=mode,full=full,warm=warm,**work))
+      rows.append(dict(mode=mode,full=full,warm=warm,locality=locality,**work))
      # Negative control: corrupt loaded values. The semantic comparison must catch it.
-     p=d/'bad.comp';spv=d/'bad.spv';p.write_text(source('hybrid',warm,negative=True))
+     p=d/'bad.comp';spv=d/'bad.spv';p.write_text(source('hybrid',warm,negative=True,locality=locality))
      subprocess.run(['glslangValidator','-V','--target-env','vulkan1.3','-o',str(spv),str(p)],check=True,capture_output=True)
      r=subprocess.run([str(exe),str(spv),*(['full']if full else[])],capture_output=True,text=True,timeout=120)
      self.assertEqual(r.returncode,0,r.stdout+r.stderr)
@@ -76,7 +81,10 @@ static void dispatch_write_barrier(VkCommandBuffer cb,int spill,int indirect,uin
     (d/'sync_policies.inc').write_text(policy)
     exe=d/'barriers'
     self.compile(D/'gbar_gpu.c',exe,'-DVKA_NDSR_PURE','-I',str(d),'-I',str(VK),'-I',str(VK/'selftest'),str(VK/'vka_ndsr.c'),'-ldl','-lm')
-    env=dict(os.environ,SYNC_COMP=str(spv),VK_LAYER_ENABLES='VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT')
+    env=dict(os.environ,SYNC_COMP=str(spv))
+    if os.getenv('RESEARCH_SYNC_NEW')=='1':
+     env.pop('VK_LAYER_ENABLES',None);env['VK_LAYER_VALIDATE_SYNC']='1'
+    else:env['VK_LAYER_ENABLES']='VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT'
     run=subprocess.run([str(exe)],capture_output=True,text=True,env=env,timeout=120)
     self.assertEqual(run.returncode,0,run.stdout+run.stderr)
     if broken:self.assertIn('SYNC-HAZARD',run.stdout+run.stderr)

@@ -4,7 +4,8 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[4]
 TRANSLATOR=ROOT/'dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Translation/Optimizations/GlobalToStorage.cs'
 
-def source(mode, warm=False, negative=False):
+def source(mode, warm=False, negative=False, locality="mixed"):
+    assert locality in ("mixed","repeated_pool")
     assert mode in ('baseline','page','hybrid')
     text=TRANSLATOR.read_text()
     for marker in ('new int[7]', 'Const(8192 - 1)', 'Const(8192)', 'Const(11)', 'Const(21)', 'mapLog2 - 1'):
@@ -51,7 +52,7 @@ uint64_t find_address(uint lo,uint hi,uint helper){
            'for(uint pr=0u;pr<8u;pr++){uint slot=((hash+pr)&1023u)+1u,old=atomicCompSwap(log_.w[slot],0u,page);if(old==0u||old==page){PU(a).v=value;return;}}log_.w[0]=1u;PU(a).v=value;}',
            'void main(){uint i=gl_GlobalInvocationID.x;uvec4 c=cases.c[i];']
     if warm:
-        for j,k in enumerate(('(i*5u+1u)&63u','(i*7u+3u)&63u','(i+1u)&63u','i')):
+        for j,k in enumerate(('0u',)*4 if locality=='repeated_pool' else ('(i*5u+1u)&63u','(i*7u+3u)&63u','(i+1u)&63u','i')):
             body+=[f'{{uvec4 w=cases.c[{k}];out_.o[64u+i*4u+{j}u]=gload(w.x,w.y);}}']
     body+=['if(c.w==0u)out_.o[i]=gload(c.x,c.y);else{gstore(c.x,c.y,c.z);out_.o[i]=0xdeadu;}',
            'out_.o[320u+i*4u]=hits;out_.o[321u+i*4u]=searches;out_.o[322u+i*4u]=probes;out_.o[323u+i*4u]=index_reads;}']
