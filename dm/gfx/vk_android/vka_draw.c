@@ -989,7 +989,7 @@ static int gmem_map(VkDescriptorBufferInfo *bi) {
     }
     if (extra) g_pidx_submission_bytes += extra; // charge even empty indexes, so memory cap is strict
     memset(s.ptr, 0xff, n); memset(s.ptr, 0, DMSH_GMEM_MAP_ENTRY);
-    memset(s.ptr + n, 0, 16 + extra); // zero count means original binary search
+    if (!extra) memset(s.ptr + n, 0, 16); // index builder initializes nonempty snapshots
     static uint64_t lo[VKA_GMEM_MAP_ENTRIES], hi[VKA_GMEM_MAP_ENTRIES], bda[VKA_GMEM_MAP_ENTRIES];
     int k = vka_mem_chunks(lo, hi, bda, VKA_GMEM_MAP_ENTRIES - 1);
     for (int i = 0; i < k && i + 1 < VKA_GMEM_MAP_ENTRIES; i++) { uint64_t e[4] = {lo[i], hi[i], bda[i] - lo[i], 0}; memcpy(s.ptr + (size_t)(i + 1) * DMSH_GMEM_MAP_ENTRY, e, sizeof e); }
