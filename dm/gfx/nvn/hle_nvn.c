@@ -382,6 +382,25 @@ uint64_t nvn_pool_live(const void *pool, unsigned *flags, int *sparse) {
     if (g) { const pool_t *o = (const pool_t *)pool; if (flags) *flags = (unsigned)o->flags; if (sparse) *sparse = o->vp != NULL; }
     pthread_mutex_unlock(&g_pl_mu); return g;
 }
+// Conservative alias guard for retiring a finalized pool's cached images.
+// The caller holds nvn_pool_use. Read only live pool OBJECTS under g_pl_mu,
+// never the texture storage or an object whose Finalize has returned.
+int nvn_pool_storage_live(const void *mem, uint64_t size) {
+    uintptr_t lo = (uintptr_t)mem;
+    if (!lo || !size || size > UINTPTR_MAX - lo) return 1;
+    uintptr_t hi = lo + size; int live = 0;
+    pthread_mutex_lock(&g_pl_mu);
+    for (uint32_t i = 0; i < g_cpl && !live; i++) {
+        const pool_t *p = g_pl[i].p;
+        if (!p || p == (const pool_t *)1 || !g_pl[i].gen) continue;
+        if (!p->size) continue;
+        uintptr_t a = (uintptr_t)p->mem;
+        if (!a || p->size > UINTPTR_MAX - a) { live = 1; break; }
+        live = a < hi && lo < a + p->size;
+    }
+    pthread_mutex_unlock(&g_pl_mu);
+    return live;
+}
 __attribute__((weak)) void dm_gfx_pool_fileback(const void *mem, uint64_t size, int kind) { (void)mem; (void)size; (void)kind; }
 NVN(nvnMemoryPoolInitialize, NVNboolean, NVNmemoryPool *p, const NVNmemoryPoolBuilder *b) {
     const pool_builder_t *s = (const pool_builder_t *)b; pool_t *o = (pool_t *)p;

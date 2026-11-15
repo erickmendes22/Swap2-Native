@@ -37,7 +37,8 @@ def model(ops):
 
 class ComputeOverlap(unittest.TestCase):
     def test_source_defers_only_direct_consecutive_compute(self):
-        self.assertIn('if (h.op != OP_DISPATCH && !overlap_state_record(h.op)) vka_dispatch_overlap_flush();', EXEC)
+        self.assertIn('if (h.op != OP_DISPATCH && !overlap_state_record(h.op)) {', EXEC)
+        self.assertIn('if (h.op != OP_BARRIER || !vka_dispatch_guest_can_cover())', EXEC)
         self.assertIn('static int overlap_state_record(uint32_t op)', EXEC)
         self.assertIn('case OP_BIND_UBO:', EXEC)
         self.assertIn('case OP_PUSH_CONST:', EXEC)

@@ -63,6 +63,11 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- Current menu cleanup: retire shader A omission and ignore its stored/environment value in the runtime; shader B remains independently configurable. Cached classic passes remain forcibly disabled for Ocarina and absent from the menu. Two independent new switches expose full-guest compute dependency merging and finalized-pool image retirement; both default on and require restart. Existing vegetation optimizations stay automatic.
+
+- [Finalized-pool GPU image retirement](../../../docs/reference/rendering.md#finalized-pools-retain-private-gpu-images-below-the-cache-budget): the user reports about nine percentage points more system RAM than Banana with RAM Saver both enabled and disabled. This is a baseline-memory investigation, not a RAM Saver defect. Source comparison finds stricter indefinite GPU-image retention here versus Banana's idle eviction. Safely release only proven-dead storage; the amount recovered and remaining difference require a device comparison. No nine-point recovery or crash fix is established yet.
+- [Compute publication absorbed by full guest dependencies](../../../docs/reference/rendering.md#adjacent-compute-publication-repeats-a-full-guest-dependency): eliminate one redundant host dependency at eligible boundaries while retaining full guest ordering. Real software-Vulkan parity passes; phone frequency and FPS gain remain unmeasured.
+
 - [Surface stripes with optional coarse fragment shading](../../../docs/reference/rendering.md#surface-stripes-with-optional-coarse-fragment-shading): user172 comparison removes the low-resolution surface stripes with VRS off; the responsible individual fragment pass remains open.
 
 - [Overwritten deferred uniform uploads](../../../docs/reference/rendering.md#overwritten-deferred-uniform-uploads): eliminate only fully superseded pass-close GPU copies while retaining per-draw shadows and the complete texture journal. Phone frequency and FPS effect remain unmeasured.

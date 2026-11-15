@@ -575,6 +575,7 @@ static VkImageViewType view_type(int target, uint32_t layers) {
 
 uint64_t nvn_pool_live(const void *pool, unsigned *flags, int *sparse); void nvn_pool_use(int on);   // hle_nvn.c: the replay reads a texture's pool only through it (the game may have finalized it)
 uint64_t nvn_pool_fin(void);
+int nvn_pool_storage_live(const void *mem, uint64_t size);
 static int pool_sparse(const void *pool) { int sp = 0; return pool && nvn_pool_live(pool, NULL, &sp) && sp; }
 static unsigned pool_flags(const void *pool) { unsigned f = 0; nvn_pool_live(pool, &f, NULL); return f; }
 uint64_t nvn_sparse_gen(void); uint64_t nvn_sparse_copy(const void *pool, void *dst, uint64_t a, uint64_t n);   // hle_nvn.c: sparse virtual pools
@@ -1559,8 +1560,8 @@ static void img_first_use(vka_img *im, const tex_t *t, VkCommandBuffer cb, int m
 // CPU-filled images of finalized pools whose registrations are already invalid.
 // Never evict GPU-written attachments: their content is NOT in guest memory.
 // All map references must be accounted for before any entry changes.
-static int img_evict_locked(vka_img *im) {
-    if (!im || im->holds || im->gpu_owned) return 0;
+static int img_forget_locked(vka_img *im) {
+    if (!im || im->holds) return 0;
     int refs = 0;
     for (size_t i = 0; i < g_mapcap; i++)
         if (g_map[i].serial && g_map[i].serial != ~0ull && g_map[i].im == im) refs++;
@@ -1575,6 +1576,10 @@ static int img_evict_locked(vka_img *im) {
         }
     }
     return refs;
+}
+static int img_evict_locked(vka_img *im) {
+    if (!im || im->holds || im->gpu_owned) return 0;
+    return img_forget_locked(im);
 }
 static uint64_t meminfo_kb(const char *buf, const char *key) {
     const char *p = strstr(buf, key);
@@ -1653,6 +1658,52 @@ static int img_prune_candidate(vka_img *im, uint64_t frame, uint64_t done, int r
     int dead = img_pool_dead(im);
     int can = dead || im->mode == ST_ZERO || (im->from_mem && im->mem && im->pool);
     return vktl_evictable(frame, last, im->holds, im->gpu_owned, fence && done < fence, can);
+}
+// Unlike pressure eviction, dead-pool retirement never discards content from
+// any live storage range. A live alias/descriptor, unknown generation, sparse
+// pool, video, external hold, recent use or outstanding fence vetoes retirement.
+static int img_retire_candidate(vka_img *im, uint64_t frame, uint64_t done, int registered) {
+    if (registered || im->is_video || im->vpool || !im->mem || !im->pool || !im->pgen ||
+        !img_pool_dead(im)) return 0;
+    uint64_t last = __atomic_load_n(&im->last_frame, __ATOMIC_RELAXED);
+    uint64_t fence = __atomic_load_n(&im->last_fence, __ATOMIC_RELAXED);
+    if (!vktl_evictable(frame,last,im->holds,0,fence && done < fence,1)) return 0;
+    return !nvn_pool_storage_live(im->mem,im->L.size);
+}
+static uint64_t g_dead_images, g_dead_image_bytes;
+static void vka_tex_retire_dead_locked(void) {
+    if (!VKA_ENV("DM_VK_RETIRE_DEAD_IMAGES",1)) return;
+    uint64_t frame=vka_frame(), fin=nvn_pool_fin();
+    static uint64_t seen, checked; static int retry;
+    if (!frame || (fin==seen && (!retry || frame<checked+30))) return;
+    seen=fin; checked=frame; retry=0;
+    uint8_t *registered=calloc((size_t)g_nlive,1);
+    if (!registered) { retry=1; return; }
+    // Strictly pin every live registration here, including bindless ones.
+    // Feedback-based cache eviction's looser registration rule is NOT used.
+    for (int id=1;id<g_ntreg;id++) if (g_treg[id].t.serial && treg_pins_image(&g_treg[id])) {
+        smap_ent *e=map_get(g_treg[id].t.serial);
+        if (!e || !e->im) continue;
+        int ix=e->im->live_index;
+        if (ix>=0 && ix<g_nlive && g_live[ix]==e->im) registered[ix]=1;
+    }
+    uint64_t done=vka_done(), bytes=0, count=0;
+    // Deletion swaps the last live image into this index. Descending order
+    // means that image has already been checked; lower indices remain valid.
+    for (int i=g_nlive-1;i>=0;i--) {
+        vka_img *im=g_live[i];
+        if (!im->pool || !im->pgen || !img_pool_dead(im)) continue;
+        if (!img_retire_candidate(im,frame,done,registered[i])) { retry=1; continue; }
+        uint64_t n=im->bytes;
+        if (img_forget_locked(im)) { bytes+=n; count++; }
+        else retry=1;
+    }
+    free(registered);
+    if (count) {
+        g_dead_images+=count; g_dead_image_bytes+=bytes;
+        VLOG("RAM finalized-pool retirement: %llu images, %.1f MiB scheduled for fence-safe release; total %llu images %.1f MiB; live storage aliases/registrations and pending fences protected",
+             (unsigned long long)count,bytes/1048576.0,(unsigned long long)g_dead_images,g_dead_image_bytes/1048576.0);
+    }
 }
 static void vka_tex_prune_locked(void) {
     uint64_t frame = vka_frame(); if (!frame) return;
@@ -3226,6 +3277,7 @@ int vka_tex_prepare(VkCommandBuffer cb) {
     nvn_pool_use(1);   // the re-uploads below read guest storage: no pool is finalized (and unmapped) under them. Taken before g_tmu, as write_tex does
     pthread_mutex_lock(&g_tmu);
     pfb_consume_locked();
+    vka_tex_retire_dead_locked();
     vka_tex_prune_locked();
     read_watch();
     for (int i = 0; i < g_nredo; i++) {   // CPU writes to textures that already have an image (WriteTexels): from now on they follow their storage

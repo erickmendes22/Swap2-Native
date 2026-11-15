@@ -226,18 +226,22 @@ final class GameSettings {
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));
             box.addView(vegetation.view);
-            // Do not restore the previous two-shader shortcut. Each switch
-            // omits one exact FS key to identify which corrupted the picture.
-            Ui.Setting shaderA = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Omitir shader A (teste)", null)
-                    .toggle(a, Prefs.skipFsA(a, id), (b, on) -> Prefs.skipFsA(a, id, on));
-            shaderA.value("5684f5e6: teste isolado. Pode criar falhas de cor/profundidade; desligado por padrão. Reinicie.");
-            box.addView(shaderA.view);
+            // Shader A omission is retired: the real pass must render.
             Ui.Setting shaderB = new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Omitir shader B (teste)", null)
                     .toggle(a, Prefs.skipFsB(a, id), (b, on) -> Prefs.skipFsB(a, id, on));
             shaderB.value("47eb514f: teste isolado. Pode criar falhas de cor/profundidade; desligado por padrão. Reinicie.");
             box.addView(shaderB.view);
+            Ui.Setting computeGuestDedup = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    a.getString(R.string.s2_gpu_compute_guest_dedup), null)
+                    .toggle(a, Prefs.computeGuestDedup(a, id), (b, on) -> Prefs.computeGuestDedup(a, id, on));
+            computeGuestDedup.value(a.getString(R.string.s2_gpu_compute_guest_dedup_note));
+            box.addView(computeGuestDedup.view);
+            Ui.Setting retireDeadImages = new Ui.Setting(a, R.drawable.s2_ic_chip,
+                    a.getString(R.string.s2_gpu_retire_dead_images), null)
+                    .toggle(a, Prefs.retireDeadImages(a, id), (b, on) -> Prefs.retireDeadImages(a, id, on));
+            retireDeadImages.value(a.getString(R.string.s2_gpu_retire_dead_images_note));
+            box.addView(retireDeadImages.view);
             Ui.Setting partialTextureUploads = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_partial_upload), null)
                     .toggle(a, Prefs.partialTextureUploads(a, id), (button, on) -> Prefs.partialTextureUploads(a, id, on));
             partialTextureUploads.value(a.getString(R.string.s2_gpu_partial_upload_note));

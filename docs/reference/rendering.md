@@ -1492,3 +1492,20 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Fix:** the automatic draw gate accepts either validated placed memory or the validated FD backend, preserving explicit off/on and selftest overrides and the unsupported-device safety gate. During FD retirement the hole check is not classified as post-free; anonymous guest pages replace the alias before releasing its independent driver map.
 - **Check:** execute the actual draw gate across backend/override combinations; the previous gate fails the negative control. Execute actual retirement against real Linux memfd aliases, checking zero/nonzero pages, read-only/read-write protections, deferred fence retention, and replacement-before-free ordering. Vulkan calls in the lifetime fixture are stubbed; it is not a phone GPU test.
 - **Found on:** [Ocarina Android](../../dm/games/0400486024DEC000/README.md).
+
+
+### Finalized pools retain private GPU images below the cache budget
+
+- **Symptom:** baseline resident memory remains higher than another backend with the same RAM Saver setting, and unused GPU attachments remain cached after pool finalization.
+- **Cause:** pressure eviction correctly refuses GPU-written images because their current contents cannot be reconstructed from guest memory. That safeguard also retained images whose original pool had ended, even below the pressure threshold.
+- **Fix:** retire finalized-pool images before pressure pruning, independently of file backing/RAM Saver. Require a known dead generation, no overlapping live pool storage, no live texture registration, no external hold, no pending GPU fence, and normal recent-use protection. Exclude sparse/video/unknown storage. Keep ordinary eviction's GPU-owned prohibition and use the existing map reference accounting, descriptor invalidation and fence-delayed destruction. Sweep on pool changes with bounded retries; never read old guest storage.
+- **Check:** compile and run the production generation/range guard, retirement predicate and sweep with AddressSanitizer/UndefinedBehaviorSanitizer. Cover overlapping new pools, object/address reuse, live aliases, registered descriptors, recent use, holds, fences and retained live GPU contents. Logical fixture bytes are not a measured device RSS saving. The retirement log reports scheduled release; phone memory delta remains to be measured.
+- **Found on:** [Ocarina Android](../../dm/games/0400486024DEC000/README.md).
+
+### Adjacent compute publication repeats a full guest dependency
+
+- **Symptom:** a pending compute group receives a host publication barrier immediately followed by a full guest barrier with no intervening GPU work.
+- **Cause:** the opcode boundary flush ran before checking that the following explicit guest barrier already covers all compute/transfer writes and all later consumers.
+- **Fix:** only at a closed-pass explicit guest barrier, let the full dependency publish the pending group. Acknowledge pending writes only after recording that barrier. Keep all guest barriers, other opcode flushes, pass-active/profiling/scanning fallbacks and an independent menu switch. Internal rollback: `DM_VK_COMPUTE_GUEST_DEDUP=0`. The image-retirement menu switch independently sets `DM_VK_RETIRE_DEAD_IMAGES`; RAM Saver remains separate.
+- **Check:** execute the production guards and handler, including kept/covered fallbacks. Compare 256 real Vulkan compute/transfer/indirect chains byte for byte, asserting one full guest dependency remains and only its redundant host publication is removed. Software Vulkan proves ordering, not an Adreno FPS gain.
+- **Found on:** [Ocarina Android](../../dm/games/0400486024DEC000/README.md).

@@ -665,6 +665,8 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - horizontal surface bands in a low-resolution scene disappear when optional VRS is disabled, while earlier upscaler substitutions did not remove them. → [Surface stripes with optional coarse fragment shading](../reference/rendering.md#surface-stripes-with-optional-coarse-fragment-shading)
 - pass-close inline uniform uploads can copy the same destination repeatedly even though only the last bytes are observed after the pass. → [Overwritten deferred uniform uploads](../reference/rendering.md#overwritten-deferred-uniform-uploads)
 - exported FD memory passes its alias probe and guest pools map successfully, but the renderer reports no placed guest memory and disables draws/dispatches, leaving a black screen. → [Validated shared guest memory disables rendering](../reference/rendering.md#validated-shared-guest-memory-disables-rendering)
+- baseline resident memory remains higher than another backend with the same RAM Saver setting, and unused GPU attachments remain cached after pool finalization. → [Finalized pools retain private GPU images below the cache budget](../reference/rendering.md#finalized-pools-retain-private-gpu-images-below-the-cache-budget)
+- a pending compute group receives a host publication barrier immediately followed by a full guest barrier with no intervening GPU work. → [Adjacent compute publication repeats a full guest dependency](../reference/rendering.md#adjacent-compute-publication-repeats-a-full-guest-dependency)
 
 ## Shaders
 

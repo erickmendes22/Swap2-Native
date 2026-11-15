@@ -284,6 +284,9 @@ void mtl_set_frame(uint64_t f) {
         { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
           if (total != overlap0) VLOG("iOS compute dispatch overlap: %.1f full GPU barriers removed/frame; every non-dispatch NVN command still flushes", (total-overlap0)/n);
           overlap0 = total; }
+        { static uint64_t merged0; uint64_t total=vka_dispatch_guest_merges();
+          VLOG("Vulkan compute-to-guest dependency dedup: %.1f host dependencies removed/frame; full guest barriers retained",(total-merged0)/n);
+          merged0=total; }
         { char pb[400]; void vka_draw_prof(char *b, size_t n, double draws); vka_draw_prof(pb, sizeof pb, (double)(g_stat_draws - d0)); if (pb[0]) VLOG("draw path per draw (us): %s", pb);
           vka_enc_stats(pb, sizeof pb, n); if (pb[0]) VLOG("%s", pb);
           vka_floor_stats(pb, sizeof pb); if (pb[0]) VLOG("%s", pb);
@@ -1619,7 +1622,10 @@ static void exec(const uint8_t *p, int depth) {
             h.op == OP_CALL || h.op == OP_BARRIER || h.op == OP_FENCE_SYNC ||
             h.op == OP_SIGNAL_EVENT))
             vka_rp_end();
-        if (h.op != OP_DISPATCH && !overlap_state_record(h.op)) vka_dispatch_overlap_flush(); // preserve guest GPU ordering but let consecutive state/binding records pass
+        if (h.op != OP_DISPATCH && !overlap_state_record(h.op)) {
+            if (h.op != OP_BARRIER || !vka_dispatch_guest_can_cover())
+                vka_dispatch_overlap_flush();
+        }
         const void *a = p + 8;
         if (g_memu_cover && !memu_allowed(h.op))
             g_memu_cover = 0;
@@ -1710,7 +1716,10 @@ static void exec(const uint8_t *p, int depth) {
         case OP_COPY_B2T: if (g_cb) copy_bt(a, 1); break;
         case OP_COPY_T2B: if (g_cb) copy_bt(a, 0); break;
         case OP_COPY_T2T: if (g_cb) copy_t2t(a); break;
-        case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb); break;
+        case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);
+            if (g_cb && (bar_covered || !bar_kept)) vka_dispatch_guest_covered();
+            else vka_dispatch_overlap_flush();
+            break;
         case OP_DRAW: if (!S.rc_skip && g_cb) { p_draw t; const p_draw *dr = draw_rec(a, h.size, &t);
                           memu_before_draw(p, dr);   // prepare task/mesh compute before opening the raster pass
                           g_stat_draws++; uint64_t sk = oq_sk0();

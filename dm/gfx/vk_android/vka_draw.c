@@ -35,6 +35,7 @@ static vka_pool_bind_cache g_pool_bind[2];
 static VkPipelineLayout g_set0_layout[2];
 static int g_dispatch_overlap_pending;
 static uint64_t g_dispatch_overlap_skipped;
+static uint64_t g_dispatch_guest_merged;
 uint64_t vka_frame(void);  // also used by the fail-closed SGSR chain frame tracker
 // The Metal port can overlap successive compute dispatches when NVN issued no
 // explicit barrier between them. The Vulkan replay had inserted a full GPU
@@ -54,6 +55,22 @@ void vka_dispatch_overlap_flush(void) {
     g_dispatch_overlap_pending = 0;
 }
 uint64_t vka_dispatch_overlap_skips(void) { return g_dispatch_overlap_skipped; }
+// A full NVN guest barrier immediately follows, with no render pass or GPU
+// instrumentation in between. Let THAT dependency publish the pending group
+// instead of first publishing compute writes and then repeating a full drain.
+int vka_dispatch_guest_can_cover(void) {
+    return g_dispatch_overlap_pending && g_cb && !vka_rp_is_open() &&
+        !vka_gp_active && !vka_nan_on() &&
+        VKA_ENV("DM_VK_COMPUTE_GUEST_DEDUP",1);
+}
+// Call only AFTER the complete guest/pass-end barrier has been recorded.
+void vka_dispatch_guest_covered(void) {
+    if (g_cb && g_dispatch_overlap_pending) {
+        g_dispatch_overlap_pending=0;
+        g_dispatch_guest_merged++;
+    }
+}
+uint64_t vka_dispatch_guest_merges(void) { return g_dispatch_guest_merged; }
 static uint64_t g_dispatch_selective_deps, g_dispatch_arg_deps;
 void vka_dispatch_sync_counts(uint64_t *compute, uint64_t *args) {
     if (compute) *compute = g_dispatch_selective_deps;
@@ -1813,8 +1830,8 @@ static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
         VLOG("lower vegetation detail: %llu mesh draws omitted", (unsigned long long)omitted);
     return 1;
 }
-// Two independent Ocarina diagnostics for the unsafe historical two-shader
-// omission. Users can now test A and B separately, with BOTH OFF by default.
+// Shader A omission is retired after white artifacts on the device.
+// Keep only the independent, opt-in shader B diagnostic.
 // This is NOT a claimed visibility optimization: each draw may write depth,
 // fog, colour or texture data used in later passes. Do not enable both
 // automatically, and keep the normal shader path untouched.
@@ -1822,7 +1839,7 @@ static int oot_skip_one_fs(const vka_shader *fs) {
     if (!fs || (fs->key != VKA_OOT_FS_HEAVY &&
                 fs->key != VKA_OOT_FS_LAYER2) ||
         strcmp(DM_GAME_ID, "0400486024DEC000")) return 0;
-    int a = VKA_ENV("DM_VK_OOT_SKIP_HEAVY_FS", 0) != 0;
+    int a = 0; // retired: dropping shader A corrupts colour/depth (white artifacts)
     int b = VKA_ENV("DM_VK_OOT_SKIP_LAYER2_FS", 0) != 0;
     if (!vka_oot_skip_fs_individual(fs->key, a, b)) return 0;
     static _Atomic uint64_t skip_a, skip_b;

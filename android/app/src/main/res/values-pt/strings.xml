@@ -748,4 +748,8 @@
     <string name="s2_gpu_unused_color_note">Evita carregar cores em passes de profundidade que não podem alterá-las. Mantém os testes de profundidade e visibilidade. Reinicie o jogo para aplicar.</string>
     <string name="s2_gpu_attachment_parts">Sincronização seletiva da GPU</string>
     <string name="s2_gpu_attachment_parts_note">Reduz a sincronização após renderização, cópias, limpezas e compute; evita barreiras duplicadas quando a preparação das texturas não grava trabalho na GPU. Mantém a ordem e a qualidade original. Reinicie o jogo para aplicar.</string>
+    <string name="s2_gpu_compute_guest_dedup">Unificar dependências de compute</string>
+    <string name="s2_gpu_compute_guest_dedup_note">Remove uma sincronização duplicada da GPU antes da barreira completa do jogo. Mantém renderização e resolução. Reinicie para aplicar.</string>
+    <string name="s2_gpu_retire_dead_images">Liberar imagens GPU encerradas</string>
+    <string name="s2_gpu_retire_dead_images_note">Libera imagens de pools encerrados após o uso pela GPU. Independente do RAM Saver; preserva texturas ativas. Reinicie para aplicar.</string>
 </resources>

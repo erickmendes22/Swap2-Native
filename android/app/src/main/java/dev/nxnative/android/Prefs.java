@@ -121,11 +121,18 @@ final class Prefs {
     // remove live colour/depth draws after install-over.
     static boolean hiddenLayersOff(Context c, String titleId) { return false; }
     static void hiddenLayersOff(Context c, String titleId, boolean on) { /* retired */ }
-    // New keys: never inherit the broken combined "hidden layers" preference.
-    static boolean skipFsA(Context c, String id) { return OCARINA_TITLE.equals(id) &&
-        of(c).getBoolean(gameKey("oot_fs_a_diagnostic", id), false); }
+    // Shader A omission caused white artifacts. Ignore stale install-over state.
+    static boolean skipFsA(Context c, String id) { return false; }
     static void skipFsA(Context c, String id, boolean on) {
-        of(c).edit().putBoolean(gameKey("oot_fs_a_diagnostic", id), on).commit(); }
+        of(c).edit().remove(gameKey("oot_fs_a_diagnostic", id)).commit(); }
+    static boolean computeGuestDedup(Context c, String id) {
+        return of(c).getBoolean(gameKey("gpu_compute_guest_dedup", id), true); }
+    static void computeGuestDedup(Context c, String id, boolean on) {
+        of(c).edit().putBoolean(gameKey("gpu_compute_guest_dedup", id), on).commit(); }
+    static boolean retireDeadImages(Context c, String id) {
+        return of(c).getBoolean(gameKey("gpu_retire_dead_images", id), true); }
+    static void retireDeadImages(Context c, String id, boolean on) {
+        of(c).edit().putBoolean(gameKey("gpu_retire_dead_images", id), on).commit(); }
     static boolean skipFsB(Context c, String id) { return OCARINA_TITLE.equals(id) &&
         of(c).getBoolean(gameKey("oot_fs_b_diagnostic", id), false); }
     static void skipFsB(Context c, String id, boolean on) {
