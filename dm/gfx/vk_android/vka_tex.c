@@ -1661,9 +1661,9 @@ static int img_prune_candidate(vka_img *im, uint64_t frame, uint64_t done, int r
 }
 // Unlike pressure eviction, dead-pool retirement never discards content from
 // any live storage range. A live alias/descriptor, unknown generation, sparse
-// pool, video, external hold, recent use or outstanding fence vetoes retirement.
+// pool, external hold, recent use or outstanding fence vetoes retirement.
 static int img_retire_candidate(vka_img *im, uint64_t frame, uint64_t done, int registered) {
-    if (registered || im->is_video || im->vpool || !im->mem || !im->pool || !im->pgen ||
+    if (registered || im->vpool || !im->mem || !im->pool || !im->pgen ||
         !img_pool_dead(im)) return 0;
     uint64_t last = __atomic_load_n(&im->last_frame, __ATOMIC_RELAXED);
     uint64_t fence = __atomic_load_n(&im->last_fence, __ATOMIC_RELAXED);

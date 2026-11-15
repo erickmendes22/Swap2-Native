@@ -28,7 +28,7 @@ typedef struct { uint64_t gen; } pool_t;
 typedef struct {
  const pool_t *pool;uint64_t pgen,pfin,serial,last_frame,last_fence,bytes;
  uint8_t *mem;struct {uint64_t size;} L;
- int pdead,track,holds,gpu_owned,is_video,refs,live_index;void *vpool;
+ int pdead,track,holds,gpu_owned,refs,live_index;void *vpool;
  uint32_t sentinel;
 } vka_img;
 typedef struct {uint64_t serial;vka_img *im;} smap_ent;
@@ -123,7 +123,7 @@ static uint64_t nvn_pool_live(const void *p,void *f,void *s){(void)f;(void)s;ret
 typedef struct {
  const pool_t *pool; uint64_t pgen,pfin,serial,last_frame,last_fence;
  uint8_t *mem;struct {uint64_t size;} L;
- int pdead,track,holds,gpu_owned,is_video;void *vpool;
+ int pdead,track,holds,gpu_owned;void *vpool;
 } vka_img;
 static void watch_del(vka_img *im){(void)im;}
 '''
@@ -144,7 +144,6 @@ int main(void){
  im.last_frame=99;assert(!img_retire_candidate(&im,100,100,0));
  im.last_frame=100;assert(!img_retire_candidate(&im,100,100,0));
  im.last_frame=0;assert(!img_retire_candidate(&im,100,100,0));im.last_frame=40;
- im.is_video=1;assert(!img_retire_candidate(&im,100,100,0));im.is_video=0;
  im.vpool=&alias;assert(!img_retire_candidate(&im,100,100,0));im.vpool=0;
  im.pgen=0;assert(!img_retire_candidate(&im,100,100,0));im.pgen=1;
  im.mem=0;assert(!img_retire_candidate(&im,100,100,0));im.mem=(void*)0x10400;

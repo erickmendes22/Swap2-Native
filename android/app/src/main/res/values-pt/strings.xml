@@ -752,4 +752,5 @@
     <string name="s2_gpu_compute_guest_dedup_note">Remove uma sincronização duplicada da GPU antes da barreira completa do jogo. Mantém renderização e resolução. Reinicie para aplicar.</string>
     <string name="s2_gpu_retire_dead_images">Liberar imagens GPU encerradas</string>
     <string name="s2_gpu_retire_dead_images_note">Libera imagens de pools encerrados após o uso pela GPU. Independente do RAM Saver; preserva texturas ativas. Reinicie para aplicar.</string>
+    <string name="s2_oot_render_profile_720_direct">720p direto · cena e saída 1280×720</string>
 </resources>
