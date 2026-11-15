@@ -12,6 +12,8 @@ class AndroidMemoryAudit(unittest.TestCase):
   with tempfile.TemporaryDirectory() as td:
    d=Path(td);proc=d/'proc';sys=d/'sys';bin=d/'bin';bin.mkdir();proc.mkdir();sys.mkdir()
    (proc/'meminfo').write_text('MemTotal: 16000000 kB\nMemAvailable: 2000000 kB\n')
+   files=d/'files';logs=files/'com.swap2native.ootv11ios/files/logs';logs.mkdir(parents=True)
+   (logs/'current.log').write_text('[nxlaunch] build fixture\n[nxlaunch] env DM_VK_PLACE_SHADER_POOLS=0\n[nxlaunch] env SECRET_TOKEN=private-value\n[dm] timing up to frame 1200: fixture\n')
    processes=d/'ps';processes.write_text('PID ARGS\n101 com.swap2native.ootv11ios\n102 com.swap2native.ootv11ios:game\n103 dev.bananative.android:game\n104 com.swap2native.ootv11ios.evil\n105 unrelated.app\n')
    smaps='''1000-2000 rw-s 00000000 00:01 1 /dmabuf:driver
 Rss: 64 kB
@@ -34,7 +36,7 @@ SwapPss: 4096 kB
     if pid!=103:
      (p/'smaps').write_text(smaps);(p/'smaps_rollup').write_text('Rss: 8320 kB\nPss: 8272 kB\nSwapPss: 4096 kB\n')
    (bin/'dumpsys').write_text('#!/bin/sh\nprintf "DUMPSYS_PID=%s\\n" "$5"\n');(bin/'dumpsys').chmod(0o755)
-   env=dict(os.environ,SWAP_AUDIT_PROC_ROOT=str(proc),SWAP_AUDIT_SYS_ROOT=str(sys),SWAP_AUDIT_PS_LIST_FILE=str(processes),PATH=str(bin)+os.pathsep+os.environ['PATH'])
+   env=dict(os.environ,SWAP_AUDIT_WAIT_SECONDS="0",SWAP_AUDIT_FILES_ROOT=str(files),SWAP_AUDIT_PROC_ROOT=str(proc),SWAP_AUDIT_SYS_ROOT=str(sys),SWAP_AUDIT_PS_LIST_FILE=str(processes),PATH=str(bin)+os.pathsep+os.environ['PATH'])
    r=subprocess.run(['sh',str(SCRIPT),'-'],env=env,text=True,capture_output=True)
    self.assertEqual(r.returncode,0,r.stderr);s=r.stdout
    self.assertIn('=== PROCESS 102 com.swap2native.ootv11ios:game ===',s)
@@ -45,6 +47,16 @@ SwapPss: 4096 kB
    self.assertIn('        8192         8192         8192         4096        1 guest named memory',s)
    self.assertIn('UNAVAILABLE: smaps (root may be required)',s)
    self.assertIn('DUMPSYS_PID=102',s)
+   self.assertIn('DM_VK_PLACE_SHADER_POOLS=0',s)
+   self.assertNotIn('SECRET_TOKEN',s)
+   self.assertNotIn('private-value',s)
+   # Launcher-only and a game of the wrong package are rejected explicitly.
+   processes.write_text('PID ARGS\n101 com.swap2native.ootv11ios\n103 dev.bananative.android:game\n')
+   env['SWAP_AUDIT_TARGET']='com.swap2native.ootv11ios'
+   r=subprocess.run(['sh',str(SCRIPT),'-'],env=env,text=True,capture_output=True)
+   self.assertEqual(r.returncode,2);self.assertIn('NOT a gameplay memory snapshot',r.stdout)
+   self.assertNotIn('--- STATUS ---',r.stdout)
+   del env['SWAP_AUDIT_TARGET']
    processes.write_text('PID ARGS\n104 unrelated.app\n')
    r=subprocess.run(['sh',str(SCRIPT),'-'],env=env,text=True,capture_output=True)
    self.assertEqual(r.returncode,2);self.assertIn('neither emulator',r.stdout)

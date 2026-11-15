@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Shader-only file backing versus the RAM Saver texture option](../../../docs/reference/memory.md#shader-only-file-backing-differs-from-the-ram-saver-texture-option): upstream has automatic shader backing while174 does not; source candidate follows that policy, with no new APK or claimed complete memory-gap fix.
+
 - [Allocation counters versus physical memory](../../../docs/reference/memory.md#vulkan-allocation-counters-are-not-physical-android-memory-savings): build174 reduces recorded pool allocations but the user reports no useful total-RAM reduction; CPU residency/PSS must be measured before another memory candidate is advertised.
 
 - [Program address queries commit unused shader-code pools](../../../docs/reference/rendering.md#program-address-queries-commit-unused-shader-code-pools): the Banana0.3.24 log identifies344 MiB extra placed pools and the missing shader-code placement deferral in our NVN host.
@@ -1485,3 +1487,39 @@ processes; denied fields remain unavailable. Collect the same steady scene
 with one emulator at a time and equal RAM Saver/settings. The current logs
 lack PSS, file-backed residency, package subprocess memory and memtrack, so
 they cannot identify the remaining physical-RAM owner by themselves.
+
+
+## First physical snapshots (2026-11-15, current/open)
+
+`swap-memory-20261115-095504.txt` captures Banana's real game process10759,
+with smaps PSS7309261 KiB and Android total PSS7376787 KiB (about7.03 GiB,
+including memtrack). Breakdown from the smaps sample: guest-named memory
+4306780 KiB, GPU mappings1820408 KiB, native allocator563175 KiB, unlinked
+cache files351744 KiB, translated shader library107608 KiB. Keep memtrack
+separate from the mapping buckets when interpreting these figures.
+
+`swap-memory-20261115-095632.txt` does NOT capture Swap gameplay. It lists
+only Swap launcher11639 and Banana launcher23033; there is no Swap`:game`
+process. MemAvailable is11367892 KiB versus2098816 KiB in the Banana game
+capture. Do not compare the launcher's Android PSS120792 KiB to the Banana
+game or treat this as a RAM fix. The collector should have rejected such a
+snapshot; it now requires the requested game process, waits at most60 s,
+records safe current-run flags/timing and rejects launcher-only/wrong-app
+captures. It also flags a game ending mid-capture. Only a valid Swap gameplay
+snapshot is still needed; retain the valid Banana snapshot.
+
+Independent source audit finds a missing second half of upstream memory
+policy: Banana0.3.24 defaults `fb_kinds` to shader-only file backing, even
+when the RAM Saver texture toggle is off. Our174 defaults all backing off.
+The351744 KiB of unlinked cache pages in Banana is consistent with this
+path, but does not alone identify every cache mapping or prove the full
+reported RAM gap. A source candidate matches that shader-only default,
+keeps textures opt-in and preserves explicit full opt-out. No APK is
+triggered before valid target measurements justify the candidate.
+
+The new test executes actual backing selection and `vkfb_to_file`. In the
+32 MiB Linux fixture, anonymous PSS32937 KiB becomes32938 KiB immediately
+after file backing; only explicit test-only OS reclaim drops it to170 KiB,
+and a full verified reread restores32938 KiB. This validates reclaimability
+and exact bytes, not an immediate or measured phone memory saving. Retain
+the nine-point gap as OPEN and do not add another performance menu option.

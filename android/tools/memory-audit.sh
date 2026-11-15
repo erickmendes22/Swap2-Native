@@ -6,6 +6,7 @@ set -u
 umask 077
 PROC_ROOT=${SWAP_AUDIT_PROC_ROOT:-/proc}
 SYS_ROOT=${SWAP_AUDIT_SYS_ROOT:-/sys}
+FILES_ROOT=${SWAP_AUDIT_FILES_ROOT:-/sdcard/Android/data}
 OUT=${1:-/sdcard/Download/swap-memory-$(date +%Y%m%d-%H%M%S).txt}
 if [ "$OUT" != - ]; then
     exec 3>"$OUT" || exit 1
@@ -34,32 +35,59 @@ if ! command -v awk >/dev/null 2>&1; then
     say 'ERROR: awk unavailable; no memory comparison was made.'
     exit 3
 fi
+TARGET=${SWAP_AUDIT_TARGET:-}
+WAIT_SECONDS=${SWAP_AUDIT_WAIT_SECONDS:-60}
+case "$TARGET" in ''|com.swap2native.ootv11ios|dev.bananative.android) ;; *) say 'ERROR: invalid target package'; exit 4;; esac
+case "$WAIT_SECONDS" in ''|*[!0-9]*) say 'ERROR: invalid wait duration'; exit 4;; esac
+[ "$WAIT_SECONDS" -le 60 ] || WAIT_SECONDS=60
+elapsed=0
+while :; do
+    if [ -n "${SWAP_AUDIT_PS_LIST_FILE:-}" ]; then
+        inventory=$(cat "$SWAP_AUDIT_PS_LIST_FILE") || exit 1
+    else
+        inventory=$(ps -A -o PID,ARGS 2>/dev/null) || { say 'ERROR: process inventory unavailable'; exit 1; }
+    fi
+    processes=$(printf '%s\n' "$inventory" | awk '
+    $1 ~ /^[0-9]+$/ {
+     for(i=1;i<=2;i++) {
+      p=i==1?"com.swap2native.ootv11ios":"dev.bananative.android"
+      if($2==p || index($2,p ":")==1) {print $1, $2;break}
+     }}')
+    game=$(printf '%s\n' "$processes" | awk -v target="$TARGET" '
+    (target!="" && $2==target ":game") ||
+    (target=="" && ($2=="com.swap2native.ootv11ios:game" || $2=="dev.bananative.android:game")) {print $1}')
+    [ -z "$game" ] || break
+    if [ "$elapsed" -ge "$WAIT_SECONDS" ]; then
+        if [ -z "$processes" ]; then say 'ERROR: neither emulator package has a running process.'
+        else say 'ERROR: launcher found, but the requested :game process is absent. This is NOT a gameplay memory snapshot.'; say "$processes"; fi
+        [ "$OUT" = - ] || printf 'Saved error report: %s\n' "$OUT" >&2
+        exit 2
+    fi
+    [ "$elapsed" -ne 0 ] || say "Waiting up to $WAIT_SECONDS seconds for ${TARGET:-either emulator}:game. Return to the loaded game."
+    sleep 2
+    elapsed=$((elapsed + 2))
+done
+say "Capture time: $(date '+%Y-%m-%d %H:%M:%S %z'); requested target: ${TARGET:-either}; game PIDs: $game"
 say '--- SYSTEM MEMORY BEFORE ---'; read_file "$PROC_ROOT/meminfo"
 say '--- MEMORY PRESSURE ---'; read_file "$PROC_ROOT/pressure/memory"
 for z in "$SYS_ROOT"/block/zram*/mm_stat; do
     [ -e "$z" ] || continue
     say "--- GLOBAL ZRAM: $z (bytes: orig_data_size compr_data_size mem_used_total, then kernel fields) ---"; read_file "$z"
 done
-if [ -n "${SWAP_AUDIT_PS_LIST_FILE:-}" ]; then
-    inventory=$(cat "$SWAP_AUDIT_PS_LIST_FILE") || exit 1
-else
-    inventory=$(ps -A -o PID,ARGS 2>/dev/null) || { say 'ERROR: process inventory unavailable'; exit 1; }
-fi
-processes=$(printf '%s\n' "$inventory" | awk '
-$1 ~ /^[0-9]+$/ {
- for(i=1;i<=2;i++) {
-  p=i==1?"com.swap2native.ootv11ios":"dev.bananative.android"
-  if($2==p || index($2,p ":")==1) {print $1, $2;break}
- }}')
-if [ -z "$processes" ]; then
-    say 'ERROR: neither emulator package has a running process. Start one and load the scene first.'
-    [ "$OUT" = - ] || printf 'Saved: %s\n' "$OUT" >&2
-    exit 2
-fi
 say '--- MATCHED PROCESSES (includes launcher, game and preparation processes) ---'
 say "$processes"
 printf '%s\n' "$processes" | while read -r pid name; do
     say "=== PROCESS $pid $name ==="
+    case "$name" in *:game)
+        package=${name%%:*}
+        latest=$(ls -t "$FILES_ROOT/$package/files/logs/"*.log 2>/dev/null | head -n 1)
+        say '--- RUN IDENTITY AND SAFE MEMORY/RENDER FLAGS ---'
+        if [ -n "$latest" ] && [ -r "$latest" ]; then
+            say "Log: $latest"
+            awk '/^\[nxlaunch\] build / || /env (DM_MEM_FILEBACK|DM_MEM_FILEBACK_KINDS|DM_VK_PLACE_SHADER_POOLS|DM_VK_ALIAS|DM_VK_NDSR|DM_GRAPHICS_SCALE|DM_OPMODE)=/ {print}' "$latest" >&3
+            tail -n 250 "$latest" | awk '/timing up to frame/ {last=$0} END {if(last!="")print last;else print "UNAVAILABLE: recent frame timing"}' >&3
+        else say 'UNAVAILABLE: current app log'; fi
+    ;; esac
     say '--- STATUS ---'
     if [ -r "$PROC_ROOT/$pid/status" ]; then
         awk '/^(Name|State|Pid|PPid|Uid|VmPeak|VmSize|VmRSS|RssAnon|RssFile|RssShmem|VmSwap|Threads):/' "$PROC_ROOT/$pid/status" >&3
@@ -111,6 +139,12 @@ printf '%s\n' "$processes" | while read -r pid name; do
         say "--- KGSL $f (driver-provided units, may overlap PSS) ---"; read_file "$fpath"
     done
     say "=== END PROCESS $pid ==="
+done
+for gamepid in $game; do
+    if [ ! -r "$PROC_ROOT/$gamepid/status" ]; then
+        say "ERROR: game PID $gamepid ended during the snapshot; this capture is incomplete."
+        exit 2
+    fi
 done
 say '--- SYSTEM MEMORY AFTER ---'; read_file "$PROC_ROOT/meminfo"
 say 'End of snapshot. This capture does not change render settings or terminate apps.'
