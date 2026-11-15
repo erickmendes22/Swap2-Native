@@ -759,4 +759,6 @@
     <string name="s2_gpu_visibility_note">Pode reduzir o trabalho de desenho em cenas com objetos encobertos. Experimental; reinicie o jogo para aplicar.</string>
     <string name="s2_narrow_barriers">Barreiras compute específicas</string>
     <string name="s2_narrow_barriers_note">Experimental. Restringe a sincronização de compute quando válido. Reinicie o jogo.</string>
+    <string name="s2_gpu_page_index">Índice de páginas da GPU (experimental)</string>
+    <string name="s2_gpu_page_index_note">Busca opcional por páginas para shaders preparados com suporte ao índice. Mantém o cache e a busca original. Até 4 MiB extras por submissão. Reinicie para aplicar; desligado por padrão.</string>
 </resources>
