@@ -199,6 +199,11 @@ def rewrite(py, srcs, out, jobs, g, in_process=False, mods=None):
     rewritten into a staging folder and swapped in when it is complete (swap_in), so a run stopped part way never leaves new code with old tables.
     in_process: each in this process (run_in_process) with one worker, one module after the other. mods: module → its exefs patches (rewrite_key, rewriter_src)"""
     mods = mods or {}
+    # The rewriter must know whether an exefs mod changed a frame-step site.
+    # Build the label from only patches selected for THIS module, never
+    # inherit another module's env or a stray process-wide setting.
+    def applied_mod_labels(module):
+        return ', '.join(label for label, _ in mods.get(module, ()))
     env = dict(os.environ, DM_GAME=g.id, DM_REWRITE_J=str(max(1, (os.cpu_count() or 4) // max(1, len(srcs)))))
     todo = {}
     for m, src in srcs.items():
@@ -214,7 +219,7 @@ def rewrite(py, srcs, out, jobs, g, in_process=False, mods=None):
             shutil.rmtree(staging(out, m), ignore_errors=True)
             print(f'  {m}: rewriting {src} (in process)', flush=True)
             t0 = time.monotonic()
-            rc = run_in_process(REPO / 'dm/tools/patch_nso.py', [str(rewriter_src(src, out, m, mods.get(m, ()))), staging(out, m), m, '--target', 'android'], {'DM_GAME': g.id, 'DM_REWRITE_J': '1'}, out / f'rewrite_{m}.log')
+            rc = run_in_process(REPO / 'dm/tools/patch_nso.py', [str(rewriter_src(src, out, m, mods.get(m, ()))), staging(out, m), m, '--target', 'android'], {'DM_GAME': g.id, 'DM_REWRITE_J': '1', 'DM_EXEFS_MODS': applied_mod_labels(m)}, out / f'rewrite_{m}.log')
             if rc:
                 tail = (out / f'rewrite_{m}.log').read_text(errors='replace').splitlines()[-20:]
                 raise Error(f'patch_nso.py exit code {rc} on {m}:\n' + '\n'.join(tail))
@@ -229,7 +234,7 @@ def rewrite(py, srcs, out, jobs, g, in_process=False, mods=None):
                 m = pending.pop(0); kf = out / f'{m}.android.key'; kf.unlink(missing_ok=True); shutil.rmtree(staging(out, m), ignore_errors=True)
                 print(f'  {m}: rewriting {todo[m][0]}', flush=True)
                 log = open(out / f'rewrite_{m}.log', 'w')
-                procs[m] = (subprocess.Popen([py, str(REPO / 'dm/tools/patch_nso.py'), str(rewriter_src(todo[m][0], out, m, mods.get(m, ()))), str(staging(out, m)), m, '--target', 'android'], env=env, stdout=log, stderr=subprocess.STDOUT), log)
+                procs[m] = (subprocess.Popen([py, str(REPO / 'dm/tools/patch_nso.py'), str(rewriter_src(todo[m][0], out, m, mods.get(m, ()))), str(staging(out, m)), m, '--target', 'android'], env=dict(env, DM_EXEFS_MODS=applied_mod_labels(m)), stdout=log, stderr=subprocess.STDOUT), log)
             for m in list(procs):
                 p, log = procs[m]
                 if p.poll() is None: continue

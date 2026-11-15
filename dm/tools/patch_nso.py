@@ -1367,7 +1367,27 @@ obs += region_obs
 FRAME_STEP = PATCHES['FRAME_STEP']
 FS_STATE_OFF = 0
 RENDER_SCALE = 0   # 1 = the build has a render-scale stub (state +0x10): the fixups table says so (RENDER_SCALE), and the iOS launcher offers the setting (dm/games/settings.tsv)
+# The upstream 0.1.8.5 fix: a frame-rate exefs mod may already change
+# the same instruction as our optional frame-step patch. Inspect *all*
+# sites before writing anything. With a mod, keep its code and skip the
+# internal frame-step entirely; without mods, a mismatch is still fatal.
+FS_MODS = os.environ.get('DM_EXEFS_MODS', '')
+fs_changed = []
 if BUILD_ID in FRAME_STEP and NAME == 'main':
+    def fs_check(off, orig):
+        ob = bytes.fromhex(orig)
+        if IMG[off:off + len(ob)] != ob:
+            fs_changed.append(f'{off:#x}: {bytes(IMG[off:off + len(ob)]).hex()}, not {orig}')
+    use_area(0)
+    FRAME_STEP[BUILD_ID](types.SimpleNamespace(
+        here=here, emit=lambda w, kind=None: None,
+        site=fs_check, put=lambda off, words, why: None,
+        state=KEY_PAGE_OFF + 0x4000, render_scale=0))
+    if fs_changed:
+        assert FS_MODS, 'frame step original bytes mismatch ' + '; '.join(fs_changed)
+        print(f'frame step: left out, exefs mod ({FS_MODS}) changed its site ' +
+              '; '.join(fs_changed), flush=True)
+if BUILD_ID in FRAME_STEP and NAME == 'main' and not fs_changed:
     FS_STATE_OFF = KEY_PAGE_OFF + 0x4000
     if FAR:
         # The loader supplies zero-filled BSS/key pages for a front patch area.
