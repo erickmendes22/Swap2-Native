@@ -175,13 +175,8 @@ void reconstruct(uvec2 pixel)
 			color.w =color[OperationMode] - mean;
 
 			float sum = (((((abs(left.x)+abs(left.y))+abs(left.z))+abs(left.w))+(((abs(right.x)+abs(right.y))+abs(right.z))+abs(right.w)))+(((abs(upDown.x)+abs(upDown.y))+abs(upDown.z))+abs(upDown.w)));
-			// This source is encoded HDR (often sqrt-colour). A tiny contrast sum
-            // must never overflow mediump into INF; INF*0 produces NaNs,
-            // which become bright invalid B10G11R11 pixels after packing.
-            // On ordinary contrast this is byte-identical to the old formula.
-            highp float safeSum = max(float(sum), 1.0e-4);
-            highp float sumMean = 1.014185e+01/safeSum;
-            highp float std = min(sumMean*sumMean, 65504.0);
+			float sumMean = 1.014185e+01/sum;
+			float std = (sumMean*sumMean);
 
 #if defined(UseEdgeDirection)
 			vec3 data = vec3(std, edgeDirection(left, right));
@@ -201,12 +196,7 @@ void reconstruct(uvec2 pixel)
 			aWY += weightY(pl.x-2.0, pl.y, right.z,data);
 			aWY += weightY(pl.x-1.0, pl.y, right.w,data);
 
-            // If Lanczos weights nearly cancel (or any sampled data is
-            // invalid), keep the original sample rather than creating an
-            // isolated HDR sparkle by dividing through zero.
-            if (abs(aWY.x) > 1.0e-5 &&
-                !any(isnan(aWY)) && !any(isinf(aWY))) {
-            float finalY = aWY.y/aWY.x;
+			float finalY = aWY.y/aWY.x;
             float maxY = max(max(left.y,left.z),max(right.x,right.w));
 			float minY = min(min(left.y,left.z),min(right.x,right.w));
 			float deltaY = clamp(EdgeSharpness*finalY, minY, maxY) -color.w;
@@ -217,7 +207,6 @@ void reconstruct(uvec2 pixel)
 			color.x = max((color.x+deltaY),0.0);   // (Qualcomm: clamp(..., 0.0, 1.0); see above)
 			color.y = max((color.y+deltaY),0.0);
 			color.z = max((color.z+deltaY),0.0);
-            }
 		}
 	}
 
