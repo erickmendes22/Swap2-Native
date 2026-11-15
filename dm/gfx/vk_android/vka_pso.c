@@ -950,7 +950,8 @@ static uint8_t *g_pw_buf; static size_t g_pw_len, g_pw_cap; static uint32_t g_pw
 static uint64_t *g_pw_set; static size_t g_pw_setcap, g_pw_setn;   // their hashes
 static uint8_t *g_pw_load; static size_t g_pw_load_len; static uint32_t g_pw_load_n;   // the loaded records, read by the prewarm threads (not changed after pw_load)
 static _Atomic uint32_t g_pw_next, g_pw_done, g_pw_made, g_pw_had, g_pw_bad;
-static uint32_t g_pw_budget;  // set once before pthread_create; frame-demand pipelines are never capped static int g_pw_threads; static uint64_t g_pw_t0;
+static uint32_t g_pw_budget;  // set once before pthread_create; frame-demand pipelines are never capped
+static int g_pw_threads; static uint64_t g_pw_t0;
 static size_t pw_size(const pwrec *r) { return sizeof *r + ((r->klen + 7) & ~(size_t)7); }
 static int pw_set_add(uint64_t h) {   // 1 = new
     if (!h) h = 1;
