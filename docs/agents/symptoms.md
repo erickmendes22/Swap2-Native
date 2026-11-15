@@ -662,6 +662,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - GPU transfers still take full dependencies with selective synchronization enabled; profiling stops before the end of the frame. → [Optional GPU producer dependencies after isolated commands](../reference/rendering.md#optional-gpu-producer-dependencies-after-isolated-commands)
 - Texture/feedback descriptor pools are bound repeatedly despite an unchanged layout and identical sets; task/mesh CPU replay copies inactive stage bindings. → [Exact-layout pool bindings remain valid](../reference/rendering.md#exact-layout-pool-bindings-remain-valid)
 - a mesh-compute shader allocates and copies a large task payload into workgroup memory before executing, even though its body reads only a few elements. → [Immutable mesh payload copied into every emulated workgroup](../reference/rendering.md#immutable-mesh-payload-copied-into-every-emulated-workgroup)
+- exported FD memory passes its alias probe and guest pools map successfully, but the renderer reports no placed guest memory and disables draws/dispatches, leaving a black screen. → [Validated shared guest memory disables rendering](../reference/rendering.md#validated-shared-guest-memory-disables-rendering)
 
 ## Shaders
 

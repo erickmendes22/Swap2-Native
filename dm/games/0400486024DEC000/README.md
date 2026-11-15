@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Validated shared guest memory disables rendering](../../../docs/reference/rendering.md#validated-shared-guest-memory-disables-rendering).
+
 - [Immutable mesh payload copies](../../../docs/reference/rendering.md#immutable-mesh-payload-copied-into-every-emulated-workgroup).
 
 - [Exact-layout pool bindings remain valid](../../../docs/reference/rendering.md#exact-layout-pool-bindings-remain-valid): avoid duplicate texture/feedback binds with conservative invalidation.
@@ -1294,3 +1296,11 @@ candidate targets code of the actual remaining heavy scene variant; GPU/FPS
 benefit on the phone is unmeasured, and the ~3ms block includes VS/depth/ROP.
 
 Build167 delivery: sourceb3582d0, APK commitecc1a508, Actions43655531326 SUCCESS (validate132633081931, apk132633445287). One artifact14137873792,26032246bytes. Actual badging com.swap2native.ootv11ios/versionCode174; apksigner SHA256a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad matches prior builds. Install over166, then import the separate123480-byte Swap2-Native-167-Scene-GPU-Shaders.zip (SHA25665c3d9476906b5461d54aa5e5ac8f6056b63a13954199e3a3d58994197309edf), keep Optimize fragment (test) ON and restart. APK alone retains the old imported patch and cannot select the new19f99 module. Both optimized source entries use original realAST versions; source captures and compiled game-shader ZIP stay outside git. Reproduction uses the locked translator in an isolated checkout withXLATE_DEBUG=0/DMSH_GMEM_FAST1=1/DMSH_GMEM_MAP_8192=1/DMSH_GMEM_LAST1=1, generated AST-only headers, and selected captured keys19f99e925937b038+1e4d2630d24846d0. Pack as the documented STORED shader ZIP with purposeocarina-fragment-ast-v1; never stamp this partial library as the normal complete shader set. Native exact linkage and actual Java file/stream delivery imports pass. Device graphics parity and GPU/FPS improvement remain pending.
+
+### Build170 Shared buffer black screen and candidate171 (2026-11-15)
+
+User001137 log identifies5e5999bf7d23/build170 (versionCode180). DM_VK_ALIAS=prefer; Adreno840's FD alias passes bidirectional mapping/mprotect and pools are placed. Selecting FD clearsV.placed by design, but draws_on still requiredV.placed alone and logs draws/dispatches OFF. The renderer's automatic backend predicate, not the shaders or FD probe, rejects the valid backend. Do not forceDM_VK_DRAW=1 globally or re-enable placed Vulkan mapping while FD alias owns guest memory; fix the actual predicate. See the general finding for the complete capability/lifetime correction and test scope.
+
+Candidate171 accepts V.placed OR V.fd_alias in the existing draw gate, retaining explicit off/on, selftest overrides and default-off when neither backend is available. It also classifies the still-live FD alias correctly during retirement rather than treating it as a freed placed-map hole; this explains the log's false give-back mapping warnings. Guest contents, zero pages, page protections, GPU fence waits and driver-map lifetime are retained. Forty actual gate cases pass; the old condition fails. Real Linux memfd retirement tests cover completed/incomplete fences and replacement before free; six Shared buffer tests and upstream/cave-OFF/168 SGSR checks pass locally. No Android GPU result claimed before device testing.
+
+Shared buffer remains optional/defaultOFF. Direct mapping remains the default and failed-probe fallback. Keep170/169 SGSR/layer diagnostic state and cave backend policy, existing CPU improvements, shader ABI/full42339 library/imports and package/signing identity. This fixes the black-screen regression without altering scene resolution, shaders or query results. One signed update APK, com.swap2native.ootv11ios, same a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad signer, versionCode greater than180. Source checkpoint must be saved before APK generation.

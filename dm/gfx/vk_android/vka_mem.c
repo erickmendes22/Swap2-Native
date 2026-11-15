@@ -566,7 +566,10 @@ static void unplace(const seg_t *sp) {
     // is done: sw_hole_check reserves the range and says so ([RED]) when another mapping took part of it, which the mremap then replaces. A driver that keeps the range
     // reserved after an unmap with VK_MEMORY_UNMAP_RESERVE_BIT_EXT, as the extension specifies (the application owns the range from the unmap on), has no hole: the
     // mremap replaces that reservation. DM_VK_UNPLACE_REMAP is the experiment for a driver that does not (not yet tried on the phone)
-    if (t != MAP_FAILED) sw_hole_check(s.lo, n, waited && !elsewhere, "giving back pool memory");
+    // An FD alias is still mapped here: its Vulkan memory is freed only
+    // AFTER anonymous pages replace the guest alias. It is not a post-free
+    // hole and must not train the placed-map reservation detector as one.
+    if (t != MAP_FAILED) sw_hole_check(s.lo, n, waited && !elsewhere && !s.fd_alias, "giving back pool memory");
     if (t == MAP_FAILED || sw_mremap_to(t, n, s.lo) == MAP_FAILED) {
         VRED_ONCE("giving back pool memory %#lx+%#zx: no anonymous pages with its bytes (errno %d): they are lost", (unsigned long)s.lo, n, errno);
         if (t != MAP_FAILED) munmap(t, n);

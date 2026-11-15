@@ -73,6 +73,7 @@ on:
       - 'android/app/src/main/java/dev/nxnative/android/Lsfg.java'
       - 'dm/tools/tests/test_ocarina_upstream_0185_ports.py'
       - 'dm/tools/tests/test_ocarina_0185_shared_buffer.py'
+      - 'dm/host/tests/t_shared_buffer_retire.c'
       - 'android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/PackService.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/Job.java'

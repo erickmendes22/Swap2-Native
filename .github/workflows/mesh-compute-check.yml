@@ -58,6 +58,10 @@ on:
       - dm/gfx/vk_android/selftest/ndsr_lvp.c
       - dm/tools/tests/test_ndsr_sgsr_gpu.py
       - dm/gfx/vk_android/vka_draw.c
+      - dm/gfx/vk_android/vka_mem.c
+      - dm/gfx/vk_android/vka_fd_alias.h
+      - dm/host/tests/t_shared_buffer_retire.c
+      - dm/tools/tests/test_ocarina_0185_shared_buffer.py
       - dm/gfx/vk_android/vka.h
       - dm/gfx/vk_android/vka_fragment_patch.h
       - dm/gfx/tools/fragment_gpu_probe.py
@@ -93,6 +97,8 @@ jobs:
           PY
       - name: Check committed NDSR SPIR-V matches corrected Vulkan GLSL
         run: python3 dm/gfx/vk_android/fsr/ndsr_spv.py --check
+      - name: Verify Shared buffer draw gate and real Linux FD retirement
+        run: python3 -m unittest discover -s dm/tools/tests -p test_ocarina_0185_shared_buffer.py -v
       - name: Verify task mesh row snapshots and actual encoder idle CPU/order
         run: python3 -m unittest dm.gfx.tools.tests.test_memu_snapshot_rows dm.gfx.tools.tests.test_encoder_idle_cost dm.tools.tests.test_ocarina_encoder_idle_default -v
       - name: Verify exact layout pool binding cache with actual GPU consumers

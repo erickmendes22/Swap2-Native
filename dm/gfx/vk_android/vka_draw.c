@@ -127,14 +127,15 @@ static uint32_t g_claim_words;   // the draw's claim words (an upper bound of it
 #define SKIPQ() do { g_skipped++; if (VKA_ENV("DM_VK_SKIP_LOG", 0)) VLOG("skip log: draw or dispatch skipped at vka_draw.c:%d (frame %llu)", __LINE__, (unsigned long long)vka_frame()); return; } while (0)   // diagnostic: DM_VK_SKIP_LOG=1
 #define SKIP(...) do { g_skipped++; static _Atomic int n_; if (atomic_fetch_add(&n_, 1) < 4) VRED(__VA_ARGS__); if (VKA_ENV("DM_VK_SKIP_LOG", 0)) VLOG("skip log: draw skipped at vka_draw.c:%d (frame %llu)", __LINE__, (unsigned long long)vka_frame()); return; } while (0)
 
-// Whether draws and dispatches run. Without placed guest memory (an emulator's driver) the GPU sees no memory pool, so a game's draws would read nothing and only cost:
-// pipeline compiles there take minutes each. Off there by default, on with placed memory; DM_VK_DRAW=0 / 1 overrides, the selftest turns them on for its own memory
+// Both validated backends expose guest pools to the GPU. Shared buffer
+// deliberately disables the placed-map extension, not guest GPU memory.
+// Without either backend draws stay off; explicit overrides/selftests remain.
 static int g_force_draws;
 void vka_draw_force(int on) { g_force_draws = on; }
 static int draws_on(void) {
     int env = VKA_ENV("DM_VK_DRAW", -1); if (env > 0) env = 1;
-    int on = g_force_draws || (env >= 0 ? env : V.placed);
-    if (!on) VRED_ONCE("draws and dispatches are off (%s): their records are skipped; events, counters and fences still signal", env == 0 ? "DM_VK_DRAW=0" : "no placed guest memory, so the GPU would see no pool; DM_VK_DRAW=1 turns them on");
+    int on = g_force_draws || (env >= 0 ? env : (V.placed || V.fd_alias));
+    if (!on) VRED_ONCE("draws and dispatches are off (%s): their records are skipped; events, counters and fences still signal", env == 0 ? "DM_VK_DRAW=0" : "no validated Direct mapping or Shared buffer; DM_VK_DRAW=1 turns them on");
     return on;
 }
 

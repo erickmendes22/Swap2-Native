@@ -33,6 +33,7 @@ jobs:
           bash -n dm/gfx/tools/dmsh_xlate_android/build.sh
           bash -n dm/gfx/tools/dmsh_xlate_android/build_spirv_tools.sh
           python3 dm/gfx/tools/vk_abi_migrate.py --check
+          python3 -m unittest discover -s dm/tools/tests -p test_ocarina_0185_shared_buffer.py -v
           python3 -m py_compile dm/gfx/tools/vk_abi_migrate.py scripts/ocarina_shader_hot_delta.py
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_abi_migration.py'
           python3 -m unittest discover -s dm/tools/tests -p 'test_android_readiness.py' -v

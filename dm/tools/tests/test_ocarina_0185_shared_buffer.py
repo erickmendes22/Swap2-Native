@@ -2,6 +2,9 @@
 """Opt-in 0.1.8.5 FD Shared buffer port: default, probe, map and restore guards."""
 from pathlib import Path
 import unittest
+import shutil
+import subprocess
+import tempfile
 
 R = Path(__file__).resolve().parents[3]
 V = R / "dm/gfx/vk_android"
@@ -51,6 +54,53 @@ class SharedBufferOptIn(unittest.TestCase):
         self.assertIn('if (s->fd_alias) vk.vkUnmapMemory(V.dev, s->mem);', MEM)
         self.assertIn('if (!(s.buf = seg_buffer(n)))', MEM)
         self.assertIn('VK_MEMORY_MAP_PLACED_BIT_EXT', MEM)
+
+    def compile_fixture(self, source, extra=None, succeeds=True):
+        if not shutil.which('cc'): self.skipTest('C compiler required')
+        with tempfile.TemporaryDirectory() as d:
+            c=Path(d)/'fixture.c';exe=Path(d)/'fixture';c.write_text(source)
+            if extra is not None: (Path(d)/'shared_unplace.inc').write_text(extra)
+            r=subprocess.run(['cc','-std=gnu11','-O1','-Wall','-Wextra',str(c),'-o',str(exe)],capture_output=True,text=True)
+            self.assertEqual(r.returncode,0,r.stderr)
+            r=subprocess.run([str(exe)],capture_output=True,text=True)
+            if succeeds: self.assertEqual(r.returncode,0,r.stderr)
+            else: self.assertNotEqual(r.returncode,0,'negative control did not reproduce failure')
+
+    def test_real_draw_gate_with_both_backends_and_overrides(self):
+        source=(V/'vka_draw.c').read_text();start=source.index('static int g_force_draws;')
+        gate=source[start:source.index('// ---------- State',start)]
+        prefix="""
+#include <assert.h>
+#include <sys/resource.h>
+struct {int placed,fd_alias;} V;
+static int option;
+#define VKA_ENV(key,default_value) option
+#define VRED_ONCE(...) ((void)0)
+"""
+        cases="""
+int main(void){
+ struct rlimit limit={0,0};setrlimit(RLIMIT_CORE,&limit);
+ const int options[]={-2,-1,0,1,2};
+ for(int placed=0;placed<2;placed++)for(int fd=0;fd<2;fd++)
+ for(int force=0;force<2;force++)for(unsigned i=0;i<5;i++){
+  V.placed=placed;V.fd_alias=fd;option=options[i];vka_draw_force(force);
+  int expected=force ? 1 : option>=0 ? option!=0 : (placed || fd);
+  assert(draws_on()==expected);
+ }
+ V.placed=V.fd_alias=0;option=-1;vka_draw_force(0);assert(!draws_on());
+ return 0;
+}
+"""
+        self.compile_fixture(prefix+gate+cases)
+        broken=gate.replace('(V.placed || V.fd_alias)','V.placed')
+        self.assertNotEqual(broken,gate)
+        self.compile_fixture(prefix+broken+cases,succeeds=False)
+
+    def test_real_fd_retirement_bytes_protection_and_free_order(self):
+        start=MEM.index('static void unplace(const seg_t *sp)')
+        unplace=MEM[start:MEM.index('\n}\n',start)+3]
+        fixture=(R/'dm/host/tests/t_shared_buffer_retire.c').read_text()
+        self.compile_fixture(fixture,extra=unplace)
 
 if __name__ == "__main__":
     unittest.main()
