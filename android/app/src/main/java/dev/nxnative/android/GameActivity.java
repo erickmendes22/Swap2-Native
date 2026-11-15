@@ -109,7 +109,16 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             return;
         }
         FrameLayout root = new FrameLayout(this);
+        // Both GSR2 ON and OFF share an identical 1280x720 Vulkan output.
+        // The Android SurfaceFlinger compositor alone fits this 16:9 surface
+        // into the physical phone panel. No 720->native Vulkan resampling.
+        // Other games, 720p-direct profile, and Stretch retain legacy layout.
+        final boolean ootCompositor720 = Prefs.OCARINA_TITLE.equals(id)
+                && OcarinaRenderProfile.temporalGsr2(Prefs.renderProfile(this,id))
+                && GraphicsOptions.stretch(this,id) == 0;
+        root.setBackgroundColor(Color.BLACK);
         SurfaceView surface = new SurfaceView(this);
+        if (ootCompositor720) surface.getHolder().setFixedSize(1280, 720);
         surface.getHolder().addCallback(this);
         root.addView(surface);
         // The log's last lines (tail()): bottom left, one block only as high as its text, so it stays clear of the build tag in the corner above
@@ -117,6 +126,28 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
         root.addView(overlay, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.START));
         // The on-screen controls take every touch and pass it to the host, which tells controls from touchscreen fingers
         controls = new TouchControls(this, Native.hasInput(), id);
+        if (ootCompositor720) {
+            // Position the 720p surface exactly where the renderer previously
+            // letterboxed the game. User-edited picture placement is respected.
+            // SurfaceFlinger scales that 720p layer to its 16:9 view bounds;
+            // touch controls/HUD remain Android overlays at physical resolution.
+            controls.onPictureGeometry = (viewW, viewH, px, py, pw, ph) -> {
+                final int left=Math.round(viewW*px), top=Math.round(viewH*py);
+                final int width=Math.max(1,Math.round(viewW*pw));
+                final int height=Math.max(1,Math.round(viewH*ph));
+                surface.post(() -> {
+                    FrameLayout.LayoutParams lp =
+                        (FrameLayout.LayoutParams)surface.getLayoutParams();
+                    if(lp==null || lp.width!=width || lp.height!=height ||
+                       lp.leftMargin!=left || lp.topMargin!=top) {
+                        FrameLayout.LayoutParams next =
+                            new FrameLayout.LayoutParams(width,height,Gravity.TOP|Gravity.START);
+                        next.leftMargin=left;next.topMargin=top;
+                        surface.setLayoutParams(next);
+                    }
+                });
+            };
+        }
         root.addView(controls, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         // The build tag: always shown, whatever the overlay switches say, so every screenshot and recording names its build; bold, flush in the top-left corner
         tag = overlayText(Gravity.TOP | Gravity.START, 1f);

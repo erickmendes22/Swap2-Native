@@ -12,12 +12,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { P_FLOW, P_CONVERT, P_ACTIVATE, P_UPSCALE, P_COUNT };
+enum { P_FLOW, P_CONVERT, P_ACTIVATE, P_UPSCALE, P_RCAS, P_COUNT };
 enum { W_FLOW, W_YCC0, W_YCC1, W_MDA0, W_MDA1, W_LUMA0, W_LUMA1,
-       W_MDC, W_HISTORY0, W_HISTORY1, W_OUTPUT, W_COUNT };
+       W_MDC, W_HISTORY0, W_HISTORY1, W_OUTPUT, W_SHARP, W_COUNT };
 typedef struct { VkImage img; VkImageView view; VkDeviceMemory mem; uint32_t w,h; VkFormat fmt; } gsr_img;
 static struct {
-    int ready, last_mode;
+    int ready, last_mode, rcas_available;
     VkDescriptorSetLayout ds;
     VkPipelineLayout layout;
     VkSampler nearest, linear;
@@ -90,6 +90,10 @@ static int init_pipeline(void) {
     VkFormatProperties fp, packfp;
     vk.vkGetPhysicalDeviceFormatProperties(V.pd,VK_FORMAT_R16G16B16A16_SFLOAT,&fp);
     vk.vkGetPhysicalDeviceFormatProperties(V.pd,VK_FORMAT_R32_UINT,&packfp);
+    // RCAS samples raw R32UI B10G11R11 bits. Its GPU path is optional:
+    // unsupported sampled R32UI still retains the original GSR2 output.
+    G.rcas_available=(packfp.optimalTilingFeatures&
+                        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)!=0;
     if(!(fp.optimalTilingFeatures&VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
        !(fp.optimalTilingFeatures&VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) ||
        !(packfp.optimalTilingFeatures&VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
@@ -119,10 +123,12 @@ static int init_pipeline(void) {
     if(!r)r=vk.vkCreateSampler(V.dev,&si,NULL,&G.nearest);
     si.magFilter=si.minFilter=VK_FILTER_LINEAR;
     if(!r)r=vk.vkCreateSampler(V.dev,&si,NULL,&G.linear);
-    const uint32_t *words[P_COUNT]={vka_gsr2_flow,vka_gsr2_convert,vka_gsr2_activate,vka_gsr2_upscale};
+    const uint32_t *words[P_COUNT]={vka_gsr2_flow,vka_gsr2_convert,vka_gsr2_activate,
+                                     vka_gsr2_upscale,vka_gsr2_rcas};
     const size_t sizes[P_COUNT]={sizeof vka_gsr2_flow,sizeof vka_gsr2_convert,
-        sizeof vka_gsr2_activate,sizeof vka_gsr2_upscale};
+        sizeof vka_gsr2_activate,sizeof vka_gsr2_upscale,sizeof vka_gsr2_rcas};
     for(int i=0;i<P_COUNT && !r;i++) {
+        if(i==P_RCAS && !G.rcas_available)continue;
         VkShaderModule module=VK_NULL_HANDLE;
         VkShaderModuleCreateInfo mi={VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
             .codeSize=sizes[i],.pCode=words[i]};
@@ -135,13 +141,20 @@ static int init_pipeline(void) {
             r=vk.vkCreateComputePipelines(V.dev,VK_NULL_HANDLE,1,&ci,NULL,&G.pipeline[i]);
         }
         if(module)vk.vkDestroyShaderModule(V.dev,module,NULL);
+        if(r && i==P_RCAS){
+            // Keep the previously working temporal path on an unsupported
+            // driver rather than falling back to 360p SGSR by accident.
+            VRED_ONCE("Ocarina GSR2 RCAS pipeline unavailable (%d); temporal output unchanged",r);
+            G.rcas_available=0;
+            r=VK_SUCCESS;
+        }
     }
     if(r){
         VRED_ONCE("Ocarina GSR2 Vulkan pipelines failed (%d); original SGSR retained",r);
         return 0;
     }
     G.ready=1;
-    VLOG("Ocarina GSR2 four compute passes ready (packed R32UI copy): optical-flow, convert, activate, temporal-upscale; no cross-format blit or fake depth/motion");
+    VLOG("Ocarina GSR2 four reconstruction passes ready; RCAS packed-HDR sharpen %s (GPU R32UI sampled=%d; opt-out DM_VK_OOT_GSR2_RCAS=0)",G.rcas_available?"available":"unavailable",G.rcas_available);
     return 1;
 }
 
@@ -212,6 +225,7 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
         return 0;
     }
     if(!init_pipeline() || G.last_frame==frame)return 0;
+    int sharpen=G.rcas_available && VKA_ENV("DM_VK_OOT_GSR2_RCAS",1);
     const uint32_t iw=src->w,ih=src->h,ow=dst->w,oh=dst->h;
     // Build195/196 colour corruption survives both HDR blit and bit-packed
     // output, and full synthetic GSR2 Vulkan shaders pass (including push
@@ -237,9 +251,11 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     }
     int reset=(G.last_frame==UINT64_MAX || frame!=G.last_frame+1);
     for(int k=0;k<W_COUNT;k++){
+        if(k==W_SHARP && !sharpen)continue;
         // Final output stores a packed B10G11R11 word through an R32_UINT
         // storage image; all other GSR2 resources remain true RGBA16F.
-        VkFormat fmt=k==W_OUTPUT?VK_FORMAT_R32_UINT:VK_FORMAT_R16G16B16A16_SFLOAT;
+        VkFormat fmt=(k==W_OUTPUT||k==W_SHARP)?
+                     VK_FORMAT_R32_UINT:VK_FORMAT_R16G16B16A16_SFLOAT;
         int built=image_get(cb,&G.work[k],ww[k],hh[k],fmt);
         if(!built)return 0;
         reset|=built==2;
@@ -286,6 +302,27 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     {VkImageView in[4]={w[p_hist].view,w[W_MDC].view,w[c_ycc].view,w[c_ycc].view};
      VkSampler sm[4]={G.linear,G.linear,G.nearest,G.nearest};
      pass(cb,P_UPSCALE,in,sm,w[c_hist].view,w[W_OUTPUT].view,&up,ow,oh);}
+    // BananaNative's GSR2 finishes with AMD FidelityFX RCAS. The 197 path
+    // skipped that crucial clarity pass and the 720p image then received a
+    // further bilinear display scale. RCAS reads exactly the 32-bit packed
+    // B10G11R11 pixels we already produced, converts to tonemapped RGB,
+    // applies AMD RCAS (5 taps), and writes packed B10G11R11 again.
+    // No temporal-history modification, no second upscaler, no UI option.
+    // The default 0.20 linear strength is conservative to limit halos.
+    if(sharpen){
+        // AMD RCAS con0.x takes 2^-sharpnessStops, not stops directly:
+        // 0.75 linear = ~0.42 stops, a conservative but visible finish.
+        float sharp=0.75f;uint32_t bits=0;
+        memcpy(&bits,&sharp,sizeof bits);
+        struct {
+            uint32_t con0[4];int32_t size[2],itm,pad[25];
+        } rc={{bits,0,0,0},{(int32_t)ow,(int32_t)oh},1,{0}};
+        _Static_assert(sizeof(rc)==128,"GSR2 RCAS constant block");
+        VkImageView in[4]={w[W_OUTPUT].view,w[W_OUTPUT].view,
+                            w[W_OUTPUT].view,w[W_OUTPUT].view};
+        VkSampler sm[4]={G.nearest,G.nearest,G.nearest,G.nearest};
+        pass(cb,P_RCAS,in,sm,w[W_SHARP].view,w[W_SHARP].view,&rc,ow,oh);
+    }
     // Build195 produced full-frame RGB noise when the driver had to BLIT
     // RGBA16F into the game's packed B10G11R11_UFLOAT image. Reuse the
     // proven SGSR1 strategy: pack B10G11R11 in shader into R32_UINT words,
@@ -298,16 +335,16 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
         .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
         .dstOffset={0,0,0},
         .extent={ow,oh,1}};
-    vk.vkCmdCopyImage(cb,w[W_OUTPUT].img,VK_IMAGE_LAYOUT_GENERAL,
+    vk.vkCmdCopyImage(cb,w[sharpen?W_SHARP:W_OUTPUT].img,VK_IMAGE_LAYOUT_GENERAL,
                       dst->img,VK_IMAGE_LAYOUT_GENERAL,1,&copy);
     vka_barrier(cb);
     vka_img_written(dst);
     G.ping=next;G.history_ping=hist;G.last_frame=frame;G.calls++;
     if(reset)G.resets++;
     if(G.calls==1 || G.calls==120 || !(G.calls&1023u))
-        VLOG("Ocarina GSR2 optical-temporal active: %ux%u -> %ux%u; frame=%llu, calls=%llu, history resets=%llu (current %d), motion confidence rejection enabled; no fake NVN motion/depth",
+        VLOG("Ocarina GSR2 optical-temporal active: %ux%u -> %ux%u; frame=%llu, calls=%llu, history resets=%llu (current %d), packed HDR RCAS=%d, motion rejection; no fake NVN depth",
             iw,ih,ow,oh,(unsigned long long)frame,(unsigned long long)G.calls,
-            (unsigned long long)G.resets,reset);
+            (unsigned long long)G.resets,reset,sharpen);
     return 1;
 }
 #endif
