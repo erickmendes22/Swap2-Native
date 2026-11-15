@@ -391,7 +391,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 env.add("DM_VK_OOT_SKIP_HEAVY_FS=0");
                 env.add("DM_VK_COMPUTE_GUEST_DEDUP=" + (Prefs.computeGuestDedup(this, id) ? "1" : "0"));
                 env.add("DM_VK_RETIRE_DEAD_IMAGES=1");
-                env.add("DM_VK_PLACE_SHADER_POOLS=" + (Prefs.shaderPoolMemory(this, id) ? "0" : "1"));
+                // Shader code is read by the host CPU; keep GPU placement
+                // deferred unless a real draw/copy references its bytes.
+                // Always ON, independently of RAM Saver and stale 174 prefs.
+                // Advanced users may explicitly set DM_VK_PLACE_SHADER_POOLS=1
+                // in the per-game environment to reproduce the old behaviour.
+                env.add("DM_VK_PLACE_SHADER_POOLS=0");
                 env.add("DM_VK_OOT_SKIP_LAYER2_FS=" + (Prefs.skipFsB(this, id) ? "1" : "0"));
             }
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_PLANE_LUT=" + (Prefs.vegetationOptimized(this, id) ? "1" : "0"));
@@ -406,12 +411,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_PARTIAL_UPLOAD=" + (Prefs.partialTextureUploads(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_UNUSED_COLOR=" + (Prefs.unusedColorTargets(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_ATTACHMENT_PARTS=" + (Prefs.attachmentWriteScopes(this, id) ? "1" : "0"));
-            if (Prefs.ramSaver(this, id)) {
-                // TMPDIR is the app's private cache; the native backend reserves storage before mapping.
-                env.add("TMPDIR=" + getCacheDir().getAbsolutePath());
-                env.add("DM_MEM_FILEBACK=1");
-                env.add("DM_MEM_FILEBACK_KINDS=shader,texture");
-            }
+            // Unlike the original 174 APK, shader-code file backing is ON
+            // with RAM Saver OFF too. Shader pages remain CPU-readable and
+            // become reclaimable by Android as clean file-backed pages.
+            // RAM Saver additionally backs large eligible texture pools.
+            // TMPDIR is already passed as the app-private cache above.
+            env.add("DM_MEM_FILEBACK=1");
+            env.add("DM_MEM_FILEBACK_KINDS=" +
+                    (Prefs.ramSaver(this, id) ? "shader,texture" : "shader"));
             // Ocarina 0.1.2: preserve an open render pass across a game barrier
             // only when no shader stores occurred and no following draw samples
             // or aliases its attachments. vka_draw.c bar_hazard closes on a
