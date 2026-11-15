@@ -72,6 +72,7 @@ on:
       - 'dm/tools/patch_nso.py'
       - 'android/app/src/main/java/dev/nxnative/android/Lsfg.java'
       - 'dm/tools/tests/test_ocarina_upstream_0185_ports.py'
+      - 'dm/tools/tests/test_ocarina_0185_shared_buffer.py'
       - 'android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/PackService.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/Job.java'
@@ -101,6 +102,7 @@ jobs:
         run: |
           python3 -m py_compile dm/tools/patch_nso.py scripts/pack_android.py
           python3 -m unittest discover -s dm/tools/tests -p test_ocarina_upstream_0185_ports.py -v
+          python3 -m unittest discover -s dm/tools/tests -p test_ocarina_0185_shared_buffer.py -v
       - name: AV1 intro full-queue backpressure regression (ASan/UBSan)
         shell: bash
         run: |
