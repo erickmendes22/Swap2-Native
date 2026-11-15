@@ -212,6 +212,18 @@ void reconstruct(uvec2 pixel)
 
 	highp vec3 result=max(color.xyz,vec3(0.0));
     if(ENC==1)result*=result;
+    // Invalid HDR reconstruction can become a dazzling isolated white point
+    // when a floating result is repacked as B10G11R11. Do not change any
+    // finite pixel at all: only invalid output falls back to its own original
+    // unfiltered source texel (still with exact sqrt-to-linear conversion).
+    if (any(isnan(result)) || any(isinf(result))) {
+        highp vec3 fallback = textureLod(ps0,in_TEXCOORD0.xy,0.0).rgb;
+        if(ENC==1) fallback*=fallback;
+        result = vec3(
+            (isnan(fallback.r) || isinf(fallback.r)) ? 0.0 : max(fallback.r,0.0),
+            (isnan(fallback.g) || isinf(fallback.g)) ? 0.0 : max(fallback.g,0.0),
+            (isnan(fallback.b) || isinf(fallback.b)) ? 0.0 : max(fallback.b,0.0));
+    }
     store(ivec2(p)+org,result);
 }
 
