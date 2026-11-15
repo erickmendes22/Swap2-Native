@@ -1071,7 +1071,9 @@ void vka_ub_flush_pass(int attachment_only) {
             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
         g_ub_scoped_before_copy++;
     } else vka_barrier(g_cb);
-    const int dead_writes = VKA_ENV("DM_VK_UB_DEAD_WRITES", 1);
+    // Build172's device log reports zero opportunities in every window.
+    // Keep this tested experiment opt-in rather than scan every pass by default.
+    const int dead_writes = VKA_ENV("DM_VK_UB_DEAD_WRITES", 0);
     for (int i = 0; i < g_ub_np; i++) {
         const ub_pass_write *w = &g_ub_pending[i];
         if (dead_writes && ub_superseded(i)) {
