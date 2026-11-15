@@ -22,6 +22,8 @@ class CaveWalls(unittest.TestCase):
 #include <string.h>
 typedef struct { uint32_t kind, mode, v, t; uint64_t ad, q0, q1; } pop;
 static int g_oqs_rep, g_oqs_nores, g_oq_count, g_oq_fresh, g_oq_open;
+static int g_oq_last_report_fresh;
+static uint64_t g_oq_last_report_begin;
 static int g_oq_split_pass, g_cb, enabled, depth, depth_dirty, inspect, splits;
 static uint32_t g_oq_lost;
 static uint64_t g_oq_head, g_oq_seg0, g_oq_lost_epoch_total, g_oq_last_report_head;
@@ -46,14 +48,16 @@ int main(void) {
     g_oq_open=open;depth=dep;depth_dirty=dirty;inspect=0;splits=0;n=0;memset(events,0,sizeof events);
     g_oq_fresh=1;g_oq_lost=3;g_oq_head=110;g_oq_seg0=100;
     g_oq_lost_epoch_total=7;g_oq_last_report_head=90;
+    g_oq_last_report_begin=80;g_oq_last_report_fresh=0;
     int result=oq_report(0x12340,7),live=on&&count&&cb;
     if(result!=live) abort();
-    if(!live) { if(n||inspect||splits||g_oq_seg0!=100||g_oq_lost!=3) abort();continue; }
+    if(!live) { if(n||inspect||splits||g_oq_seg0!=100||g_oq_lost!=3||g_oq_last_report_begin!=80||g_oq_last_report_fresh) abort();continue; }
     const char *want=open?(opt&&dep&&dirty?"QPE":"QP"):"P";
     if(strcmp(events,want)||splits!=(opt&&open&&dep&&dirty)) abort();
     if(inspect!=(opt&&open)) abort(); // OFF adds zero pass inspections.
     if(posted.kind!=4||posted.mode!=1||posted.v!=3||posted.t!=7||
        posted.ad!=0x12340||posted.q0!=100||posted.q1!=110) abort();
+    if(g_oq_last_report_begin!=100||g_oq_last_report_fresh!=1) abort();
     if(g_oq_lost_epoch_total!=10||g_oq_last_report_head!=110||g_oq_seg0!=110||g_oq_fresh||g_oq_lost) abort();
  }
  puts("128 production report paths: publication unchanged; depth-dirty-only end-pass; OFF has zero pass inspections");
