@@ -186,6 +186,8 @@ final class Prefs {
     static void ootGsr2(Context c,String titleId,boolean enabled) {
         of(c).edit().remove(gameKey("oot_gsr2",titleId)).commit();
     }
+    static boolean gpuPageIndex(Context c, String id) { return of(c).getBoolean(gameKey("gpu_page_index", id), false); }
+    static void gpuPageIndex(Context c, String id, boolean on) { of(c).edit().putBoolean(gameKey("gpu_page_index", id), on).commit(); }
     static boolean gpuNarrowBarriers(Context c,String id) { return of(c).getBoolean(gameKey("gpu_narrow_barriers",id),false); }
     static void gpuNarrowBarriers(Context c,String id,boolean on) { of(c).edit().putBoolean(gameKey("gpu_narrow_barriers",id),on).commit(); }
     /** RAM saver per game: large guest texture pools use files in the private cache. */
