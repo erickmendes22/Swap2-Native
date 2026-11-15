@@ -385,11 +385,17 @@ void vka_rp_end(void) {
     // uniform writes after ending the pass, with a read->transfer dependency.
     // The draw-side shadow already held those values for in-pass consumers.
     const int postub = vka_ub_active();
-    vka_ub_flush_pass();
-    // The deferred-uniform flush performed an ALL_COMMANDS memory barrier
-    // immediately after EndRendering, then published GPU copies through
-    // TRANSFER -> ALL_COMMANDS barriers. No new draw writes occurred after
-    // it. Repeating the render-pass barrier therefore orders no work.
+    // Only an attachment-writing graphics pass without shader stores,
+    // pending guest barrier, external clears or diagnostics may narrow the
+    // producer scope. This still orders *all* earlier graphics reads before
+    // overwriting a uniform; no render pass, query or draw is skipped.
+    const int scoped_precopy = R.awrite && !R.swrite && !R.bar_pending && !full;
+    vka_ub_flush_pass(scoped_precopy);
+    // The deferred-uniform flush published every actual pass producer
+    // (attachment-only graphics, or full memory for other cases), then
+    // published the GPU copies via TRANSFER -> ALL_COMMANDS barriers.
+    // The previous post-uniform barrier is therefore redundant for that
+    // pass: both memory visibility and execution ordering are retained.
     // Keep exact earlier dependencies for passes WITHOUT a deferred flush;
     // preserve the option to restore the prior behavior for A/B tests.
     const int reused = postub && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
