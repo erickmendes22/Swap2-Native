@@ -38,7 +38,8 @@ class TestRedundantRenderPassBarrier(unittest.TestCase):
 
     def test_only_normal_duplicated_barrier_suppressed(self):
         self.assertIn('bar_covered = vka_rp_end_covers_barrier();', EXEC)
-        self.assertIn('if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);', EXEC)
+        self.assertIn('if (g_cb && !bar_kept && !bar_covered)', EXEC)
+        self.assertIn('if (!vka_gbar_game(g_cb,(uint32_t)bits)) vka_barrier(g_cb);', EXEC)
         self.assertIn('int bar_kept = 0, bar_covered = 0;', EXEC)
         self.assertIn('redundant full barriers avoided %.1f/frame', DRAW)
 

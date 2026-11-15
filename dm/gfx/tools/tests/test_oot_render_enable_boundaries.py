@@ -120,7 +120,8 @@ int main(void) {
         self.assertNotIn('DM_VK_MEMU_RC_TRUE_FUSE', SRC)
         self.assertIn('if (!memu_allowed(h.op) || h.size < 8)', b)
         self.assertIn('case OP_RENDER_COND: S.rc_skip = rc_eval(a);', SRC)
-        self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);', SRC)
+        self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered)', SRC)
+        self.assertIn("if (!vka_gbar_game(g_cb,(uint32_t)bits)) vka_barrier(g_cb);", SRC)
 
 
 if __name__ == "__main__":

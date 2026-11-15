@@ -83,7 +83,8 @@ class ComputeOverlap(unittest.TestCase):
         self.assertIn('vka_dispatch_overlap_flush();', method[zero:lookup])
         self.assertIn('!vka_gp_active', method[zero:lookup])
         self.assertIn('DM_VK_OOT_ZERO_DISPATCH", 1', method[zero:lookup])
-        self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);', EXEC)
+        self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered)', EXEC)
+        self.assertIn('if (!vka_gbar_game(g_cb,(uint32_t)bits)) vka_barrier(g_cb);', EXEC)
         self.assertIn('if (dp->ind) vk.vkCmdDispatchIndirect(g_cb, ib, io);', DRAW)
 
     def test_profiled_9e6b_retile_does_not_require_quality_reducing_vrs(self):
@@ -108,7 +109,8 @@ class ComputeOverlap(unittest.TestCase):
         self.assertIn('!spill && !indirect &&', helper)
         self.assertIn('VKA_ENV("DM_VK_OOT_CS_SYNC", 1)', helper)
         self.assertIn('} else vka_barrier(cb);', helper)
-        self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);', EXEC)
+        self.assertIn('case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered)', EXEC)
+        self.assertIn('if (!vka_gbar_game(g_cb,(uint32_t)bits)) vka_barrier(g_cb);', EXEC)
 
 
 if __name__ == "__main__":

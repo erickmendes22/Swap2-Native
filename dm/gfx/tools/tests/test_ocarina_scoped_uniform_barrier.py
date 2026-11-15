@@ -71,7 +71,8 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         self.assertIn("else { g_rp_graphics++; vka_graphics_write_barrier(g_cb); }", DRAW)
         self.assertIn("const int postub = vka_ub_active();", DRAW)
         self.assertIn("DM_VK_OOT_POSTUB_BAR_DEDUP", DRAW)
-        self.assertIn("case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);", EXEC)
+        self.assertIn("case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered)", EXEC)
+        self.assertIn("if (!vka_gbar_game(g_cb,(uint32_t)bits)) vka_barrier(g_cb);", EXEC)
         self.assertIn("default: if (g_cb && !vka_state_op(&S.d, h.op, a)) vka_rp_end()", EXEC)
 
     def test_deferred_uniform_precopy_never_relaxes_guest_or_storage_writes(self):
