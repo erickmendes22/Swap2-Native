@@ -9,6 +9,7 @@
 #include "vka_pool_bind_cache.h"
 #include "vka_selftest_spv.h"   // SPV_MESHCOUNT_COMP (mesh_ind_args)
 #include "vka_ndsr.h"
+#include "vka_gsr2.h"
 #include "vka_ndsr_sampler.h"
 #include "vka_hidden_layers.h"           // vka_ndsr_pipeline (vka_dispatch)
 #include "../nvn/nvn_mtl.h"
@@ -2367,6 +2368,41 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
                 r->tid = g_oot_sgsr_chain.source_tid;
                 scene_linear = 1;
                 break;
+            }
+        }
+    }
+    // Experimental temporal NDSR replacement, before the guest's spatial
+    // network has already enlarged the scene. It can run only when Ocarina
+    // gives us a sampled sqrt-HDR scene and a native 1280x720 destination.
+    // All resources are checked first; failure keeps the original NDSR stage.
+    // The scene's actual optical flow comes from consecutive colour frames;
+    // no guest motion vectors or depth are invented.
+    if (!dp->ind && !vka_gp_active && !scene_linear &&
+        !strcmp(DM_GAME_ID,"0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_GSR2",0) &&
+        (sh[5]->key==UINT64_C(0xd99fbeeb53d38847) ||
+         sh[5]->key==UINT64_C(0xfa3033d05c0a41d6) ||
+         sh[5]->key==UINT64_C(0xb106afba1a18faa9) ||
+         sh[5]->key==UINT64_C(0x7c511cc23ff85d14))) {
+        uint16_t tx=0,im=0,bk=0;
+        if (vka_ndsr_match(sh[5]->e,sh[5]->b,&tx,&im,&bk)) {
+            int srcid=0,dstid=0;
+            for(int i=0;i<g_wk.n[5];i++){
+                const vka_res *r=&g_wk.r[5][i];
+                if(r->binding==tx && r->what==VKA_R_TEX) srcid=r->tid;
+                if(r->binding==im && r->what==VKA_R_IMG) dstid=r->tid;
+            }
+            if(srcid>0 && dstid>0){
+                vka_img *source=vka_tex_id_img(srcid,g_cb);
+                vka_img *output=vka_tex_id_img(dstid,g_cb);
+                if(vka_gsr2_try(g_cb,source,output,1,vka_frame())){
+                    d->b.dispatch[0]=(uint32_t)dp->x;
+                    d->b.dispatch[1]=(uint32_t)dp->y;
+                    d->b.dispatch[2]=(uint32_t)dp->z;
+                    d->b.nvn2=(uint32_t)vka_nvn2();
+                    g_dispatches++;
+                    return;
+                }
             }
         }
     }
