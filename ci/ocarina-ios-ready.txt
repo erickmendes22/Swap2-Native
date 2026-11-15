@@ -117,3 +117,10 @@ Build177: reduce idle Vulkan pipeline objects on Ocarina 16 GiB and smaller, 202
 - Native production source syntax, source-level correctness, CPU-only policy tests and RAM tests SUCCESS at commit 6285d040. Individual CI integration readback run 43725569486 must be green before treating the build as ready.
 - Prior Build176 application memory budget remains separately testable, unchanged in this candidate. There is NO validated device PSS/FPS saving yet; request same-scene PSS from new build.
 - Compile signed install-over Android APK of com.swap2native.ootv11ios versionCode >186 with original signer SHA256 a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad.
+
+Build178: indirect compute vegetation correction, 2026-11-15:
+- Continue directly from177 with its user-confirmed RAM savings. Preserve application-pool accounting, speculative pipeline cap, full42339 shader base,508 supplement, ABI674db0a4ff79 and automatic integral compute.
+- Fix native-only vkCmdDrawMeshTasksIndirectEXT capability check rejecting emulated indirect raster draws before routing. Native safety remains; no GPU-side indirect count readback, new shader preparation or new performance option.
+- Production guard regression passes with absent/present native entry point, direct/indirect records, missing prepared output and vegetation OFF. Negative control fails on original177. Five actual Vulkan export/vertex-reader tests and11 documentation tests pass locally; native Android source compilation SUCCESS in43733910698. Full GPU CI continues in parallel.
+- Requested correction APK only. Performance investigation continues separately; no phone vegetation or FPS success claimed before device confirmation.
+- Signed install-over com.swap2native.ootv11ios, versionCode>187; signer SHA256a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad.
