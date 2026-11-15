@@ -14,7 +14,7 @@ static int reference(uint64_t a,const uint64_t *lo,const uint64_t *hi,int n) {
 }
 static int indexed(uint64_t a,const uint32_t *w,const uint64_t *lo,const uint64_t *hi,int n) {
     uint64_t page=a>>12;
-    if (page < (UINT64_C(1)<<32) && w[1] && page>=w[0] && page-w[0]<w[1]) {
+    if (page < (UINT64_C(1)<<32) && w[1] && w[1]<=4096 && page>=w[0] && page-w[0]<w[1]) {
         uint32_t x=w[4+(size_t)(page-w[0])];
         if (x && x<8192 && x<=(uint32_t)n) {
             // As in the compiler: records only cover whole pages, but also
@@ -47,6 +47,22 @@ int main(void) {
         }
         assert(indexed(a,w,lo,hi,N)==reference(a,lo,hi,N));
     }
+    // A forged owner that is numerically in range but belongs to another
+    // pool, or an impossible header count, must fall back to the exact scan.
+    uint64_t corrupted=(uint64_t)(w[0]+30)<<12;
+    uint32_t prior=w[34], count=w[1];
+    w[34]=69;
+    assert(indexed(corrupted,w,lo,hi,N)==reference(corrupted,lo,hi,N));
+    w[34]=prior;w[1]=UINT32_MAX;
+    assert(indexed(corrupted,w,lo,hi,N)==reference(corrupted,lo,hi,N));
+    w[1]=count;
+    // The real renderer uses separate fence-retired scratch snapshots.
+    // Updating a second snapshot cannot mutate records held by the first.
+    uint32_t other[WORDS];
+    uint64_t changedLo[N];memcpy(changedLo,lo,sizeof lo);
+    changedLo[0]+=4096;
+    assert(vka_gmem_pidx_build(other,WORDS,changedLo,hi,N));
+    assert(w[34]==prior && w[1]==count);
     uint64_t badlo[2]={0x1000,0x2000},badhi[2]={0x3000,0x4000};
     assert(!vka_gmem_pidx_build(w,WORDS,badlo,badhi,2) && !w[1]);
     assert(!vka_gmem_pidx_build(w,3,lo,hi,N));
