@@ -132,3 +132,9 @@ Build179: optional exact GPU visibility candidate, 2026-11-15:
 - Source594ab77: native Android syntax and complete mesh correctness43742753627 SUCCESS; GPU research43742753631 SUCCESS with72 colour/depth/vertex cases,1208 production helper cases and60000 encoder chain commands. Main incremental test must also pass before release.
 - This is a controlled optional candidate, NOT a proven phone FPS gain. Query synchronization/pass boundaries may offset saved drawing. OFF preserves178 behavior; compare ON/OFF in the same heavy scene after restart. No performance success claimed before device timings/visual confirmation.
 - Build signed install-over com.swap2native.ootv11ios, versionCode>188, signer SHA256a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad. Verify actual finished APK package, version and signer before delivery.
+
+Build179 validation-fix retry, 2026-11-15:
+- Attempt189 produced NO APK: validation stopped at the replay C fixture, which lacked NVN_PRIM_MESH and the visibility-invalidation callback. Production native code had already compiled successfully.
+- GitHub commit6efa637 updates the fixture, tests both classic/mesh and indexed preparation order, and makes this regression part of incremental CI. Full incremental run43744383935 SUCCESS before this retry.
+- Renderer, optional GPU visibility defaultOFF,178 vegetation correction,177 memory policies, shader library/ABI and package/signature are unchanged from the tested source594ab77.
+- Retry the signed179 update; require an actual successful APK build and matching package, higher versionCode and a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad signer before delivery. Device FPS benefit remains unmeasured.
