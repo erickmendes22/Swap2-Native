@@ -1,0 +1,52 @@
+name: Ocarina bounded page-index validation (no APK)
+on:
+  push:
+    branches: [ocarina-v11-ios-perf-from-v101]
+    paths:
+      - 'dm/gfx/vk_android/vka_gmem_pidx.h'
+      - 'dm/gfx/vk_android/vka_draw.c'
+      - 'dm/gfx/vk_android/selftest/gmem_pidx.c'
+      - 'dm/gfx/tools/tests/test_ocarina_page_index_runtime.py'
+      - 'dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Translation/Optimizations/GlobalToStorage.cs'
+      - 'android/app/src/main/java/dev/nxnative/android/Prefs.java'
+      - 'android/app/src/main/java/dev/nxnative/android/GameSettings.java'
+      - 'android/app/src/main/java/dev/nxnative/android/GameActivity.java'
+      - '.github/workflows/ocarina-page-index-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Differential page-index correctness under ASan/UBSan
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+            dm/gfx/vk_android/selftest/gmem_pidx.c -o /tmp/ocarina_pidx
+          ASAN_OPTIONS=detect_leaks=1 /tmp/ocarina_pidx
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_page_index_runtime.py -v
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Compile current Ryujinx shader translator (no game shader rebuild)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          dotnet build dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Ryujinx.Graphics.Shader.csproj -c Release -v quiet
+      - name: Syntax-check the real Android Vulkan renderer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" >/dev/null
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang"
+          python3 dm/games/game.py header 0400486024DEC000 "$RUNNER_TEMP/game_profile.h"
+          INC=(-I "$RUNNER_TEMP" -I dm/gfx/nvn/include -I dm/third_party/vulkan-headers/include -I dm/third_party/libvpx -I dm/third_party/libvpx/config -I dm/third_party/stb_vorbis -I dm/host)
+          "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -fsyntax-only "${INC[@]}" dm/gfx/vk_android/vka_draw.c
+          echo 'Host differential check + translator compile + Vulkan C syntax complete. No APK or proprietary shaders produced.' >> "$GITHUB_STEP_SUMMARY"
