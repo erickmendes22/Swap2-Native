@@ -49,7 +49,7 @@ void main(){
     AF3 c;
     FsrRcasF(c.r,c.g,c.b,xy,pc.con0);
     c=clamp(c,0.0,1.0);
-    if(any(isnan(c))||any(isinf(c)))c=FsrRcasLoadF(xy).rgb;
+    if(any(isnan(c))||any(isinf(c)))c=FsrRcasLoadF(ivec2(xy)).rgb;
     if(pc.itm!=0)c/=max(1.0-max(c.r,max(c.g,c.b)),1.0/1024.0);
     imageStore(dst,ivec2(xy),uvec4(pack_b10g11r11(c),0u,0u,0u));
 }
