@@ -100,11 +100,19 @@ int main(void){
   vkUpdateDescriptorSets(d,6,wr,0,0);
  }
  VkBuffer buf;VkDeviceMemory bm;VkDeviceSize bytes=(VkDeviceSize)wo*ho*4;
- VkBufferCreateInfo bci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+ VkBufferCreateInfo bci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT};
  CK(vkCreateBuffer(d,&bci,0,&buf));VkMemoryRequirements bmr;vkGetBufferMemoryRequirements(d,buf,&bmr);
  int mt=memidx(bmr.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);REQ(mt>=0);
  VkMemoryAllocateInfo bai={.sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,.allocationSize=bmr.size,.memoryTypeIndex=(uint32_t)mt};
  CK(vkAllocateMemory(d,&bai,0,&bm));CK(vkBindBufferMemory(d,buf,bm,0));
+ // Real packed B10G11R11 input: contrasting red/green/blue/grey tiles.
+ uint32_t *in;CK(vkMapMemory(d,bm,0,bytes,0,(void**)&in));
+ const uint32_t rbits=0x380u,gbits=0x380u<<11,bbits=0x1c0u<<22;
+ for(uint32_t y=0;y<hi;y++)for(uint32_t x=0;x<wi;x++){
+   int k=((int)x/40+(int)y/30)%4;
+   in[y*wi+x]=k==0?rbits:k==1?gbits:k==2?bbits:(rbits|gbits|bbits);
+ }
+ vkUnmapMemory(d,bm);
  VkCommandPoolCreateInfo cpi={.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,.queueFamilyIndex=(uint32_t)qi};
  VkCommandPool cp;CK(vkCreateCommandPool(d,&cpi,0,&cp));
  VkCommandBufferAllocateInfo cbi={.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,.commandPool=cp,.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,.commandBufferCount=1};
@@ -121,6 +129,10 @@ int main(void){
    vkCmdClearColorImage(cb,im[i].img,VK_IMAGE_LAYOUT_GENERAL,&clear,1,&rg);
  }
  barrier(cb);
+ // Transfer native packed input after image initialization, before optical flow.
+ VkBufferImageCopy icopy={.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},.imageExtent={wi,hi,1}};
+ vkCmdCopyBufferToImage(cb,buf,im[5].img,VK_IMAGE_LAYOUT_GENERAL,1,&icopy);
+ barrier(cb);
  PC pc={{(float)wi,(float)hi},{(float)wo,(float)ho},{1.0f/wi,1.0f/hi},{1.0f/wo,1.0f/ho},
  {0,0},{(float)wo/wi,10.0f},0.30f,1.0f,1,1,0.15f,0.08f,0.07f,0.15f,1.25f,0.6f,0.8f,0.35f,1.0f,1.0f,2.0f,1.0f,{0}};
  PCConvert cv={{(float)wi,(float)hi},{1.0f/wi,1.0f/hi},{1.0f/wi,1.0f/hi},1.0f,1.0f,{0,0},1.0f,0.35f,0.3f,{0}};
@@ -136,9 +148,23 @@ int main(void){
  CK(vkEndCommandBuffer(cb));
  VkSubmitInfo submit={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&cb};
  CK(vkQueueSubmit(q,1,&submit,0));CK(vkQueueWaitIdle(q));
- uint32_t *map;CK(vkMapMemory(d,bm,0,bytes,0,(void**)&map));uint32_t ref=map[(ho/2)*wo+wo/2];
- int bad=0,npx=0;for(int y=20;y<(int)ho-20;y+=9)for(int x=20;x<(int)wo-20;x+=9){npx++;if(map[y*wo+x]!=ref)bad++;}
- printf("GSR2 full-four-pass synthetic reset-frame output=0x%08x nonuniform=%d/%d\n",ref,bad,npx);
- REQ(ref!=0 && bad<npx/15);
+ uint32_t *map;CK(vkMapMemory(d,bm,0,bytes,0,(void**)&map));
+ int bad=0,npx=0;
+ for(int sy=15;sy<(int)hi-15;sy+=30)for(int sx=20;sx<(int)wi-20;sx+=40){
+   int k=(sx/40+sy/30)%4,ox=2*sx,oy=2*sy;
+   uint32_t pix=map[oy*wo+ox];
+   unsigned rr=pix&0x7ffu,gg=(pix>>11)&0x7ffu,bb=(pix>>22)&0x3ffu;
+   int reject=pix==0 ||
+     (k==0 && !(rr>4*gg&&rr>4*bb)) ||
+     (k==1 && !(gg>4*rr&&gg>4*bb)) ||
+     (k==2 && !(bb>rr&&bb>gg)) ||
+     (k==3 && !(rr>200&&gg>200&&bb>100));
+   for(int dy=-2;dy<=2;dy+=2)for(int dx=-2;dx<=2;dx+=2)
+     if(map[(oy+dy)*wo+(ox+dx)]!=pix)reject++;
+   if(reject)bad++;
+   npx++;
+ }
+ printf("GSR2 four-pass COLOR+EDGES reset-frame bad blocks %d/%d\n",bad,npx);
+ REQ(npx>=100 && bad<npx/10);
  return 0;
 }
