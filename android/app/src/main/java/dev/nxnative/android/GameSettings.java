@@ -281,9 +281,8 @@ final class GameSettings {
             Ui.add(box, Ui.small(a, a.getString(R.string.s2_vrs_heavy_note)), 6);
         }
         if (Prefs.OCARINA_TITLE.equals(id) && prof != null && prof.hasScene()) {
-            box.addView(new Ui.Setting(a,R.drawable.s2_ic_display,a.getString(R.string.s2_oot_classic_passes),null)
-                .toggle(a,Prefs.classicPasses(a,id),(button,on)->Prefs.classicPasses(a,id,on)).view);
-            Ui.add(box,Ui.small(a,a.getString(R.string.s2_oot_classic_passes_note)),6);
+            // Cached render passes were retired for Ocarina: they caused
+            // cave-wall flicker. Keep the graphics profile selector.
             String[] names=renderProfileNames(a);
             box.addView(new Ui.Setting(a,R.drawable.s2_ic_display,a.getString(R.string.s2_oot_render_profile),
                     v -> renderProfile(a,g,again)).value(names[Prefs.renderProfile(a,id)]).chevron(a).view);
