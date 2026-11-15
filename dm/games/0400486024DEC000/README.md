@@ -1351,3 +1351,50 @@ The user followed the same172 comparison with VRS disabled and confirms "resolve
 New settings now default0 in GraphicsOptions, vka_dev and vka_pso. Explicit stored per-game choices are preserved, not silently rewritten. English/PT notes describe the observed low-resolution quality risk without claiming driver-supported rates guarantee visual compatibility. Add a developer-only exact-fragment exclusion list at the existing eligibility gate for future selective isolation; no new public control, shader rebuild, extra GPU work or broader VRS eligibility. [Procedure](../../../android/VRS-TESTING.md); no selective visual/FPS result claimed. No APK is requested merely for these defaults/diagnostics; include source in the next substantive continuation.
 
 The actual exclusion parser/runtime wrapper and existing VRS format/sample/native/emulated route tests pass locally (18 tests; address/undefined sanitizer predicate run with leak checking disabled because this host's ptrace blocks LeakSanitizer). New parser checks2000 generated lists and malformed tails; wrapper checks absent/empty and oversized/truncated values. Native Android compile and full CI are pending at source checkpoint. Existing42339 shader library and674db0a4ff79 ABI remain unchanged.
+
+
+## Build173 device memory comparison (2026-11-15, current/open)
+
+The three device logs `0400486024DEC000-20261115-083945.log`,
+`0400486024DEC000-20261115-084035.log`, and
+`0400486024DEC000-20261115-084123.log` do not demonstrate a useful memory
+reduction from finalized-pool image retirement. Treat that option as
+ineffective for this scene; do not describe it as closing the reported
+nine-percentage-point system-memory gap versus Banana.
+
+| Log time | Compute merge | Dead-pool retirement | Frame1200 p50 frame/GPU, ms | Later steady GPU p50, ms |
+|---|---|---|---|---|
+| 08:39:45 | on | off | 20.77 / 20.43 | 20.37 at1500,20.42 at1800 |
+| 08:40:35 | on | on | 20.76 / 20.23 | log ends before1500 |
+| 08:41:23 | off | off | 20.76 / 20.35 | 20.40 at1500,20.50 at1800 |
+
+Retirement ON releases just one image, reported as0.0 MiB at one decimal
+place (less than0.1 MiB). Around gameplay the backend still holds1963 MiB
+of mapped pools, about1590-1612 MiB of images at cache samples, and80 MiB
+of scratch. The cache budget remains above the resident image set, so
+pressure pruning does not run. The game keeps the relevant storage alive;
+finalized-pool cleanup does not address its baseline working set.
+
+Compute merging does execute: about34.2 host dependencies removed/frame
+when enabled versus0 when disabled, with full guest barriers retained.
+The timing windows above show no clear meaningful FPS gain. These short,
+separate runs do not establish a small timing difference as a speedup.
+
+Source audit: our RAM reserve rule and Banana snapshotdc7c4203's rule both
+reserve one eighth below/equal12 GiB and otherwise one thirty-second,
+with the512 MiB floor; reserve512 in these logs is not a fork-specific
+regression. Both shader-library readers mmap their input read-only and
+copy/decompress individual modules on demand; the1246.4 MB mapped library
+size is not evidence that all of it is physically resident. Banana's idle
+GPU-image eviction differs from our live-content protection, but copying
+that policy would discard unreconstructible data and is not justified by
+these logs. No new APK should be made just to retire an ineffective toggle
+or change cache limits without measuring reclaimable live-scene bytes.
+
+All three logs are Swap builds using Shared buffer, VRS OFF, shaderA omission
+OFF and shaderB omission ON. RAM Saver is not the cause established by these
+runs; the user's matched ON/ON and OFF/OFF Banana comparisons remain the
+baseline report. A corresponding Banana gameplay log from the same scene,
+resolution and memory backend is still missing, preventing attribution of
+the between-app gap to pools, images or other process/driver allocations.
+Preserve the accepted visual fixes while resolving that gap.
