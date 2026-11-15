@@ -1372,6 +1372,14 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Fix:** port Banana Native/Hokkaido runtime mesh-to-compute conversion, generated vertex stages, per-submission bounded arenas and pass look-ahead. Use compute on Qualcomm by default. Full vegetation defaults on and cuts no reviewed vegetation draws. Off skips only the profile's seven reviewed depth/color pairs, preserving transform feedback and shaders with writable, atomic or unresolved resources. The reviewed keys are generated from game.tsv so old installed packs need no preparation.
 - **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md). Production converter and toggle regressions pass; phone visual confirmation remains open.
 
+### Native indirect-mesh guard rejects compute draws
+
+- **Symptom:** vegetation remains absent with compute emulation and its complete shader supplement enabled; `indirect mesh draw: the driver has no vkCmdDrawMeshTasksIndirectEXT: skipped` appears on a driver without native mesh support.
+- **Cause:** the native indirect entry-point check ran before mesh-to-compute routing. The look-ahead had already prepared the indirect compute record, but raster replay discarded the draw before selecting its generated vertex stage.
+- **Fix:** check the native entry point only after routing, while `mesh` is still true. Compute-emulated indirect draws use the existing arena and regular indirect raster path. Native indirect draws still reject an unavailable entry point; missing compute preparation still rejects the draw. No shader-library, ABI, RAM policy or launcher-route changes.
+- **Check:** compile and execute the production routing block with the entry point absent/present, emulation available/unavailable, direct/indirect records, unavailable prepared output and vegetation OFF. The original177 block fails the compute case; the corrected block passes. Existing Vulkan export/vertex-reader tests pass. Device vegetation confirmation remains pending.
+- **Found on:** [Ocarina of Time](../../dm/games/0400486024DEC000/README.md), build177 log20261115-124921.
+
 ### Compute-mesh export memory layout experiment
 
 - **Symptom:** fewer SPIR-V instructions or a faster sampled mesh dispatch fail to improve whole-frame GPU time; converted meshes still consume several milliseconds.

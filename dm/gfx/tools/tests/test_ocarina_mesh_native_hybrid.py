@@ -130,6 +130,83 @@ int main(void) {
                             str(src), '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
+    def test_indirect_compute_draw_without_native_mesh_entrypoint(self):
+        # Compile the production routing block, including every early-return
+        # guard. A helper-only test would miss the old native check above it.
+        draw = function((VK / "vka_draw.c").read_text(), 'vka_draw')
+        start = draw.index('    int mesh = dw && dw->prim == NVN_PRIM_MESH;')
+        end = draw.index('    if (d->poly.cull == NVN_FACE_FRONT_AND_BACK')
+        block = draw[start:end]
+        source = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdatomic.h>
+#define NVN_PRIM_MESH 99
+#define VKA_NSTAGE 8
+#define DMSH_VK_F_MESH_PRIM 1
+#define VKA_ENV(k, def) 0
+#define VLOG(...) ((void)0)
+#define VRED(...) ((void)0)
+#define VRED_ONCE(...) ((void)0)
+#define SKIP(...) do { result = -1; return; } while (0)
+#define SKIPQ() SKIP("")
+typedef struct { unsigned flags; } entry;
+typedef struct { uint64_t key; entry *e; } vka_shader;
+typedef struct { uint64_t serial; } prog_t;
+typedef struct { const prog_t *bst[8]; int tf_on, rast_discard; } vka_dstate;
+typedef struct { int prim, count, first; uint64_t ind; } p_draw;
+typedef struct { int ok; vka_shader *vs; } memu_ent;
+static struct { int mesh, memu; } V;
+static struct { void (*vkCmdDrawMeshTasksIndirectEXT)(void); } vk;
+static entry entries[3];
+static vka_shader shaders[3] = {{1,&entries[0]},{2,&entries[1]},{3,&entries[2]}};
+static memu_ent arena = {1, &shaders[2]};
+static int route, result, g_skipped, vka_memu_n_skip, prepared, calls;
+static int resolve(const prog_t *p, int st, vka_shader **out, unsigned *bad) {
+    (void)p; (void)bad; *out = st == 7 ? &shaders[0] : st == 1 ? &shaders[1] : NULL; return 1;
+}
+static int vka_ocarina_capture_mesh_draw_pair(const prog_t *a, const prog_t *b) { (void)a; (void)b; return 1; }
+static int oot_skip_one_fs(vka_shader *s) { (void)s; return 0; }
+static int vegetation_cut(vka_dstate *d, vka_shader **s) { (void)d; (void)s; return 0; }
+static int vka_mesh_route(vka_dstate *d) { (void)d; return route; }
+static memu_ent *memu_find(void) { ++calls; return prepared ? &arena : NULL; }
+static void native_entry(void) {}
+typedef struct { int unused; } tex_t;
+static int has_rt;
+static struct { int n; tex_t *color[1], *depth; } *rt;
+static void check(vka_dstate *d, p_draw *dw) {
+    vka_shader *sh[VKA_NSTAGE] = {0}; unsigned bad = 0;
+""" + block + r"""
+    result = mesh ? 2 : 1;
+    if (!mesh) assert(memu_e == &arena && sh[0] == arena.vs && !sh[7]);
+}
+int main(void) {
+    vka_dstate d = {0}; p_draw dw = {.prim=NVN_PRIM_MESH, .ind=4096};
+    V.memu=1; V.mesh=0; route=1; prepared=1;
+    check(&d,&dw); assert(result == 1 && calls == 1); // no mesh extension
+    V.mesh=1; check(&d,&dw); assert(result == 1);     // extension, missing entry point
+    dw.ind=0; dw.count=3; check(&d,&dw); assert(result == 1); // direct unchanged
+    dw.ind=4096; prepared=0; check(&d,&dw); assert(result == -1 && vka_memu_n_skip == 1);
+    prepared=1; route=0; check(&d,&dw); assert(result == -1); // native must still reject
+    vk.vkCmdDrawMeshTasksIndirectEXT=native_entry;
+    check(&d,&dw); assert(result == 2);               // native available
+    vk.vkCmdDrawMeshTasksIndirectEXT=NULL; dw.ind=0;
+    check(&d,&dw); assert(result == 2);               // native direct needs no indirect API
+    dw.ind=4096; route=-1; result=7;
+    check(&d,&dw); assert(result == 7);               // vegetation OFF remains omitted
+    return 0;
+}
+"""
+        cc = shutil.which('clang') or shutil.which('cc')
+        self.assertIsNotNone(cc)
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / 'indirect.c'; exe = Path(td) / 'indirect'
+            src.write_text(source)
+            subprocess.run([cc, '-std=gnu11', '-Wall', '-Wextra', '-Werror',
+                            '-Wno-unused-variable', '-O2', str(src), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_hybrid_lookahead_does_not_overtake_native_mesh(self):
         src = (VK / 'vka_exec.c').read_text()
         walk = function(src, 'memu_walk')

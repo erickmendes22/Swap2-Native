@@ -1875,7 +1875,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     int mesh = dw && dw->prim == NVN_PRIM_MESH;
     memu_ent *memu_e = NULL;   // a mesh draw through compute (vka_memu_draw.inc): drawn as a vertex draw of the arena
     if (mesh) {
-        // (no fallback without the extension: the translated mesh programs exist only as mesh-stage modules, so a device without them draws neither the direct nor the indirect form)
+        // Compute emulation supports both direct and GPU-driven indirect mesh draws.
         if (!V.mesh && VKA_ENV("DM_VK_SKIP_LOG", 0)) {   // diagnostic: what the skipped mesh draw would draw
             vka_shader *f_ = NULL, *m_ = NULL, *t_ = NULL; unsigned b_ = 0; const prog_t *mp_ = d->bst[7] ? d->bst[7] : d->bst[1];
             resolve(d->bst[1], 1, &f_, &b_); resolve(mp_, 7, &m_, &b_); resolve(mp_, 6, &t_, &b_);
@@ -1885,7 +1885,6 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
                  c0_ ? (unsigned long long)c0_->serial : 0ull, c0_ ? c0_->d.width : 0, c0_ ? c0_->d.height : 0, c0_ ? c0_->d.format : 0,
                  dz_ ? (unsigned long long)dz_->serial : 0ull, dz_ ? dz_->d.width : 0, dz_ ? dz_->d.height : 0, dz_ ? dz_->d.format : 0, d->chmask.mask); }
         if (!V.mesh && !V.memu) SKIP("mesh draw (nvnCommandBufferDrawMeshTasks%s) on a device without VK_EXT_mesh_shader (or DM_VK_MESH=0): skipped", dw->ind ? "Indirect" : "");
-        if (dw->ind && !vk.vkCmdDrawMeshTasksIndirectEXT) SKIP("indirect mesh draw: the driver has no vkCmdDrawMeshTasksIndirectEXT: skipped");
         // The program whose task and mesh shaders run: the fragment stage's when it has a mesh shader (a program's stages are bound together), else the one bound at the
         // mesh stage bit. Task and mesh come from the same program (a program's task shader feeds its own mesh shader)
         const prog_t *mp = d->bst[7];
@@ -1950,6 +1949,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         if (d->rast_discard && d->tf_on) SKIP("transform feedback is not on Vulkan yet (F_TF): the draw is skipped");
         if (d->tf_on) VRED_ONCE("transform feedback is not on Vulkan yet: the draw is drawn without capture");
     }
+    // Only a draw that remains native needs the mesh extension entry point.
+    // The compute route has cleared mesh and uses the arena's regular indirect draw.
+    if (mesh && dw->ind && !vk.vkCmdDrawMeshTasksIndirectEXT)
+        SKIP("indirect mesh draw: the driver has no vkCmdDrawMeshTasksIndirectEXT: skipped");
     if (d->poly.cull == NVN_FACE_FRONT_AND_BACK && !d->rast_discard) return;
     int prim = dw ? dw->prim : di->prim, expand = 0;
     VkPrimitiveTopology topo = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;   // (a mesh pipeline's: every translated mesh shader outputs triangles)

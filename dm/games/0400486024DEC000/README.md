@@ -1523,3 +1523,26 @@ after file backing; only explicit test-only OS reclaim drops it to170 KiB,
 and a full verified reread restores32938 KiB. This validates reclaimability
 and exact bytes, not an immediate or measured phone memory saving. Retain
 the nine-point gap as OPEN and do not add another performance menu option.
+
+## Build177 vegetation and performance follow-up (2026-11-15, current/open)
+
+The user confirms177's RAM savings work. Retain the application-pool mapping
+budget and speculative prewarm cap; neither is changed here.
+
+The supplied124921 log already selects full compute (`mesh=0 task=0
+compute_emulation=1`, route1), accepts the complete42339-entry base and all508
+supplement stages/dependencies, and enables vegetation. Four rate-limited
+native indirect-entry-point errors identify a replay guard that rejects
+compute draws before routing. See [Native indirect-mesh guard rejects compute
+draws](../../../docs/reference/rendering.md#native-indirect-mesh-guard-rejects-compute-draws).
+Moving that guard restores access to the existing emulated indirect path;
+it does not establish phone visual success or an FPS gain.
+
+The1500 window has frame p5025.95 ms and GPU p5022.03 ms, with substantial
+long-frame/page-fault stalls. Sampled frame1501 has14.733 ms in graphics
+blocks,3.477 ms in mesh compute and0.593 ms in task compute. These sampled
+intervals are not additive FPS predictions; graphics timings include fixed
+stages. Only two pipelines were built on the frame path, so missing-shader
+preparation is not an established explanation for the steady GPU cost.
+Performance investigation remains open; do not attribute a speedup to the
+indirect rendering correction or undo the confirmed RAM improvement.
