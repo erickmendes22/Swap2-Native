@@ -99,7 +99,7 @@ int main(void){
  VkDescriptorSetAllocateInfo sai={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,.descriptorPool=pool,.descriptorSetCount=4,.pSetLayouts=lays};
  CK(vkAllocateDescriptorSets(d,&sai,ds));
  }
- const int ids[4][6]={
+ int ids[4][6]={
  {5,7,5,5,6,6},    // flow: current source and previous YCC -> flow
  {5,5,6,5,2,8},    // convert: colour, flow -> YCC, MDA
  {10,8,2,9,1,11},  // activate: previous luma, MDA -> MDC, current luma
@@ -189,6 +189,65 @@ int main(void){
    npx++;
  }
  printf("GSR2 four-pass COLOR+EDGES reset-frame bad blocks %d/%d\n",bad,npx);
+ REQ(npx>=100 && bad<npx/10);
+ vkUnmapMemory(d,bm);
+ // Second Vulkan submission, same scene, no reset: exercise full temporal
+ // history with actual ping-pong (YCC, MDA, luma and output history).
+ // The original one-frame smoke could not expose invalid previous-frame reads.
+ int second[4][6]={
+ {5,2,5,5,6,6},
+ {5,5,6,5,7,9},
+ {11,9,7,8,1,10},
+ {3,1,7,7,0,4}};
+ for(int st=0;st<4;st++)for(int i=0;i<6;i++)ids[st][i]=second[st][i];
+ pc.reset=0.0f;cv.reset=0.0f;
+ if(!push){
+   for(int st=0;st<4;st++){
+      VkDescriptorImageInfo ii[6];VkWriteDescriptorSet wr[6];
+      for(int i=0;i<6;i++){
+        ii[i]=(VkDescriptorImageInfo){i<2&&st==3?linear:i<4?nearest:VK_NULL_HANDLE,im[ids[st][i]].v,VK_IMAGE_LAYOUT_GENERAL};
+        wr[i]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=ds[st],.dstBinding=(uint32_t)i,
+         .descriptorCount=1,.descriptorType=i<4?VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,.pImageInfo=&ii[i]};
+      }
+      vkUpdateDescriptorSets(d,6,wr,0,0);
+   }
+ }
+ CK(vkResetCommandPool(d,cp,0));
+ CK(vkBeginCommandBuffer(cb,&begin));
+ barrier(cb);
+ for(int st=0;st<4;st++){
+   vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_COMPUTE,pipes[st]);
+   if(push){
+     VkDescriptorImageInfo pi[6];VkWriteDescriptorSet wr[6];
+     for(int i=0;i<6;i++){
+       pi[i]=(VkDescriptorImageInfo){i<2&&st==3?linear:i<4?nearest:VK_NULL_HANDLE,im[ids[st][i]].v,VK_IMAGE_LAYOUT_GENERAL};
+       wr[i]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstBinding=(uint32_t)i,
+          .descriptorCount=1,.descriptorType=i<4?VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,.pImageInfo=&pi[i]};
+     }
+     cmdPush(cb,VK_PIPELINE_BIND_POINT_COMPUTE,layout,0,6,wr);
+   }else vkCmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,layout,0,1,&ds[st],0,0);
+   vkCmdPushConstants(cb,layout,VK_SHADER_STAGE_COMPUTE_BIT,0,128,st==0||st==3?(const void*)&pc:(const void*)&cv);
+   uint32_t w=st==3?wo:wi,h=st==3?ho:hi;
+   vkCmdDispatch(cb,(w+7)/8,(h+7)/8,1);barrier(cb);
+ }
+ vkCmdCopyImageToBuffer(cb,im[4].img,VK_IMAGE_LAYOUT_GENERAL,buf,1,&c);
+ CK(vkEndCommandBuffer(cb));
+ CK(vkQueueSubmit(q,1,&submit,0));CK(vkQueueWaitIdle(q));
+ CK(vkMapMemory(d,bm,0,bytes,0,(void**)&map));
+ bad=0;npx=0;
+ for(int sy=15;sy<(int)hi-15;sy+=30)for(int sx=20;sx<(int)wi-20;sx+=40){
+   int k=(sx/40+sy/30)%4,ox=2*sx,oy=2*sy;
+   uint32_t pix=map[oy*wo+ox];
+   unsigned rr=pix&0x7ffu,gg=(pix>>11)&0x7ffu,bb=(pix>>22)&0x3ffu;
+   int reject=pix==0 ||
+     (k==0 && !(rr>4*gg&&rr>4*bb)) ||
+     (k==1 && !(gg>4*rr&&gg>4*bb)) ||
+     (k==2 && !(bb>rr&&bb>gg)) ||
+     (k==3 && !(rr>200&&gg>200&&bb>100));
+   if(reject)bad++;
+   npx++;
+ }
+ printf("GSR2 four-pass SECOND-FRAME temporal history bad blocks %d/%d\n",bad,npx);
  REQ(npx>=100 && bad<npx/10);
  return 0;
 }
