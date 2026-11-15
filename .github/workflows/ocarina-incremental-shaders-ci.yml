@@ -69,6 +69,9 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_watched_images.py'
       - 'dm/gfx/tools/tests/test_ocarina_gpu_write_index.py'
       - 'scripts/pack_android.py'
+      - 'dm/tools/patch_nso.py'
+      - 'android/app/src/main/java/dev/nxnative/android/Lsfg.java'
+      - 'dm/tools/tests/test_ocarina_upstream_0185_ports.py'
       - 'android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/PackService.java'
       - 'android/app/src/ondevice/java/dev/nxnative/android/Job.java'
@@ -94,6 +97,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate original 0.1.8.5 mod-safe patch and LSFG adaptations
+        run: |
+          python3 -m py_compile dm/tools/patch_nso.py scripts/pack_android.py
+          python3 -m unittest discover -s dm/tools/tests -p test_ocarina_upstream_0185_ports.py -v
       - name: AV1 intro full-queue backpressure regression (ASan/UBSan)
         shell: bash
         run: |
