@@ -1,0 +1,37 @@
+name: Get upstream 0.1.8.5 memory alias source for port
+on:
+  push:
+    branches: [ocarina-v11-ios-perf-from-v101]
+    paths: [.github/workflows/original-0185-memory-sources.yml]
+permissions:
+  contents: read
+jobs:
+  get-original-memory:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download corresponding released source archive
+        run: |
+          curl --fail --location --retry 4 --max-time 240 \
+            https://github.com/mamcjr/Swap2-Native/releases/download/v0.1.8.5-beta/swap2-native-0.1.8.5-beta-source.zip \
+            -o /tmp/original.zip
+          unzip -l /tmp/original.zip | grep -E 'vka_(fd_alias|ahb_alias|placedkill)' | head -30
+      - name: Extract memory alias and selection reference sources only
+        run: |
+          python3 - <<'PY'
+          import pathlib,zipfile
+          z=zipfile.ZipFile('/tmp/original.zip')
+          names=['vka_fd_alias.h','vka_ahb_alias.h','vka_placedkill.h','vka_dev.c','vka_mem.c','vka.h']
+          names += ['Prefs.java','GameSettings.java','GameActivity.java']
+          dest=pathlib.Path('upstream-memory')
+          dest.mkdir(exist_ok=True)
+          for name in names:
+              found=[x for x in z.namelist() if x.endswith('/'+name) and (('/vk_android/' in x) if name.startswith('vka_') else ('/android/app/src/main/java/' in x))]
+              if len(found)!=1: raise RuntimeError((name,found))
+              (dest/name).write_bytes(z.read(found[0]))
+              print(name,'source=',found[0],'bytes=',(dest/name).stat().st_size)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: original-0185-memory-path-sources
+          path: upstream-memory/
+          retention-days: 7
