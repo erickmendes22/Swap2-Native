@@ -25,9 +25,17 @@ void main()
     vec2 ViewportUV = (vec2(ip) + vec2(0.5)) * p.renderSizeRcp;
     float luma_reference = texelFetch(YCoCgColor, ip, 0).x;
     vec4 mda = texelFetch(MotionDepthAlphaBuffer, ip, 0);
-    float depth = mda.z; float alphamask = mda.w; vec2 motion = mda.xy;
+    float depth = mda.z; float alphamask = 0.0; vec2 motion = mda.xy;
+#ifndef OOT_FLOW
+    alphamask = mda.w;
+#endif
     vec2 PrevUV = vec2(-0.5 * motion.x + ViewportUV.x, -0.5 * motion.y + ViewportUV.y);
     vec2 pf = PrevUV * p.renderSize - 0.5; ivec2 ib = ivec2(floor(pf)); vec2 fr = pf - floor(pf);
+#ifdef OOT_FLOW
+    // Optical-flow mode has no game depth. Reject reprojected history on
+    // image-matching disagreement instead of pretending luma is Z depth.
+    float depthclip = p.reset != 0.0 ? 1.0 : clamp(mda.w, 0.0, 1.0);
+#else
     float depthclip = 0.0;
     if (depth > 1.0e-05 && p.reset == 0.0) {
         float w0 = (1.0 - fr.x) * (1.0 - fr.y), w1 = fr.x * (1.0 - fr.y), w2 = (1.0 - fr.x) * fr.y, w3 = fr.x * fr.y;
@@ -43,6 +51,7 @@ void main()
                 + clamp(Ds * max(f2, depth) / (abs(f2 - depth) + EPS), 0.0, 1.0) * w2 + clamp(Ds * max(f3, depth) / (abs(f3 - depth) + EPS), 0.0, 1.0) * w3;
         depthclip = clamp(1.0 - W, 0.0, 1.0);
     }
+#endif
     // Velocity rejection: where the motion changed against the history's (non-rigid motion: a cape, a wing, a weapon; the depth test does not see it), the history
     // counts less, its box tightens and the anti-flicker term is off, as for a depth clip. dv in pixels of a 640x360 grid, the units vlo / vk were fitted in at any render size
     if (p.vrej > 0.0 && p.reset == 0.0) {

@@ -20,13 +20,26 @@ void main()
     ivec2 ip = ivec2(gl_GlobalInvocationID.xy), lim = ivec2(p.renderSize) - 1;
     if (any(greaterThan(ip, lim))) return;
     float nz = 0.0;
+#ifndef OOT_FLOW
     for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) nz = max(nz, texelFetch(InputDepth, clamp(ip + ivec2(dx, dy), ivec2(0), lim), 0).x);
-    vec2 motion = -2.0 * texelFetch(InputVelocity, ip, 0).xy * p.mvs;
+#endif
+    vec4 velocity = texelFetch(InputVelocity, ip, 0);
+    vec2 motion = -2.0 * velocity.xy * p.mvs;
     vec3 c = max(texelFetch(InputColor, ip + p.cbase, 0).xyz, vec3(0.0));
+#ifdef OOT_FLOW
+    // agl's light NDSR input holds sqrt(linear HDR); the output stays linear.
+    c *= c;
+#endif
     c /= max(max(c.x, c.y), c.z) + 1.0;   // simple tonemap (preExposure 1)
     float Y = 0.25 * (c.x + 2.0 * c.y + c.z);
     float Co = clamp(0.5 * c.x + 0.5 - 0.5 * c.z, 0.0, 1.0);
     float Cg = clamp(Y + Co - c.x, 0.0, 1.0);
     imageStore(YCoCgColor, ip, vec4(Y, Co - 0.5, Cg - 0.5, 0.0));
+#ifdef OOT_FLOW
+    // No fabricated game depth. The alpha channel is an observed optical-
+    // flow mismatch / disocclusion rejection factor, NOT physical depth.
+    imageStore(MotionDepthAlphaBuffer, ip, vec4(motion, 0.0, velocity.z));
+#else
     imageStore(MotionDepthAlphaBuffer, ip, vec4(motion, nz, 0.0));
+#endif
 }

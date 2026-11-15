@@ -1,0 +1,67 @@
+#version 450
+// Real (colour-derived) motion for Ocarina's spatial NDSR network.
+// This is a short-range optical-flow estimate, not engine velocity/depth.
+// False matches are history-rejected. Kept separate from Qualcomm's BSD-3
+// GSR2 shaders; this local shader is original Swap2 code.
+layout(local_size_x=8, local_size_y=8) in;
+layout(set=0, binding=0) uniform highp sampler2D CurrentSqrtHDR;
+layout(set=0, binding=1) uniform highp sampler2D PreviousYCoCg;
+layout(set=0, binding=4, rgba16f) uniform writeonly highp image2D Flow;
+layout(set=0, binding=5, rgba16f) uniform writeonly highp image2D Dummy;
+layout(push_constant) uniform P {
+    vec2 renderSize; vec2 outputSize; vec2 renderSizeRcp;
+    vec2 outputSizeRcp; vec2 jitterOffset; vec2 scaleRatio;
+    float minLerpContribution; float reset; int tm; int tap9;
+    float hmin; float motw; float boxtol; float boxmotw;
+    float hscale; float mlo; float mrcp; float hsmov; float afmot;
+    float bsmov; float hcr; float mvnear; float pad3[4];
+} p; // exactly 128B, shared with GSR2 upscale's push constants
+
+float currentLuma(ivec2 q) {
+    ivec2 lim = ivec2(p.renderSize)-1;
+    vec3 v = max(texelFetch(CurrentSqrtHDR, clamp(q, ivec2(0),lim),0).rgb, vec3(0.0));
+    v *= v; // NDSR input is sqrt(HDR), unlike NDSR output.
+    v /= 1.0 + max(v.r,max(v.g,v.b));
+    return dot(v,vec3(0.25,0.50,0.25));
+}
+float prevLuma(ivec2 q) {
+    ivec2 lim=ivec2(p.renderSize)-1;
+    return texelFetch(PreviousYCoCg,clamp(q,ivec2(0),lim),0).x;
+}
+float score(ivec2 q, ivec2 offset) {
+    // Center and four cross taps: a lone bright pixel may match by chance;
+    // a consistent local patch offers a more reliable displacement.
+    float e=abs(currentLuma(q)-prevLuma(q+offset));
+    e+=0.5*abs(currentLuma(q+ivec2(2,0))-prevLuma(q+offset+ivec2(2,0)));
+    e+=0.5*abs(currentLuma(q-ivec2(2,0))-prevLuma(q+offset-ivec2(2,0)));
+    e+=0.5*abs(currentLuma(q+ivec2(0,2))-prevLuma(q+offset+ivec2(0,2)));
+    e+=0.5*abs(currentLuma(q-ivec2(0,2))-prevLuma(q+offset-ivec2(0,2)));
+    return e / 3.0;
+}
+void main() {
+    ivec2 q=ivec2(gl_GlobalInvocationID.xy);
+    if(any(greaterThanEqual(q,ivec2(p.renderSize)))) return;
+    if(p.reset!=0.0) {
+        imageStore(Flow,q,vec4(0,0,1,0));
+        return;
+    }
+    // 3x3 coarse (+/-2 pixels), then 3x3 fine (+/-1 pixels).
+    // No GPU readback or CPU synchronization; 18 candidate patches.
+    float best=1e30; ivec2 delta=ivec2(0);
+    for(int y=-2;y<=2;y+=2) for(int x=-2;x<=2;x+=2) {
+        ivec2 d=ivec2(x,y);float v=score(q,d)+0.002*dot(vec2(d),vec2(d));
+        if(v<best){best=v;delta=d;}
+    }
+    ivec2 coarse=delta;
+    for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++) {
+        ivec2 d=coarse+ivec2(x,y);
+        float v=score(q,d)+0.002*dot(vec2(d),vec2(d));
+        if(v<best){best=v;delta=d;}
+    }
+    // Enforce actual motion confidence and avoid history after cuts,
+    // changing geometry and unmatchable pixels. No invented zero-MV input.
+    float reject=clamp((best-0.012)*15.0,0.0,1.0);
+    if(any(lessThan(q+delta,ivec2(0)))||any(greaterThanEqual(q+delta,ivec2(p.renderSize))))
+        reject=1.0;
+    imageStore(Flow,q,vec4(vec2(delta)*p.renderSizeRcp,reject,0.0));
+}

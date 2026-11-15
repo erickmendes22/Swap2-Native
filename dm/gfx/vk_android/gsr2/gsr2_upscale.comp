@@ -128,5 +128,12 @@ void main()
     Upsampledcw.xyz = mix(HistoryColor, Upsampledcw.xyz, alpha);
     imageStore(HistoryOutput, gid, vec4(Upsampledcw.xyz, Wfactor));
     float x_z = Upsampledcw.x - Upsampledcw.z;
-    imageStore(SceneColorOutput, gid, vec4(clamp(vec3(x_z + Upsampledcw.y, Upsampledcw.x + Upsampledcw.z, x_z - Upsampledcw.y), 0.0, 1.0), 0.0));
+    vec3 outColour = clamp(vec3(x_z + Upsampledcw.y, Upsampledcw.x + Upsampledcw.z, x_z - Upsampledcw.y), 0.0, 1.0);
+#ifdef OOT_FLOW
+    // Game's NDSR destination is linear HDR (B10G11R11); GSR2 accumulates
+    // tone-mapped scene colour. Undo the same max-channel tonemap used by
+    // the convert pass, WITHOUT changing the temporal history's encoding.
+    outColour /= max(1.0 - max(outColour.x, max(outColour.y, outColour.z)), 1.0e-4);
+#endif
+    imageStore(SceneColorOutput, gid, vec4(outColour, 0.0));
 }
