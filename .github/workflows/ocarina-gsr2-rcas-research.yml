@@ -1,0 +1,39 @@
+name: Ocarina GSR2 RCAS and single-720p present validation
+on:
+  push:
+    branches: [research/ocarina-gsr2-rcas-20261115]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gpu-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vulkan shader validation tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y glslc spirv-tools
+      - name: Generate and validate all five GSR2 plus RCAS SPIR-V shaders
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py --check
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gsr2_assets.py -v
+      - name: Android AArch64 compile check of native Vulkan bridge and compositor
+        shell: bash
+        run: |
+          set -euxo pipefail
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          if [ ! -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358"
+          fi
+          python3 dm/games/game.py header 0400486024DEC000 "$RUNNER_TEMP/game_profile.h"
+          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang"
+          INC=(-I "$RUNNER_TEMP" -I dm/gfx/nvn/include -I dm/third_party/vulkan-headers/include -I dm/host)
+          for src in dm/gfx/vk_android/vka_gsr2.c dm/gfx/vk_android/vka_present.c; do
+            "$CLANG" -std=gnu11 -D_GNU_SOURCE -DDM_NUP_ZSTD -O2 -Wall -Werror=implicit-function-declaration -fsyntax-only "${INC[@]}" "$src"
+          done
+          echo 'GSR2 RCAS and 720p compositor present: native Android AArch64 syntax passed' >> "$GITHUB_STEP_SUMMARY"
