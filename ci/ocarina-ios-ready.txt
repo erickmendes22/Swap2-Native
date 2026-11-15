@@ -164,3 +164,11 @@ Build195: real GSR2 invocation + motion scale correction (2026-11-15).
 - One lightweight log when a candidate matches, then actual successful pass log; any absence is an unambiguous runtime regression, not a performance result.
 - Keep Build194 profile setting, same VRS preference, RAM/vegetation, shader ABI and existing signer.
 - Build signed install-over com.swap2native.ootv11ios versionCode>194 same a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad certificate. No game shader rebuild.
+
+Build196 GSR2 packed-output correction after RGB screen corruption 2026-11-15.
+- User's Build195 screenshot shows full-frame RGB static but PlayStation controls/UI still correct; actual attached 0400486024DEC000-20261115-164758.log confirms 04135bb812a0d66e replaced by temporal GSR2 640x360 -> 1280x720, 120 calls and 25 resets. This is not an option-activation issue.
+- Replace speculative cross-format VK CmdBlitImage from RGBA16F to guest B10G11R11 with known-good SGSR1 32-bit shader packing, R32_UINT work image and vkCmdCopyImage of equal 32-bit texels. Temporal history stays RGBA16F.
+- Require input/dst B10G11R11, format flags STORAGE R32UI/TRANSFER_SRC and guest TRANSFER_DST. Fall back to original NDSR if unsupported.
+- Clamp nonfinite output against current scene colour before pack. Use exact SGSR1 half-float quantization.
+- SPIR-V validator plus Android AArch64 native build and original signer; do not change 177 RAM saver, 178 vegetation, VRS choice or shader ABI.
+- The phone is required to verify that image corruption is gone and GSR2 genuinely improves quality; do not claim success just because GitHub CI passes.
