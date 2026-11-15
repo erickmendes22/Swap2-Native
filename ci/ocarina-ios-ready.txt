@@ -188,3 +188,11 @@ Build198 — same-output GSR2 A/B, native 720p compositor + AMD RCAS, 2026-11-15
 - Existing Ocarina on-screen controls, touch coordinates, editable picture position and Android overlays remain physical-resolution; picture 16:9 SurfaceView follows user placement. Non-Ocarina and other profiles unchanged; Stretch continues legacy fullscreen path.
 - Research branch all shader SPIR-V compilation, GSR2 unit tests and Android AArch64 native checks passed. Full Android app Gradle build required here.
 - Same signer must match SHA256 a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad; expected versionCode 198 or higher, install over Build197. User must compare scene/profile/VRS and fixed camera position with GSR2 OFF vs ON; visual/FPS improvement unverified on phone.
+
+
+Ocarina opt-in page index integration - 2026-11-15:
+- Real Android Vulkan GMEM descriptor snapshot and Ryujinx raw-helper page lookup integrated after the existing last-range cache/pool-1/2MiB hint, with full 8192-entry fallback for all missed or invalid mappings.
+- Immutable fence-retired index snapshots. Additional budget <=2MiB per generation and <=4MiB per submission, zero/invalid header falls back to old search. GSR2 remains forced off and narrow compute barriers remain off by default.
+- Both on-device shader translation (PackService) and selected hot-shader builder enable page-index-capable compilation; user toggle controls whether the renderer populates the index. Previously prepared shaders remain compatible and are not silently rebuilt.
+- CPU differential reference passed 200000 cases; extended 8191-pool host stress passed 2000000 accesses with no result mismatches. Real game-shader correctness and Adreno FPS improvement remain unmeasured.
+- APK workflow now gates on compiler source integration checks, sanitizer host test, translator build and Android native syntax. Do not publish on validation failure; preserve prior APK signer.
