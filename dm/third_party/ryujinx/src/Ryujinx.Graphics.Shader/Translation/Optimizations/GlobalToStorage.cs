@@ -1137,11 +1137,15 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                 Operand indexBase = MapWord(indexHeader, 0);
                 Operand indexCount = MapWord(indexHeader, 1);
                 Operand offset = context.ISubtract(page, indexBase);
+                // The 2-MiB host cap holds 524,288 4-byte records.
+                // An invalid header must never cause an out-of-range SSBO read.
                 Operand covered = context.BitwiseAnd(
                     context.ICompareLessUnsigned(addrHigh, Const(1 << 12)),
                     context.BitwiseAnd(
                         context.ICompareLessOrEqualUnsigned(indexBase, page),
-                        context.ICompareLessUnsigned(offset, indexCount)));
+                        context.BitwiseAnd(
+                            context.ICompareLessOrEqualUnsigned(indexCount, Const(1 << 19)),
+                            context.ICompareLessUnsigned(offset, indexCount))));
                 Operand indexMiss = Label();
                 context.BranchIfFalse(indexMiss, covered);
                 Operand record = context.IAdd(indexHeader,
@@ -1151,6 +1155,21 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                     context.ICompareNotEqual(candidate, Const(0)),
                     context.ICompareLessUnsigned(candidate, Const(8192)));
                 context.BranchIfFalse(indexMiss, valid);
+                // A corrupt/stale record may name an existing but unrelated
+                // pool. Check BOTH bounds before it can supply a GPU pointer;
+                // never rely on the later end-only binary-search validation.
+                Operand entry = context.IMultiply(candidate, Const(GmemMapEntryWords));
+                Operand startLow = MapWord(entry, 0), startHigh = MapWord(entry, 1);
+                Operand stopLow = MapWord(entry, 2), stopHigh = MapWord(entry, 3);
+                Operand geStart = context.BitwiseOr(
+                    context.ICompareLessUnsigned(startHigh, addrHigh),
+                    context.BitwiseAnd(context.ICompareEqual(startHigh, addrHigh),
+                                       context.ICompareLessOrEqualUnsigned(startLow, addrLow)));
+                Operand ltEnd = context.BitwiseOr(
+                    context.ICompareLessUnsigned(addrHigh, stopHigh),
+                    context.BitwiseAnd(context.ICompareEqual(addrHigh, stopHigh),
+                                       context.ICompareLessUnsigned(addrLow, stopLow)));
+                context.BranchIfFalse(indexMiss, context.BitwiseAnd(geStart, ltEnd));
                 context.Copy(selected, candidate);
                 context.Branch(afterSearch);
                 context.MarkLabel(indexMiss);
