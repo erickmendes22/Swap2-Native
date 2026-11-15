@@ -55,6 +55,15 @@ jobs:
             'dm/gfx/vk_android/vka_tex.c',
             'dm/gfx/vk_android/vka_pso.c',
             'dm/gfx/nvn/hle_nvn.c',
+            'dm/gfx/tools/vk_android_spv.py',
+            'dm/gfx/tools/shader_split.py',
+            'dm/tools/patch_nso.py',
+            'dm/games/0400486024DEC000/patches.py',
+            'dm/gfx/vk_android/vka_shader.c',
+            'dm/gfx/vk_android/vka_driver.c',
+            'dm/host/rt/game_profile.h',
+            'android/app/src/main/java/dev/nxnative/android/Lsfg.java',
+            'android/app/src/main/java/dev/nxnative/android/PackFind.java',
             'android/app/src/main/java/dev/nxnative/android/GameActivity.java',
             'android/app/src/main/java/dev/nxnative/android/Prefs.java',
             'android/app/src/main/java/dev/nxnative/android/GameSettings.java',
@@ -78,6 +87,6 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: swap2-original-0.1.7.2-audit
+          name: swap2-original-0.1.7.2-audit-deep
           path: upstream-audit/
           retention-days: 7
