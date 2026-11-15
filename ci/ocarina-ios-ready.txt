@@ -52,3 +52,6 @@ Build168 — Android non-720p SGSR image correction, no classic pass backend (20
 - Native and launcher permanently exclude DM_VK_CLASSIC_RP for Ocarina, including stale preference/env.txt; it caused cave-wall flicker. The approved fast DM_VK_OQ_SPLIT_PASS=0 path is unchanged, along with unused colour optimizations, depth-dirty guard, query accuracy, CPU reductions, vegetation and full HDR.
 - Real software-Vulkan 20-case SGSR parity and production depth/query/codec tests passed in experiment/ocarina-168-resampling-safety, Actions 43658981378. Full SVG/pack regression for signed APK still must pass.
 - Preserve package com.swap2native.ootv11ios, existing signer a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad, versionCode monotonically higher. Test visually at non-720p first; measure FPS only at same heavy outdoor scene, not the cave.
+
+
+Build168 final packaging: removed retired “Passes em cache (Qualcomm)” control from Ocarina graphics settings; the immutable native disable and unchanged 162 fast cave-OFF render path remain. New source regression test forbids reintroducing the toggle. This packaging supersedes the preceding 168 run to include the complete UI removal, source correction and signed install-over APK.
