@@ -30,6 +30,8 @@ jobs:
           if [ ! -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang" ]; then
             "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358"
           fi
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py --check
           python3 dm/games/game.py header 0400486024DEC000 "$RUNNER_TEMP/game_profile.h"
           CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang"
           INC=(-I "$RUNNER_TEMP" -I dm/gfx/nvn/include -I dm/third_party/vulkan-headers/include -I dm/host)
