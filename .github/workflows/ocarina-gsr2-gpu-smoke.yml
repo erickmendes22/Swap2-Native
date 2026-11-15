@@ -1,0 +1,29 @@
+name: Ocarina GSR2 GPU smoke test (no APK)
+on:
+  push:
+    branches: [research/gsr2-gpu-smoke-20261115]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-vulkan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install software Vulkan and SPIR-V tools
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers glslc spirv-tools
+      - name: Compile and validate actual production GSR2 shader
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py --check
+          cc -std=gnu11 -O2 -Wall -Wextra -Wno-missing-field-initializers \
+            -I dm/gfx/vk_android \
+            dm/gfx/tools/tests/test_ocarina_gsr2_gpu.c -lvulkan -lm \
+            -o /tmp/gsr2-gpu-test
+          LIBGL_ALWAYS_SOFTWARE=1 /tmp/gsr2-gpu-test
