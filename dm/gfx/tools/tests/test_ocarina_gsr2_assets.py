@@ -97,6 +97,19 @@ class Gsr2Assets(unittest.TestCase):
         self.assertIn("packHalf2x16",stable)
         self.assertIn("packHalf2x16",up)
 
+    def test_guest_view_correctness_and_sampler_binding(self):
+        # Critical regression: raw underlying VkImage identity views ignore
+        # guest set_format/set_levels/set_swizzle and can poison the complete
+        # temporal history while all shaders/push descriptors are valid.
+        run=(ROOT/"dm/gfx/vk_android/vka_gsr2.c").read_text()
+        draw=(ROOT/"dm/gfx/vk_android/vka_draw.c").read_text()
+        self.assertIn("vka_tex_id_view_rec(srcid,cb,srcdim,0,NULL)",run)
+        self.assertIn("vka_samp_id_rec(samplerid,0)",run)
+        self.assertIn("game_sampler",run)
+        self.assertNotIn("VkImageView colour=vka_view(src,",run)
+        self.assertIn("srcdim=r->dim;samplerid=r->sid;",draw)
+        self.assertIn("srcid,srcdim,samplerid",draw)
+
     def test_generator_matches_on_gpu_runner_if_available(self):
         sys.path.insert(0, str(D))
         import gsr2_spv

@@ -187,7 +187,8 @@ _Static_assert(sizeof(gsr_pc_convert)==128,"GSR2 convert push constants");
 _Static_assert(sizeof(gsr_pc_upscale)==128,"GSR2 upscale/flow push constants");
 
 int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
-                 int source_is_sqrt, uint64_t frame) {
+                 int source_is_sqrt, uint64_t frame,
+                 int srcid, uint8_t srcdim, int samplerid) {
     // Fail closed before doing any extra GPU work. In particular a lower
     // resolution input with NO native 720p destination must keep its shaders.
     if(!cb || !src || !dst || !source_is_sqrt || src->f.kind || dst->f.kind ||
@@ -212,9 +213,23 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     }
     if(!init_pipeline() || G.last_frame==frame)return 0;
     const uint32_t iw=src->w,ih=src->h,ow=dst->w,oh=dst->h;
-    VkImageView colour=vka_view(src,src->f.vk,VK_IMAGE_VIEW_TYPE_2D,
-        VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1,NULL);
-    if(!colour)return 0;
+    // Build195/196 colour corruption survives both HDR blit and bit-packed
+    // output, and full synthetic GSR2 Vulkan shaders pass (including push
+    // descriptors and temporal history). The real guest NDSR sampler is a
+    // VIEW, not necessarily the raw VkImage format/level/colour mapping.
+    // The normal SGSR1 path uses vka_tex_id_view_rec and vka_samp_id_rec.
+    // Using a raw vka_view(underlying format, mip0, identity swizzle) here
+    // bypassed the guest view's set_format/set_levels/set_swizzle and could
+    // feed invalid colour to all four temporal passes.
+    // Match the proven guest shader texture path exactly.
+    VkImageView colour=vka_tex_id_view_rec(srcid,cb,srcdim,0,NULL);
+    if(!colour) {
+        VRED_ONCE("Ocarina GSR2: guest NDSR sampled texture view unavailable; preserving SGSR1");
+        return 0;
+    }
+    VkSampler game_sampler=samplerid?vka_samp_id_rec(samplerid,0):VK_NULL_HANDLE;
+    if(!game_sampler)game_sampler=vka_samp_default();
+    if(!game_sampler)return 0;
     uint32_t ww[W_COUNT],hh[W_COUNT];
     for(int k=0;k<W_COUNT;k++){
         ww[k]=k>=W_HISTORY0?ow:iw;
@@ -258,12 +273,12 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     // Optical flow must compare the unaltered previous YCoCg with the
     // current INPUT scene. It must run before the new convert writes YCoCg.
     {VkImageView in[4]={colour,w[p_ycc].view,colour,colour};
-     VkSampler sm[4]={G.nearest,G.nearest,G.nearest,G.nearest};
+     VkSampler sm[4]={game_sampler,G.nearest,G.nearest,G.nearest};
      pass(cb,P_FLOW,in,sm,w[W_FLOW].view,w[W_FLOW].view,&up,iw,ih);}
     // OOT_FLOW's convert reads the measured motion from binding2, rejects
     // mismatches in velocity.z, and squares sqrt-HDR source colour.
     {VkImageView in[4]={colour,colour,w[W_FLOW].view,colour};
-     VkSampler sm[4]={G.nearest,G.nearest,G.nearest,G.nearest};
+     VkSampler sm[4]={game_sampler,game_sampler,G.nearest,game_sampler};
      pass(cb,P_CONVERT,in,sm,w[c_ycc].view,w[c_mda].view,&pc,iw,ih);}
     {VkImageView in[4]={w[p_luma].view,w[c_mda].view,w[c_ycc].view,w[p_mda].view};
      VkSampler sm[4]={G.nearest,G.nearest,G.nearest,G.nearest};

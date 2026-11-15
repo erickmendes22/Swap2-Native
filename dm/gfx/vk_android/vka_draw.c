@@ -2388,10 +2388,13 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
         // This remains opt-in and Ocarina-only, not a generic HMMA patch.
         uint16_t tx=0,im=0,bk=0;
         if (vka_ndsr_match(sh[5]->e,sh[5]->b,&tx,&im,&bk)) {
-            int srcid=0,dstid=0;
+            int srcid=0,dstid=0,samplerid=0;
+            uint8_t srcdim=1;
             for(int i=0;i<g_wk.n[5];i++){
                 const vka_res *r=&g_wk.r[5][i];
-                if(r->binding==tx && r->what==VKA_R_TEX) srcid=r->tid;
+                if(r->binding==tx && r->what==VKA_R_TEX) {
+                    srcid=r->tid;srcdim=r->dim;samplerid=r->sid;
+                }
                 if(r->binding==im && r->what==VKA_R_IMG) dstid=r->tid;
             }
             if(srcid>0 && dstid>0){
@@ -2409,7 +2412,10 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
                              output->w,output->h,(int)output->f.vk,output->usage,
                              source->inited,output->inited);
                 }
-                if(vka_gsr2_try(g_cb,source,output,1,vka_frame())){
+                // Use the same guest image view (format, swizzle, mip/layer)
+                // and sampler as bind_sets/SGSR1, NOT a raw VkImage view.
+                if(vka_gsr2_try(g_cb,source,output,1,vka_frame(),
+                                srcid,srcdim,samplerid)){
                     d->b.dispatch[0]=(uint32_t)dp->x;
                     d->b.dispatch[1]=(uint32_t)dp->y;
                     d->b.dispatch[2]=(uint32_t)dp->z;
