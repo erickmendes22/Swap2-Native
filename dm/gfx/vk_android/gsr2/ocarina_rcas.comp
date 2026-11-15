@@ -1,0 +1,55 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// AMD FidelityFX RCAS after Qualcomm GSR2 Ocarina temporal reconstruction.
+// The genuine FSR1 implementation remains in third_party/fidelityfx-fsr1
+// (MIT, copyright AMD 2021). Input/output are raw B10G11R11 packed words
+// in R32_UINT so Adreno never needs an unsupported B10 storage-image view.
+// History remains separate and untouched. Strength is from con0.x.
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set=0, binding=0) uniform highp usampler2D tex;
+layout(set=0, binding=4, r32ui) uniform writeonly highp uimage2D dst;
+layout(push_constant) uniform P { uvec4 con0; ivec2 size; int itm; } pc;
+
+#define A_GPU 1
+#define A_GLSL 1
+#include "ffx_a.h"
+#define FSR_RCAS_F 1
+
+uint encodeHalf(float v, uint drop, float cap) {
+    uint h=packHalf2x16(vec2(clamp(v,0.0,cap),0.0)) & 0x7fffu;
+    return (h+(1u<<(drop-1u)))>>drop;
+}
+uint pack_b10g11r11(vec3 c){
+    return encodeHalf(c.r,4u,65024.0) |
+           (encodeHalf(c.g,4u,65024.0)<<11) |
+           (encodeHalf(c.b,5u,64512.0)<<22);
+}
+vec3 unpack_b10g11r11(uint bits) {
+    // Unsigned 11/11/10 float channels use the same 5-bit exponent as
+    // binary16, with 6/6/5 mantissa bits. Shift the fields into half bits.
+    float r=unpackHalf2x16((bits & 0x7ffu)<<4).x;
+    float g=unpackHalf2x16(((bits>>11)&0x7ffu)<<4).x;
+    float b=unpackHalf2x16(((bits>>22)&0x3ffu)<<5).x;
+    return max(vec3(r,g,b),vec3(0.0));
+}
+AF4 FsrRcasLoadF(ASU2 p){
+    ivec2 q=clamp(ivec2(p),ivec2(0),pc.size-1);
+    uint pixel=texelFetch(tex,q,0).r;
+    vec3 c=unpack_b10g11r11(pixel);
+    // GSR2 upstream RCAS works in tone-mapped RGB. Rebuild that domain
+    // from the packed linear HDR input before the 5-tap RCAS kernel.
+    c/=1.0+max(c.r,max(c.g,c.b));
+    return vec4(c,1.0);
+}
+void FsrRcasInputF(inout AF1 r,inout AF1 g,inout AF1 b){}
+#include "ffx_fsr1.h"
+void main(){
+    uvec2 xy=gl_GlobalInvocationID.xy;
+    if(any(greaterThanEqual(xy,uvec2(pc.size))))return;
+    AF3 c;
+    FsrRcasF(c.r,c.g,c.b,xy,pc.con0);
+    c=clamp(c,0.0,1.0);
+    if(any(isnan(c))||any(isinf(c)))c=FsrRcasLoadF(xy).rgb;
+    if(pc.itm!=0)c/=max(1.0-max(c.r,max(c.g,c.b)),1.0/1024.0);
+    imageStore(dst,ivec2(xy),uvec4(pack_b10g11r11(c),0u,0u,0u));
+}

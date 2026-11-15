@@ -21,6 +21,7 @@ PASSPROGS = (
     ("vka_gsr2_activate", "gsr2_activate.comp"),
     ("vka_gsr2_upscale", "gsr2_upscale.comp"),
     ("vka_gsr2_flow", "ocarina_flow.comp"),
+    ("vka_gsr2_rcas", "ocarina_rcas.comp"),
 )
 
 def tool(name):
@@ -48,7 +49,9 @@ def compile_header():
         for sym, filename in PASSPROGS:
             src = HERE / filename
             out = Path(temp) / (sym + ".spv")
-            cmd = [glslc, "-O", "--target-env=vulkan1.1", "-DOOT_FLOW=1", str(src)]
+            cmd = [glslc, "-O", "--target-env=vulkan1.1", "-DOOT_FLOW=1",
+                   "-I", str(HERE.parents[2] / "third_party" / "fidelityfx-fsr1"),
+                   str(src)]
             subprocess.run(cmd + ["-o", str(out)], check=True)
             subprocess.run([spirv_val, "--target-env", "vulkan1.1", str(out)], check=True)
             data = subprocess.run(cmd + ["-mfmt=num", "-o", "-"],

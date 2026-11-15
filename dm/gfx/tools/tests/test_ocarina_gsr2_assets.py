@@ -92,7 +92,9 @@ class Gsr2Assets(unittest.TestCase):
         self.assertNotIn("vk.vkCmdBlitImage(cb,w[W_OUTPUT].img",src)
         self.assertIn("VK_FORMAT_FEATURE_TRANSFER_SRC_BIT",src)
         self.assertIn("VK_FORMAT_FEATURE_TRANSFER_DST_BIT",src)
+        rcas=(D/"ocarina_rcas.comp").read_text()
         self.assertIn("layout(set = 0, binding = 5, r32ui)",up)
+        self.assertIn("layout(set = 0, binding = 4, r32ui)",rcas)
         self.assertIn("imageStore(SceneColorOutput, gid, uvec4(pack_b10g11r11(outColour)",up)
         self.assertIn("packHalf2x16",stable)
         self.assertIn("packHalf2x16",up)
@@ -109,6 +111,20 @@ class Gsr2Assets(unittest.TestCase):
         self.assertNotIn("VkImageView colour=vka_view(src,",run)
         self.assertIn("srcdim=r->dim;samplerid=r->sid;",draw)
         self.assertIn("srcid,srcdim,samplerid",draw)
+
+    def test_amd_rcas_hdr_packed_after_temporal(self):
+        shader=(D/"ocarina_rcas.comp").read_text()
+        native=(ROOT/"dm/gfx/vk_android/vka_gsr2.c").read_text()
+        gen=(D/"gsr2_spv.py").read_text()
+        self.assertIn('#include "ffx_fsr1.h"',shader)
+        self.assertIn("FsrRcasF(c.r, c.g, c.b",shader)
+        self.assertIn("unpackHalf2x16",shader)
+        self.assertIn("pack_b10g11r11",shader)
+        self.assertIn("VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT",native)
+        self.assertIn("pass(cb,P_RCAS",native)
+        self.assertIn("DM_VK_OOT_GSR2_RCAS",native)
+        self.assertIn("sharpen?W_SHARP:W_OUTPUT",native)
+        self.assertIn('("vka_gsr2_rcas", "ocarina_rcas.comp")',gen)
 
     def test_generator_matches_on_gpu_runner_if_available(self):
         sys.path.insert(0, str(D))
