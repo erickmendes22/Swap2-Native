@@ -11,6 +11,8 @@ on:
       - 'android/app/src/main/java/dev/nxnative/android/Prefs.java'
       - 'android/app/src/main/java/dev/nxnative/android/GameSettings.java'
       - 'android/app/src/main/java/dev/nxnative/android/GameActivity.java'
+      - 'android/app/src/ondevice/java/dev/nxnative/android/PackService.java'
+      - 'scripts/build_ocarina_hot_shaders.py'
       - '.github/workflows/ocarina-page-index-check.yml'
   workflow_dispatch:
 
