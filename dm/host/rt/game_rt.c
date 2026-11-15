@@ -83,6 +83,24 @@ int dm_game_load(const char *path) {
     if (!dm_game.nmod) { LOG("[RED] game profile %s: no MODULE rows", path); bad = 1; }
     if (dm_game.nvn_api_major >= 0 && dm_game.nvn_api_minor < 0) { LOG("[RED] game profile %s: NVN_API_MAJOR without NVN_API_MINOR", path); bad = 1; }
     if (bad) return -1;
+#if defined(__ANDROID__)
+    // BananaNative v0.2.6+ enforces the application-pool budget during
+    // MapPhysicalMemory, instead of letting both heap and alias commit past
+    // the Switch's reported pool. Ocarina's existing prepared packs were
+    // written when our game.py still defaulted this field OFF. Correct it
+    // here at load time: no Prepare / shader ABI change is required.
+    //
+    // This limits *guest mapped memory*, not Vulkan allocations and not
+    // virtual address reservation. The game receives Horizon's existing
+    // ResultLimitReached and can unmap cached alias pages before retry.
+    // Keep a per-game env fallback for driver/game regressions.
+    if (dm_game.id && !strcmp(dm_game.id, "0400486024DEC000")) {
+        const char *m = getenv("DM_MEM_MAP_LIMIT");
+        dm_game.mem_map_limit = m && !strcmp(m, "0") ? 0 : 1;
+        LOG("[mem] Ocarina application-pool map budget: %s (heap + alias + used bytes; DM_MEM_MAP_LIMIT=0 restores old overcommit)",
+            dm_game.mem_map_limit ? "ON" : "OFF");
+    }
+#endif
     LOG("game profile %s: %s (%s), %d modules, %d builds, read at start", path, dm_game.name, dm_game.id, dm_game.nmod, dm_game.nvers);
     return 0;
 }
