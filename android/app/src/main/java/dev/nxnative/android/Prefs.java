@@ -105,11 +105,11 @@ final class Prefs {
      */
     // Unsafe scene-layer speedhacks: never inherited from another game;
     // the second switch is a strict subset of the first and both start OFF.
-    static boolean classicPasses(Context c,String id) {
-        return OCARINA_TITLE.equals(id) && of(c).getBoolean(gameKey("oot_classic_passes",id),false);
-    }
+    // Retired: cached classic render passes cause cave-wall flicker on Adreno.
+    // Ignore stale saved values; do not expose a new toggle for this backend.
+    static boolean classicPasses(Context c,String id) { return false; }
     static void classicPasses(Context c,String id,boolean on) {
-        of(c).edit().putBoolean(gameKey("oot_classic_passes",id),on).commit();
+        of(c).edit().remove(gameKey("oot_classic_passes",id)).commit();
     }
     static boolean keepCaveWalls(Context c, String id) {
         return OCARINA_TITLE.equals(id) && of(c).getBoolean(gameKey("oot_keep_cave_walls", id), false);
