@@ -235,7 +235,7 @@ void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 // CPU per draw (recording: mtl_sub_begin to vkEndCommandBuffer)
 extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
 static uint64_t g_ub_copy_cmds, g_ub_copy_regions;  // actual Vulkan copy commands versus independently staged inline regions
-static uint64_t g_ub_deferred, g_ub_shadows, g_ub_flushed, g_ub_after_guest_bar; // in-pass deferred updates, snapshots, saves after retained guest barriers
+static uint64_t g_ub_deferred, g_ub_shadows, g_ub_flushed, g_ub_after_guest_bar, g_ub_scoped_before_copy; // in-pass deferred updates, snapshots, saves after retained guest barriers
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
 static uint64_t g_job_frame; static int g_job_frame_set;   // the frame of the submission the worker replays (vka_exec_sub_frame)
 void vka_exec_sub_frame(uint64_t f) { g_job_frame = f; g_job_frame_set = 1; }
@@ -270,6 +270,10 @@ void mtl_set_frame(uint64_t f) {
               (g_ub_shadows-shadow0)/n, (g_ub_flushed-flushed0)/n);
           deferred0=g_ub_deferred; shadow0=g_ub_shadows;
           flushed0=g_ub_flushed; afterbar0=g_ub_after_guest_bar; }
+        { static uint64_t scoped0;
+          VLOG("Ocarina deferred-uniform GPU dependency: %.1f scoped graphics-to-copy barriers/frame (other pass types retain original full dependency)",
+               (g_ub_scoped_before_copy-scoped0)/n);
+          scoped0=g_ub_scoped_before_copy; }
         { static uint64_t cb0; VLOG("Vulkan compute dependencies: %.2f scoped compute+transfer -> ALL_COMMANDS write dependencies/frame (compute groups and selected dispatch completions)",
               (vka_n_compute_bar - cb0) / n); cb0 = vka_n_compute_bar; }
         { static uint64_t overlap0; uint64_t total = vka_dispatch_overlap_skips();
@@ -1026,9 +1030,26 @@ static void buf_update(ub_batch *batch, const void *data, uint64_t dst, uint64_t
 // their original pass boundary, in order. A full producer/consumer dependency
 // before copies protects earlier shader and vertex reads from being overwritten
 // while executing; the existing transfer-write barrier publishes the updates.
-void vka_ub_flush_pass(void) {
+// The deferred writes overlap a render pass boundary, not an NVN guest
+// barrier. Before overwriting a previously consumed uniform we need WAR
+// execution ordering for ALL graphics readers. The only memory producers
+// in an attachment-only render pass are colour/depth/stencil attachments,
+// so publishing them does not require a global ALL_COMMANDS cache flush.
+// Compute/storage passes, explicit barriers and diagnostic work still take
+// the exact old full-memory dependency. The later transfer->ALL_COMMANDS
+// dependency (ub_flush) continues to publish the uniform bytes.
+void vka_ub_flush_pass(int attachment_only) {
     if (!g_ub_np) return;
-    vka_barrier(g_cb);
+    if (attachment_only && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_UB_SCOPED_PRECOPY", 1)) {
+        VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+        vk.vkCmdPipelineBarrier(g_cb, VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+        g_ub_scoped_before_copy++;
+    } else vka_barrier(g_cb);
     for (int i = 0; i < g_ub_np; i++) {
         const ub_pass_write *w = &g_ub_pending[i];
         buf_update(&g_inline_ub, w->bytes, w->addr, w->size);
