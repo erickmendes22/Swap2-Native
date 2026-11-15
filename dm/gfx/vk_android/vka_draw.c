@@ -385,11 +385,13 @@ void vka_rp_end(void) {
     // uniform writes after ending the pass, with a read->transfer dependency.
     // The draw-side shadow already held those values for in-pass consumers.
     const int postub = vka_ub_active();
-    // Only an attachment-writing graphics pass without shader stores,
-    // pending guest barrier, external clears or diagnostics may narrow the
-    // producer scope. This still orders *all* earlier graphics reads before
-    // overwriting a uniform; no render pass, query or draw is skipped.
-    const int scoped_precopy = R.awrite && !R.swrite && !R.bar_pending && !full;
+    // The kept NVN guest barrier is permitted only if the pass has no
+    // shader-memory writers (vka_rp_game_barrier). Therefore a pending
+    // attachment-only barrier needs the same attachment producer scope,
+    // even when it precedes a deferred uniform update. Every graphics
+    // read is still ordered before that GPU copy (WAR), and explicit
+    // full/diagnostic barriers or shader stores take the old full path.
+    const int scoped_precopy = R.awrite && !R.swrite && !full;
     vka_ub_flush_pass(scoped_precopy);
     // The deferred-uniform flush published every actual pass producer
     // (attachment-only graphics, or full memory for other cases), then
