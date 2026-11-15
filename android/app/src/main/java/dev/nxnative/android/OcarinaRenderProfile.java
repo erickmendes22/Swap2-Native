@@ -12,6 +12,8 @@ final class OcarinaRenderProfile {
     private OcarinaRenderProfile() {}
     static int checked(int mode) { return mode >= 0 && mode <= 3 ? mode : 0; }
     static boolean direct720(int mode) { return checked(mode) == 3; }
+    /** Banana 360p/540p profiles retain the game's 720p NDSR output for temporal reconstruction. */
+    static boolean temporalGsr2(int mode) { return checked(mode) == 1 || checked(mode) == 2; }
     static String scale(int mode, String selected) {
         return mode == 1 ? "0.5" : mode == 2 ? "0.75" : mode == 3 ? "1.0" : selected;
     }

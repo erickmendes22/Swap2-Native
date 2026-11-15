@@ -51,6 +51,17 @@ class Gsr2Assets(unittest.TestCase):
         self.assertIn("spirv_val", src)
         self.assertIn("temp.replace(OUTPUT)", src)
 
+    def test_gsr2_menu_and_launcher_gate_match_banana_profiles(self):
+        game_settings=(ROOT/"android/app/src/main/java/dev/nxnative/android/GameSettings.java").read_text()
+        graphics=(ROOT/"android/app/src/main/java/dev/nxnative/android/GraphicsOptions.java").read_text()
+        profile=(ROOT/"android/app/src/main/java/dev/nxnative/android/OcarinaRenderProfile.java").read_text()
+        self.assertIn("static boolean temporalGsr2(int mode)",profile)
+        self.assertIn("OcarinaRenderProfile.temporalGsr2(temporalProfile)",game_settings)
+        self.assertIn("temporal.toggle(a,Prefs.ootGsr2(a,id)",game_settings)
+        self.assertIn("OcarinaRenderProfile.temporalGsr2(Prefs.renderProfile(c,id))",graphics)
+        self.assertIn('out.add("DM_VK_OOT_GSR2=" + (ootGsr2 ? 1 : 0))',graphics)
+        self.assertNotIn("if (OcarinaRenderProfile.direct720(Prefs.renderProfile(a,id)))",game_settings)
+
     def test_generator_matches_on_gpu_runner_if_available(self):
         sys.path.insert(0, str(D))
         import gsr2_spv

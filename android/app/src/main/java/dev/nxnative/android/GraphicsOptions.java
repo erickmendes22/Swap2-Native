@@ -125,6 +125,11 @@ final class GraphicsOptions {
      * Existing user env.txt remains last and takes precedence. */
     static void env(Context c, String id, List<String> out) {
         int m = clamp(mode(c, id), 0, 4);
+        // Build 193's inverted direct720 gate hid and disabled GSR2 on the
+        // actual Banana 360p/540p profiles. Both UI and env use this predicate.
+        boolean ootGsr2 = Prefs.OCARINA_TITLE.equals(id) &&
+                OcarinaRenderProfile.temporalGsr2(Prefs.renderProfile(c,id)) &&
+                Prefs.ootGsr2(c,id);
         // A/B: the old 720p SGSR output route remains the default for
         // already-saved SGSR preferences. Only the explicit SGSR compute
         // choice reconstructs at the network's real output dimensions,
@@ -136,7 +141,8 @@ final class GraphicsOptions {
         // Direct scene/output 1280x720: prevent a stale SGSR/FSR filter
         // preference from introducing an unnecessary second GPU upscale.
         if (Prefs.OCARINA_TITLE.equals(id) &&
-                OcarinaRenderProfile.direct720(Prefs.renderProfile(c, id))) m = 2;
+                (OcarinaRenderProfile.direct720(Prefs.renderProfile(c, id)) || ootGsr2))
+            m = 2; // Avoid a second SGSR1 pass after temporal reconstruction.
         out.add("DM_VK_PRESENT_FILTER=" + m);
         out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));
         out.add("DM_VK_FSR_SHARP=" + sharp(c, id));
@@ -164,18 +170,18 @@ final class GraphicsOptions {
             // through env.txt; ignore stale saved UI choices from beta.
             out.add("DM_VK_OOT_FPS_BOOST=0");
             out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));
-            // Native temporal GSR2 only runs on actual 1280x720 NDSR output.
-            // No shader preparation, render profile or VRS policy is changed.
-            out.add("DM_VK_OOT_GSR2=" +
-                    (OcarinaRenderProfile.direct720(Prefs.renderProfile(c,id)) &&
-                     Prefs.ootGsr2(c,id) ? 1 : 0));
+            // Only Banana 360p/540p -> 720p is eligible, never direct 720p.
+            // The Vulkan side checks real input/output textures and falls
+            // back to the original NDSR if the resources are incompatible.
+            out.add("DM_VK_OOT_GSR2=" + (ootGsr2 ? 1 : 0));
             // Experimental iOS V19 0.25 chain bypass, but SGSR1 must have
             // ACTUALLY drawn a frame and the direct HDR source must validate.
             // OFF by default so existing shaders/playable graphics are safe.
             // The 0.25 legacy chain bypass is validated only with a final
             // SGSR presentation, not when SGSR runs inside NDSR.
             out.add("DM_VK_OOT_SGSR_CHAIN=" +
-                    (!OcarinaRenderProfile.direct720(Prefs.renderProfile(c, id)) &&
+                    (!ootGsr2 &&
+                    !OcarinaRenderProfile.direct720(Prefs.renderProfile(c, id)) &&
                     Prefs.NDSR_SGSR.equals(Prefs.ndsr(c, id)) ? 1 : 0));
             // Backported from iOS: independent consecutive NVN compute dispatches
             // no longer force individual GPU barriers. Does not rebuild shaders.

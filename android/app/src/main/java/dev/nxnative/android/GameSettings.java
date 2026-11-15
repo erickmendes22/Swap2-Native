@@ -226,15 +226,6 @@ final class GameSettings {
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));
             box.addView(vegetation.view);
-            if (OcarinaRenderProfile.direct720(Prefs.renderProfile(a,id))) {
-                Ui.Setting temporal = new Ui.Setting(a,R.drawable.s2_ic_image,
-                    "GSR2 temporal (teste 360p/540p → 720p)",null)
-                    .toggle(a,Prefs.ootGsr2(a,id),
-                            (button,on)->Prefs.ootGsr2(a,id,on));
-                temporal.value("Fluxo óptico real entre quadros, sem vetores de movimento do jogo. " +
-                    "Desligado por padrão; reinicie. Se o driver não suportar, mantém SGSR1.");
-                box.addView(temporal.view);
-            }
             // Shader A omission is retired: the real pass must render.
             Ui.Setting shaderB = new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Omitir shader B (teste)", null)
@@ -313,6 +304,24 @@ final class GameSettings {
             box.addView(new Ui.Setting(a,R.drawable.s2_ic_display,a.getString(R.string.s2_oot_render_profile),
                     v -> renderProfile(a,g,again)).value(names[Prefs.renderProfile(a,id)]).chevron(a).view);
             Ui.add(box,Ui.small(a,a.getString(R.string.s2_oot_render_profile_note)),6);
+            // Keep the temporal upscaler directly below the Banana profile selector,
+            // not hidden among unrelated performance switches. Build 193 mistakenly
+            // exposed it ONLY for 720p-direct (the mode that needs no upscale).
+            int temporalProfile = Prefs.renderProfile(a,id);
+            boolean temporalEligible = OcarinaRenderProfile.temporalGsr2(temporalProfile);
+            Ui.Setting temporal = new Ui.Setting(a,R.drawable.s2_ic_image,
+                    "GSR2 temporal (360p/540p → 720p)",null);
+            if (temporalEligible) {
+                temporal.toggle(a,Prefs.ootGsr2(a,id),
+                        (button,on)->Prefs.ootGsr2(a,id,on));
+                temporal.value("Fluxo óptico entre quadros · experimental. Reinicie o jogo. " +
+                        "Se o driver ou a cena não forem compatíveis, mantém o NDSR original.");
+            } else {
+                temporal.value("Selecione Perfil Banana: 360p → 720p ou 540p → 720p para ativar.");
+                temporal.view.setEnabled(false);
+                temporal.view.setAlpha(0.55f);
+            }
+            box.addView(temporal.view);
         }
         if (prof != null && prof.hasScene() && Prefs.renderProfile(a,id)==0) {   // only where the profile names the palette's scale (scene_scale_palette; SceneOverlay)
             boolean on = Prefs.scene720(a, id);
