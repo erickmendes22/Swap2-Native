@@ -54,13 +54,13 @@ layout(local_size_x=128,local_size_y=1,local_size_z=1) in;
 #else
 layout(local_size_x=8,local_size_y=8,local_size_z=1) in;
 #endif
-precision mediump float;
+precision highp float;
 precision highp int;
 layout(push_constant) uniform P { highp vec4 ViewportInfo; highp uvec2 size; } pc;
 layout(constant_id=0) const int ENC=0;
 layout(constant_id=1) const int MAP=0;
 layout(constant_id=3) const int PACK=1;
-layout(set=0,binding=100) uniform mediump sampler2D ps0;
+layout(set=0,binding=100) uniform highp sampler2D ps0;
 #if PACKED
 layout(set=0,binding=101,r32ui) uniform writeonly highp uimage2D dst;
 #else
@@ -175,7 +175,7 @@ void reconstruct(uvec2 pixel)
 			color.w =color[OperationMode] - mean;
 
 			float sum = (((((abs(left.x)+abs(left.y))+abs(left.z))+abs(left.w))+(((abs(right.x)+abs(right.y))+abs(right.z))+abs(right.w)))+(((abs(upDown.x)+abs(upDown.y))+abs(upDown.z))+abs(upDown.w)));
-			float sumMean = 1.014185e+01/sum;
+			float sumMean = 1.014185e+01/max(sum, 1.0e-5);
 			float std = (sumMean*sumMean);
 
 #if defined(UseEdgeDirection)
@@ -196,13 +196,19 @@ void reconstruct(uvec2 pixel)
 			aWY += weightY(pl.x-2.0, pl.y, right.z,data);
 			aWY += weightY(pl.x-1.0, pl.y, right.w,data);
 
-			float finalY = aWY.y/aWY.x;
-            float maxY = max(max(left.y,left.z),max(right.x,right.w));
-			float minY = min(min(left.y,left.z),min(right.x,right.w));
-			float deltaY = clamp(EdgeSharpness*finalY, minY, maxY) -color.w;
-
-			//smooth high contrast input
-			deltaY = clamp(deltaY, -23.0 / 255.0, 23.0 / 255.0);
+            // An almost-zero/invalid signed Lanczos normalizer is not a
+            // valid edge direction. Keep the original bilinear pixel
+            // rather than dividing by zero and creating HDR fireflies.
+            float deltaY = 0.0;
+            if (abs(aWY.x) > 1.0e-6 && !isnan(aWY.x) && !isinf(aWY.x) &&
+                !isnan(aWY.y) && !isinf(aWY.y)) {
+                float finalY = aWY.y/aWY.x;
+                float maxY = max(max(left.y,left.z),max(right.x,right.w));
+                float minY = min(min(left.y,left.z),min(right.x,right.w));
+                deltaY = clamp(EdgeSharpness*finalY, minY, maxY) - color.w;
+                // Preserve the original Qualcomm high-contrast correction cap.
+                deltaY = clamp(deltaY, -23.0 / 255.0, 23.0 / 255.0);
+            }
 
 			color.x = max((color.x+deltaY),0.0);   // (Qualcomm: clamp(..., 0.0, 1.0); see above)
 			color.y = max((color.y+deltaY),0.0);
