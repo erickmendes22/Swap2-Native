@@ -876,6 +876,11 @@ public final class PackService extends Service {
                 ocarinaShaders && hotKeys.isEmpty() ? "1" : "0");
         PackEngine.setenv("DMSH_GMEM_LAST1", ocarinaShaders ? "1" : "0");
         PackEngine.setenv("DMSH_GMEM_MAP_8192", ocarinaShaders ? "1" : "0");
+        // Compile the optional page-index branch into newly translated Ocarina
+        // shaders. The runtime setting controls whether an index is populated;
+        // a zero header always takes the original lookup without needing to
+        // rebuild the game library when the user toggles this experiment.
+        PackEngine.setenv("DMSH_GMEM_PIDX", ocarinaShaders ? "1" : "0");
         // The translator is still explicitly limited to hotKeys. A captured
         // source must be verified before it is ever given a shader key.
         PackEngine.setenv("DMSH_VK_CAPTURE_DIR",
