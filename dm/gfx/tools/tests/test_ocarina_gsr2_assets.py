@@ -40,7 +40,8 @@ class Gsr2Assets(unittest.TestCase):
         # Existing Ocarina NDSR is spatial only; it must not be mistaken
         # for a source of game-provided motion or depth.
         ndsr = (ROOT/"dm/gfx/vk_android/vka_ndsr.c").read_text()
-        self.assertIn("one sampled input, one", ndsr)
+        self.assertIn("purely spatial network:", ndsr)
+        self.assertIn("no history, motion or depth", ndsr)
 
     def test_generator_has_three_passes_and_atomic_output(self):
         src = (D/"gsr2_spv.py").read_text()
