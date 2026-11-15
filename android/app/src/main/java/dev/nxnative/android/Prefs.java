@@ -169,6 +169,13 @@ final class Prefs {
     static void unusedColorTargets(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("gpu_unused_color", titleId), on).commit(); }
     static boolean attachmentWriteScopes(Context c, String titleId) { return of(c).getBoolean(gameKey("gpu_attachment_parts", titleId), true); }
     static void attachmentWriteScopes(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("gpu_attachment_parts", titleId), on).commit(); }
+    /** GPU guest-memory mapping: Direct mapping is the unchanged default. */
+    static boolean gpuSharedBuffer(Context c, String titleId) {
+        return of(c).getBoolean(gameKey("gpu_shared_buffer", titleId), false);
+    }
+    static void gpuSharedBuffer(Context c, String titleId, boolean on) {
+        of(c).edit().putBoolean(gameKey("gpu_shared_buffer", titleId), on).commit();
+    }
     /** RAM saver per game: large guest texture pools use files in the private cache. */
     static boolean ramSaver(Context c, String titleId) { return of(c).getBoolean(gameKey("ram_saver", titleId), false); }
     static void ramSaver(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("ram_saver", titleId), on).commit(); }

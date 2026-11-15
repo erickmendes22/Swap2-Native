@@ -274,6 +274,17 @@ final class GameSettings {
                 + "a cada carregamento de area; precisa de espaco livre. Padrao: desligado. "
                 + "Reinicie o jogo para aplicar.");
         box.addView(ram.view);
+        // Shared buffer is opt-in while Direct mapping remains our measured
+        // baseline. No shader reprepare is needed; restart creates the Vulkan
+        // device and probes the actual driver for a bidirectional FD alias.
+        Ui.Setting gpuMemory = new Ui.Setting(a, R.drawable.s2_ic_chip,
+                "Shared buffer (memória GPU, teste)", null)
+                .toggle(a, Prefs.gpuSharedBuffer(a, id),
+                        (button, on) -> Prefs.gpuSharedBuffer(a, id, on));
+        gpuMemory.value("Desligado: Direct mapping original. Ligado: tenta compartilhar "
+                + "um buffer com a GPU; se o driver não suportar, mantém Direct mapping. "
+                + "Reinicie o jogo. Compare FPS, RAM e estabilidade.");
+        box.addView(gpuMemory.view);
         // Selective HDR VRS, including driver-queried 4x2/4x4 modes.
         // The game retains all original shaders and output dimensions.
         if (Prefs.OCARINA_TITLE.equals(id)) {
