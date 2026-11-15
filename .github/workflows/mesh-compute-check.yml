@@ -71,7 +71,9 @@ on:
       - .github/workflows/mesh-compute-check.yml
   workflow_dispatch:
 permissions:
-  contents: read
+  # The exact generated SPIR-V is committed only from this isolated branch,
+  # after the full real Vulkan pixel regression has passed.
+  contents: write
 jobs:
   readback:
     runs-on: ubuntu-24.04
@@ -88,6 +90,10 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write('VK_ICD_FILENAMES=' + paths[0] + '\n')
           PY
+      - name: Regenerate lower-resolution SGSR SPIR-V from the checked-in GLSL
+        run: |
+          python3 dm/gfx/vk_android/fsr/ndsr_spv.py
+          python3 dm/gfx/vk_android/fsr/ndsr_spv.py --check
       - name: Verify task mesh row snapshots and actual encoder idle CPU/order
         run: python3 -m unittest dm.gfx.tools.tests.test_memu_snapshot_rows dm.gfx.tools.tests.test_encoder_idle_cost dm.tools.tests.test_ocarina_encoder_idle_default -v
       - name: Verify exact layout pool binding cache with actual GPU consumers
@@ -100,6 +106,18 @@ jobs:
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_168_sgsr_sampling.py -v
       - name: Validate SGSR1 pixels against independent Banana reference
         run: python3 -m unittest discover -s dm/tools/tests -p test_ndsr_sgsr_gpu.py -v
+      - name: Save validated generated Vulkan shader bytes for install-over build
+        if: github.ref == 'refs/heads/experiment/ocarina-168-resampling-safety'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dm/gfx/vk_android/vka_ndsr_spv.h
+          if ! git diff --cached --quiet; then
+            git commit -m "gen(vulkan): validated corrected SGSR low-resolution SPIR-V"
+            git push origin HEAD:experiment/ocarina-168-resampling-safety
+          fi
       - name: Exercise real encoder ring ordering and copied arguments
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_classic_encoder_order.py -v
       - name: Compare cached classic passes and dynamic rendering on Vulkan
