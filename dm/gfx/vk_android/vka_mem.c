@@ -1004,7 +1004,7 @@ uint64_t vka_mem_placed_bytes(uint64_t *peak) { pthread_rwlock_rdlock(&g_rw); ui
 int dm_gfx_guest_release(uintptr_t lo, uintptr_t hi) { return vka_mem_release(lo, hi); }
 // File-backed memory pool implementation ported from AnkaNative by EddizEge (MIT).
 // ---------- File-backed pools (DM_MEM_FILEBACK; vka_fileback.h) ----------
-// DM_MEM_FILEBACK=1 (read once; default 0, every game as before; Ocarina of Time 1 in its profile): a memory pool of the kinds DM_MEM_FILEBACK_KINDS names (default
+// DM_MEM_FILEBACK=1 (read once; shader-only backing defaults ON; RAM Saver also enables eligible large texture pools): a memory pool of the kinds DM_MEM_FILEBACK_KINDS names (default
 // "shader"; "shader,texture" adds the large ones) becomes, at nvnMemoryPoolInitialize (hle_nvn.c, after mtl_pool_add), a MAP_SHARED mapping of an unlinked sparse file in
 // TMPDIR (the app's cache folder) instead of private anonymous memory, by the swap the placements use: the range read-only (writers wait in the fault hook and the pre-write
 // hook), the pages that hold data copied into the file's mapping elsewhere, that mapping moved over the range with mremap, the protections put back. Why: such a pool is

@@ -11,6 +11,24 @@ def function(s,sig):
  while d:d+=(s[i]=='{')-(s[i]=='}');i+=1
  return s[a:i]
 class ShaderFilebackDefault(unittest.TestCase):
+ def test_launcher_policies_match_banana_ram_saver_ab(self):
+  activity=(ROOT/'android/app/src/main/java/dev/nxnative/android/GameActivity.java').read_text()
+  settings=(ROOT/'android/app/src/main/java/dev/nxnative/android/GameSettings.java').read_text()
+  prefs=(ROOT/'android/app/src/main/java/dev/nxnative/android/Prefs.java').read_text()
+  # With RAM Saver OFF, shader code is file-backed; ON adds large textures.
+  self.assertIn('env.add("DM_MEM_FILEBACK=1");',activity)
+  self.assertIn('(Prefs.ramSaver(this, id) ? "shader,texture" : "shader")',activity)
+  # No stale Build 174 preference may force Vulkan shader-pool placement.
+  self.assertIn('env.add("DM_VK_PLACE_SHADER_POOLS=0");',activity)
+  self.assertNotIn('Prefs.shaderPoolMemory(',activity)
+  self.assertNotIn('Prefs.shaderPoolMemory(',settings)
+  self.assertNotIn('static boolean shaderPoolMemory(',prefs)
+  # User's explicitly supplied per-game env stays applied last for debugging.
+  self.assertLess(activity.index('env.add("DM_VK_PLACE_SHADER_POOLS=0")'),
+                  activity.index('env.addAll(user);'))
+  # App-private backing directory is passed even without RAM Saver.
+  self.assertIn('"TMPDIR=" + getCacheDir()',activity)
+
  def test_default_is_only_shader_and_explicit_settings_remain_respected(self):
   source=(ROOT/'dm/gfx/vk_android/vka_mem.c').read_text()
   code='''#include <stdio.h>
