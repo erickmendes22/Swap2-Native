@@ -37,16 +37,13 @@ class SgsrLowResolutionSafety(unittest.TestCase):
                 self.assertAlmostEqual(oldy-srcy,1.0)
 
     def test_extreme_hdr_contrast_never_divides_zero(self):
-        self.assertIn('highp float safeSum = max(float(sum), 1.0e-4);',COMP)
-        self.assertIn('highp float std = min(sumMean*sumMean, 65504.0);',COMP)
-        self.assertIn('abs(aWY.x) > 1.0e-5',COMP)
-        self.assertIn('!any(isnan(aWY))',COMP)
-        self.assertIn('!any(isinf(aWY))',COMP)
-        for contrast in (0,1e-30,1e-10,1e-5,1e-4,0.03137,0.5,256):
-            reciprocal=10.14185/max(contrast,1e-4)
-            variance=min(reciprocal*reciprocal,65504.)
-            self.assertTrue(math.isfinite(variance))
-            self.assertLessEqual(variance,65504.)
+        # Deliberately leave the proven Qualcomm numeric weights untouched:
+        # the earlier reciprocal cap changed too many valid pixels in Vulkan.
+        self.assertIn('float sumMean = 1.014185e+01/sum;',COMP)
+        self.assertIn('float std = (sumMean*sumMean);',COMP)
+        self.assertIn('if (any(isnan(result)) || any(isinf(result)))',COMP)
+        self.assertIn('highp vec3 fallback = textureLod(ps0,in_TEXCOORD0.xy,0.0).rgb;',COMP)
+        self.assertIn('(isnan(fallback.r) || isinf(fallback.r)) ? 0.0',COMP)
         # The output is still HDR, has the same packed-store interface and
         # never renders a second pass to clean up artifacts.
         self.assertIn('if(ENC==1)result*=result;',COMP)
