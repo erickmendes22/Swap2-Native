@@ -35,7 +35,8 @@ jobs:
         env:
           MEMU_TEST_VULKAN: '1'
           VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
-          VK_LAYER_VALIDATE_SYNC: '1'
+          VK_VALIDATION_VALIDATE_SYNC: '1'
+          VK_VALIDATION_SYNCVAL_SHADER_ACCESSES_HEURISTIC: '1'
           RESEARCH_SYNC_NEW: '1'
           RESEARCH_RESULTS: page-index-work-counts.json
         run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_memory_research -v
@@ -43,7 +44,8 @@ jobs:
         env:
           MEMU_TEST_VULKAN: '1'
           VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
-          VK_LAYER_VALIDATE_SYNC: '1'
+          VK_VALIDATION_VALIDATE_SYNC: '1'
+          VK_VALIDATION_SYNCVAL_SHADER_ACCESSES_HEURISTIC: '1'
           RESEARCH_SYNC_NEW: '1'
         run: python3 -m unittest dm.gfx.tools.tests.test_selective_transfer_compute_gpu dm.gfx.tools.tests.test_depth_pass_optimizations -v
       - uses: actions/upload-artifact@v4

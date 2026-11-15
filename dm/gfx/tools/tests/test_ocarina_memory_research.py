@@ -83,7 +83,9 @@ static void dispatch_write_barrier(VkCommandBuffer cb,int spill,int indirect,uin
     self.compile(D/'gbar_gpu.c',exe,'-DVKA_NDSR_PURE','-I',str(d),'-I',str(VK),'-I',str(VK/'selftest'),str(VK/'vka_ndsr.c'),'-ldl','-lm')
     env=dict(os.environ,SYNC_COMP=str(spv))
     if os.getenv('RESEARCH_SYNC_NEW')=='1':
-     env.pop('VK_LAYER_ENABLES',None);env['VK_LAYER_VALIDATE_SYNC']='1'
+     env.pop('VK_LAYER_ENABLES',None)
+     env['VK_VALIDATION_VALIDATE_SYNC']='1'
+     env['VK_VALIDATION_SYNCVAL_SHADER_ACCESSES_HEURISTIC']='1'
     else:env['VK_LAYER_ENABLES']='VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT'
     run=subprocess.run([str(exe)],capture_output=True,text=True,env=env,timeout=120)
     self.assertEqual(run.returncode,0,run.stdout+run.stderr)
