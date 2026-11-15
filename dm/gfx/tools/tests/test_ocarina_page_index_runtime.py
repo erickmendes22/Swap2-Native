@@ -57,8 +57,8 @@ class PageIndexContracts(unittest.TestCase):
         # central device loader must initialize them before installing hooks.
         declared = VKA_HEADER.split("#define VKA_DEVICE_FNS(X)", 1)[1].split("#define VKA_DECL(f)", 1)[0]
         hooked = GBAR.split("#define GB_FNS(X)", 1)[1].split("#define GB_DECL(f)", 1)[0]
-        device_functions = set(re.findall(r"X\\((vk\\w+)\\)", declared))
-        hooked_functions = set(re.findall(r"X\\((vk\\w+)\\)", hooked))
+        device_functions = set(re.findall(r"X\((vk\w+)\)", declared))
+        hooked_functions = set(re.findall(r"X\((vk\w+)\)", hooked))
         self.assertTrue(hooked_functions)
         self.assertEqual(set(), hooked_functions - device_functions,
                          "The barrier hook references Vulkan function pointers not declared in vka_fns")
