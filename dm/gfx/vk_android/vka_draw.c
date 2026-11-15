@@ -29,6 +29,7 @@
 static int g_classic_pass;
 static VkCommandBuffer g_cb; static unsigned g_slot; static int g_prof, g_dyn_filter = 1, g_pass_keep = 1, g_vb_filter = 1;   // g_prof: DM_VK_PROF
 static int g_vin_skip = 1;
+static size_t g_pidx_submission_bytes; // snapshot allocation budget, reset at submission start
 static uint64_t g_vin_kept, g_vin_built, g_vb_kept, g_vb_bound;
 uint64_t vka_n_rp;   // render passes the draws opened (vka_exec.c replay statistics)
 static uint64_t g_draws, g_skipped, g_dispatches;
@@ -926,7 +927,6 @@ static int ssbo_desc(uint64_t addr, uint64_t size, VkDescriptorBufferInfo *bi) {
 typedef struct { VkBuffer buf; VkDeviceSize off; } c0_at;
 static struct { int valid; vka_span s; uint64_t k[3]; uint8_t b[DMSH_DRV_SIZE]; } g_dm[VKA_NSTAGE][3];
 static struct { int valid; uint64_t gen; vka_span s; VkDeviceSize bytes; } g_gm;
-static size_t g_pidx_submission_bytes; // per-submission budget for immutable page-index snapshots
 static struct { int valid; uint32_t ref; vka_span s; } g_sm_ref;   // the support buffer with the alpha test's reference (stage_writes)
 static int g_drv_memo = 1, g_drv_stamp = 1; static uint64_t g_dm_hit, g_dm_miss, g_dm_stamp;
 static void drv_memo_reset(void) { for (int st = 0; st < VKA_NSTAGE; st++) for (int b = 0; b < 3; b++) g_dm[st][b].valid = 0; g_gm.valid = 0; g_sm_ref.valid = 0; g_drv_memo = VKA_ENV("DM_VK_DRV_MEMO", 1); g_drv_stamp = VKA_ENV("DM_VK_DRV_STAMP", 1); }
@@ -987,6 +987,7 @@ static int gmem_map(VkDescriptorBufferInfo *bi) {
         if (!extra || !vka_scratch(n + 16, V.sb_align, &s)) return 0;
         extra = 0; bytes = n + 16;
     }
+    if (extra) g_pidx_submission_bytes += extra; // charge even empty indexes, so memory cap is strict
     memset(s.ptr, 0xff, n); memset(s.ptr, 0, DMSH_GMEM_MAP_ENTRY);
     memset(s.ptr + n, 0, 16 + extra); // zero count means original binary search
     static uint64_t lo[VKA_GMEM_MAP_ENTRIES], hi[VKA_GMEM_MAP_ENTRIES], bda[VKA_GMEM_MAP_ENTRIES];
@@ -1018,7 +1019,6 @@ static int gmem_map(VkDescriptorBufferInfo *bi) {
         size_t covered = vka_gmem_pidx_build((uint32_t *)(s.ptr + n),
             4 + extra / 4, lo, hi, k);
         if (covered) {
-            g_pidx_submission_bytes += extra;
             static int announced;
             if (!announced++) VLOG("raw GMEM page index: bounded 2 MiB snapshot, %zu covered 4KiB pages; fallback for uncovered pages and older shaders", covered);
         } // A zero header keeps the original lookup when no pages qualify.
