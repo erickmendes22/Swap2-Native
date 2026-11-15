@@ -5,6 +5,7 @@ import unittest
 import shutil
 import subprocess
 import tempfile
+import sys
 
 R = Path(__file__).resolve().parents[3]
 V = R / "dm/gfx/vk_android"
@@ -96,6 +97,7 @@ int main(void){
         self.assertNotEqual(broken,gate)
         self.compile_fixture(prefix+broken+cases,succeeds=False)
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux memfd alias fixture")
     def test_real_fd_retirement_bytes_protection_and_free_order(self):
         start=MEM.index('static void unplace(const seg_t *sp)')
         unplace=MEM[start:MEM.index('\n}\n',start)+3]
