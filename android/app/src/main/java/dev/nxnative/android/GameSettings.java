@@ -226,15 +226,6 @@ final class GameSettings {
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));
             box.addView(vegetation.view);
-            // Both switches are deliberately experimental. The heavy
-            // fragment option is a subset of Hidden layers off; users can
-            // benchmark each independently without touching shader packs.
-            Ui.Setting hiddenLayers = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Ocultar camadas (teste)", null)
-                    .toggle(a, Prefs.hiddenLayersOff(a, id),
-                            (b, on) -> Prefs.hiddenLayersOff(a, id, on));
-            hiddenLayers.value("Omite os shaders 5684f5e6 e 47eb514f. Pode faltar ceu, neblina ou objetos. Desligado por padrao; reinicie o jogo.");
-            box.addView(hiddenLayers.view);
             Ui.Setting partialTextureUploads = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_partial_upload), null)
                     .toggle(a, Prefs.partialTextureUploads(a, id), (button, on) -> Prefs.partialTextureUploads(a, id, on));
             partialTextureUploads.value(a.getString(R.string.s2_gpu_partial_upload_note));

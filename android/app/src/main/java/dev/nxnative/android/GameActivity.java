@@ -383,7 +383,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 // Approved Ocarina 162/167 cave-OFF renderer uses dynamic rendering.
                 // Never revive the cached classic backend for this title.
                 env.add("DM_VK_CLASSIC_RP=0");
-                env.add("DM_VK_OOT_HIDDEN_LAYERS=" + (Prefs.hiddenLayersOff(this, id) ? "1" : "0"));
+                // Retire unsafe fragment-key omission; old stored preferences are ignored.
+                env.add("DM_VK_OOT_HIDDEN_LAYERS=0");
                 env.add("DM_VK_OOT_SKIP_HEAVY_FS=" + (Prefs.skipHeavyFragment(this, id) ? "1" : "0"));
             }
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_PLANE_LUT=" + (Prefs.vegetationOptimized(this, id) ? "1" : "0"));

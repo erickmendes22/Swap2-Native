@@ -117,12 +117,10 @@ final class Prefs {
     static void keepCaveWalls(Context c, String id, boolean on) {
         of(c).edit().putBoolean(gameKey("oot_keep_cave_walls", id), on).commit();
     }
-    static boolean hiddenLayersOff(Context c, String titleId) {
-        return of(c).getBoolean(gameKey("oot_hidden_layers", titleId), false);
-    }
-    static void hiddenLayersOff(Context c, String titleId, boolean on) {
-        of(c).edit().putBoolean(gameKey("oot_hidden_layers", titleId), on).commit();
-    }
+    // Retired after the 169 phone A/B: stale saved ON values must not
+    // remove live colour/depth draws after install-over.
+    static boolean hiddenLayersOff(Context c, String titleId) { return false; }
+    static void hiddenLayersOff(Context c, String titleId, boolean on) { /* retired */ }
     // Retired destructive diagnostic; ignore stale persisted beta state.
     static boolean skipHeavyFragment(Context c, String titleId) { return false; }
     static void skipHeavyFragment(Context c, String titleId, boolean on) { /* retired */ }

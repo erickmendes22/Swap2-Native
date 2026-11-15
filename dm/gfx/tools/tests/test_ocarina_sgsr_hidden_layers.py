@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ocarina opt-in layer omissions and internal SGSR1 source-level guards.
+"""Ocarina retired layer omissions and internal SGSR1 source-level guards.
 
 The actual new compute SPIR-V must ALSO pass glslc + spirv-val in APK CI.
 """
@@ -41,14 +41,16 @@ int main(void) {
                             "-O2", "-I", str(VK), str(src), "-o", str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
-    def test_skips_before_expensive_draw_setup(self):
+    def test_layer_omission_retired_in_real_draw_path(self):
         text = (VK / "vka_draw.c").read_text()
         start = text.index("void vka_draw(vka_dstate")
         end = text.index("void vka_dispatch(", start)
         draw = text[start:end]
-        self.assertEqual(draw.count("if (oot_skip_hidden_fs(sh[1])) SKIPQ();"), 2)
-        self.assertLess(draw.index("if (oot_skip_hidden_fs(sh[1]))"), draw.index("walk_all(d, sh);"))
-        self.assertIn('strcmp(DM_GAME_ID, "0400486024DEC000")', text)
+        self.assertNotIn("oot_skip_hidden_fs(", text)
+        self.assertNotIn("VKA_OOT_FS_HEAVY", draw)
+        self.assertNotIn("VKA_OOT_FS_LAYER2", draw)
+        self.assertIn("preserve every valid draw".lower(),
+                      text.lower())
 
     def test_sgsr_full_n_ds_replacement_and_fallback(self):
         shader = (VK / "fsr/ndsr_easu.comp").read_text()
@@ -74,18 +76,18 @@ int main(void) {
         self.assertIn('out.add("DM_VK_OOT_SGSR_CHAIN=" +', options)
         self.assertIn("DM_VK_NDSR=fsr", profile)
 
-    def test_hidden_layers_remains_opt_in_but_heavy_fragment_beta_retired(self):
+    def test_retired_layer_preference_cannot_restore_artifacts(self):
         pref = (JAVA / "Prefs.java").read_text()
         launch = (JAVA / "GameActivity.java").read_text()
         ui = (JAVA / "GameSettings.java").read_text()
-        self.assertIn('gameKey("oot_hidden_layers", titleId), false', pref)
+        self.assertIn('static boolean hiddenLayersOff(Context c, String titleId) { return false; }', pref)
+        self.assertNotIn('gameKey("oot_hidden_layers", titleId), false', pref)
+        self.assertIn('env.add("DM_VK_OOT_HIDDEN_LAYERS=0");', launch)
+        self.assertIn('env.add("DM_VK_OOT_SKIP_HEAVY_FS="', launch)
         self.assertIn('static boolean skipHeavyFragment(Context c, String titleId) { return false; }', pref)
-        self.assertNotIn('gameKey("oot_skip_heavy_fs", titleId), false', pref)
-        for key in ("DM_VK_OOT_HIDDEN_LAYERS", "DM_VK_OOT_SKIP_HEAVY_FS"):
-            self.assertIn(key, launch)
-        self.assertIn("Prefs.hiddenLayersOff(a, id)", ui)
-        self.assertNotIn("Prefs.skipHeavyFragment(a, id)", ui)
-        self.assertNotIn('"Descartar fragment shader pesado (teste)"', ui)
+        self.assertNotIn('Prefs.hiddenLayersOff(a, id)', ui)
+        self.assertNotIn('"Ocultar camadas (teste)"', ui)
+        self.assertNotIn('Prefs.skipHeavyFragment(a, id)', ui)
 
 
 if __name__ == "__main__":
