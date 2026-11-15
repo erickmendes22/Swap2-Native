@@ -74,6 +74,29 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         self.assertIn("case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);", EXEC)
         self.assertIn("default: if (g_cb && !vka_state_op(&S.d, h.op, a)) vka_rp_end()", EXEC)
 
+    def test_deferred_uniform_precopy_never_relaxes_guest_or_storage_writes(self):
+        # This is an explicit Vulkan writer/reader dependency, not a barrier
+        # deletion. Its producer scope includes *all* graphics reads (WAR),
+        # with attachment write availability, and every possible consumer.
+        self.assertIn('void vka_ub_flush_pass(int attachment_only)', EXEC)
+        self.assertIn('const int scoped_precopy = R.awrite && !R.swrite && !R.bar_pending && !full;', DRAW)
+        self.assertIn('vka_ub_flush_pass(scoped_precopy);', DRAW)
+        self.assertIn('VKA_ENV("DM_VK_OOT_UB_SCOPED_PRECOPY", 1)', EXEC)
+        flush = function(EXEC, "void vka_ub_flush_pass(")
+        self.assertIn('VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT', flush)
+        self.assertIn('VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT', flush)
+        self.assertIn('VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT', flush)
+        self.assertIn('VK_PIPELINE_STAGE_ALL_COMMANDS_BIT', flush)
+        self.assertIn('VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT', flush)
+        self.assertIn('} else vka_barrier(g_cb);', flush)
+        self.assertIn('ub_flush(&g_inline_ub);', flush)
+        self.assertIn('const int reused = postub', DRAW)
+        # Explicit NVN barriers and non-graphics producers still use the
+        # existing complete fallback; their semantics are not guessed.
+        self.assertIn('g_rp_force_full || had_clears || vka_nan_on()', DRAW)
+        self.assertIn('R.swrite && VKA_ENV("DM_VK_OOT_FPS_BOOST"', DRAW)
+        self.assertIn('g_ub_scoped_before_copy++', EXEC)
+
     def test_full_destination_consumer_set(self):
         # All Vulkan command types that could touch the guest buffer still
         # fall inside ALL_COMMANDS with both read and write destination access.
