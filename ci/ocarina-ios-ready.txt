@@ -196,3 +196,8 @@ Ocarina opt-in page index integration - 2026-11-15:
 - Both on-device shader translation (PackService) and selected hot-shader builder enable page-index-capable compilation; user toggle controls whether the renderer populates the index. Previously prepared shaders remain compatible and are not silently rebuilt.
 - CPU differential reference passed 200000 cases; extended 8191-pool host stress passed 2000000 accesses with no result mismatches. Real game-shader correctness and Adreno FPS improvement remain unmeasured.
 - APK workflow now gates on compiler source integration checks, sanitizer host test, translator build and Android native syntax. Do not publish on validation failure; preserve prior APK signer.
+
+Build retry after failed Actions 43774239120, 2026-11-15:
+- Fixed missing vkCmdResetQueryPool/vkCmdBeginQuery/vkCmdEndQuery/vkCmdWriteTimestamp members in VKA_DEVICE_FNS, which loads their pointers via vkGetDeviceProcAddr before vka_gbar_install.
+- Added a source regression to detect GB_FNS commands missing in the central Vulkan device dispatch table during the validation phase, ahead of full APK compilation.
+- Keep previous APK package, signing, page-index opt-in and original shader fallback. Build result and physical GPU performance must be verified, not assumed.
