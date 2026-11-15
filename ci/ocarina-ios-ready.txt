@@ -172,3 +172,11 @@ Build196 GSR2 packed-output correction after RGB screen corruption 2026-11-15.
 - Clamp nonfinite output against current scene colour before pack. Use exact SGSR1 half-float quantization.
 - SPIR-V validator plus Android AArch64 native build and original signer; do not change 177 RAM saver, 178 vegetation, VRS choice or shader ABI.
 - The phone is required to verify that image corruption is gone and GSR2 genuinely improves quality; do not claim success just because GitHub CI passes.
+
+Build197 2026-11-15: NVN image view source fix for full-frame temporal GSR2 corruption.
+- Build196 log 0400486024DEC000-20261115-170530.log confirms GSR2 runs 960x540->1280x720, 120 calls, 22 resets, yet user still sees full RGB noise. Frame mode VRS 2x1, driver Adreno 891.14. Cross-format blit was eliminated in 196 and did not help.
+- Actual four-pass Qualcomm GSR2 shaders exercised on Mesa Vulkan llvmpipe with native packed B10G11R11 source and coloured 40x30 hard-edge tiles: 0/165 blocks corrupt. Normal and KHR push descriptors: both passed. Second temporal frame with non-reset ping-pong history: passed. No claim of Adreno graphics correctness from software tests.
+- Found a concrete divergence from the existing working SGSR1 pipeline: GSR2 sampled the underlying VkImage by vka_view(src->f.vk, mip0, identity swizzle) instead of the guest NVN registered texture view. This ignores set_format/set_levels/set_swizzle metadata and original sampler, potentially poisoning all temporal colour stages. Now use vka_tex_id_view_rec(srcid, srcdim, sampled) and vka_samp_id_rec(samplerid) with original descriptor IDs, preserving original fail-closed fallback.
+- Android AArch64 syntax CI and 9 asset/structural regression tests passed in research branch; signed APK build should preserve 177 RAM saver, 178 vegetation, VRS config and precompiled 42k shader ABI.
+- Require versionCode 197 and existing test signer a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad; install over 196, do not reprepare shaders.
+- This is a targeted hypothesis supported by source-level mismatch, not a proven visual repair until RedMagic on-device test.
