@@ -42,9 +42,12 @@ class DeferredUniformTests(unittest.TestCase):
 
     def test_flush_is_outside_renderpass_and_dependent(self):
         a=DRAW.index('vk.vkCmdEndRendering(g_cb);')
-        b=DRAW.index('vka_ub_flush_pass();',a)
+        b=DRAW.index('vka_ub_flush_pass(scoped_precopy);',a)
         self.assertLess(a,b)
-        self.assertIn('vka_barrier(g_cb);\n    for (int i = 0; i < g_ub_np; i++)',EXEC)
+        self.assertIn('if (attachment_only && !strcmp(DM_GAME_ID, "0400486024DEC000")',EXEC)
+        self.assertIn('VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT',EXEC)
+        self.assertIn('} else vka_barrier(g_cb);',EXEC)
+        self.assertIn('for (int i = 0; i < g_ub_np; i++)',EXEC)
         self.assertIn('buf_update(&g_inline_ub, w->bytes, w->addr, w->size);',EXEC)
         self.assertIn('ub_flush(&g_inline_ub);',EXEC)
         self.assertIn('g_ub_np = 0; g_ub_seq++;',EXEC)
