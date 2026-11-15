@@ -9,7 +9,8 @@
 #include "vka_pool_bind_cache.h"
 #include "vka_selftest_spv.h"   // SPV_MESHCOUNT_COMP (mesh_ind_args)
 #include "vka_ndsr.h"
-#include "vka_ndsr_sampler.h"           // vka_ndsr_pipeline (vka_dispatch)
+#include "vka_ndsr_sampler.h"
+#include "vka_hidden_layers.h"           // vka_ndsr_pipeline (vka_dispatch)
 #include "../nvn/nvn_mtl.h"
 #include "../../host/plat/plat.h"
 #include "vka_memu_abi.h"
@@ -1811,10 +1812,27 @@ static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
         VLOG("lower vegetation detail: %llu mesh draws omitted", (unsigned long long)omitted);
     return 1;
 }
-// Ocarina 170: never discard a draw merely by fragment shader key. Real
-// gameplay demonstrated missing visual contributions with the old two-shader
-// "Ocultar camadas" shortcut. It could drop depth/colour needed by later
-// passes, independent of the NDSR/SGSR upscaler. Preserve every valid draw.
+// Two independent Ocarina diagnostics for the unsafe historical two-shader
+// omission. Users can now test A and B separately, with BOTH OFF by default.
+// This is NOT a claimed visibility optimization: each draw may write depth,
+// fog, colour or texture data used in later passes. Do not enable both
+// automatically, and keep the normal shader path untouched.
+static int oot_skip_one_fs(const vka_shader *fs) {
+    if (!fs || (fs->key != VKA_OOT_FS_HEAVY &&
+                fs->key != VKA_OOT_FS_LAYER2) ||
+        strcmp(DM_GAME_ID, "0400486024DEC000")) return 0;
+    int a = VKA_ENV("DM_VK_OOT_SKIP_HEAVY_FS", 0) != 0;
+    int b = VKA_ENV("DM_VK_OOT_SKIP_LAYER2_FS", 0) != 0;
+    if (!vka_oot_skip_fs_individual(fs->key, a, b)) return 0;
+    static _Atomic uint64_t skip_a, skip_b;
+    uint64_t n = fs->key == VKA_OOT_FS_HEAVY ?
+        atomic_fetch_add(&skip_a, 1) + 1 : atomic_fetch_add(&skip_b, 1) + 1;
+    if (n == 1 || !(n & 4095))
+        VLOG("Ocarina test: omit ONLY fragment shader %016llx, count %llu; "
+             "may remove depth, colour, lighting, fog or scenery; revert switch if artifacts appear",
+             (unsigned long long)fs->key, (unsigned long long)n);
+    return 1;
+}
 void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc, int has_sc, const p_draw *dw, const p_draw_idx *di) {
     if (!g_cb || !draws_on() || !statics()) SKIPQ();
     if (!d->inited) vka_dstate_reset(d);
@@ -1871,6 +1889,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
             }
         }
         if (bad) SKIPQ();   // a refused or missing shader (logged when it was made)
+        if (oot_skip_one_fs(sh[1])) SKIPQ();
         if (!sh[7]) SKIP("mesh draw with no mesh shader bound: skipped");
         if (d->bst[6] && d->bst[6] != mp) VRED_ONCE("mesh draw: a program bound at the task stage bit apart from the mesh program; drawn with the mesh program's own task shader, if any");
         // A pixel shader with per-primitive inputs reads what its mesh shader writes per primitive (Vulkan matches only equally decorated interfaces). The other way round
@@ -1907,6 +1926,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     } else {
         for (int st = 0; st < 5; st++) if (!resolve(d->bst[st], st, &sh[st], &bad)) SKIP("draw skipped: no shader library");
         if (bad) SKIPQ();   // a refused or missing shader (logged when it was made)
+        if (oot_skip_one_fs(sh[1])) SKIPQ();
         if (!sh[0]) SKIP("draw with no vertex shader bound: skipped");
         if (sh[1] && (sh[1]->e->flags & DMSH_VK_F_MESH_PRIM)) SKIP("pixel shader %016llx reads per-primitive mesh outputs and is drawn with a vertex shader: skipped", (unsigned long long)sh[1]->key);
         if (d->rast_discard && d->tf_on) SKIP("transform feedback is not on Vulkan yet (F_TF): the draw is skipped");

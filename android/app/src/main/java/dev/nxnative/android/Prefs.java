@@ -121,6 +121,15 @@ final class Prefs {
     // remove live colour/depth draws after install-over.
     static boolean hiddenLayersOff(Context c, String titleId) { return false; }
     static void hiddenLayersOff(Context c, String titleId, boolean on) { /* retired */ }
+    // New keys: never inherit the broken combined "hidden layers" preference.
+    static boolean skipFsA(Context c, String id) { return OCARINA_TITLE.equals(id) &&
+        of(c).getBoolean(gameKey("oot_fs_a_diagnostic", id), false); }
+    static void skipFsA(Context c, String id, boolean on) {
+        of(c).edit().putBoolean(gameKey("oot_fs_a_diagnostic", id), on).commit(); }
+    static boolean skipFsB(Context c, String id) { return OCARINA_TITLE.equals(id) &&
+        of(c).getBoolean(gameKey("oot_fs_b_diagnostic", id), false); }
+    static void skipFsB(Context c, String id, boolean on) {
+        of(c).edit().putBoolean(gameKey("oot_fs_b_diagnostic", id), on).commit(); }
     // Retired destructive diagnostic; ignore stale persisted beta state.
     static boolean skipHeavyFragment(Context c, String titleId) { return false; }
     static void skipHeavyFragment(Context c, String titleId, boolean on) { /* retired */ }

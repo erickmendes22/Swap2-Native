@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ocarina retired layer omissions and internal SGSR1 source-level guards.
+"""Ocarina individually testable layer omissions and internal SGSR1 source-level guards.
 
 The actual new compute SPIR-V must ALSO pass glslc + spirv-val in APK CI.
 """
@@ -29,6 +29,15 @@ int main(void) {
     assert(vka_oot_skip_fs_key(VKA_OOT_FS_HEAVY, 1, 1));
     assert(vka_oot_skip_fs_key(VKA_OOT_FS_LAYER2, 1, 1));
     assert(!vka_oot_skip_fs_key(0xABCDEF1234567890ULL, 1, 1));
+    assert(!vka_oot_skip_fs_individual(VKA_OOT_FS_HEAVY, 0, 0));
+    assert(!vka_oot_skip_fs_individual(VKA_OOT_FS_LAYER2, 0, 0));
+    assert(vka_oot_skip_fs_individual(VKA_OOT_FS_HEAVY, 1, 0));
+    assert(!vka_oot_skip_fs_individual(VKA_OOT_FS_LAYER2, 1, 0));
+    assert(!vka_oot_skip_fs_individual(VKA_OOT_FS_HEAVY, 0, 1));
+    assert(vka_oot_skip_fs_individual(VKA_OOT_FS_LAYER2, 0, 1));
+    assert(vka_oot_skip_fs_individual(VKA_OOT_FS_HEAVY, 1, 1));
+    assert(vka_oot_skip_fs_individual(VKA_OOT_FS_LAYER2, 1, 1));
+    assert(!vka_oot_skip_fs_individual(0xABCDEF1234567890ULL, 1, 1));
     return 0;
 }
 '''
@@ -47,10 +56,12 @@ int main(void) {
         end = text.index("void vka_dispatch(", start)
         draw = text[start:end]
         self.assertNotIn("oot_skip_hidden_fs(", text)
-        self.assertNotIn("VKA_OOT_FS_HEAVY", draw)
-        self.assertNotIn("VKA_OOT_FS_LAYER2", draw)
-        self.assertIn("preserve every valid draw".lower(),
-                      text.lower())
+        self.assertEqual(draw.count("if (oot_skip_one_fs(sh[1])) SKIPQ();"), 2)
+        self.assertIn('DM_VK_OOT_SKIP_HEAVY_FS', text)
+        self.assertIn('DM_VK_OOT_SKIP_LAYER2_FS', text)
+        self.assertIn('vka_oot_skip_fs_individual(fs->key, a, b)', text)
+        self.assertIn('VKA_ENV("DM_VK_OOT_SKIP_HEAVY_FS", 0)', text)
+        self.assertIn('VKA_ENV("DM_VK_OOT_SKIP_LAYER2_FS", 0)', text)
 
     def test_sgsr_full_n_ds_replacement_and_fallback(self):
         shader = (VK / "fsr/ndsr_easu.comp").read_text()
@@ -84,6 +95,13 @@ int main(void) {
         self.assertNotIn('gameKey("oot_hidden_layers", titleId), false', pref)
         self.assertIn('env.add("DM_VK_OOT_HIDDEN_LAYERS=0");', launch)
         self.assertIn('env.add("DM_VK_OOT_SKIP_HEAVY_FS="', launch)
+        self.assertIn('env.add("DM_VK_OOT_SKIP_LAYER2_FS="', launch)
+        self.assertIn('Prefs.skipFsA(this, id)', launch)
+        self.assertIn('Prefs.skipFsB(this, id)', launch)
+        self.assertIn('getBoolean(gameKey("oot_fs_a_diagnostic", id), false)', pref)
+        self.assertIn('getBoolean(gameKey("oot_fs_b_diagnostic", id), false)', pref)
+        self.assertIn('Prefs.skipFsA(a, id)', ui)
+        self.assertIn('Prefs.skipFsB(a, id)', ui)
         self.assertIn('static boolean skipHeavyFragment(Context c, String titleId) { return false; }', pref)
         self.assertNotIn('Prefs.hiddenLayersOff(a, id)', ui)
         self.assertNotIn('"Ocultar camadas (teste)"', ui)
