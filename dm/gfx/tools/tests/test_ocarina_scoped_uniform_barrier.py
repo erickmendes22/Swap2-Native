@@ -79,7 +79,11 @@ class TestUniformUpdateTransferBarrier(unittest.TestCase):
         # deletion. Its producer scope includes *all* graphics reads (WAR),
         # with attachment write availability, and every possible consumer.
         self.assertIn('void vka_ub_flush_pass(int attachment_only)', EXEC)
-        self.assertIn('const int scoped_precopy = R.awrite && !R.swrite && !R.bar_pending && !full;', DRAW)
+        self.assertIn('const int scoped_precopy = R.awrite && !R.swrite && !full;', DRAW)
+        # A retained barrier has already been proved free of shader
+        # memory writes, so it can be covered by attachment availability.
+        self.assertIn('if (R.swrite || !VKA_ENV("DM_VK_BAR_KEEP", 0)) return 0;', DRAW)
+        self.assertIn('R.bar_pending = 1;', DRAW)
         self.assertIn('vka_ub_flush_pass(scoped_precopy);', DRAW)
         self.assertIn('VKA_ENV("DM_VK_OOT_UB_SCOPED_PRECOPY", 1)', EXEC)
         flush = function(EXEC, "void vka_ub_flush_pass(")
