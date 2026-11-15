@@ -62,6 +62,26 @@ class Gsr2Assets(unittest.TestCase):
         self.assertIn('out.add("DM_VK_OOT_GSR2=" + (ootGsr2 ? 1 : 0))',graphics)
         self.assertNotIn("if (OcarinaRenderProfile.direct720(Prefs.renderProfile(a,id)))",game_settings)
 
+    def test_actual_194_shader_key_does_not_bypass_gsr2(self):
+        src=(ROOT/"dm/gfx/vk_android/vka_draw.c").read_text()
+        run=(ROOT/"dm/gfx/vk_android/vka_gsr2.c").read_text()
+        self.assertIn("04135bb812a0d66e",src)
+        self.assertIn("vka_ndsr_match(sh[5]->e,sh[5]->b",src)
+        self.assertNotIn('sh[5]->key==UINT64_C(0xd99fbeeb53d38847) ||',src)
+        self.assertIn("(src->w==640 && src->h==360)",run)
+        self.assertIn("(src->w==960 && src->h==540)",run)
+        self.assertIn('VLOG("Ocarina GSR2 NDSR candidate:',src)
+
+    def test_optical_flow_uses_pixel_units_once(self):
+        flow=(D/"ocarina_flow.comp").read_text()
+        run=(ROOT/"dm/gfx/vk_android/vka_gsr2.c").read_text()
+        conv=(D/"gsr2_convert.comp").read_text()
+        up=(D/"gsr2_upscale.comp").read_text()
+        self.assertIn("vec4(vec2(delta),reject,0.0)",flow)
+        self.assertIn("{1.0f/iw,1.0f/ih},1.0f,reset",run)
+        self.assertIn("vec2 motion = -2.0 * velocity.xy * p.mvs;",conv)
+        self.assertIn("-0.5 * Motion.x + Hruv.x",up)
+
     def test_generator_matches_on_gpu_runner_if_available(self):
         sys.path.insert(0, str(D))
         import gsr2_spv

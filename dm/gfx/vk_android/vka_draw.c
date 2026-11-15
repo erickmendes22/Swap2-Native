@@ -2379,11 +2379,13 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     // no guest motion vectors or depth are invented.
     if (!dp->ind && !vka_gp_active && !scene_linear &&
         !strcmp(DM_GAME_ID,"0400486024DEC000") &&
-        VKA_ENV("DM_VK_OOT_GSR2",0) &&
-        (sh[5]->key==UINT64_C(0xd99fbeeb53d38847) ||
-         sh[5]->key==UINT64_C(0xfa3033d05c0a41d6) ||
-         sh[5]->key==UINT64_C(0xb106afba1a18faa9) ||
-         sh[5]->key==UINT64_C(0x7c511cc23ff85d14))) {
+        VKA_ENV("DM_VK_OOT_GSR2",0)) {
+        // Build194 did not execute GSR2 at 640x360: the actual internal
+        // NDSR compute key was 04135bb812a0d66e, absent from its legacy
+        // four-key whitelist. Match the NDSR *interface* instead: exact
+        // one sampled colour, one storage output, push bank and weights.
+        // The GPU runner additionally accepts only 640/960 -> 1280x720.
+        // This remains opt-in and Ocarina-only, not a generic HMMA patch.
         uint16_t tx=0,im=0,bk=0;
         if (vka_ndsr_match(sh[5]->e,sh[5]->b,&tx,&im,&bk)) {
             int srcid=0,dstid=0;
@@ -2395,6 +2397,18 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
             if(srcid>0 && dstid>0){
                 vka_img *source=vka_tex_id_img(srcid,g_cb);
                 vka_img *output=vka_tex_id_img(dstid,g_cb);
+                if(source && output &&
+                   ((source->w==640 && source->h==360) ||
+                    (source->w==960 && source->h==540)) &&
+                   output->w==1280 && output->h==720) {
+                    static _Atomic int candidate_logged;
+                    if(!atomic_exchange(&candidate_logged,1))
+                        VLOG("Ocarina GSR2 NDSR candidate: shader=%016llx input %ux%u fmt=%d flags=%#x -> %ux%u fmt=%d flags=%#x (source/dest initialized %d/%d); trying four-pass temporal",
+                             (unsigned long long)sh[5]->key,
+                             source->w,source->h,(int)source->f.vk,source->usage,
+                             output->w,output->h,(int)output->f.vk,output->usage,
+                             source->inited,output->inited);
+                }
                 if(vka_gsr2_try(g_cb,source,output,1,vka_frame())){
                     d->b.dispatch[0]=(uint32_t)dp->x;
                     d->b.dispatch[1]=(uint32_t)dp->y;

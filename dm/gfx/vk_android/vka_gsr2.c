@@ -191,8 +191,8 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
        !src->inited || !dst->inited || src->samples!=1 || dst->samples!=1 ||
        !(src->usage&VK_IMAGE_USAGE_SAMPLED_BIT) ||
        !(dst->usage&VK_IMAGE_USAGE_TRANSFER_DST_BIT) ||
-       dst->w!=1280 || dst->h!=720 || src->w>960 || src->h>540 ||
-       src->w<320 || src->h<180 ||
+       dst->w!=1280 || dst->h!=720 ||
+       !((src->w==640 && src->h==360) || (src->w==960 && src->h==540)) ||
        (uint64_t)src->w*dst->h!=(uint64_t)src->h*dst->w)
         return 0;
     VkFormatProperties sp,dp;
@@ -231,8 +231,12 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     int p_luma=G.ping?W_LUMA1:W_LUMA0,c_luma=next?W_LUMA1:W_LUMA0;
     int p_hist=G.history_ping?W_HISTORY1:W_HISTORY0;
     int c_hist=hist?W_HISTORY1:W_HISTORY0;
+    // The flow shader stores real frame-to-frame displacement in INPUT
+    // texels. Qualcomm's convert pass normalizes pixel motion by 1/iw,1/ih
+    // and maps it to NDC (-2*). Treating the displacement as already
+    // normalized AND leaving mvs=1 made motion effectively zero/incorrect.
     gsr_pc_convert pc={{(float)iw,(float)ih},{1.0f/iw,1.0f/ih},
-        {1.0f,1.0f},1.0f,reset?1.0f:0.0f,{0,0},
+        {1.0f/iw,1.0f/ih},1.0f,reset?1.0f:0.0f,{0,0},
         1.0f,0.35f,0.3f,{0}};
     float area=(float)ow*(float)oh/((float)iw*(float)ih);
     float history_scale=fminf(area*area*area,10.0f);

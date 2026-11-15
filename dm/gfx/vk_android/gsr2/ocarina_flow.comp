@@ -63,5 +63,7 @@ void main() {
     float reject=clamp((best-0.012)*15.0,0.0,1.0);
     if(any(lessThan(q+delta,ivec2(0)))||any(greaterThanEqual(q+delta,ivec2(p.renderSize))))
         reject=1.0;
-    imageStore(Flow,q,vec4(vec2(delta)*p.renderSizeRcp,reject,0.0));
+    // Pixel displacement, not UV: GSR2 convert multiplies by
+    // (-2/iw,-2/ih); upscale uses PrevUV=uv-0.5*Motion=uv+delta/size.
+    imageStore(Flow,q,vec4(vec2(delta),reject,0.0));
 }
