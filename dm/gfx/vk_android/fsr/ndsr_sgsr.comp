@@ -179,7 +179,8 @@ void reconstruct(uvec2 pixel)
             // must never overflow mediump into INF; INF*0 produces NaNs,
             // which become bright invalid B10G11R11 pixels after packing.
             // On ordinary contrast this is byte-identical to the old formula.
-            highp float sumMean = 1.014185e+01/max(highp float(sum),1.0e-4);
+            highp float safeSum = max(float(sum), 1.0e-4);
+            highp float sumMean = 1.014185e+01/safeSum;
             highp float std = min(sumMean*sumMean, 65504.0);
 
 #if defined(UseEdgeDirection)
