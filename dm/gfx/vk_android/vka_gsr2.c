@@ -15,7 +15,7 @@
 enum { P_FLOW, P_CONVERT, P_ACTIVATE, P_UPSCALE, P_COUNT };
 enum { W_FLOW, W_YCC0, W_YCC1, W_MDA0, W_MDA1, W_LUMA0, W_LUMA1,
        W_MDC, W_HISTORY0, W_HISTORY1, W_OUTPUT, W_COUNT };
-typedef struct { VkImage img; VkImageView view; VkDeviceMemory mem; uint32_t w,h; } gsr_img;
+typedef struct { VkImage img; VkImageView view; VkDeviceMemory mem; uint32_t w,h; VkFormat fmt; } gsr_img;
 static struct {
     int ready, last_mode;
     VkDescriptorSetLayout ds;
@@ -36,8 +36,8 @@ static void image_free(gsr_img *w) {
 }
 static void retired_free(void *p) { gsr_img *w=p; image_free(w); free(w); }
 
-static int image_get(VkCommandBuffer cb, gsr_img *w, uint32_t width, uint32_t height) {
-    if (w->img && w->w==width && w->h==height) return 1;
+static int image_get(VkCommandBuffer cb, gsr_img *w, uint32_t width, uint32_t height, VkFormat fmt) {
+    if (w->img && w->w==width && w->h==height && w->fmt==fmt) return 1;
     if (w->img) {
         // Previous submissions may still reference the old image. Retire only
         // after the current recording's next GPU timeline fence.
@@ -49,7 +49,7 @@ static int image_get(VkCommandBuffer cb, gsr_img *w, uint32_t width, uint32_t he
     memset(w,0,sizeof *w);
     VkImageCreateInfo ci={VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType=VK_IMAGE_TYPE_2D,
-        .format=VK_FORMAT_R16G16B16A16_SFLOAT,
+        .format=fmt,
         .extent={width,height,1},.mipLevels=1,.arrayLayers=1,
         .samples=VK_SAMPLE_COUNT_1_BIT,.tiling=VK_IMAGE_TILING_OPTIMAL,
         .usage=VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT|
@@ -65,14 +65,14 @@ static int image_get(VkCommandBuffer cb, gsr_img *w, uint32_t width, uint32_t he
     if(!r)r=vk.vkBindImageMemory(V.dev,w->img,w->mem,0);
     VkImageViewCreateInfo vi={VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image=w->img,.viewType=VK_IMAGE_VIEW_TYPE_2D,
-        .format=VK_FORMAT_R16G16B16A16_SFLOAT,
+        .format=fmt,
         .subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}};
     if(!r)r=vk.vkCreateImageView(V.dev,&vi,NULL,&w->view);
     if(r) {
         VRED_ONCE("Ocarina GSR2 work image %ux%u creation error %d; preserve original NDSR",width,height,r);
         image_free(w);return 0;
     }
-    w->w=width;w->h=height;
+    w->w=width;w->h=height;w->fmt=fmt;
     vka_img_barrier(cb,w->img,VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_GENERAL);
     VkClearColorValue zero={{0,0,0,0}};
     VkImageSubresourceRange range={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
@@ -87,11 +87,14 @@ static int init_pipeline(void) {
         VRED_ONCE("Ocarina GSR2 requires push descriptors, not advertised; original SGSR retained");
         return 0;
     }
-    VkFormatProperties fp;
+    VkFormatProperties fp, packfp;
     vk.vkGetPhysicalDeviceFormatProperties(V.pd,VK_FORMAT_R16G16B16A16_SFLOAT,&fp);
+    vk.vkGetPhysicalDeviceFormatProperties(V.pd,VK_FORMAT_R32_UINT,&packfp);
     if(!(fp.optimalTilingFeatures&VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
-       !(fp.optimalTilingFeatures&VK_FORMAT_FEATURE_BLIT_SRC_BIT)) {
-        VRED_ONCE("Ocarina GSR2: RGBA16F storage/blit source unsupported; original SGSR retained");
+       !(fp.optimalTilingFeatures&VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) ||
+       !(packfp.optimalTilingFeatures&VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
+       !(packfp.optimalTilingFeatures&VK_FORMAT_FEATURE_TRANSFER_SRC_BIT)) {
+        VRED_ONCE("Ocarina GSR2: RGBA16F intermediate or R32_UINT packed transfer unsupported; original SGSR retained");
         return 0;
     }
     VkDescriptorSetLayoutBinding bindings[6];
@@ -138,7 +141,7 @@ static int init_pipeline(void) {
         return 0;
     }
     G.ready=1;
-    VLOG("Ocarina GSR2 four compute passes ready: optical-flow, convert, activate, temporal-upscale (opt-in); no game depth or zero motion fabricated");
+    VLOG("Ocarina GSR2 four compute passes ready (packed R32UI copy): optical-flow, convert, activate, temporal-upscale; no cross-format blit or fake depth/motion");
     return 1;
 }
 
@@ -191,6 +194,10 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
        !src->inited || !dst->inited || src->samples!=1 || dst->samples!=1 ||
        !(src->usage&VK_IMAGE_USAGE_SAMPLED_BIT) ||
        !(dst->usage&VK_IMAGE_USAGE_TRANSFER_DST_BIT) ||
+       // Input/output in the recorded Zelda path use exactly 32-bit
+       // B10G11R11_UFLOAT pixels; copying packed 32-bit words is safe.
+       src->f.vk!=VK_FORMAT_B10G11R11_UFLOAT_PACK32 ||
+       dst->f.vk!=VK_FORMAT_B10G11R11_UFLOAT_PACK32 ||
        dst->w!=1280 || dst->h!=720 ||
        !((src->w==640 && src->h==360) || (src->w==960 && src->h==540)) ||
        (uint64_t)src->w*dst->h!=(uint64_t)src->h*dst->w)
@@ -199,8 +206,8 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     vk.vkGetPhysicalDeviceFormatProperties(V.pd,src->f.vk,&sp);
     vk.vkGetPhysicalDeviceFormatProperties(V.pd,dst->f.vk,&dp);
     if(!(sp.optimalTilingFeatures&VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) ||
-       !(dp.optimalTilingFeatures&VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
-        VRED_ONCE("Ocarina GSR2: source sample/dest blit feature unavailable; SGSR retained");
+       !(dp.optimalTilingFeatures&VK_FORMAT_FEATURE_TRANSFER_DST_BIT)) {
+        VRED_ONCE("Ocarina GSR2: source sample/dest packed transfer feature unavailable; SGSR retained");
         return 0;
     }
     if(!init_pipeline() || G.last_frame==frame)return 0;
@@ -215,7 +222,10 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     }
     int reset=(G.last_frame==UINT64_MAX || frame!=G.last_frame+1);
     for(int k=0;k<W_COUNT;k++){
-        int built=image_get(cb,&G.work[k],ww[k],hh[k]);
+        // Final output stores a packed B10G11R11 word through an R32_UINT
+        // storage image; all other GSR2 resources remain true RGBA16F.
+        VkFormat fmt=k==W_OUTPUT?VK_FORMAT_R32_UINT:VK_FORMAT_R16G16B16A16_SFLOAT;
+        int built=image_get(cb,&G.work[k],ww[k],hh[k],fmt);
         if(!built)return 0;
         reset|=built==2;
     }
@@ -261,14 +271,20 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     {VkImageView in[4]={w[p_hist].view,w[W_MDC].view,w[c_ycc].view,w[c_ycc].view};
      VkSampler sm[4]={G.linear,G.linear,G.nearest,G.nearest};
      pass(cb,P_UPSCALE,in,sm,w[c_hist].view,w[W_OUTPUT].view,&up,ow,oh);}
-    // The NDSR target is an actual game image and will receive overlays/UI.
-    // Blitting from RGBA16F avoids assuming B10G11R11 supports storage image.
-    // Do not replace it with a newly allocated output unknown to the game.
-    VkImageBlit bl={
-        {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},{{0,0,0},{(int32_t)ow,(int32_t)oh,1}},
-        {VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},{{0,0,0},{(int32_t)ow,(int32_t)oh,1}}};
-    vk.vkCmdBlitImage(cb,w[W_OUTPUT].img,VK_IMAGE_LAYOUT_GENERAL,
-                      dst->img,VK_IMAGE_LAYOUT_GENERAL,1,&bl,VK_FILTER_NEAREST);
+    // Build195 produced full-frame RGB noise when the driver had to BLIT
+    // RGBA16F into the game's packed B10G11R11_UFLOAT image. Reuse the
+    // proven SGSR1 strategy: pack B10G11R11 in shader into R32_UINT words,
+    // then a same-32-bit-texel raw copy. This preserves exact game bits and
+    // avoids driver's cross-format filter/blit conversion entirely.
+    // R32_UINT and B10G11R11_UFLOAT_PACK32 have identical 4-byte texels.
+    VkImageCopy copy={
+        .srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+        .srcOffset={0,0,0},
+        .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+        .dstOffset={0,0,0},
+        .extent={ow,oh,1}};
+    vk.vkCmdCopyImage(cb,w[W_OUTPUT].img,VK_IMAGE_LAYOUT_GENERAL,
+                      dst->img,VK_IMAGE_LAYOUT_GENERAL,1,&copy);
     vka_barrier(cb);
     vka_img_written(dst);
     G.ping=next;G.history_ping=hist;G.last_frame=frame;G.calls++;

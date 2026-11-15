@@ -82,6 +82,21 @@ class Gsr2Assets(unittest.TestCase):
         self.assertIn("vec2 motion = -2.0 * velocity.xy * p.mvs;",conv)
         self.assertIn("-0.5 * Motion.x + Hruv.x",up)
 
+    def test_195_full_frame_noise_avoids_cross_format_blit(self):
+        src=(ROOT/"dm/gfx/vk_android/vka_gsr2.c").read_text()
+        up=(D/"gsr2_upscale.comp").read_text()
+        stable=(ROOT/"dm/gfx/vk_android/fsr/ndsr_sgsr.comp").read_text()
+        self.assertIn("VK_FORMAT_R32_UINT",src)
+        self.assertIn("VK_FORMAT_B10G11R11_UFLOAT_PACK32",src)
+        self.assertIn("vk.vkCmdCopyImage(cb,w[W_OUTPUT].img",src)
+        self.assertNotIn("vk.vkCmdBlitImage(cb,w[W_OUTPUT].img",src)
+        self.assertIn("VK_FORMAT_FEATURE_TRANSFER_SRC_BIT",src)
+        self.assertIn("VK_FORMAT_FEATURE_TRANSFER_DST_BIT",src)
+        self.assertIn("layout(set = 0, binding = 5, r32ui)",up)
+        self.assertIn("imageStore(SceneColorOutput, gid, uvec4(pack_b10g11r11(outColour)",up)
+        self.assertIn("packHalf2x16",stable)
+        self.assertIn("packHalf2x16",up)
+
     def test_generator_matches_on_gpu_runner_if_available(self):
         sys.path.insert(0, str(D))
         import gsr2_spv

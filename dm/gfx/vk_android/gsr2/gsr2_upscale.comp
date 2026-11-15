@@ -16,12 +16,29 @@ layout(set = 0, binding = 0) uniform highp sampler2D PrevHistoryOutput;
 layout(set = 0, binding = 1) uniform highp sampler2D MotionDepthClipAlphaBuffer;
 layout(set = 0, binding = 2) uniform highp sampler2D YCoCgColor;
 layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D HistoryOutput;
+#ifdef OOT_FLOW
+layout(set = 0, binding = 5, r32ui) uniform writeonly highp uimage2D SceneColorOutput;
+#else
 layout(set = 0, binding = 5, rgba16f) uniform writeonly image2D SceneColorOutput;
+#endif
 layout(push_constant) uniform P {
     vec2 renderSize; vec2 outputSize; vec2 renderSizeRcp; vec2 outputSizeRcp; vec2 jitterOffset; vec2 scaleRatio;
     float minLerpContribution; float reset; int tm; int tap9; float hmin; float motw; float boxtol; float boxmotw; float hscale;
     float mlo; float mrcp; float hsmov; float afmot; float bsmov; float hcr; float mvnear; float pad3[4];
 } params;
+// Exact B10G11R11 packing already used by the working Ocarina SGSR1 NDSR
+// path (ndsr_sgsr.comp). The game consumes the same 32-bit packed bits.
+#ifdef OOT_FLOW
+uint pack_ufloat(float v, uint drop, float mx) {
+    uint h = packHalf2x16(vec2(clamp(v, 0.0, mx), 0.0)) & 0x7fffu;
+    return (h + (1u << (drop - 1u))) >> drop;
+}
+uint pack_b10g11r11(vec3 c) {
+    return pack_ufloat(c.r, 4u, 65024.0) |
+           (pack_ufloat(c.g, 4u, 65024.0) << 11) |
+           (pack_ufloat(c.b, 5u, 64512.0) << 22);
+}
+#endif
 float FastLanczos(float base) { float y = base - 1.0f; float y2 = y * y; float y_temp = 0.75f * y + y2; return y_temp * y2; }
 // 4x4 Catmull-Rom fetch of the history colour (motion clarity: the bilinear re-sample blurs moving content a little more every frame), clamped to the 2x2 bilinear
 // footprint's min / max so it cannot ring; the W channel stays bilinear
@@ -133,7 +150,17 @@ void main()
     // Game's NDSR destination is linear HDR (B10G11R11); GSR2 accumulates
     // tone-mapped scene colour. Undo the same max-channel tonemap used by
     // the convert pass, WITHOUT changing the temporal history's encoding.
+    // If a history tap becomes invalid, do not propagate a NaN/Inf into
+    // the guest game image or store it back in next-frame packed history.
+    // Fall back locally to this frame's centre YCoCg sample.
+    if (any(isnan(outColour)) || any(isinf(outColour))) {
+        vec3 cur = C(InputPos);
+        float yc = cur.x - cur.z;
+        outColour = clamp(vec3(yc + cur.y, cur.x + cur.z, yc - cur.y), 0.0, 1.0);
+    }
     outColour /= max(1.0 - max(outColour.x, max(outColour.y, outColour.z)), 1.0e-4);
-#endif
+    imageStore(SceneColorOutput, gid, uvec4(pack_b10g11r11(outColour), 0u, 0u, 0u));
+#else
     imageStore(SceneColorOutput, gid, vec4(outColour, 0.0));
+#endif
 }
