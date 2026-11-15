@@ -441,6 +441,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_DIRECT_PAYLOAD=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_PARTIAL_UPLOAD=" + (Prefs.partialTextureUploads(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_GPU_VISIBILITY=" + (Prefs.gpuVisibility(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_BAR_NARROW="+(Prefs.gpuNarrowBarriers(this,id)?"1":"0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_UNUSED_COLOR=" + (Prefs.unusedColorTargets(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_ATTACHMENT_PARTS=" + (Prefs.attachmentWriteScopes(this, id) ? "1" : "0"));
             // Unlike the original 174 APK, shader-code file backing is ON

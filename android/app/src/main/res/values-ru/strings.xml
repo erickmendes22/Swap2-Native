@@ -16,4 +16,6 @@
     <string name="s2_language_note">При следующем запуске игра выберет этот язык, если её файлы содержат перевод. Иначе игра использует свой резервный язык.</string>
     <string name="s2_gpu_visibility">Видимость на GPU</string>
     <string name="s2_gpu_visibility_note">Может уменьшить отрисовку скрытых объектов. Экспериментальная функция; перезапустите игру.</string>
+    <string name="s2_narrow_barriers">Узкие барьеры compute</string>
+    <string name="s2_narrow_barriers_note">Экспериментально. Перезапустите игру.</string>
 </resources>

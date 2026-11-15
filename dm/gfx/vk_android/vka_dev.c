@@ -367,6 +367,7 @@ static int init_once(void) {
     if (!vk.vkCmdPushDescriptorSetKHR) V.push_desc = 0, V.max_push = 0;
     if (!vk.vkCmdSetVertexInputEXT) V.vin_dyn = 0;
     vka_enc_install();
+    vka_gbar_install();
     const VkPhysicalDeviceLimits *lim = &V.props.limits;
     V.ub_align = lim->minUniformBufferOffsetAlignment ? lim->minUniformBufferOffsetAlignment : 256; V.sb_align = lim->minStorageBufferOffsetAlignment ? lim->minStorageBufferOffsetAlignment : 256;
     vka_tex_pfb_flags();   // texture pool reads decided (and their buffers made) here, before any module is made, so no module's hook makes them under a caller's lock

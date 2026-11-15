@@ -182,14 +182,12 @@ final class Prefs {
         of(c).edit().putBoolean(gameKey("gpu_shared_buffer", titleId), on).commit();
     }
     /** Ocarina GSR2 360p/540p -> native 720p: off unless explicitly selected. */
-    static boolean ootGsr2(Context c,String titleId) {
-        return OCARINA_TITLE.equals(titleId) &&
-            of(c).getBoolean(gameKey("oot_gsr2",titleId),false);
-    }
+    static boolean ootGsr2(Context c,String titleId) { return false; }
     static void ootGsr2(Context c,String titleId,boolean enabled) {
-        if(OCARINA_TITLE.equals(titleId))
-            of(c).edit().putBoolean(gameKey("oot_gsr2",titleId),enabled).commit();
+        of(c).edit().remove(gameKey("oot_gsr2",titleId)).commit();
     }
+    static boolean gpuNarrowBarriers(Context c,String id) { return of(c).getBoolean(gameKey("gpu_narrow_barriers",id),false); }
+    static void gpuNarrowBarriers(Context c,String id,boolean on) { of(c).edit().putBoolean(gameKey("gpu_narrow_barriers",id),on).commit(); }
     /** RAM saver per game: large guest texture pools use files in the private cache. */
     static boolean ramSaver(Context c, String titleId) { return of(c).getBoolean(gameKey("ram_saver", titleId), false); }
     static void ramSaver(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("ram_saver", titleId), on).commit(); }

@@ -567,3 +567,9 @@ uint64_t vka_refresh_ns(void);   // vka_present.c: the panel's refresh period in
 
 int vka_classic_rp(void);
 VkRenderPass vka_rp_compat(const VkFormat *cf,uint32_t n,VkFormat df,VkFormat sf,uint32_t samples);
+
+void vka_gbar_install(void);
+void vka_gbar_cb(VkCommandBuffer cb);
+void vka_gbar_settle(VkCommandBuffer cb);
+int vka_gbar_game(VkCommandBuffer cb,uint32_t bits);
+void vka_gbar_stats(char *b,size_t n,double frames);

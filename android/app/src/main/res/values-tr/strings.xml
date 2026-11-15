@@ -16,4 +16,6 @@
     <string name="s2_language_note">Oyun, dosyalarında bu çeviri varsa bir sonraki açılışta seçilen dili kullanır; aksi hâlde kendi yedek dilini kullanır.</string>
     <string name="s2_gpu_visibility">GPU görünürlük denetimi</string>
     <string name="s2_gpu_visibility_note">Gizlenen nesnelerin olduğu sahnelerde çizim yükünü azaltabilir. Deneyseldir; uygulamak için oyunu yeniden başlatın.</string>
+    <string name="s2_narrow_barriers">Dar compute bariyerleri</string>
+    <string name="s2_narrow_barriers_note">Deneysel. Oyunu yeniden başlatın.</string>
 </resources>

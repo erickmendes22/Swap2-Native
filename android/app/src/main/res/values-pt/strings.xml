@@ -757,4 +757,6 @@
     <string name="s2_gpu_shader_pool_memory_note">Mantém o código original dos shaders na memória da CPU até a GPU realmente precisar dos dados. Independente do RAM Saver. Reinicie para aplicar.</string>
     <string name="s2_gpu_visibility">Visibilidade pela GPU</string>
     <string name="s2_gpu_visibility_note">Pode reduzir o trabalho de desenho em cenas com objetos encobertos. Experimental; reinicie o jogo para aplicar.</string>
+    <string name="s2_narrow_barriers">Barreiras compute específicas</string>
+    <string name="s2_narrow_barriers_note">Experimental. Restringe a sincronização de compute quando válido. Reinicie o jogo.</string>
 </resources>

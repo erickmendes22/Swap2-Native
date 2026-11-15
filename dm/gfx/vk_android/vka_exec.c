@@ -791,6 +791,7 @@ void vka_rp_sub_begin(void) {
     vk.vkResetCommandBuffer(g_cb, 0);
     VkCommandBufferBeginInfo bi = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     vk.vkBeginCommandBuffer(g_cb, &bi);
+    vka_gbar_cb(g_cb);
     if (ts_init()) {
         qf.reset(g_cb, g_qp, k * QPS, QPS); qf.write(g_cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, g_qp, k * QPS);
         g_slot_frame[k] = g_frame; g_slot_ts[k] = 1; g_slot_parts[k] = 1; gpu_tag_begin(g_frame);
@@ -859,11 +860,13 @@ static void chunk(void) {
     uint32_t part = g_slot_parts[k]; int ts = g_slot_ts[k] && part < NCHUNK + 1;
     part_arg pe = {g_cb, ts ? k * QPS + 2 * (part - 1) + 1 : UINT32_MAX}, pb = {next, ts ? k * QPS + 2 * part : UINT32_MAX};
     if (ts) g_slot_parts[k] = part + 1;
+    vka_gbar_settle(g_cb);
     vka_up_flush(); vka_up_throttle();   // the upload batch goes first: the part may use what it made (vka_dev.c "Upload batches")
     // With the encoder the part's end, its submit and the next part's reset and begin are made on its thread, in order with the calls before: the replay thread goes on
     if (vka_enc_call(part_submit, &pe, sizeof pe)) { vka_enc_call(part_begin, &pb, sizeof pb); vka_enc_switch(next); }
     else { part_submit(&pe); part_begin(&pb); }
     g_cb = next;
+    vka_gbar_cb(g_cb);
     vka_draw_cb_switch(g_cb); vka_gp_part(g_cb);
     g_chunk_d0 = g_stat_draws; g_n_chunks++;
 }
@@ -892,6 +895,7 @@ uint64_t vka_rp_sub_commit(uint64_t reserved) {
     vka_tex_writeback(g_cb);   // linear textures the GPU wrote, back into their storage for the CPU
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT};
     vk.vkCmdPipelineBarrier(g_cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
+    vka_gbar_settle(g_cb);
     vka_enc_stop();   // every call made: the command buffer is complete
     vka_pso_retire(fence);
     unsigned k = (g_slot_i - 1) % NSLOT;
@@ -1737,7 +1741,7 @@ static void exec(const uint8_t *p, int depth) {
         case OP_COPY_B2T: if (g_cb) copy_bt(a, 1); break;
         case OP_COPY_T2B: if (g_cb) { vka_rc_gpu_invalidate(); copy_bt(a, 0); } break;
         case OP_COPY_T2T: if (g_cb) copy_t2t(a); break;
-        case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);
+        case OP_BARRIER: if (g_cb && !bar_kept && !bar_covered) { int32_t bits; memcpy(&bits,a,4); if (!vka_gbar_game(g_cb,(uint32_t)bits)) vka_barrier(g_cb); }
             if (g_cb && (bar_covered || !bar_kept)) vka_dispatch_guest_covered();
             else vka_dispatch_overlap_flush();
             break;
