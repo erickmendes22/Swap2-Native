@@ -485,7 +485,7 @@ int vka_ub_active(void);
 uint64_t vka_ub_seq(void);
 int vka_ub_pending_overlap(uint64_t addr, uint64_t size);
 void vka_ub_overlay(uint64_t addr, void *out, uint64_t size);
-void vka_ub_flush_pass(void);
+void vka_ub_flush_pass(int attachment_only);
 int vka_rp_end_covers_barrier(void); // closes the pass; true only when its last GPU command already emitted the full memory barrier
 void vka_rp_discard(const p_set_rt *rt, int has_rt, int color_index); // -1 depth/stencil; 0..7 color
 void vka_rp_predict_discard(uint32_t colors, int depth); // new-pass only, reset immediately after draw
