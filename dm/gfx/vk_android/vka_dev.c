@@ -2,6 +2,7 @@
 // Feature and extension choices follow the probe of android/spike (results/honor-pnm-n49.md): placed memory maps, buffer device addresses, update-after-bind arrays, display timing
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_fd_alias.h"   // validated optional Vulkan FD export alias from original 0.1.8.5
 #include <dlfcn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -100,6 +101,9 @@ static int init_once(void) {
     if (swap) dext[ndext++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
     if (map2_ext) dext[ndext++] = VK_KHR_MAP_MEMORY_2_EXTENSION_NAME;
     if (placed) dext[ndext++] = VK_EXT_MAP_MEMORY_PLACED_EXTENSION_NAME;
+    // Shared buffer is opt-in; the old Direct mapping is still the default.
+    int x_fd = has_ext(de, nde, VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
+    if (x_fd) dext[ndext++] = VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
     if (V.display_timing) dext[ndext++] = VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME;
     if (V.mem_budget) dext[ndext++] = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME;
     // The draw path (vka_draw.c): each one optional, with a fallback when absent
@@ -266,6 +270,22 @@ static int init_once(void) {
     if (!vk.vkMapMemory2KHR) vk.vkMapMemory2KHR = (PFN_vkMapMemory2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkMapMemory2");   // core in 1.4
     if (!vk.vkUnmapMemory2KHR) vk.vkUnmapMemory2KHR = (PFN_vkUnmapMemory2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkUnmapMemory2");
     if (!vk.vkMapMemory2KHR || !vk.vkUnmapMemory2KHR) V.placed = V.placed_range = 0;
+    // Source port from 0.1.8.5. OPAQUE_FD alone never proves that mmap
+    // works: only the real device's bidirectional read/write+mprotect probe
+    // can enable this. Setting is per-game and restart-only.
+    const char *alias_mode = getenv("DM_VK_ALIAS");
+    if (alias_mode && (!strcmp(alias_mode, "prefer") || !strcmp(alias_mode, "fd"))) {
+        char reason[160] = "VK_KHR_external_memory_fd unavailable";
+        if (x_fd && vka_fd_enabled() &&
+            vka_fd_probe(&vk, V.pd, V.dev, &V.memp, V.bda, reason, sizeof reason)) {
+            V.fd_alias = 1;
+            V.placed = V.placed_range = V.unmap_reserve = 0;
+            VLOG("guest GPU memory: Shared buffer enabled (exported FD alias passed bidirectional map/mprotect); driver %s", V.props.deviceName);
+        } else {
+            VLOG("guest GPU memory: Shared buffer unavailable (%s); using Direct mapping %s", reason, V.placed ? "as fallback" : "not supported on this driver");
+        }
+    } else
+        VLOG("guest GPU memory: Direct mapping selected (Shared buffer opt-in via DM_VK_ALIAS=prefer)");
     vka_host_compile_fns();
     vk.vkGetDeviceQueue(V.dev, V.qf, 0, &V.q);
     if (x_ph && fph.queuePerfHint) V.perf_hint = (void *)vk.vkGetDeviceProcAddr(V.dev, "vkQueueSetPerfHintQCOM");
@@ -372,7 +392,7 @@ static int init_once(void) {
          "uniform alignment %llu (range %llu), storage alignment %llu, subgroups %u (%u-%u)",
          V.push_desc ? "yes" : "no", V.max_push, V.vin_dyn ? "yes" : "no", V.null_desc ? "yes" : "no", V.idx8 ? "yes" : "no", V.divisor ? "yes" : "no", V.logic_op ? "yes" : "no",
          V.dual_src ? "yes" : "no", V.geom ? "yes" : "no", V.tess ? "yes" : "no", (unsigned long long)V.ub_align, (unsigned long long)V.ub_range, (unsigned long long)V.sb_align, V.subgroup_size, V.subgroup_min, V.subgroup_max);
-    if (!V.placed) VRED("no VK_EXT_map_memory_placed: guest memory stays anonymous and the GPU sees no memory pool");
+    if (!V.placed && !V.fd_alias) VRED("no usable Direct mapping or Shared buffer: guest memory stays anonymous and the GPU sees no memory pool");
     if (!swap) VRED("no VK_KHR_swapchain: nothing is presented");
     vka_present_init();
     return 1;
