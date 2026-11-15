@@ -65,7 +65,7 @@ No gameplay FPS gain is claimed.
 
 - [Program address queries commit unused shader-code pools](../../../docs/reference/rendering.md#program-address-queries-commit-unused-shader-code-pools): the Banana0.3.24 log identifies344 MiB extra placed pools and the missing shader-code placement deferral in our NVN host.
 
-- Current menu cleanup: retire shader A omission and ignore its stored/environment value in the runtime; shader B remains independently configurable. Cached classic passes remain forcibly disabled for Ocarina and absent from the menu. Two independent new switches expose full-guest compute dependency merging and finalized-pool image retirement; both default on and require restart. Existing vegetation optimizations stay automatic.
+- Build173 menu cleanup (historical): retire shader A omission and ignore its stored/environment value in the runtime; shader B remains independently configurable. Cached classic passes remain forcibly disabled for Ocarina and absent from the menu. Two independent new switches expose full-guest compute dependency merging and finalized-pool image retirement; both default on and require restart. Existing vegetation optimizations stay automatic.
 
 - [Finalized-pool GPU image retirement](../../../docs/reference/rendering.md#finalized-pools-retain-private-gpu-images-below-the-cache-budget): the user reports about nine percentage points more system RAM than Banana with RAM Saver both enabled and disabled. This is a baseline-memory investigation, not a RAM Saver defect. Source comparison finds stricter indefinite GPU-image retention here versus Banana's idle eviction. Safely release only proven-dead storage; the amount recovered and remaining difference require a device comparison. No nine-point recovery or crash fix is established yet.
 - [Compute publication absorbed by full guest dependencies](../../../docs/reference/rendering.md#adjacent-compute-publication-repeats-a-full-guest-dependency): eliminate one redundant host dependency at eligible boundaries while retaining full guest ordering. Real software-Vulkan parity passes; phone frequency and FPS gain remain unmeasured.
@@ -1355,7 +1355,7 @@ New settings now default0 in GraphicsOptions, vka_dev and vka_pso. Explicit stor
 The actual exclusion parser/runtime wrapper and existing VRS format/sample/native/emulated route tests pass locally (18 tests; address/undefined sanitizer predicate run with leak checking disabled because this host's ptrace blocks LeakSanitizer). New parser checks2000 generated lists and malformed tails; wrapper checks absent/empty and oversized/truncated values. Native Android compile and full CI are pending at source checkpoint. Existing42339 shader library and674db0a4ff79 ABI remain unchanged.
 
 
-## Build173 device memory comparison (2026-11-15, current/open)
+## Build173 device memory comparison (2026-11-15, historical)
 
 The three device logs `0400486024DEC000-20261115-083945.log`,
 `0400486024DEC000-20261115-084035.log`, and
@@ -1374,7 +1374,7 @@ Retirement ON releases just one image, reported as0.0 MiB at one decimal
 place (less than0.1 MiB). Around gameplay the backend still holds1963 MiB
 of mapped pools, about1590-1612 MiB of images at cache samples, and80 MiB
 of scratch. The cache budget remains above the resident image set, so
-pressure pruning does not run. The game keeps the relevant storage alive;
+pressure pruning does not run. The relevant storage does not become eligible under the retirement guards;
 finalized-pool cleanup does not address its baseline working set.
 
 Compute merging does execute: about34.2 host dependencies removed/frame
@@ -1396,9 +1396,9 @@ or change cache limits without measuring reclaimable live-scene bytes.
 All three logs are Swap builds using Shared buffer, VRS OFF, shaderA omission
 OFF and shaderB omission ON. RAM Saver is not the cause established by these
 runs; the user's matched ON/ON and OFF/OFF Banana comparisons remain the
-baseline report. A corresponding Banana gameplay log from the same scene,
-resolution and memory backend is still missing, preventing attribution of
-the between-app gap to pools, images or other process/driver allocations.
+baseline report. At this checkpoint the corresponding Banana gameplay log was not available.
+The later Banana0.3.24 comparison below supplies it and identifies the
+shader-code placement mechanism; it supersedes that missing-data status.
 Preserve the accepted visual fixes while resolving that gap.
 
 
@@ -1433,3 +1433,15 @@ cleanup automatic. An opt-out restores old placement. No full9-point recovery
 or FPS gain is established by the fixture tests. The Banana log's GPU p50 is
 22.64-22.82 ms versus roughly20.4 ms in Swap173; these are separate runs,
 with different memory backend/upscaler paths, not a controlled speed ranking.
+
+
+Build174 delivery: source0724aded, APK commitf10043d9,
+[Actions43712827551](https://github.com/erickmendes22/Swap2-Native/actions/runs/43712827551)
+SUCCESS. [Artifact14160988942](https://github.com/erickmendes22/Swap2-Native/actions/runs/43712827551/artifacts/14160988942),
+26051808 bytes, archive SHA2562820b0e181fc2d206a18fd375cbb91180656f49531c17205c0610c032c462662.
+Actual aapt verifies package`com.swap2native.ootv11ios`, versionCode184,
+versionName0.1.6; apksigner verifies v2 and the existing
+`a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad`
+signer. Install-over compatibility retained. Device RAM/FPS/visual outcome
+for174 remains pending; do not upgrade the344 MiB allocation finding into a
+claimed9-point physical-RAM recovery.
