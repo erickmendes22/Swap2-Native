@@ -5,5 +5,6 @@
 #if defined(__ANDROID__)
 #include "vka.h"
 int vka_gsr2_try(VkCommandBuffer cb,vka_img *src,vka_img *dst,
-                 int source_is_sqrt,uint64_t frame);
+                 int source_is_sqrt,uint64_t frame,
+                 int srcid,uint8_t srcdim,int samplerid);
 #endif
