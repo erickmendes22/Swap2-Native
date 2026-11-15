@@ -27,3 +27,4 @@ jobs:
             dm/gfx/tools/tests/test_ocarina_gsr2_gpu.c -lvulkan -lm \
             -o /tmp/gsr2-gpu-test
           LIBGL_ALWAYS_SOFTWARE=1 /tmp/gsr2-gpu-test
+          GSR2_TEST_PUSH=1 LIBGL_ALWAYS_SOFTWARE=1 /tmp/gsr2-gpu-test
