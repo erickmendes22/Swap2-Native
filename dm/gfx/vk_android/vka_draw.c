@@ -456,7 +456,12 @@ int vka_classic_rp(void) {
     static int on=-1;
     if(on<0 && V.dev) {
         const char *e=getenv("DM_VK_CLASSIC_RP");
-        int want=e && atoi(e)!=0;
+        // Immutable title safety rule: the classic cached render-pass
+        // backend causes cave walls to flicker on Qualcomm. Disable even
+        // if an old saved env.txt explicitly re-enables it. Other titles
+        // retain the original choice without any shader/occlusion changes.
+        int want=e && atoi(e)!=0 &&
+                 strcmp(DM_GAME_ID, "0400486024DEC000") != 0;
         on=want && V.imageless;
         VLOG("cached classic render passes: %s (imageless=%d; DM_VK_CLASSIC_RP)",on ? "on" : "off",V.imageless);
     }
