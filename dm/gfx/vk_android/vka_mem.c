@@ -18,6 +18,7 @@
 // mtl_pool_need returns. DM_VK_MEM_LOCK_WHOLE=1 holds the write lock across a placement as before (diagnostic A/B)
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_fd_alias.h"   // optional exported shared Vulkan buffer from original 0.1.8.5
 #include "../nvn/nvn_mtl.h"
 #include "../nvn/nvn_dirty.h"
 #include "vka_place.h"
@@ -34,7 +35,7 @@
 #include <unistd.h>
 #include <time.h>
 
-typedef struct { uintptr_t lo, hi; VkDeviceMemory mem; VkBuffer buf; VkDeviceAddress bda; int refs; } seg_t;
+typedef struct { uintptr_t lo, hi; VkDeviceMemory mem; VkBuffer buf; VkDeviceAddress bda; int refs, fd_alias; } seg_t;
 static seg_t *g_sg; static int g_nsg, g_sgcap;   // sorted by lo, disjoint
 // Bumped (under g_rw for writing) whenever a segment comes or goes: the replay's per-thread lookup cache (vka_addr, vka_addr_run) holds while it stands
 static _Atomic uint64_t g_sg_gen = 1;
@@ -402,6 +403,13 @@ static uint64_t g_ph[6], g_ph_n;
 static __thread uint64_t t_place_bytes, t_pend_ns;   // this thread's bytes placed and time in pend_wait (mtl_pool_add's attribution: other threads place while it waits)
 static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
     VkDeviceSize n = hi - lo; seg_t s = {lo, hi, .refs = 1}; VkResult r; uint64_t p0 = mono_ns(), p1, p2, p3, p4, p5;
+    vka_fd_memory exported = {.fd = -1};
+    if (V.fd_alias == 1) {
+        r = vka_fd_create(&vk, V.pd, V.dev, &V.memp, n, V.bda, &exported);
+        if (r) { VRED("guest pool %#lx+%#llx: Shared buffer allocation failed %d",
+                      (unsigned long)lo, (unsigned long long)n, r); return 0; }
+        s.buf = exported.buf; s.mem = exported.mem; s.fd_alias = 1;
+    } else {
     if (!(s.buf = seg_buffer(n))) { VRED("pool memory %#lx+%#llx: vkCreateBuffer failed", (unsigned long)lo, (unsigned long long)n); return 0; }
     VkMemoryRequirements mr; vk.vkGetBufferMemoryRequirements(V.dev, s.buf, &mr);
     if (V.guest_type == UINT32_MAX || !(mr.memoryTypeBits >> V.guest_type & 1)) {
@@ -416,6 +424,7 @@ static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
         vk.vkDestroyBuffer(V.dev, s.buf, NULL); return 0;
     }
     vk.vkBindBufferMemory(V.dev, s.buf, s.mem, 0);
+    }
     p1 = mono_ns(); g_ph[0] += p1 - p0;
     nvn_dirty_hold((const void *)lo, n);   // (see the note above prot_known; released after swap_end)
     prun pr[MAXRUN]; int npr = prot_runs(lo, hi, pr, MAXRUN), exact = prot_known(pr, &npr, lo, hi);
@@ -423,9 +432,23 @@ static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
     void *p = NULL; int ok = 0;
     swap_begin(lo, hi);
     prot_readonly(pr, npr);   // writers wait in the fault hook from here
-    if (!vk.vkMapMemory(V.dev, s.mem, 0, VK_WHOLE_SIZE, 0, &p) && p) {
+    if ((s.fd_alias ? (p = exported.mapped, 0) : vk.vkMapMemory(V.dev, s.mem, 0, VK_WHOLE_SIZE, 0, &p)) == 0 && p) {
         copy_readable(p, lo, pr, npr);
         p3 = mono_ns(); g_ph[2] += p3 - p2; p2 = p3;
+        if (s.fd_alias) {
+            // Tested bidirectional exported Vulkan buffer alias; do not
+            // unmap the driver's independent map until the pool is finalized.
+            void *q = (void *)syscall(__NR_mmap, lo, (size_t)n,
+                                     PROT_READ | PROT_WRITE,
+                                     MAP_SHARED | MAP_FIXED, exported.fd, 0);
+            ok = q == (void *)lo;
+            r = ok ? VK_SUCCESS : VK_ERROR_MEMORY_MAP_FAILED;
+            if (!ok) {
+                sw_hole_check(lo, n, 0, "exported pool memory");
+                if (sw_mmap_fixed(lo, n) != MAP_FAILED)
+                    memcpy((void *)lo, p, (size_t)n);
+            }
+        } else {
         vk.vkUnmapMemory(V.dev, s.mem);
         VkMemoryMapPlacedInfoEXT pi = {VK_STRUCTURE_TYPE_MEMORY_MAP_PLACED_INFO_EXT, .pPlacedAddress = (void *)lo};
         VkMemoryMapInfoKHR mi = {VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR, .pNext = &pi, .flags = VK_MEMORY_MAP_PLACED_BIT_EXT, .memory = s.mem, .offset = 0, .size = V.placed_range ? n : VK_WHOLE_SIZE};
@@ -437,7 +460,9 @@ static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
             void *a = sw_mmap_fixed(lo, n);
             if (a != MAP_FAILED && !vk.vkMapMemory(V.dev, s.mem, 0, VK_WHOLE_SIZE, 0, &p)) { memcpy((void *)lo, p, n); vk.vkUnmapMemory(V.dev, s.mem); }
         }
+        }
     }
+    if (exported.fd >= 0) close(exported.fd);
     static int pf = -1; if (pf < 0) { const char *e = getenv("DM_VK_PREFAULT"); pf = !(e && !strcmp(e, "0")); if (!pf) VLOG("DM_VK_PREFAULT=0: placed maps are not faulted in (a diagnostic: DM_VK_NANSCAN's placed memory test shows whether the driver needs it)"); }
     p3 = mono_ns();
     if (ok && pf) prefault(lo, hi);   // before any mprotect splits the mapping (see prefault)
@@ -452,7 +477,7 @@ static int place(uintptr_t lo, uintptr_t hi, VkDeviceSize *grow) {
     g_ph[3] += p3 - p2; g_ph[4] += p4 - p3; g_ph[5] += p5 - p4;
     if (!(++g_ph_n & 255)) VLOG("placed memory: %llu placements: allocation %.0f ms, protections read %.0f ms (%.0f lines of /proc/self/maps a read), copy %.0f ms, maps %.0f ms, prefault %.0f ms, protections back %.0f ms",
                                (unsigned long long)g_ph_n, g_ph[0] / 1e6, g_ph[1] / 1e6, (double)g_maps_lines / g_ph_n, g_ph[2] / 1e6, g_ph[3] / 1e6, g_ph[4] / 1e6, g_ph[5] / 1e6);
-    if (!ok) { VRED("pool memory %#lx+%#llx: placed map %d at %p", (unsigned long)lo, (unsigned long long)n, r, p); vk.vkDestroyBuffer(V.dev, s.buf, NULL); vk.vkFreeMemory(V.dev, s.mem, NULL); return 0; }
+    if (!ok) { if (s.fd_alias) vk.vkUnmapMemory(V.dev, s.mem); VRED("pool memory %#lx+%#llx: placed map %d at %p", (unsigned long)lo, (unsigned long long)n, r, p); vk.vkDestroyBuffer(V.dev, s.buf, NULL); vk.vkFreeMemory(V.dev, s.mem, NULL); return 0; }
     if (V.bda) { VkBufferDeviceAddressInfo bai = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = s.buf}; s.bda = vk.vkGetBufferDeviceAddress(V.dev, &bai); }
     if (!lock_whole()) pthread_rwlock_wrlock(&g_rw);
     sg_insert(&s);
@@ -509,7 +534,7 @@ static void detach(int i, segvec *v) {   // caller holds g_pl, and g_rw for writ
 // Memory the GPU is not known to be done with (the wait ran into the hang time, or a GPU hang was declared) is never freed: it stays allocated (leaked) behind the anonymous pages,
 // since a free under work the GPU still runs faults the GPU (freed anyway after 2 s before, on the way to a system restart on the phone)
 static void seg_free(const seg_t *s, int waited, uint64_t fence) {
-    if (waited) { vk.vkDestroyBuffer(V.dev, s->buf, NULL); vk.vkFreeMemory(V.dev, s->mem, NULL); return; }
+    if (waited) { if (s->fd_alias) vk.vkUnmapMemory(V.dev, s->mem); vk.vkDestroyBuffer(V.dev, s->buf, NULL); vk.vkFreeMemory(V.dev, s->mem, NULL); return; }
     static _Atomic int nk; if (atomic_fetch_add(&nk, 1) < 8) VRED("giving back pool memory %#lx+%#zx: the GPU is not known to be done with it (fence %llu%s): its Vulkan memory is kept, not freed",
                                                                (unsigned long)s->lo, (size_t)(s->hi - s->lo), (unsigned long long)fence, vka_hung() ? ", GPU hang" : " not reached in the hang time");
 }
@@ -529,12 +554,12 @@ static void unplace(const seg_t *sp) {
                 if (o) memcpy(t + (a - s.lo), (const void *)a, 4096);
             }
         }
-    unmap_placed(s.mem);   // the CPU mapping only: the GPU's stays with the allocation
+    if (!s.fd_alias) unmap_placed(s.mem);   // FD shared buffer keeps its independent driver map until guest pages are restored
     // DM_VK_UNPLACE_REMAP=1 (experiment, off): map the memory again where the driver likes, so that the address the driver keeps is outside the guest range, then move the
     // pages in before the free (no hole, if the driver's free takes down only its last map). Checked after the free: a range the free took down anyway is [RED]
     void *elsewhere = NULL;
-    if (waited && t != MAP_FAILED && VKA_ENV("DM_VK_UNPLACE_REMAP", 0) && (vk.vkMapMemory(V.dev, s.mem, 0, VK_WHOLE_SIZE, 0, &elsewhere) || !elsewhere)) elsewhere = NULL;
-    if (!elsewhere) seg_free(&s, waited, fence);
+    if (!s.fd_alias && waited && t != MAP_FAILED && VKA_ENV("DM_VK_UNPLACE_REMAP", 0) && (vk.vkMapMemory(V.dev, s.mem, 0, VK_WHOLE_SIZE, 0, &elsewhere) || !elsewhere)) elsewhere = NULL;
+    if (!s.fd_alias && !elsewhere) seg_free(&s, waited, fence);
     // Open: from the driver's vkFreeMemory, which takes the range down (above), to this mremap the guest range has a hole, and another thread's mmap(NULL) (the driver's,
     // libc's malloc: calls this library does not see) could be given part of it. The window is the few microseconds between the two calls, and it cannot be closed here:
     // anything mapped into the range before the free (a reservation, these pages) is taken down by the free, and the free cannot wait until after (the bug above). What
@@ -547,6 +572,7 @@ static void unplace(const seg_t *sp) {
         if (t != MAP_FAILED) munmap(t, n);
         sw_mmap_fixed(s.lo, n);
     }
+    if (s.fd_alias) seg_free(&s, waited, fence);   // after the guest FD alias has been replaced by anonymous pages
     if (elsewhere) {
         vk.vkUnmapMemory(V.dev, s.mem); seg_free(&s, waited, fence);
         if (msync((void *)s.lo, n, MS_ASYNC)) {   // the free took the range down after all: the bytes are lost
@@ -735,7 +761,7 @@ static uint64_t part_gran(void) {
     if (v < 0) { int64_t m = VKA_ENV("DM_VK_PLACE_GRANULE_MB", 16); if (m < 1) m = 1; v = m << 20; uintptr_t al = pg_align(); v = (v + (int64_t)al - 1) & ~(int64_t)(al - 1); }
     return (uint64_t)v;
 }
-static int can_place(uint64_t size) { return size && vka_ok() && placed_on() && V.placed; }
+static int can_place(uint64_t size) { return size && vka_ok() && placed_on() && (V.placed || V.fd_alias); }
 // Place [mem, mem+size) (page aligned out): its segments into *l (which may list some already: they take no second reference). Caller holds g_pl. *lg: the placed total
 // crossed a 256 MiB step since the last line (*tot). *mine: the bytes this call placed
 static int place_pool(uintptr_t mem, uint64_t size, seglist *l, int *lg, uint64_t *tot, uint64_t *mine_out) {
