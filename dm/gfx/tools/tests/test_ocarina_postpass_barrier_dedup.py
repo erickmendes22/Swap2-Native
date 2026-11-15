@@ -12,8 +12,8 @@ class PostUbBarrier(unittest.TestCase):
         b=D.index('// OP_BARRIER used to end a render pass',a)
         s=D[a:b]
         self.assertLess(s.index('vk.vkCmdEndRendering(g_cb);'),s.index('const int postub = vka_ub_active();'))
-        self.assertLess(s.index('const int postub = vka_ub_active();'),s.index('vka_ub_flush_pass();'))
-        self.assertLess(s.index('vka_ub_flush_pass();'),s.index('const int reused = postub'))
+        self.assertLess(s.index('const int postub = vka_ub_active();'),s.index('vka_ub_flush_pass(scoped_precopy);'))
+        self.assertLess(s.index('vka_ub_flush_pass(scoped_precopy);'),s.index('const int reused = postub'))
         self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")',s)
         self.assertIn('DM_VK_OOT_POSTUB_BAR_DEDUP',s)
         self.assertIn('g_rp_full++; vka_barrier(g_cb);',s)
@@ -22,10 +22,13 @@ class PostUbBarrier(unittest.TestCase):
         self.assertIn('g_rp_force_full',s)
 
     def test_real_flush_orders_copies_and_all_consumers(self):
-        a=E.index('void vka_ub_flush_pass(void)')
+        a=E.index('void vka_ub_flush_pass(int attachment_only)')
         b=E.index('// ---------- Clears ----------',a)
         s=E[a:b]
-        self.assertLess(s.index('vka_barrier(g_cb);'),s.index('buf_update(&g_inline_ub, w->bytes'))
+        self.assertIn('} else vka_barrier(g_cb);', s)
+        self.assertIn('VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT', s)
+        self.assertIn('VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT', s)
+        self.assertLess(s.index('} else vka_barrier(g_cb);'),s.index('buf_update(&g_inline_ub, w->bytes'))
         self.assertLess(s.index('buf_update(&g_inline_ub, w->bytes'),s.index('ub_flush(&g_inline_ub);'))
         self.assertIn('vka_transfer_write_barrier(g_cb);',E)
         self.assertIn('VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT',T)
