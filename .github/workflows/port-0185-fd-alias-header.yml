@@ -1,0 +1,38 @@
+name: Import verified upstream fd memory alias helper
+on:
+  push:
+    branches: [ocarina-v11-ios-perf-from-v101]
+    paths: [.github/workflows/port-0185-fd-alias-header.yml]
+permissions:
+  contents: write
+jobs:
+  import-header:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Extract released FD export / alias implementation
+        run: |
+          set -euxo pipefail
+          curl --fail --location --retry 4 --max-time 240 \
+            https://github.com/mamcjr/Swap2-Native/releases/download/v0.1.8.5-beta/swap2-native-0.1.8.5-beta-source.zip \
+            -o /tmp/upstream.zip
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          with ZipFile('/tmp/upstream.zip') as z:
+              matches=[n for n in z.namelist() if n.endswith('/dm/gfx/vk_android/vka_fd_alias.h')]
+              assert len(matches)==1,matches
+              out=Path('dm/gfx/vk_android/vka_fd_alias.h')
+              assert not out.exists(), 'do not overwrite local file'
+              out.write_bytes(z.read(matches[0]))
+              print(out, out.stat().st_size)
+          PY
+      - name: Commit original helper only
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dm/gfx/vk_android/vka_fd_alias.h
+          git commit -m "Import 0.1.8.5 opt-in exported FD alias support helper"
+          git push origin HEAD:ocarina-v11-ios-perf-from-v101
