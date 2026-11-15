@@ -124,7 +124,8 @@ def main():
         env["DMSH_VK_CAPTURE_DIR"] = str(capture)
         print(f"Selected {len(keys)} runtime-captured shaders; no full game shader split or translated base rebuild required")
     env.update(DMSH_GMEM_FAST1="1", DMSH_GMEM_MAP_8192="1",
-               DMSH_GMEM_LAST1="1", DMSH_VK_REQUIRE_ALL="1")
+               DMSH_GMEM_LAST1="1", DMSH_GMEM_PIDX="1",
+               DMSH_VK_REQUIRE_ALL="1")
     tool = ROOT / "dm/gfx/tools/vk_android_build.py"
     chain = ROOT / "dm/gfx/tools/dmsh_chain.py"
     # Explicit headers ensure the just-built overlay agrees with the running
