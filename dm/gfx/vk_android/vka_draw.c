@@ -18,6 +18,7 @@
 #include "vka_prepass.h"
 #include "vka_vegetation_profiles.h"
 #include "vka_vegetation_supplement.h"  // generated 508 original task/mesh shader keys (kept ABI-stable)
+#include "vka_gmem_pidx.h"
 #include "game_profile.h"
 #include <math.h>
 #include <stdio.h>
@@ -249,6 +250,7 @@ void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot) {
     g_cb = cb; g_slot = slot % NSLOT; vka_dyn_invalidate();
     { void vka_mem_rec_thread(void); vka_mem_rec_thread(); }   // the address lookups' cache outside TLS for the recording thread (vka_mem.c)
     drv_memo_reset();   // the last submission's scratch spans go with its fence
+    g_pidx_submission_bytes = 0; // old index snapshots stay in the retiring submission scratch blocks
     g_prof = VKA_ENV("DM_VK_PROF", 0) != 0; g_dyn_filter = VKA_ENV("DM_VK_DYN_FILTER", 1); g_pass_keep = VKA_ENV("DM_VK_PASS_KEEP", 1); g_vb_filter = VKA_ENV("DM_VK_VB_FILTER", 1);   // live: from this submission
     g_vin_skip = VKA_ENV("DM_VK_VIN_SKIP", 1);
     for (int i = 0; i < g_ndp[g_slot]; i++) vk.vkResetDescriptorPool(V.dev, g_dp[g_slot][i], 0);   // the slot's last submission is done (mtl_sub_begin waited for it)
@@ -923,7 +925,8 @@ static int ssbo_desc(uint64_t addr, uint64_t size, VkDescriptorBufferInfo *bi) {
 // its commit), so the memo is forgotten at each submission's start (vka_draw_sub_begin)
 typedef struct { VkBuffer buf; VkDeviceSize off; } c0_at;
 static struct { int valid; vka_span s; uint64_t k[3]; uint8_t b[DMSH_DRV_SIZE]; } g_dm[VKA_NSTAGE][3];
-static struct { int valid; uint64_t gen; vka_span s; } g_gm;
+static struct { int valid; uint64_t gen; vka_span s; VkDeviceSize bytes; } g_gm;
+static size_t g_pidx_submission_bytes; // per-submission budget for immutable page-index snapshots
 static struct { int valid; uint32_t ref; vka_span s; } g_sm_ref;   // the support buffer with the alpha test's reference (stage_writes)
 static int g_drv_memo = 1, g_drv_stamp = 1; static uint64_t g_dm_hit, g_dm_miss, g_dm_stamp;
 static void drv_memo_reset(void) { for (int st = 0; st < VKA_NSTAGE; st++) for (int b = 0; b < 3; b++) g_dm[st][b].valid = 0; g_gm.valid = 0; g_sm_ref.valid = 0; g_drv_memo = VKA_ENV("DM_VK_DRV_MEMO", 1); g_drv_stamp = VKA_ENV("DM_VK_DRV_STAMP", 1); }
@@ -966,10 +969,26 @@ static int drv_seg(const vka_dstate *d, int st, int bank, int pool, VkDescriptor
 uint64_t vka_mem_gen(void);
 static int gmem_map(VkDescriptorBufferInfo *bi) {
     size_t n = (size_t)VKA_GMEM_MAP_ENTRIES * DMSH_GMEM_MAP_ENTRY;
+    // Allocate each GPU-visible generation from the fence-retired submission
+    // scratch. Never rewrite a snapshot already referenced by a recorded draw.
+    // Bound worst-case extra memory to 4 MiB per submission (2 x 2 MiB).
+    // With the option OFF, reserve only an empty 16-byte index header.
+    const size_t index_cap = 2u << 20, budget = 4u << 20;
+    int requested = VKA_ENV("DM_VK_GMEM_PIDX", 0) != 0;
+    size_t extra = requested && g_pidx_submission_bytes <= budget - index_cap &&
+        (VkDeviceSize)(n + 16 + index_cap) <= V.props.limits.maxStorageBufferRange
+        ? index_cap : 0;
+    size_t bytes = n + 16 + extra;
     uint64_t gen = vka_mem_gen();
-    if (g_drv_memo && g_gm.valid && g_gm.gen == gen) { *bi = (VkDescriptorBufferInfo){g_gm.s.buf, g_gm.s.off, n}; return 1; }
-    vka_span s; if (!vka_scratch(n, V.sb_align, &s)) return 0;
+    if (g_drv_memo && g_gm.valid && g_gm.gen == gen) { *bi = (VkDescriptorBufferInfo){g_gm.s.buf, g_gm.s.off, g_gm.bytes}; return 1; }
+    vka_span s;
+    if (!vka_scratch(bytes, V.sb_align, &s)) {
+        // Memory pressure must not stop rendering: use the old binary search.
+        if (!extra || !vka_scratch(n + 16, V.sb_align, &s)) return 0;
+        extra = 0; bytes = n + 16;
+    }
     memset(s.ptr, 0xff, n); memset(s.ptr, 0, DMSH_GMEM_MAP_ENTRY);
+    memset(s.ptr + n, 0, 16 + extra); // zero count means original binary search
     static uint64_t lo[VKA_GMEM_MAP_ENTRIES], hi[VKA_GMEM_MAP_ENTRIES], bda[VKA_GMEM_MAP_ENTRIES];
     int k = vka_mem_chunks(lo, hi, bda, VKA_GMEM_MAP_ENTRIES - 1);
     for (int i = 0; i < k && i + 1 < VKA_GMEM_MAP_ENTRIES; i++) { uint64_t e[4] = {lo[i], hi[i], bda[i] - lo[i], 0}; memcpy(s.ptr + (size_t)(i + 1) * DMSH_GMEM_MAP_ENTRY, e, sizeof e); }
@@ -995,8 +1014,17 @@ static int gmem_map(VkDescriptorBufferInfo *bi) {
     if (!hint_log_once && hint_count) { hint_log_once = 1;
         VLOG("raw GMEM: built %u tagged 2-MiB lookup hints for %d placed pool ranges (no guest shader ABI change)", hint_count, k);
     }
-    g_gm.valid = 1; g_gm.gen = gen; g_gm.s = s;   // (a segment that came between the read of gen and the table: the next draw sees a new gen and builds it again)
-    *bi = (VkDescriptorBufferInfo){s.buf, s.off, n}; return 1;
+    if (extra) {
+        size_t covered = vka_gmem_pidx_build((uint32_t *)(s.ptr + n),
+            4 + extra / 4, lo, hi, k);
+        if (covered) {
+            g_pidx_submission_bytes += extra;
+            static int announced;
+            if (!announced++) VLOG("raw GMEM page index: bounded 2 MiB snapshot, %zu covered 4KiB pages; fallback for uncovered pages and older shaders", covered);
+        } // A zero header keeps the original lookup when no pages qualify.
+    }
+    g_gm.valid = 1; g_gm.gen = gen; g_gm.s = s; g_gm.bytes = bytes;   // (a segment that came between the read of gen and the table: the next draw sees a new gen and builds it again)
+    *bi = (VkDescriptorBufferInfo){s.buf, s.off, bytes}; return 1;
 }
 // A compute program's shared memory past the device's limit (DMSH_VK_KIND_SHARED_SPILL; Ryujinx StructuredIr/SharedSpillInfo.cs): one buffer for the process
 // (DM_VK_SHARED_SPILL_MB, default 16 MiB, at least one slice), reused by every such dispatch: each dispatch ends with a barrier (vka_dispatch), so the next one finds it free.
