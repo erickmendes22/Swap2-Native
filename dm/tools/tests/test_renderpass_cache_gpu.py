@@ -74,7 +74,8 @@ class RenderpassCache(unittest.TestCase):
         self.assertIn('if (!fb) {',draw)
         self.assertIn('if(!g_classic_pass)vk.vkCmdBeginRendering',draw)
         self.assertIn('if(g_classic_pass)vk.vkCmdEndRenderPass',draw)
-        self.assertIn('int want=e && atoi(e)!=0;',draw)
+        self.assertIn('int want=e && atoi(e)!=0 &&',draw)
+        self.assertIn('strcmp(DM_GAME_ID, "0400486024DEC000") != 0;',draw)
         self.assertIn('im->cflags=ci.flags;',tex)
 
 if __name__=='__main__':unittest.main()
