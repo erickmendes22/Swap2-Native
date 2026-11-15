@@ -765,4 +765,6 @@
     <string name="s2_gpu_visibility_note">May reduce drawing work in scenes with occluded objects. Experimental; restart the game to apply.</string>
     <string name="s2_narrow_barriers">Narrow compute barriers</string>
     <string name="s2_narrow_barriers_note">Experimental. Restricts compute synchronization where valid. Restart the game.</string>
+    <string name="s2_gpu_page_index">GPU memory page index (experimental)</string>
+    <string name="s2_gpu_page_index_note">Optional bounded guest-page lookup for shaders compiled with index support. Original cache and full search remain. Uses up to 4 MiB of additional scratch per submission; restart to apply. Off by default.</string>
 </resources>
