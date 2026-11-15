@@ -1,0 +1,29 @@
+name: Ocarina GSR2 temporal research (no APK)
+on:
+  push:
+    branches: [research/ocarina-gsr2-360p-20261115]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shaders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify temporal inputs and licensing
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gsr2_assets.py -v
+      - name: Install GPU shader tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y glslc spirv-tools
+      - name: Compile Qualcomm three-pass GSR2 to validated Vulkan SPIR-V
+        run: |
+          set -euo pipefail
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py --check
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gsr2_assets.py -v
+          printf 'GSR2: Qualcomm convert/activate/upscale SPIR-V validated for Vulkan 1.1; no APK.\n' >> "$GITHUB_STEP_SUMMARY"
