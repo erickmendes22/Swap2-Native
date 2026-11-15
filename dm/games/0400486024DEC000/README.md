@@ -1590,3 +1590,43 @@ HookLink's latest engine storage-write-set optimizationf5c68a8a is Metal
 has a256-entry raw-write-log ring instead. Blindly porting that Metal change
 would not eliminate the cited Android graphics cost. Reassess applicable
 shared changes individually rather than count a Metal-only edit as a GPU gain.
+
+### After178: exact GPU visibility research (2026-11-15, current/open)
+
+The user confirms178 fixed vegetation. Preserve that result and177's working
+RAM savings. No additional shader or capture request is needed for this
+research stage.177's heavy-window statistics identify619.5 conditional blocks
+per frame drawn because a counted occlusion report is still in flight,
+compared with16.5 skipped and16.4 drawn from an actual comparison. This is
+potential avoidable GPU work, not proof that all619.5 blocks are hidden.
+The existing same-reset-epoch early-pair path logs no successful attempts in
+this supplied run; its exact eligibility limitation is not established by the
+aggregate log. Do not bypass its guards or compare stale counter values.
+
+Research-only `selftest/conditional_visibility_gpu.c` exercises actual current
+GPU occlusion queries followed by GPU-only predicate consumption. A CPU
+reference knows the synthetic geometry; it never reads GPU counters to choose
+which commands to record. All predicate buffers start with stale nonzero
+sentinels to catch missing initialization. Across normal/inverted conditions,
+opaque/checkerboard discard and reversed query slots, three execution paths
+match exact reference colour/depth and reduce actual vertex invocations from6
+to3: native conditional rendering, normal indirect drawing and indexed indirect
+drawing. Additional device creation with conditional rendering explicitly NOT
+enabled passes both indirect paths. Total40 real Vulkan cases, Khronos
+synchronization validation clean. Conservative draw-all is a negative control;
+inverted conditions expose an implementation that silently ignores the
+predicate. These are fixture work counts, never a50% phone FPS claim.
+
+No application renderer feature, menu control or shader ABI is changed or
+enabled. This is not yet a replacement for `rc_eval`: its general NVN semantics
+compare64-bit cumulative reports, including resets and fallback/lost samples.
+The fixture intentionally uses a narrower zero-versus-positive current-query
+predicate. `VK_QUERY_RESULT_WAIT_BIT` here waits on the GPU, not the CPU, but
+can serialize the GPU. Integration must prove that avoided drawing pays for
+query copies/helper work/pass boundaries. It must preserve exact reports,
+conditional dispatch/mesh side effects, guest command order and report
+generations, and prevent query-ring recycling until every consuming copy has
+completed. The extension-free indirect alternative avoids requiring an unknown
+conditional-rendering capability from the Android driver. Keep178 unchanged
+while these obligations remain open; no new performance APK is justified by
+this fixture alone.

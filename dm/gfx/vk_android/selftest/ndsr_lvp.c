@@ -122,6 +122,27 @@ static int init(void) {
     VkPhysicalDeviceVulkan12Features f12={VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,.pNext=&f13,.imagelessFramebuffer=VK_TRUE};
     dc.pNext=&f12;
 #endif
+#ifdef VKA_GPU_VISIBILITY_TEST
+    if (!have.pipelineStatisticsQuery) return 0;
+    f.pipelineStatisticsQuery = VK_TRUE;
+    VkPhysicalDeviceConditionalRenderingFeaturesEXT conditional = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONDITIONAL_RENDERING_FEATURES_EXT};
+    VkPhysicalDeviceFeatures2 features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &conditional};
+    const char *conditional_ext = VK_EXT_CONDITIONAL_RENDERING_EXTENSION_NAME;
+    if (!getenv("VIS_NO_NATIVE")) {
+        vkGetPhysicalDeviceFeatures2(pd, &features);
+        if (!conditional.conditionalRendering) {
+            printf("SKIP: conditional rendering unavailable; VIS_NO_NATIVE tests portable paths\n");
+            return 0;
+        }
+        conditional.inheritedConditionalRendering = VK_FALSE;
+        conditional.pNext = (void *)dc.pNext;
+        dc.pNext = &conditional;
+        dc.enabledExtensionCount = 1;
+        dc.ppEnabledExtensionNames = &conditional_ext;
+    }
+#endif
     VK(vkCreateDevice(pd, &dc, NULL, &dev)); vkGetDeviceQueue(dev, qi, 0, &q);
     VkFormatProperties fp; vkGetPhysicalDeviceFormatProperties(pd, VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, &fp);
     if (!(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) { printf("SKIP: E5B9G9R9 is not sampled on this device\n"); return 0; }
