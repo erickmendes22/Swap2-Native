@@ -390,7 +390,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 env.add("DM_VK_OOT_HIDDEN_LAYERS=0");
                 env.add("DM_VK_OOT_SKIP_HEAVY_FS=0");
                 env.add("DM_VK_COMPUTE_GUEST_DEDUP=" + (Prefs.computeGuestDedup(this, id) ? "1" : "0"));
-                env.add("DM_VK_RETIRE_DEAD_IMAGES=" + (Prefs.retireDeadImages(this, id) ? "1" : "0"));
+                env.add("DM_VK_RETIRE_DEAD_IMAGES=1");
+                env.add("DM_VK_PLACE_SHADER_POOLS=" + (Prefs.shaderPoolMemory(this, id) ? "0" : "1"));
                 env.add("DM_VK_OOT_SKIP_LAYER2_FS=" + (Prefs.skipFsB(this, id) ? "1" : "0"));
             }
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_PLANE_LUT=" + (Prefs.vegetationOptimized(this, id) ? "1" : "0"));

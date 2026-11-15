@@ -50,3 +50,12 @@ Swap2-Native is not affiliated with, endorsed or sponsored by Nintendo. Nintendo
 trademarks of Nintendo.
 
 Compute mesh emulation and texture-use feedback were ported from Banana Native (moceure/BananaNative, android d652abeb534496724e798ff96474752903d7953a). Compute mesh emulation derives from Hokkaido contributors (pavelgajdo/Hokkaido #569, #642), GPL-3.0-or-later. Texture-use feedback follows Anka Native (MIT, copyright 2026 seedds and EddizEge). Original copyright and SPDX notices are retained in the source.
+
+
+Shader-code pool placement deferral (`DM_VK_PLACE_SHADER_POOLS`, NVN command
+hooks and CPU shader-code readability in `dm/gfx/nvn/hle_nvn.c`) is adapted
+from [Banana Native](https://git.eden-emu.dev/moceure/BananaNative), v0.3.24,
+which credits [Anka Native](https://github.com/EddizEge/AnkaNative) v0.2.2,
+Copyright (c) 2026 EddizEge, under the MIT license and permission notice in
+[LICENSE](../LICENSE). Our adaptation keeps original shader code CPU-readable
+and materializes real GPU data uses, including complete multi-pool ranges.

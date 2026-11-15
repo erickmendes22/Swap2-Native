@@ -753,4 +753,6 @@
     <string name="s2_gpu_retire_dead_images">Liberar imagens GPU encerradas</string>
     <string name="s2_gpu_retire_dead_images_note">Libera imagens de pools encerrados após o uso pela GPU. Independente do RAM Saver; preserva texturas ativas. Reinicie para aplicar.</string>
     <string name="s2_oot_render_profile_720_direct">720p direto · cena e saída 1280×720</string>
+    <string name="s2_gpu_shader_pool_memory">Evitar cópias GPU de shaders</string>
+    <string name="s2_gpu_shader_pool_memory_note">Mantém o código original dos shaders na memória da CPU até a GPU realmente precisar dos dados. Independente do RAM Saver. Reinicie para aplicar.</string>
 </resources>

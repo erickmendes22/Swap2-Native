@@ -56,3 +56,7 @@ void *mtl_device_classic(void);   // the same for a layer that draws only on cla
 uint64_t mtl_ext_tex(void *tex);
 uint64_t mtl_present_ext(uint64_t serial, double period, void *ev, uint64_t ev_val, const int crop[4]);   // crop: x, y, w, h of the texture to show (NULL = all of it)
 void mtl_present_wait(uint64_t ticket);   // as in nvn_obj.h: wait until that present has been handed to the GPU
+
+// Shader code stays CPU-readable without committing unused Vulkan buffers.
+int nvn_shader_pools_deferred(void);
+int nvn_shader_code_readable(uint64_t a, uint64_t n);

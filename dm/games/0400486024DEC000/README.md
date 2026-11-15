@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Program address queries commit unused shader-code pools](../../../docs/reference/rendering.md#program-address-queries-commit-unused-shader-code-pools): the Banana0.3.24 log identifies344 MiB extra placed pools and the missing shader-code placement deferral in our NVN host.
+
 - Current menu cleanup: retire shader A omission and ignore its stored/environment value in the runtime; shader B remains independently configurable. Cached classic passes remain forcibly disabled for Ocarina and absent from the menu. Two independent new switches expose full-guest compute dependency merging and finalized-pool image retirement; both default on and require restart. Existing vegetation optimizations stay automatic.
 
 - [Finalized-pool GPU image retirement](../../../docs/reference/rendering.md#finalized-pools-retain-private-gpu-images-below-the-cache-budget): the user reports about nine percentage points more system RAM than Banana with RAM Saver both enabled and disabled. This is a baseline-memory investigation, not a RAM Saver defect. Source comparison finds stricter indefinite GPU-image retention here versus Banana's idle eviction. Safely release only proven-dead storage; the amount recovered and remaining difference require a device comparison. No nine-point recovery or crash fix is established yet.
@@ -1398,3 +1400,36 @@ baseline report. A corresponding Banana gameplay log from the same scene,
 resolution and memory backend is still missing, preventing attribution of
 the between-app gap to pools, images or other process/driver allocations.
 Preserve the accepted visual fixes while resolving that gap.
+
+
+## Banana 0.3.24 memory baseline (2026-11-15, current)
+
+The supplied `0400486024DEC000-20261115-085417.log` is official Banana0.3.24,
+commit04da6e96fd29. Same title/update NUP, Adreno840/driver891.14, graphics
+scale2, handheld mode, full vegetation, Max resolution OFF, texture pool x2
+OFF. Banana uses native placed maps and RAM Saver ON; the submitted Swap173
+runs use Shared buffer and RAM Saver OFF. The user's earlier matched ON/ON
+and OFF/OFF nine-point observations remain valid reports, but this new pair
+must not be presented as a controlled RAM Saver comparison.
+
+Banana's last allocation sample is1619 MiB placed pools,1464 MiB images and
+144 MiB scratch. Our samples show1963 MiB placed pools,1468-1491 MiB images
+and80 MiB scratch. The material placed-pool difference is344 MiB, while
+images are close. Banana's shader library is720.7 MB/42848 shaders; ours is
+1246.4 MB/42339 shaders. File size is not resident RAM, and different chains
+must not be interchanged or relabelled. Both loaders map libraries read-only.
+
+The NVN source audit finds the missing Banana/Anka shader-code-pool deferral:
+upstream documents205 Ocarina shader pools totalling345 MiB (largest244 MiB)
+committed for address queries despite their code being read only on the CPU.
+This matches the observed344 MiB pool gap closely; shader-pool byte counters
+and total placed bytes on the device must verify the exact reduction.
+Adapt the complete command-use fallback and CPU code-hash path, not just the
+query skip. Preserve all42339 existing shaders/ABI and accepted visual fixes.
+
+Replace the ineffective dead-pool-retirement menu switch with **Avoid unused
+shader GPU copies** (defaultON, independent of RAM Saver); keep safe dead-pool
+cleanup automatic. An opt-out restores old placement. No full9-point recovery
+or FPS gain is established by the fixture tests. The Banana log's GPU p50 is
+22.64-22.82 ms versus roughly20.4 ms in Swap173; these are separate runs,
+with different memory backend/upscaler paths, not a controlled speed ranking.

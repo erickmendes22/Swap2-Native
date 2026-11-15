@@ -237,11 +237,11 @@ final class GameSettings {
                     .toggle(a, Prefs.computeGuestDedup(a, id), (b, on) -> Prefs.computeGuestDedup(a, id, on));
             computeGuestDedup.value(a.getString(R.string.s2_gpu_compute_guest_dedup_note));
             box.addView(computeGuestDedup.view);
-            Ui.Setting retireDeadImages = new Ui.Setting(a, R.drawable.s2_ic_chip,
-                    a.getString(R.string.s2_gpu_retire_dead_images), null)
-                    .toggle(a, Prefs.retireDeadImages(a, id), (b, on) -> Prefs.retireDeadImages(a, id, on));
-            retireDeadImages.value(a.getString(R.string.s2_gpu_retire_dead_images_note));
-            box.addView(retireDeadImages.view);
+            Ui.Setting shaderPoolMemory = new Ui.Setting(a, R.drawable.s2_ic_chip,
+                    a.getString(R.string.s2_gpu_shader_pool_memory), null)
+                    .toggle(a, Prefs.shaderPoolMemory(a, id), (b, on) -> Prefs.shaderPoolMemory(a, id, on));
+            shaderPoolMemory.value(a.getString(R.string.s2_gpu_shader_pool_memory_note));
+            box.addView(shaderPoolMemory.view);
             Ui.Setting partialTextureUploads = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_partial_upload), null)
                     .toggle(a, Prefs.partialTextureUploads(a, id), (button, on) -> Prefs.partialTextureUploads(a, id, on));
             partialTextureUploads.value(a.getString(R.string.s2_gpu_partial_upload_note));

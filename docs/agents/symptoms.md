@@ -667,6 +667,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - exported FD memory passes its alias probe and guest pools map successfully, but the renderer reports no placed guest memory and disables draws/dispatches, leaving a black screen. → [Validated shared guest memory disables rendering](../reference/rendering.md#validated-shared-guest-memory-disables-rendering)
 - baseline resident memory remains higher than another backend with the same RAM Saver setting, and unused GPU attachments remain cached after pool finalization. → [Finalized pools retain private GPU images below the cache budget](../reference/rendering.md#finalized-pools-retain-private-gpu-images-below-the-cache-budget)
 - a pending compute group receives a host publication barrier immediately followed by a full guest barrier with no intervening GPU work. → [Adjacent compute publication repeats a full guest dependency](../reference/rendering.md#adjacent-compute-publication-repeats-a-full-guest-dependency)
+- shader-code pools consume driver memory although the Vulkan renderer reads original code only on the CPU and executes translated SPIR-V. Ocarina shows about344 MiB more placed pools than Banana while image allocations are similar. → [Program address queries commit unused shader-code pools](../reference/rendering.md#program-address-queries-commit-unused-shader-code-pools)
 
 ## Shaders
 

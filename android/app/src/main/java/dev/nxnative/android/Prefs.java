@@ -129,10 +129,10 @@ final class Prefs {
         return of(c).getBoolean(gameKey("gpu_compute_guest_dedup", id), true); }
     static void computeGuestDedup(Context c, String id, boolean on) {
         of(c).edit().putBoolean(gameKey("gpu_compute_guest_dedup", id), on).commit(); }
-    static boolean retireDeadImages(Context c, String id) {
-        return of(c).getBoolean(gameKey("gpu_retire_dead_images", id), true); }
-    static void retireDeadImages(Context c, String id, boolean on) {
-        of(c).edit().putBoolean(gameKey("gpu_retire_dead_images", id), on).commit(); }
+    static boolean shaderPoolMemory(Context c, String id) {
+        return of(c).getBoolean(gameKey("gpu_shader_pool_memory", id), true); }
+    static void shaderPoolMemory(Context c, String id, boolean on) {
+        of(c).edit().putBoolean(gameKey("gpu_shader_pool_memory", id), on).commit(); }
     static boolean skipFsB(Context c, String id) { return OCARINA_TITLE.equals(id) &&
         of(c).getBoolean(gameKey("oot_fs_b_diagnostic", id), false); }
     static void skipFsB(Context c, String id, boolean on) {
