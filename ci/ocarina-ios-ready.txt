@@ -180,3 +180,11 @@ Build197 2026-11-15: NVN image view source fix for full-frame temporal GSR2 corr
 - Android AArch64 syntax CI and 9 asset/structural regression tests passed in research branch; signed APK build should preserve 177 RAM saver, 178 vegetation, VRS config and precompiled 42k shader ABI.
 - Require versionCode 197 and existing test signer a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad; install over 196, do not reprepare shaders.
 - This is a targeted hypothesis supported by source-level mismatch, not a proven visual repair until RedMagic on-device test.
+
+Build198 — same-output GSR2 A/B, native 720p compositor + AMD RCAS, 2026-11-15.
+- Profiles Banana 360p/540p -> 720p keep the guest NDSR output 1280x720 for GSR2 ON and OFF; no presentation FSR/SGSR second GPU upscale in either. App SurfaceHolder fixed 1280x720 and physical 16:9 view placement matching touch geometry; Android SurfaceFlinger handles final panel scaling.
+- Force DM_VK_PRESENT_FILTER=2 and DM_VK_FSR=0 for the two Banana profiles independently of Prefs.ootGsr2; DM_VK_OOT_SURFACE_720=1 and DM_VK_PRETRANSFORM=0 for direct 720p swapchain. Vulkan uses exact 1:1 image copy when format/usage/transform permit, otherwise same-size blit; logs effective method and swapchain size.
+- AMD FidelityFX RCAS from existing MIT third_party source: real shader, packed R32UI -> B10G11R11 output after GSR2 temporal. Fixed moderate 0.75 linear (about 0.42 stops), default on when sampled R32UINT supported. Internal DM_VK_OOT_GSR2_RCAS=0 disables post-sharpening for A/B; no user-facing clutter. History remains unchanged.
+- Existing Ocarina on-screen controls, touch coordinates, editable picture position and Android overlays remain physical-resolution; picture 16:9 SurfaceView follows user placement. Non-Ocarina and other profiles unchanged; Stretch continues legacy fullscreen path.
+- Research branch all shader SPIR-V compilation, GSR2 unit tests and Android AArch64 native checks passed. Full Android app Gradle build required here.
+- Same signer must match SHA256 a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad; expected versionCode 198 or higher, install over Build197. User must compare scene/profile/VRS and fixed camera position with GSR2 OFF vs ON; visual/FPS improvement unverified on phone.
