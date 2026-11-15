@@ -10,6 +10,9 @@ on:
       - dm/host/tests/t_android_shader_fileback_memory.c
       - dm/tools/tests/test_android_shader_fileback_default.py
       - dm/gfx/vk_android/vka_mem.c
+      - dm/gfx/vk_android/vka_pso.c
+      - dm/gfx/vk_android/vka_prewarmlimit.h
+      - dm/tools/tests/test_ocarina_prewarmlimit.py
       - dm/host/rt/game_rt.c
       - dm/tools/tests/test_ocarina_app_pool_budget.py
       - .github/workflows/memory-accounting-check.yml
@@ -27,5 +30,7 @@ jobs:
         run: python3 -m unittest dm.tools.tests.test_android_shader_fileback_default -v
       - name: Verify corrected Ocarina 9 GiB application-pool budget and opt-out
         run: python3 -m unittest dm.tools.tests.test_ocarina_app_pool_budget -v
+      - name: Verify real speculative prewarm policy and frame-demand fallback
+        run: python3 -m unittest dm.tools.tests.test_ocarina_prewarmlimit -v
       - name: Verify Android collector package coverage and mapping categories
         run: python3 -m unittest dm.tools.tests.test_android_memory_audit -v

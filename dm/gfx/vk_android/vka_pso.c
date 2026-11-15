@@ -19,6 +19,7 @@
 #include <sys/resource.h>
 #include <errno.h>
 #include "vka_texlimit.h"
+#include "vka_prewarmlimit.h"
 
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 // Suspend (mtl_drain, the app going to the background): the prewarm and optimizer threads stop between pipelines until the game submits again (vka_pso_pause(0) at the next
@@ -948,7 +949,8 @@ static pthread_mutex_t g_pw_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint8_t *g_pw_buf; static size_t g_pw_len, g_pw_cap; static uint32_t g_pw_n; static int g_pw_dirty;   // every record (loaded, then new), under g_pw_mu
 static uint64_t *g_pw_set; static size_t g_pw_setcap, g_pw_setn;   // their hashes
 static uint8_t *g_pw_load; static size_t g_pw_load_len; static uint32_t g_pw_load_n;   // the loaded records, read by the prewarm threads (not changed after pw_load)
-static _Atomic uint32_t g_pw_next, g_pw_done, g_pw_made, g_pw_had, g_pw_bad; static int g_pw_threads; static uint64_t g_pw_t0;
+static _Atomic uint32_t g_pw_next, g_pw_done, g_pw_made, g_pw_had, g_pw_bad;
+static uint32_t g_pw_budget;  // set once before pthread_create; frame-demand pipelines are never capped static int g_pw_threads; static uint64_t g_pw_t0;
 static size_t pw_size(const pwrec *r) { return sizeof *r + ((r->klen + 7) & ~(size_t)7); }
 static int pw_set_add(uint64_t h) {   // 1 = new
     if (!h) h = 1;
@@ -1103,6 +1105,15 @@ static int pw_memory_pressure(void) {
     atomic_store_explicit(&low, pressure, memory_order_relaxed);
     return pressure;
 }
+// The phone's physical-RAM footprint, read ONCE before speculative prewarm.
+static uint64_t pw_total_ram(void) {
+    FILE *f = fopen("/proc/meminfo", "r");
+    if (!f) return 0;
+    char ln[160]; unsigned long long kb = 0;
+    while (fgets(ln, sizeof ln, f)) if (sscanf(ln, "MemTotal: %llu kB", &kb) == 1) break;
+    fclose(f);
+    return kb * 1024ull;
+}
 static int pw_memu_rec(const pwrec *r) {
     if (r->kind == 2) return 0;
     for (int s = 0; s < (r->kind == 1 ? 1 : 5); s++) if (r->key[s] && vka_shader_memu_key(r->key[s])) return 1;
@@ -1111,7 +1122,7 @@ static int pw_memu_rec(const pwrec *r) {
 static void *pw_main(void *a) {
     (void)a; pthread_setname_np(pthread_self(), "vk-prewarm"); vka_host_fp("vk-prewarm");
     setpriority(PRIO_PROCESS, 0, 10);   // this thread (Linux: per-thread nice), under the game's threads
-    uint32_t max = (uint32_t)VKA_ENV("DM_VK_PREWARM_MAX", 8192);
+    uint32_t max = g_pw_budget;
     size_t *offs = NULL;   // walked once by each thread to find the record of index i: built here (the list is small)
     uint32_t n = g_pw_load_n; offs = malloc((n ? n : 1) * sizeof *offs);
     if (offs) for (size_t o = 0, i = 0; i < n; i++) { offs[i] = o; pwrec r; memcpy(&r, g_pw_load + o, sizeof r); o += pw_size(&r); }
@@ -1135,7 +1146,7 @@ static void *pw_main(void *a) {
         // one made the oldest sessions' pipelines first while the game, back where it was last played, made its own on the frame path or waited for them
         uint32_t i = atomic_fetch_add(&g_pw_next, 1);
         if (!offs || i >= n || i >= max) break;
-        i = n - 1 - i;
+        i = vkpw_newest(n, i);
         pwrec r; memcpy(&r, g_pw_load + offs[i], sizeof r);
         const uint8_t *kb = g_pw_load + offs[i] + sizeof r;
         vka_shader *sh[VKA_NSTAGE]; memset(sh, 0, sizeof sh); int bad = !pw_rec_ok(&r, kb);
@@ -1182,6 +1193,22 @@ static void pw_start(void) {
     int nt = VKA_ENV("DM_VK_PREWARM", 2);
     if (nt <= 0 || !g_pw_load_n) { if (g_pw_load_n) VLOG("prewarm: off (DM_VK_PREWARM=0): %u keys not made ahead", g_pw_load_n); return; }
     if (nt > 4) nt = 4;
+    // Prewarm previously allocated 2,075 cached pipeline objects on the
+    // Ocarina 16-GiB test device, vs 1,546 on Banana. The driver's native
+    // heap keeps every object alive even if the current scene never uses it.
+    // Limit only speculative builds (newest records first). Frame-demand
+    // gfx_obtain/cs_obtain still builds *any* omitted key using the preserved
+    // on-disk pipeline cache, maintaining visual correctness. On larger
+    // devices the old limit applies. Explicit DM_VK_PREWARM_MAX overrides.
+    const char *override = getenv("DM_VK_PREWARM_MAX");
+    uint64_t ram = pw_total_ram();
+    unsigned requested = (unsigned)VKA_ENV("DM_VK_PREWARM_MAX", 8192);
+    g_pw_budget = vkpw_limit(requested, ram,
+                            DM_GAME_ID && !strcmp(DM_GAME_ID, "0400486024DEC000"),
+                            override && *override);
+    if (g_pw_budget < requested)
+        VLOG("prewarm: Ocarina <=16 GiB RAM, %u of %u oldest/unused speculative pipeline records skipped; frame-demand pipelines and on-disk cache unchanged",
+             g_pw_load_n > g_pw_budget ? g_pw_load_n - g_pw_budget : 0, g_pw_load_n);
     g_pw_t0 = now_ns(); g_pw_threads = 0;
     for (int i = 0; i < nt; i++) { pthread_t th; if (!pthread_create(&th, NULL, pw_main, NULL)) { pthread_detach(th); g_pw_threads++; } }
     VLOG("prewarm: %u pipeline keys of earlier runs made ahead on %d background threads (DM_VK_PREWARM=0 off)", g_pw_load_n, g_pw_threads);
