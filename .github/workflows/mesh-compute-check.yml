@@ -11,6 +11,8 @@ on:
       - dm/gfx/tools/tests/test_oot_render_enable_boundaries.py
       - dm/gfx/tools/tests/test_oot_compute_hdr_vrs.py
       - dm/gfx/vk_android/vka_pso.c
+      - dm/gfx/vk_android/vka_vrs_filter.h
+      - dm/gfx/tools/tests/test_vrs_exclusion.py
       - dm/gfx/tools/tests/test_memu_plane_lut.py
       - dm/gfx/tools/tests/test_banana_input_caches.py
       - dm/gfx/tools/tests/test_memu_snapshot_rows.py
@@ -209,7 +211,7 @@ jobs:
             /tmp/mesh-invariant.spv /tmp/mesh-invariant-patched.spv
           spirv-val --target-env vulkan1.3 /tmp/mesh-invariant-patched.spv
       - name: Verify VRS eligibility survives compute mesh conversion
-        run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_oot_compute_hdr_vrs.py -v
+        run: python3 -m unittest dm.gfx.tools.tests.test_oot_compute_hdr_vrs dm.gfx.tools.tests.test_vrs_exclusion dm.gfx.tools.tests.test_ocarina_fps_boost_vrs -v
       - name: Test real NVN mesh lookahead render-enable boundaries
         run: python3 -m unittest discover -s dm/gfx/tools/tests -p test_oot_render_enable_boundaries.py -v
       - name: Check hybrid routing and caller ordering

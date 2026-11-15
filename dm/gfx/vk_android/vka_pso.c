@@ -9,6 +9,7 @@
 #include "vka.h"
 #include "vka_memu_abi.h"
 #include "vka_memu.h"
+#include "vka_vrs_filter.h"
 #include "../nvn/nvn_mtl.h"
 #include <stdlib.h>
 #include <string.h>
@@ -297,8 +298,8 @@ static void fout_masks(const vka_shader *fs, const vka_gkey *k, uint32_t *um, ui
 // The captured two-target HDR pass must keep its chosen VRS rate after
 // draw_body replaces its native task/mesh stages with the arena vertex stage.
 // The derived VS key proves the original mesh identity for BOTH arena layouts;
-// ordinary vertex programs and unrelated R16 targets remain excluded. Task
-// dispatch changes geometry, not this fragment shader's shading-rate contract.
+// ordinary vertex programs and unrelated R16 targets remain excluded. This
+// proves routing identity, not visual safety of a coarse shading rate.
 static int oot_profiled_mesh_hdr(vka_shader *const sh[VKA_NSTAGE], const vka_gkey *k, int mesh) {
     int targets = k->ncolor == 2 &&
                   VKA_COLOR_ORIGINAL(k->cfmt[0]) == VK_FORMAT_R16G16B16A16_SFLOAT &&
@@ -311,6 +312,25 @@ static int oot_profiled_mesh_hdr(vka_shader *const sh[VKA_NSTAGE], const vka_gke
                    sh[0]->key == (UINT64_C(0x066f5daf12e43c71) ^
                                   VKA_MEMU_KEY_VS ^ vka_memu_layout_tag());
     return native || emulated;
+}
+// Startup diagnostic: pipelines already made are not rebuilt by a live edit.
+// Used to isolate coarse-shading artifacts without dropping a guest draw or
+// changing the shader pack, resolution, depth state or the selected VRS rate.
+static int vrs_excluded(uint64_t key) {
+    char list[1024];
+    if (!vka_env_str("DM_VK_VRS_EXCLUDE_FS", list, sizeof list)) return 0;
+    int excluded = strlen(list) == sizeof list - 1 ? -1 : vka_vrs_exclusion(list, key);
+    if (excluded < 0) {
+        VRED_ONCE("VRS fragment exclusion list malformed or too long: full-detail shading retained");
+        return 1;
+    }
+    if (excluded) {
+        static _Atomic int note;
+        if (!atomic_exchange(&note, 1))
+            VLOG("VRS fragment exclusions active: matching shaders retain full-detail shading; first fs=%016llx; restart to change DM_VK_VRS_EXCLUDE_FS",
+                 (unsigned long long)key);
+    }
+    return excluded;
 }
 // 0 = a stage's module is missing (logged by vka_shader_module)
 static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_layout *lay, const vka_gkey *k) {
@@ -432,7 +452,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
     int explicit_hot = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0) > 0 &&
                        (fs_hot == UINT64_C(0x5ad65c0eefd09c7f) ||
                         fs_hot == UINT64_C(0x1e4d2630d24846d0));
-    int hotpass_profile = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1);
+    int hotpass_profile = VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 0);
     int game_oot = !strcmp(DM_GAME_ID, "0400486024DEC000");
     int balanced_hot = hotpass_profile > 0 && scene_hot && game_oot;
     // Same captured HDR pass in native mesh and integral-compute routing.
@@ -456,7 +476,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
                        profiled_mesh_hdr;
     if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)
         && (k->samples ? k->samples : 1) == 1 && k->ncolor > 0 &&
-        profiled_hdr) {
+        profiled_hdr && !vrs_excluded(fs_hot)) {
         // Apply the user's chosen validated VRS rate to the known HDR
         // fragment allowlist at EVERY scene resolution. The former 360p-
         // specific gate and 480p+ forced 2x2 cap made the 4x2/4x4 menu

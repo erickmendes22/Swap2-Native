@@ -1469,6 +1469,14 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Check:** complete GPU arena equality for8/64/1024-word fixtures, both layouts, absent/empty/short/full producers and duplicate task prefixes; baseline module hashes, pointer-escape/volatile fallback and historical cache decoding. Software timings are not phone FPS evidence.
 - **Found on:** [Ocarina Android](../../dm/games/0400486024DEC000/README.md).
 
+### Surface stripes with optional coarse fragment shading
+
+- **Symptom:** horizontal surface bands in a low-resolution scene disappear when optional VRS is disabled, while earlier upscaler substitutions did not remove them.
+- **Cause:** the device comparison isolates the active coarse-shading configuration. It does not identify which fragment pass is responsible. A successful pipeline creation or a hot-shader profile is not proof of acceptable visual quality at a coarse rate.
+- **Fix:** new Ocarina settings default to full-detail shading in both launcher and backend, preserving explicit per-game choices. For selective investigation, `DM_VK_VRS_EXCLUDE_FS` excludes exact fragment keys from the existing VRS eligibility gate; it never enables VRS or changes draws, shaders, depth or dimensions. Malformed or truncated lists fail to full detail. Restart to change pipeline policy. Retain the accepted off setting until a selective configuration is visually checked; there is no automatic per-shader repair or measured FPS claim yet.
+- **Check:** execute the production hexadecimal parser and actual runtime wrapper with exact-key and malformed-tail cases,2000 generated lists, absent/empty values and truncation. Preserve existing format, sample, mesh identity and driver gates. These checks validate selection, not phone VRS image quality. [Diagnostic procedure](../../android/VRS-TESTING.md).
+- **Found on:** [Ocarina Android](../../dm/games/0400486024DEC000/README.md).
+
 ### Overwritten deferred uniform uploads
 
 - **Symptom:** pass-close inline uniform uploads can copy the same destination repeatedly even though only the last bytes are observed after the pass.

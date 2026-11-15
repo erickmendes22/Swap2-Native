@@ -81,11 +81,10 @@ final class GraphicsOptions {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("encoder_idle", id), fallback), 0, 1);
     }
     static int hotpassVrs(Context c, String id) {
-        // A moderate per-fragment rate is separate from the old FPS Boost,
-        // which remained OFF in all the GPU-profiler sessions. The new rate
-        // affects only profiled HDR fragment programs, using the driver's
-        // queried 2x1 or 2x2 rate with 2x1 fallback for the aggressive mode.
-        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 5);
+        // Build172's user test isolates surface stripes to VRS. Default off
+        // for new settings; preserve every explicit per-game rate, including
+        // the user's accepted off choice. Individual-pass isolation is open.
+        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 0), 0, 5);
     }
     static int sgsrChain(Context c, String id) {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_sgsr_chain", id), 0), 0, 1);

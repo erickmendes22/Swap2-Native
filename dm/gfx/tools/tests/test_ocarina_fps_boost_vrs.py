@@ -73,8 +73,8 @@ class FpsBoostTests(unittest.TestCase):
             "0xf48e795040c5dc9a", "0x80d2f2ff9f9882b8",
         ):
             self.assertIn(key, PSO)
-        self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', DEV)
-        self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1)', PSO)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 0)', DEV)
+        self.assertIn('VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 0)', PSO)
         self.assertIn('int explicit_boost = VKA_ENV("DM_VK_OOT_FPS_BOOST", 0)', DEV)
         self.assertIn('requested_rate > explicit_boost ? requested_rate : explicit_boost', DEV)
         self.assertIn('if (V.fps_boost_vrs && sh[1] && (balanced_hot || explicit_hot || extended_scene_hdr)', PSO)
@@ -88,7 +88,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertIn('V.fps_boost_vrs =', DEV)
         self.assertIn('DM_VK_OOT_HOTPASS_VRS=0 restores full fragment detail', DEV)
         self.assertIn('HOTPASS_VRS = {', OPTIONS)
-        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1)', OPTIONS)
+        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 0)', OPTIONS)
         self.assertIn('out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));', OPTIONS)
         self.assertIn('GraphicsOptions.choice(a, id, "oot_hotpass_vrs"', SETTINGS)
         self.assertIn('"DM_VK_OOT_HOTPASS_VRS"', CTL)
@@ -96,14 +96,14 @@ class FpsBoostTests(unittest.TestCase):
 
     def test_optional_2x2_and_accurate_hdr_mesh_coverage(self):
         self.assertIn('"VRS 2×2"', OPTIONS)
-        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 1), 0, 5)', OPTIONS)
+        self.assertIn('getInt(Prefs.gameKey("oot_hotpass_vrs", id), 0), 0, 5)', OPTIONS)
         self.assertIn('else if (want_boost >= 2 && has_2x2)', DEV)
         self.assertIn('profiled_mesh_hdr = oot_profiled_mesh_hdr(sh, k, mesh)', PSO)
         self.assertIn('0xefaa4fa6a80ba719', PSO)
         self.assertIn('0x066f5daf12e43c71', PSO)
         self.assertIn('k->ncolor == 2', PSO)
         self.assertIn('VKA_COLOR_ORIGINAL(k->cfmt[1]) == VK_FORMAT_R16G16B16A16_SFLOAT', PSO)
-        self.assertIn('profiled_hdr)', PSO)
+        self.assertIn('profiled_hdr && !vrs_excluded(fs_hot))', PSO)
         self.assertIn('if (!r && P->fsrate.sType && sh[1]', PSO)
         self.assertIn('Ocarina VRS pipeline ready', PSO)
         self.assertNotIn('if (atomic_fetch_add(&nboost, 1) < 6)', PSO)

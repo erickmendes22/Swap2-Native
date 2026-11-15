@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Surface stripes with optional coarse fragment shading](../../../docs/reference/rendering.md#surface-stripes-with-optional-coarse-fragment-shading): user172 comparison removes the low-resolution surface stripes with VRS off; the responsible individual fragment pass remains open.
+
 - [Overwritten deferred uniform uploads](../../../docs/reference/rendering.md#overwritten-deferred-uniform-uploads): eliminate only fully superseded pass-close GPU copies while retaining per-draw shadows and the complete texture journal. Phone frequency and FPS effect remain unmeasured.
 
 - [Validated shared guest memory disables rendering](../../../docs/reference/rendering.md#validated-shared-guest-memory-disables-rendering).
@@ -1336,3 +1338,11 @@ The new user log identifiesb4d2a63aca86 and contains0.0 eliminated uploads/bytes
 The attached1188127.jpg is now available and inspected: repeated light/dark horizontal bands across the ground/low foliage near Link's feet; the user confirms they move with scene surfaces. They are distinct from the bright white artifacts addressed by the independent layer omission. The same log hasSKIP_HEAVY_FS=0 andSKIP_LAYER2_FS=1; do not misattribute a stripe result to these switches.
 
 A concrete remaining variable isVRS:DM_VK_OOT_HOTPASS_VRS=2 and the device reports an active2x2 rate. The successful-pipeline log includes5ad65c0eefd09c7f on twoRGBA16F targets; the sampled GPU profile shows its actual480x270 pass, generatedVS086551b608e12c6b andD32 depth. Code explicitly admits this native/emulated task/mesh triple throughoot_profiled_mesh_hdr; this is not an accidental proof from one colour-format name or a shader filename. Other scene shaders also useVRS. Existingnet/bilinear tests do not isolate VRS, and noVRS-OFF visual result for this screenshot has been supplied. The next device isolation needs only the existing172: keep540p/camera/layer settings and restart withVRS disabled. Do not claim VRS is the cause before that comparison, globally force a depth offset, or generate a speculative stripe-fix APK. The separately imported AST pair is also active; it remains another independently reversible candidate if VRS-OFF leaves the bands.
+
+### User confirms VRS-off removes surface stripes after172 (2026-11-15)
+
+The user followed the same172 comparison with VRS disabled and confirms "resolved". This isolates the current coarse-shading configuration as the cause of the observed surface bands, distinct from the white-artifact layer omission. It does not identify the responsible individual shader or establish a VRS performance gain/loss; do not claim that5ad65c0eefd09c7f alone is the culprit, or that AST/upscaling needs a speculative rewrite. Keep the user's accepted VRS-off choice.
+
+New settings now default0 in GraphicsOptions, vka_dev and vka_pso. Explicit stored per-game choices are preserved, not silently rewritten. English/PT notes describe the observed low-resolution quality risk without claiming driver-supported rates guarantee visual compatibility. Add a developer-only exact-fragment exclusion list at the existing eligibility gate for future selective isolation; no new public control, shader rebuild, extra GPU work or broader VRS eligibility. [Procedure](../../../android/VRS-TESTING.md); no selective visual/FPS result claimed. No APK is requested merely for these defaults/diagnostics; include source in the next substantive continuation.
+
+The actual exclusion parser/runtime wrapper and existing VRS format/sample/native/emulated route tests pass locally (18 tests; address/undefined sanitizer predicate run with leak checking disabled because this host's ptrace blocks LeakSanitizer). New parser checks2000 generated lists and malformed tails; wrapper checks absent/empty and oversized/truncated values. Native Android compile and full CI are pending at source checkpoint. Existing42339 shader library and674db0a4ff79 ABI remain unchanged.

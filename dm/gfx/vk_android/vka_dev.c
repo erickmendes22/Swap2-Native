@@ -138,7 +138,7 @@ static int init_once(void) {
     // The two larger rates are opt-in and never assumed to be supported.
     // Profile 3/4/5 target the same verified HDR shader keys.
     int hotpass_vrs = !strcmp(DM_GAME_ID, "0400486024DEC000")
-                      ? VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 1) : 0;
+                      ? VKA_ENV("DM_VK_OOT_HOTPASS_VRS", 0) : 0;
     if (hotpass_vrs < 0) hotpass_vrs = 0;
     if (hotpass_vrs > 5) hotpass_vrs = 5;
     int requested_rate = hotpass_vrs >= 5 ? 4 : hotpass_vrs >= 4 ? 3
