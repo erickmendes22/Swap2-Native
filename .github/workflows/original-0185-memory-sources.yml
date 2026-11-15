@@ -25,7 +25,7 @@ jobs:
           dest=pathlib.Path('upstream-memory')
           dest.mkdir(exist_ok=True)
           for name in names:
-              found=[x for x in z.namelist() if x.endswith('/'+name) and (('/vk_android/' in x) if name.startswith('vka_') else ('/android/app/src/main/java/' in x))]
+              found=[x for x in z.namelist() if x.endswith('/'+name) and (('/vk_android/' in x) if name.startswith('vka') else ('/android/app/src/main/java/' in x))]
               if len(found)!=1: raise RuntimeError((name,found))
               (dest/name).write_bytes(z.read(found[0]))
               print(name,'source=',found[0],'bytes=',(dest/name).stat().st_size)
