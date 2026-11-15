@@ -51,6 +51,7 @@ class SgsrLowResolutionSafety(unittest.TestCase):
         self.assertIn('imageStore(dst, p, uvec4(w));',COMP)
 
     def test_cave_wall_backend_is_unconditionally_disabled(self):
+        self.assertNotIn('R.string.s2_oot_classic_passes', (ROOT/"android/app/src/main/java/dev/nxnative/android/GameSettings.java").read_text())
         self.assertIn('env.add("DM_VK_CLASSIC_RP=0");',ACT)
         self.assertIn('static boolean classicPasses(Context c,String id) { return false; }',PREFS)
         self.assertIn('strcmp(DM_GAME_ID, "0400486024DEC000") != 0;',DRAW)
