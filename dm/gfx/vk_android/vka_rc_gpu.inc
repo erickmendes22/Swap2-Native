@@ -2,15 +2,29 @@
 // Included after the replay's nested-list and state helpers. No shader ABI changes.
 #include "vka_rc_gpu_policy.h"
 #include "vka_rc_gpu_spv.h"
+typedef struct {
+    const prog_t *program[5]; uint64_t serial[5];
+    const uint8_t *caller[16]; int depth, tf, discard;
+} rc_gpu_context;
+typedef struct { const uint8_t *p; rc_rep a, b; uint32_t mode; rc_gpu_context context; } rc_gpu_job;
+static rc_gpu_job g_rc_jobs[VKA_RC_GPU_MAX_JOBS];
+static vka_rc_gpu_plan g_rc_plan;
+static uint32_t g_rc_job_words[VKA_RC_GPU_MAX_JOBS * 12];
+static void rc_gpu_context_of(rc_gpu_context *out, const vka_dstate *d, int depth, const uint8_t *const *caller) {
+    memset(out, 0, sizeof *out); out->depth = depth; out->tf = d->tf_on; out->discard = d->rast_discard;
+    for (int i = 0; i < 5; i++) { out->program[i] = d->bst[i]; out->serial[i] = d->bst[i] ? d->bst[i]->serial : 0; }
+    for (int i = 0; i < depth && i < 16; i++) out->caller[i] = caller[i];
+}
 static struct {
     int enabled, n;
     uint64_t revision, submission_first;
     const uint8_t *record[VKA_RC_GPU_MAX_JOBS];
+    rc_gpu_context context[VKA_RC_GPU_MAX_JOBS];
     vka_span predicates, current;
     VkDescriptorSetLayout set;
     VkPipelineLayout layout;
     VkPipeline pipeline;
-    uint64_t batches, pairs, query_copies, requests;
+    uint64_t batches, pairs, query_copies, requests, cpu_zero;
 } RG;
 static vka_dstate g_rc_scan;
 
@@ -69,15 +83,12 @@ static int rc_gpu_init(void) {
 // Crossing report/reset/transfer/clear/dispatch/event records is forbidden.
 // Complete a block at the next render-enable command, or the outer list end;
 // otherwise discard its candidate. No partial block is ever predicated.
-static void rc_gpu_prepare(const uint8_t *p) {
-    RG.n = 0; RG.revision = g_rc_revision;
+static int rc_gpu_collect(const uint8_t *p, rc_gpu_job *jobs) {
     const uint8_t *ret[17]; int nr = g_memu_depth;
-    if (nr < 0 || nr > 16) return;
+    if (nr < 0 || nr > 16) return 0;
     for (int i = 0; i < nr; i++) ret[i] = g_memu_caller[i];
     g_rc_scan = S.d;
-    struct { const uint8_t *p; rc_rep a, b; uint32_t mode; } jobs[VKA_RC_GPU_MAX_JOBS];
     int n = 0, pending = -1, draws = 0;
-    uint32_t total = 0;
     for (int guard = 0; guard < 200000; guard++) {
         op_hdr h; memcpy(&h, p, sizeof h); const void *arg = p + 8;
         if (h.size < 8) break;
@@ -87,7 +98,7 @@ static void rc_gpu_prepare(const uint8_t *p) {
             pending = -1; break;
         }
         if (h.op == OP_JUMP) { memcpy(&p, arg, 8); continue; }
-        if (h.op == OP_CALL) { if (nr == 17) break; ret[nr++] = p + h.size; memcpy(&p, arg, 8); continue; }
+        if (h.op == OP_CALL) { if (nr == 16) break; ret[nr++] = p + h.size; memcpy(&p, arg, 8); continue; }
         if (h.op == OP_RENDER_COND) {
             if (pending >= 0 && draws) n++;
             pending = -1; draws = 0;
@@ -95,7 +106,11 @@ static void rc_gpu_prepare(const uint8_t *p) {
             p_render_cond cond; memcpy(&cond, arg, sizeof cond);
             if ((cond.mode == 0 || cond.mode == 1) && cond.addr <= UINT64_MAX - 16 &&
                 rc_gpu_report(cond.addr, &jobs[n].a) && rc_gpu_report(cond.addr + 16, &jobs[n].b)) {
-                jobs[n].p = p; jobs[n].mode = (uint32_t)cond.mode; pending = n;
+                if (jobs[n].a.oq_begin == jobs[n].a.oq_end && jobs[n].b.oq_begin == jobs[n].b.oq_end) {
+                    p += h.size; continue; // rc_gpu_bind resolves these exact empty counters on the CPU.
+                }
+                jobs[n].p = p; jobs[n].mode = (uint32_t)cond.mode;
+                rc_gpu_context_of(&jobs[n].context, &g_rc_scan, nr, ret); pending = n;
             }
         } else if (h.op == OP_DRAW || h.op == OP_DRAW_IDX) {
             if (pending >= 0) {
@@ -114,40 +129,43 @@ static void rc_gpu_prepare(const uint8_t *p) {
         } else break;
         p += h.size;
     }
-    // A candidate is counted only after seeing its full safe block.
+    return n;
+}
+static void rc_gpu_prepare(const uint8_t *p) {
+    RG.n = 0; RG.revision = g_rc_revision;
+    rc_gpu_job *jobs = g_rc_jobs;
+    int n = rc_gpu_collect(p, jobs);
     if (!n) return;
+    memset(&g_rc_plan, 0, sizeof g_rc_plan);
     for (int i = 0; i < n; i++) {
-        uint64_t amount = jobs[i].a.oq_end - jobs[i].a.oq_begin + jobs[i].b.oq_end - jobs[i].b.oq_begin;
-        if (amount > VKA_RC_GPU_MAX_QUERIES - total) { n = i; break; }
-        total += (uint32_t)amount;
+        uint32_t *j = g_rc_job_words + i * 12; memset(j, 0, 48);
+        const rc_rep *r[2] = {&jobs[i].a, &jobs[i].b};
+        for (unsigned side = 0; side < 2; side++) {
+            if (!vka_rc_gpu_plan_add(&g_rc_plan, r[side]->oq_begin, r[side]->oq_end, OQ_N, &j[side * 4])) return;
+            j[side * 4 + 1] = (uint32_t)(r[side]->oq_end - r[side]->oq_begin);
+            j[side * 4 + 2] = (uint32_t)r[side]->oq_lost;
+            j[side * 4 + 3] = (uint32_t)(r[side]->oq_lost >> 32);
+        }
+        j[8] = jobs[i].mode; j[9] = (uint32_t)OQ.precise;
     }
-    if (!n || !rc_gpu_init()) return;
+    if (!rc_gpu_init()) return;
+    uint32_t total = g_rc_plan.total;
     vka_span query, job, predicate;
     VkDeviceSize align = V.sb_align > 8 ? V.sb_align : 8;
     if (!vka_scratch((total ? total : 1) * 8, align, &query) ||
         !vka_scratch((VkDeviceSize)n * 48, align, &job) ||
         !vka_scratch((VkDeviceSize)n * 4, align, &predicate)) return;
-    // All queries come from reports recorded in this submission, already
-    // closed. Their host-reset callback cannot run until this fence completes.
+    memcpy(job.ptr, g_rc_job_words, (size_t)n * 48);
+    // All queries come from closed reports in this submission. Their reset
+    // callback cannot run until this fence completes, after these copies.
     vka_rp_end(); vka_dispatch_overlap_flush();
-    uint32_t cursor = 0;
-    for (int i = 0; i < n; i++) {
-        uint32_t *j = (uint32_t *)job.ptr + i * 12; memset(j, 0, 48);
-        const rc_rep *r[2] = {&jobs[i].a, &jobs[i].b};
-        for (unsigned side = 0; side < 2; side++) {
-            uint32_t count = (uint32_t)(r[side]->oq_end - r[side]->oq_begin);
-            j[side * 4] = cursor; j[side * 4 + 1] = count;
-            j[side * 4 + 2] = (uint32_t)r[side]->oq_lost; j[side * 4 + 3] = (uint32_t)(r[side]->oq_lost >> 32);
-            for (uint64_t q = r[side]->oq_begin; q < r[side]->oq_end;) {
-                uint32_t slot = (uint32_t)(q % OQ_N), k = (uint32_t)(r[side]->oq_end - q);
-                if (k > OQ_N - slot) k = OQ_N - slot;
-                vk.vkCmdCopyQueryPoolResults(g_cb, OQ.pool, slot, k, query.buf,
-                    query.off + (VkDeviceSize)cursor * 8, 8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-                cursor += k; q += k; RG.query_copies++;
-            }
-        }
-        j[8] = jobs[i].mode; j[9] = (uint32_t)OQ.precise; RG.record[i] = jobs[i].p;
+    for (unsigned i = 0; i < g_rc_plan.copies; i++) {
+        const vka_rc_gpu_copy *c = &g_rc_plan.copy[i];
+        vk.vkCmdCopyQueryPoolResults(g_cb, OQ.pool, c->first, c->count, query.buf,
+            query.off + (VkDeviceSize)c->offset * 8, 8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
     }
+    for (int i = 0; i < n; i++) { RG.record[i] = jobs[i].p; RG.context[i] = jobs[i].context; }
+    RG.query_copies += g_rc_plan.copies;
     VkMemoryBarrier transfer = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_WRITE_BIT,
         .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
@@ -177,11 +195,23 @@ static void rc_gpu_bind(const uint8_t *p) {
         !vk.vkCmdDrawIndirectCount || !vk.vkCmdDrawIndexedIndirectCount) return;
     p_render_cond cond; memcpy(&cond, p + 8, sizeof cond);
     if (cond.mode != 0 && cond.mode != 1) return;
+    rc_rep a, b;
+    if (!rc_gpu_report(cond.addr, &a) || cond.addr > UINT64_MAX - 16 ||
+        !rc_gpu_report(cond.addr + 16, &b)) return;
+    if (a.oq_begin == a.oq_end && b.oq_begin == b.oq_end) {
+        // Fresh + zero lost + no queries proves both counters are exactly zero,
+        // independently of GPU completion. Do not dispatch a predicate helper.
+        S.rc_skip = cond.mode == 1; RG.cpu_zero++; return;
+    }
+    rc_gpu_context context;
+    rc_gpu_context_of(&context, &S.d, g_memu_depth, g_memu_caller);
     int i;
-    for (i = 0; i < RG.n; i++) if (RG.record[i] == p && RG.revision == g_rc_revision) break;
+    for (i = 0; i < RG.n; i++) if (RG.record[i] == p && RG.revision == g_rc_revision &&
+        !memcmp(&RG.context[i], &context, sizeof context)) break;
     if (i == RG.n) {
         rc_gpu_prepare(p);
-        for (i = 0; i < RG.n; i++) if (RG.record[i] == p) break;
+        for (i = 0; i < RG.n; i++) if (RG.record[i] == p &&
+            !memcmp(&RG.context[i], &context, sizeof context)) break;
     }
     if (i < RG.n) { RG.current = RG.predicates; RG.current.off += (VkDeviceSize)i * 4; }
 }
@@ -192,7 +222,7 @@ int vka_rc_gpu_predicate(VkBuffer *buffer, VkDeviceSize *offset) {
 }
 static void rc_gpu_stats(double frames) {
     if (!RG.enabled || frames <= 0) return;
-    VLOG("GPU visibility research: %.1f batches, %.1f exact current-submission pairs, %.1f query copies, %.1f draw-count predicate requests/frame; no hidden-draw/FPS claim",
-        RG.batches / frames, RG.pairs / frames, RG.query_copies / frames, RG.requests / frames);
-    RG.batches = RG.pairs = RG.query_copies = RG.requests = 0;
+    VLOG("GPU visibility research: %.1f batches, %.1f exact current-submission pairs, %.1f query copies, %.1f draw-count predicate requests, %.1f exact empty-counter CPU decisions/frame; no hidden-draw/FPS claim",
+        RG.batches / frames, RG.pairs / frames, RG.query_copies / frames, RG.requests / frames, RG.cpu_zero / frames);
+    RG.batches = RG.pairs = RG.query_copies = RG.requests = RG.cpu_zero = 0;
 }

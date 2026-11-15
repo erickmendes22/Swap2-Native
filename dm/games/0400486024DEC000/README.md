@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [CPU-unavailable occlusion reports conservatively draw pending blocks](../../../docs/reference/frame-rate.md#cpu-unavailable-occlusion-reports-conservatively-draw-pending-blocks): current experimental GPU visibility integration; device performance remains open.
+
 - [Shader-only file backing versus the RAM Saver texture option](../../../docs/reference/memory.md#shader-only-file-backing-differs-from-the-ram-saver-texture-option): upstream has automatic shader backing while174 does not; source candidate follows that policy, with no new APK or claimed complete memory-gap fix.
 
 - [Allocation counters versus physical memory](../../../docs/reference/memory.md#vulkan-allocation-counters-are-not-physical-android-memory-savings): build174 reduces recorded pool allocations but the user reports no useful total-RAM reduction; CPU residency/PSS must be measured before another memory candidate is advertised.
@@ -1666,3 +1668,35 @@ modes. Admission C executes100000 generated ownership/range cases. Native Androi
 compilation, full-block collection, indirect-count drawing and encoder order
 verification remain required before treating this checkpoint as ready. No
 claim of a device FPS increase or of eliminating all619 unknown blocks is made.
+
+### Integrated optional candidate follow-up (2026-11-15)
+
+The optional `GPU visibility` / Portuguese `Visibilidade pela GPU` menu now
+reaches the production gate and defaults OFF, so installing a candidate keeps
+178's path until explicitly enabled. PT/EN/TR/PL/RU strings describe the
+experimental status and required restart. This supersedes the earlier
+checkpoint's statement that no launcher control exists; no shader preparation
+or library replacement is introduced.
+
+The actual collector now proves the complete block and keys its cache by
+program identities/serials, transform-feedback/discard state and exact nested
+caller returns. Reusing one command address from another parent cannot reuse
+its earlier safety proof. Storage images are rejected consistently with the
+replay's storage-write classification. Query copy planning deduplicates
+identical ranges, merges contiguous physical copies and handles ring wrap.
+Fresh empty report pairs are decided directly on the CPU; no predicate helper
+is dispatched for them. A1000-round generated planner test compares physical
+copied values and duplicate offsets with the logical requested ranges.
+
+Production checked-in GPU arithmetic passes1208 cases. The integrated drawing
+fixture now also executes normal and indexed `DrawIndirectCount` with original
+immutable draw arguments and a separately generated0/1 command count;72 total
+colour/depth/vertex-invocation cases pass synchronization validation. The real
+encoder preserves60000 query-copy/normal-count/indexed-count commands,
+including64-bit offsets and direct fallback, in addition to its200000-command
+ordering/copy regression. Default-off runtime/Prefs/environment and five
+resource locales are tested. Android native/Java compilation and final-source
+CI are still required before any candidate APK is marked ready. Device FPS,
+GPU cost of query waits/pass boundaries, eligible-block coverage and visual
+correctness remain unmeasured. Preserve178/RAM fixes and do not claim a speedup
+from these fixture counts.

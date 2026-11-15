@@ -41,6 +41,7 @@ static struct {\n'''+''.join('PFN_'+n+' '+n+';\n' for n in sorted(names))+'} vk;
             good=subprocess.run([str(exe)],capture_output=True,text=True,timeout=30)
             self.assertEqual(good.returncode,0,good.stdout+good.stderr)
             self.assertIn('200000 commands',good.stdout)
+            self.assertIn('query->draw-count chain: 60000 commands',good.stdout)
             import os
             bad=subprocess.run([str(exe)],env=dict(os.environ,ENC_NEGATIVE='1'),capture_output=True,text=True,timeout=30)
             self.assertNotEqual(bad.returncode,0,bad.stdout+bad.stderr)

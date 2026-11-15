@@ -54,7 +54,7 @@ class ConditionalVisibilityGPU(unittest.TestCase):
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                 self.assertNotIn('Validation Error', run.stdout + run.stderr)
                 self.assertNotIn('SYNC-HAZARD', run.stdout + run.stderr)
-                self.assertEqual(run.stdout.count('colour+depth exact'), 24, run.stdout)
+                self.assertEqual(run.stdout.count('colour+depth exact'), 40, run.stdout)
             print(run.stdout)
             # Prove that the portable indirect paths do not depend on enabling
             # the conditional-rendering extension at device creation.
@@ -63,7 +63,7 @@ class ConditionalVisibilityGPU(unittest.TestCase):
             self.assertEqual(portable.returncode, 0, portable.stdout + portable.stderr)
             self.assertNotIn('Validation Error', portable.stdout + portable.stderr)
             self.assertNotIn('SYNC-HAZARD', portable.stdout + portable.stderr)
-            self.assertEqual(portable.stdout.count('colour+depth exact'), 16, portable.stdout)
+            self.assertEqual(portable.stdout.count('colour+depth exact'), 32, portable.stdout)
             print(portable.stdout)
 
 

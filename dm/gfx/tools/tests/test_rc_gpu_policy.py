@@ -48,6 +48,135 @@ int main(void) {
                             '-I', str(VK), str(p), '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
+    def test_actual_copy_planner_deduplication_merge_and_ring_wrap(self):
+        source = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#include "vka_rc_gpu_policy.h"
+int main(void){
+ vka_rc_gpu_plan p={0};uint32_t off;
+ assert(vka_rc_gpu_plan_add(&p,3,5,256,&off)&&off==0&&p.copies==1);
+ assert(vka_rc_gpu_plan_add(&p,5,7,256,&off)&&off==2&&p.copies==1&&p.copy[0].count==4);
+ assert(vka_rc_gpu_plan_add(&p,3,5,256,&off)&&off==0&&p.total==4&&p.copies==1);
+ assert(vka_rc_gpu_plan_add(&p,100,100,256,&off)&&p.total==4);
+ memset(&p,0,sizeof p);
+ assert(vka_rc_gpu_plan_add(&p,255,258,256,&off)&&p.copies==2&&p.total==3);
+ assert(p.copy[0].first==255&&p.copy[0].count==1&&p.copy[1].first==0&&p.copy[1].count==2);
+ assert(!vka_rc_gpu_plan_add(&p,8,7,256,&off));
+ assert(!vka_rc_gpu_plan_add(&p,0,257,256,&off));
+ assert(!vka_rc_gpu_plan_add(&p,0,2,1,&off));
+ uint64_t seed=179;
+ for(int round=0;round<1000;round++){
+  memset(&p,0,sizeof p);uint32_t values[4096]={0};
+  for(int i=0;i<128;i++){
+   seed=seed*6364136223846793005ULL+1;
+   uint64_t begin=(seed>>32)&65535;uint32_t count=(seed&15);
+   if(!vka_rc_gpu_plan_add(&p,begin,begin+count,32768,&off))break;
+   for(unsigned c=0;c<p.copies;c++)for(unsigned k=0;k<p.copy[c].count;k++)
+    values[p.copy[c].offset+k]=p.copy[c].first+k;
+   for(unsigned k=0;k<count;k++)assert(values[off+k]==(begin+k)%32768);
+   uint32_t total=p.total,copies=p.copies;
+   assert(vka_rc_gpu_plan_add(&p,begin,begin+count,32768,&off));
+   assert(total==p.total&&copies==p.copies);
+  }
+ }
+ return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / 'copies.c'; exe = p.with_suffix('')
+            p.write_text(source)
+            subprocess.run([shutil.which('cc'), '-O2', '-Wall', '-Wextra', '-Werror',
+                            '-I', str(VK), str(p), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
+    def test_actual_collector_rejects_partial_and_unsafe_blocks(self):
+        from dm.gfx.tools.tests.test_ocarina_mesh_native_hybrid import function
+        text = (VK / 'vka_rc_gpu.inc').read_text()
+        source = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#include "vka_rc_gpu_policy.h"
+enum {OP_END,OP_JUMP,OP_CALL,OP_RENDER_COND,OP_DRAW,OP_DRAW_IDX,
+      OP_BIND_PROGRAM,OP_SET_RT,OP_BARRIER,OP_CLEAR_COLOR,OP_REPORT_COUNTER,OP_UPDATE_UB};
+enum {NVN_PRIM_MESH=256,NVN_DRAW_PRIMITIVE_LINE_LOOP=2,NVN_DRAW_PRIMITIVE_QUADS=7};
+typedef struct {uint32_t op,size;}op_hdr;
+typedef struct {int32_t mode,pad;uint64_t addr;}p_render_cond;
+typedef struct {int prim,base_instance,mdi_cnt;}p_draw;
+typedef p_draw p_draw_idx;
+typedef struct {uint64_t serial;}prog_t;
+typedef struct {const prog_t *bst[5];int tf_on,rast_discard,safe;}vka_dstate;
+typedef struct {uint64_t oq_begin,oq_end;}rc_rep;
+""" + text[text.index('typedef struct {'):text.index('static rc_gpu_job g_rc_jobs')] + r"""
+static vka_dstate g_rc_scan;
+static struct {vka_dstate d;}S;
+static int g_memu_depth;
+static const uint8_t *g_memu_caller[16];
+static int rc_gpu_report(uint64_t a,rc_rep *r){r->oq_begin=1;r->oq_end=2;return a!=0xbad;}
+static int vka_rc_gpu_state_safe(const vka_dstate*d){return d->safe&&!d->tf_on&&!d->rast_discard;}
+static const p_draw*draw_rec(const void*a,uint32_t n,p_draw*t){(void)n;(void)t;return a;}
+static const p_draw_idx*draw_idx_rec(const void*a,uint32_t n,p_draw_idx*t){(void)n;(void)t;return a;}
+static int overlap_state_record(uint32_t op){return op==OP_BIND_PROGRAM;}
+static void vka_state_op(vka_dstate*d,uint32_t op,const void*a){if(op==OP_BIND_PROGRAM)memcpy(&d->safe,a,4);}
+""" + 'static void ' + function(text,'rc_gpu_context_of') + '\nstatic int ' + function(text,'rc_gpu_collect') + r"""
+typedef struct {op_hdr h;union{p_render_cond c;p_draw d;const uint8_t*p;int safe;}u;}record;
+#define REC(op) (record){.h={op,sizeof(record)}}
+static record cond(int mode){record r=REC(OP_RENDER_COND);r.u.c=(p_render_cond){mode,0,0x1000};return r;}
+static record draw(void){record r=REC(OP_DRAW);r.u.d=(p_draw){3,0,0};return r;}
+int main(void){
+ rc_gpu_job jobs[128];S.d.safe=1;
+ record a[]={cond(1),draw(),cond(2),REC(OP_END)};
+ assert(rc_gpu_collect((const uint8_t*)a,jobs)==1&&jobs[0].p==(const uint8_t*)&a[0]);
+ // A clear/report/inline update makes the whole current block ineligible.
+ const uint32_t bad[]={OP_CLEAR_COLOR,OP_REPORT_COUNTER,OP_UPDATE_UB};
+ for(unsigned i=0;i<3;i++){
+  a[2]=REC(bad[i]);assert(rc_gpu_collect((const uint8_t*)a,jobs)==0);
+ }
+ record b[]={cond(1),draw(),cond(0),draw(),REC(OP_CLEAR_COLOR),REC(OP_END)};
+ assert(rc_gpu_collect((const uint8_t*)b,jobs)==1); // first FULL block only
+ record c[]={cond(1),draw(),REC(OP_BIND_PROGRAM),draw(),cond(2),REC(OP_END)};
+ c[2].u.safe=0;assert(rc_gpu_collect((const uint8_t*)c,jobs)==0); // no partial predication
+ c[2].u.safe=1;assert(rc_gpu_collect((const uint8_t*)c,jobs)==1);
+ record d[]={cond(1),draw(),cond(2),REC(OP_END)};
+ d[1].u.d.prim=NVN_PRIM_MESH;assert(!rc_gpu_collect((const uint8_t*)d,jobs));
+ d[1].u.d.prim=NVN_DRAW_PRIMITIVE_QUADS;assert(!rc_gpu_collect((const uint8_t*)d,jobs));
+ d[1]=draw();d[1].u.d.base_instance=1;assert(!rc_gpu_collect((const uint8_t*)d,jobs));
+ d[1]=draw();d[1].u.d.mdi_cnt=1;assert(!rc_gpu_collect((const uint8_t*)d,jobs));
+ d[1]=draw();d[1].h.op=OP_DRAW_IDX;assert(rc_gpu_collect((const uint8_t*)d,jobs)==1);
+ S.d.tf_on=1;assert(!rc_gpu_collect((const uint8_t*)d,jobs));S.d.tf_on=0;
+ d[0].u.c.addr=0xbad;assert(!rc_gpu_collect((const uint8_t*)d,jobs));
+ // Nested-list return is part of a block, not its end.
+ record child[]={draw(),REC(OP_END)};
+ record parent[]={cond(1),REC(OP_CALL),draw(),cond(2),REC(OP_END)};
+ parent[1].u.p=(const uint8_t*)child;
+ assert(rc_gpu_collect((const uint8_t*)parent,jobs)==1);
+ record inner[]={cond(1),draw(),REC(OP_END)};
+ g_memu_depth=1;g_memu_caller[0]=(const uint8_t*)&parent[2];
+ assert(rc_gpu_collect((const uint8_t*)inner,jobs)==1&&jobs[0].context.depth==1);
+ // The same child record under a DIFFERENT caller/state cannot reuse a cached proof.
+ rc_gpu_context first=jobs[0].context, second;
+ const uint8_t *different[1]={(const uint8_t*)&parent[3]};
+ rc_gpu_context_of(&second,&S.d,1,different);assert(memcmp(&first,&second,sizeof first));
+ rc_gpu_context_of(&second,&S.d,1,g_memu_caller);assert(!memcmp(&first,&second,sizeof first));
+ prog_t p={1};S.d.bst[0]=&p;rc_gpu_context_of(&first,&S.d,1,g_memu_caller);
+ p.serial++;rc_gpu_context_of(&second,&S.d,1,g_memu_caller);assert(memcmp(&first,&second,sizeof first));
+ g_memu_depth=17;assert(!rc_gpu_collect((const uint8_t*)inner,jobs));g_memu_depth=0;
+ inner[1].h.size=0;assert(!rc_gpu_collect((const uint8_t*)inner,jobs));
+ record many[259];
+ for(int i=0;i<129;i++){many[2*i]=cond(i&1);many[2*i+1]=draw();}
+ many[258]=REC(OP_END);assert(rc_gpu_collect((const uint8_t*)many,jobs)==128);
+ return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / 'collect.c'; exe = p.with_suffix('')
+            p.write_text(source)
+            subprocess.run([shutil.which('cc'), '-std=gnu11', '-O2', '-Wall', '-Wextra', '-Werror',
+                            '-I', str(VK), str(p), '-o', str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_checked_in_helper_has_current_source_and_valid_spirv(self):
         text = (VK / 'vka_rc_gpu_spv.h').read_text()
         digest = hashlib.sha256((VK / 'rc/visibility.comp').read_bytes()).hexdigest()
@@ -60,10 +189,6 @@ int main(void) {
                 p = Path(tmp) / 'helper.spv'
                 p.write_bytes(struct.pack('<' + 'I' * len(words), *words))
                 subprocess.run([validator, '--target-env', 'vulkan1.1', str(p)], check=True)
-
-
-if __name__ == '__main__':
-    unittest.main()
 
 @unittest.skipUnless(__import__('os').getenv('MEMU_TEST_VULKAN') == '1', 'real Vulkan ICD required')
 class RCGpuArithmetic(unittest.TestCase):
@@ -121,3 +246,7 @@ class RCGpuArithmetic(unittest.TestCase):
             result = struct.unpack('<' + 'I' * len(expected), output.read_bytes())
             self.assertEqual(list(result), expected)
             print(run.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -6,7 +6,8 @@
 #define NDSR_EXTRA_FNS(X) X(vkGetPhysicalDeviceFeatures2) X(vkCreateGraphicsPipelines) \
  X(vkCmdDraw) X(vkCmdSetScissor) X(vkCmdBeginQuery) X(vkCmdEndQuery) \
  X(vkCmdBeginRendering) X(vkCmdEndRendering) X(vkCmdCopyQueryPoolResults) \
- X(vkGetDeviceProcAddr) X(vkCmdDrawIndirect) X(vkCmdDrawIndexedIndirect) X(vkCmdBindIndexBuffer)
+ X(vkGetDeviceProcAddr) X(vkCmdDrawIndirect) X(vkCmdDrawIndexedIndirect) X(vkCmdBindIndexBuffer) \
+ X(vkCmdDrawIndirectCount) X(vkCmdDrawIndexedIndirectCount)
 #define main ndsr_unused_main
 #include "ndsr_lvp.c"
 #undef main
@@ -103,11 +104,14 @@ static uint64_t run_visibility(int path, int invert, int alpha, int swap, uint8_
     qci.queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS; qci.queryCount = 1;
     qci.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT;
     VK(vkCreateQueryPool(dev, &qci, NULL, &stats));
-    void *pred_map, *read_map, *args_map, *index_map;
+    void *pred_map, *read_map, *args_map, *index_map, *fixed_map;
     VkBuffer pred = buffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &pred_map);
     VkBuffer args = buffer(40, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
         (getenv("VIS_NO_NATIVE") ? 0 : VK_BUFFER_USAGE_CONDITIONAL_RENDERING_BIT_EXT), &args_map);
     memset(args_map, 0xa5, 40);
+    VkBuffer fixed = buffer(40, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, &fixed_map);
+    const uint32_t original_args[10] = {3,1,0,0,0,3,1,0,0,0};
+    memcpy(fixed_map, original_args, sizeof original_args);
     VkBuffer indices = buffer(12, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &index_map);
     const uint32_t triangle[3] = {2, 0, 1}; memcpy(index_map, triangle, 12);
     VkDescriptorPoolSize size = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2};
@@ -208,7 +212,12 @@ static uint64_t run_visibility(int path, int invert, int alpha, int swap, uint8_
             VkRect2D sc = {{0, 0}, {obj ? W / 2 : W, H}};
             vkCmdSetScissor(cb, 0, 1, &sc);
             vkCmdPushConstants(cb, lay, push.stageFlags, 0, 32, pc);
-            if (path == 4) {
+            if (path == 6) {
+                vkCmdBindIndexBuffer(cb, indices, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexedIndirectCount(cb, fixed, i * 20, args, i * 20 + 4, 1, 20);
+            } else if (path == 5) {
+                vkCmdDrawIndirectCount(cb, fixed, i * 20, args, i * 20 + 4, 1, 20);
+            } else if (path == 4) {
                 vkCmdBindIndexBuffer(cb, indices, 0, VK_INDEX_TYPE_UINT32);
                 vkCmdDrawIndexedIndirect(cb, args, i * 20, 1, 20);
             } else vkCmdDrawIndirect(cb, args, i * 20, 1, 20);
@@ -245,7 +254,7 @@ int main(void) {
     uint8_t *reference = malloc(BYTES * 2), *gpu = malloc(BYTES * 2), *conservative = malloc(BYTES * 2);
     for (int invert = 0; invert < 2; invert++) for (int alpha = 0; alpha < 2; alpha++) for (int swap = 0; swap < 2; swap++) {
         uint64_t exact = run_visibility(2, invert, alpha, swap, reference);
-        for (int path = 1; path <= 4; path++) {
+        for (int path = 1; path <= 6; path++) {
         if (path == 2 || (path == 1 && getenv("VIS_NO_NATIVE"))) continue;
         uint64_t actual = run_visibility(path, invert, alpha, swap, gpu);
         uint64_t all = run_visibility(0, invert, alpha, swap, conservative);

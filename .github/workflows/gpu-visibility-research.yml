@@ -36,6 +36,8 @@ jobs:
           VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
           VK_LAYER_ENABLES: VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT
         run: python3 -m unittest dm.gfx.tools.tests.test_conditional_visibility_gpu dm.gfx.tools.tests.test_rc_gpu_policy -v
+      - name: Verify actual encoder query-copy and draw-count ordering
+        run: python3 -m unittest dm.gfx.tools.tests.test_classic_encoder_order -v
       - name: Verify shared fixture still preserves original depth and query behavior
         env:
           MEMU_TEST_VULKAN: '1'

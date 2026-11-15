@@ -168,6 +168,8 @@ final class Prefs {
     static void vegetationContiguous(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_contiguous", titleId), on).commit(); }
     static boolean partialTextureUploads(Context c, String titleId) { return of(c).getBoolean(gameKey("gpu_partial_upload", titleId), true); }
     static void partialTextureUploads(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("gpu_partial_upload", titleId), on).commit(); }
+    static boolean gpuVisibility(Context c, String titleId) { return of(c).getBoolean(gameKey("gpu_visibility", titleId), false); }
+    static void gpuVisibility(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("gpu_visibility", titleId), on).commit(); }
     static boolean unusedColorTargets(Context c, String titleId) { return of(c).getBoolean(gameKey("gpu_unused_color", titleId), true); }
     static void unusedColorTargets(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("gpu_unused_color", titleId), on).commit(); }
     static boolean attachmentWriteScopes(Context c, String titleId) { return of(c).getBoolean(gameKey("gpu_attachment_parts", titleId), true); }

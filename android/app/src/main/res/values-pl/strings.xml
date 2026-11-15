@@ -14,4 +14,6 @@
     <string name="s2_driver">Sterownik GPU</string>
     <string name="s2_language">Język aplikacji i gry</string>
     <string name="s2_language_note">Gra użyje wybranego języka przy następnym uruchomieniu, jeśli zawiera tłumaczenie. W przeciwnym razie wybierze język zastępczy.</string>
+    <string name="s2_gpu_visibility">Widoczność na GPU</string>
+    <string name="s2_gpu_visibility_note">Może ograniczyć rysowanie zasłoniętych obiektów. Opcja eksperymentalna; uruchom grę ponownie.</string>
 </resources>

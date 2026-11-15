@@ -1513,7 +1513,8 @@ int vka_rc_gpu_state_safe(const vka_dstate *d) {
         for (unsigned i = 0; i < sh[stage]->e->bind_count; i++) {
             const dmsh_vk_bind *b = &sh[stage]->b[i];
             if ((b->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC)) ||
-                b->kind == DMSH_VK_KIND_GMEM_LOG || b->kind == DMSH_VK_KIND_UNKNOWN) return 0;
+                b->kind == DMSH_VK_KIND_GMEM_LOG || b->kind == DMSH_VK_KIND_IMG ||
+                b->kind == DMSH_VK_KIND_UNKNOWN) return 0;
         }
     }
     return sh[0] != NULL;

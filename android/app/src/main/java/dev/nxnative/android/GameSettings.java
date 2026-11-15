@@ -241,6 +241,10 @@ final class GameSettings {
                     .toggle(a, Prefs.partialTextureUploads(a, id), (button, on) -> Prefs.partialTextureUploads(a, id, on));
             partialTextureUploads.value(a.getString(R.string.s2_gpu_partial_upload_note));
             box.addView(partialTextureUploads.view);
+            Ui.Setting gpuVisibility = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_visibility), null)
+                    .toggle(a, Prefs.gpuVisibility(a, id), (button, on) -> Prefs.gpuVisibility(a, id, on));
+            gpuVisibility.value(a.getString(R.string.s2_gpu_visibility_note));
+            box.addView(gpuVisibility.view);
             Ui.Setting unusedColorTargets = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_gpu_unused_color), null)
                     .toggle(a, Prefs.unusedColorTargets(a, id), (button, on) -> Prefs.unusedColorTargets(a, id, on));
             unusedColorTargets.value(a.getString(R.string.s2_gpu_unused_color_note));

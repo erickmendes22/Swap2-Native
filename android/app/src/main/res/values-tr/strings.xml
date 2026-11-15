@@ -14,4 +14,6 @@
     <string name="s2_driver">GPU sürücüsü</string>
     <string name="s2_language">Uygulama ve oyun dili</string>
     <string name="s2_language_note">Oyun, dosyalarında bu çeviri varsa bir sonraki açılışta seçilen dili kullanır; aksi hâlde kendi yedek dilini kullanır.</string>
+    <string name="s2_gpu_visibility">GPU görünürlük denetimi</string>
+    <string name="s2_gpu_visibility_note">Gizlenen nesnelerin olduğu sahnelerde çizim yükünü azaltabilir. Deneyseldir; uygulamak için oyunu yeniden başlatın.</string>
 </resources>

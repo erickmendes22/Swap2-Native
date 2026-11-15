@@ -164,7 +164,6 @@ static void rc_note(uint64_t a, int kind) {
         .gpu_write_epoch = g_rc_gpu_write_epoch};
     rc_ix_put(a, (uint32_t)(g_nrcp - 1));
     if (g_nrcp > g_rcp_max) g_rcp_max = g_nrcp;
-    rc_gpu_stats(frames);
 }
 static void rc_prune(void) {   // the reports whose submissions are done are in memory now (post_run runs before the fence reads as done)
     uint64_t done = vka_done(); int j = 0;
