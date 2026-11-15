@@ -1,0 +1,23 @@
+name: Physical memory accounting (no APK)
+on:
+  push:
+    branches: [ocarina-v11-ios-perf-from-v101]
+    paths:
+      - android/tools/memory-audit.sh
+      - dm/tools/tests/test_android_memory_audit.py
+      - dm/tools/tests/test_android_pool_memory_accounting.py
+      - dm/host/tests/t_android_pool_memory_accounting.c
+      - dm/gfx/vk_android/vka_mem.c
+      - .github/workflows/memory-accounting-check.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  physical-memory:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare actual Linux PSS with logical GPU counters and CPU aliases
+        run: python3 -m unittest dm.tools.tests.test_android_pool_memory_accounting -v
+      - name: Verify Android collector package coverage and mapping categories
+        run: python3 -m unittest dm.tools.tests.test_android_memory_audit -v

@@ -132,6 +132,7 @@ One line per symptom in the [subsystem references](../reference/): what you see 
 - GPU memory grows with repeated `nvnTextureReadTexels` calls on a long-lived game thread, even after each readback completes. → [GPU readback without an autorelease pool](../reference/memory.md#gpu-readback-without-an-autorelease-pool)
 - `libc++abi: terminating due to uncaught exception of type St9bad_alloc` and `shadow stack read-write mprotect(…) failed: Out of memory` minutes in, without a `CRASH` line of the game's; `/proc/<pid>/maps` of the game process climbs from about 25,800 to 48,700 entries in seconds just before. → [Memory maps run out under Turnip during a compute-heavy video (Android)](../reference/memory.md#memory-maps-run-out-under-turnip-during-a-compute-heavy-video-android)
 - process footprint and Metal allocation grow during stationary gameplay even after readback fences complete; the deferred-release queue and command allocator sizes remain bounded. → [Completion readbacks survive a guest waiter's pool](../reference/memory.md#completion-readbacks-survive-a-guest-waiters-pool)
+- an optimization removes hundreds of MiB from `placed pools` while the device RAM percentage does not improve; the log's `footprint` moves in the opposite direction. → [Vulkan allocation counters are not physical Android memory savings](../reference/memory.md#vulkan-allocation-counters-are-not-physical-android-memory-savings)
 
 ## Threads
 

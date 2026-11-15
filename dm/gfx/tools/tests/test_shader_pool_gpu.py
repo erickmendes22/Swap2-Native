@@ -1,4 +1,9 @@
-"""Real Vulkan memory commitment and bytes after actual NVN command promotion."""
+"""GPU data-use correctness only; allocation counts do not measure RAM savings.
+
+This fixture keeps guest malloc storage separate from Vulkan buffers, whereas
+production placement replaces guest backing. Physical-memory expectations must
+use test_android_pool_memory_accounting, which includes that replacement.
+"""
 import os
 import unittest
 from dm.gfx.tools.tests import test_selective_transfer_compute_gpu as sync

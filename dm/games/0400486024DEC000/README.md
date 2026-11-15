@@ -63,6 +63,8 @@ No gameplay FPS gain is claimed.
 
 ## Found on this game
 
+- [Allocation counters versus physical memory](../../../docs/reference/memory.md#vulkan-allocation-counters-are-not-physical-android-memory-savings): build174 reduces recorded pool allocations but the user reports no useful total-RAM reduction; CPU residency/PSS must be measured before another memory candidate is advertised.
+
 - [Program address queries commit unused shader-code pools](../../../docs/reference/rendering.md#program-address-queries-commit-unused-shader-code-pools): the Banana0.3.24 log identifies344 MiB extra placed pools and the missing shader-code placement deferral in our NVN host.
 
 - Build173 menu cleanup (historical): retire shader A omission and ignore its stored/environment value in the runtime; shader B remains independently configurable. Cached classic passes remain forcibly disabled for Ocarina and absent from the menu. Two independent new switches expose full-guest compute dependency merging and finalized-pool image retirement; both default on and require restart. Existing vegetation optimizations stay automatic.
@@ -1442,6 +1444,44 @@ SUCCESS. [Artifact14160988942](https://github.com/erickmendes22/Swap2-Native/act
 Actual aapt verifies package`com.swap2native.ootv11ios`, versionCode184,
 versionName0.1.6; apksigner verifies v2 and the existing
 `a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad`
-signer. Install-over compatibility retained. Device RAM/FPS/visual outcome
-for174 remains pending; do not upgrade the344 MiB allocation finding into a
+signer. Install-over compatibility retained. The later build174 device results below supersede the initially pending outcome; do not upgrade the344 MiB allocation finding into a
 claimed9-point physical-RAM recovery.
+
+
+## Build174 device results (2026-11-15, current/open)
+
+The user reports no useful RAM improvement and rejects additional ineffective
+options/builds. The new paired logs confirm the code path executes, but do not
+establish physical RAM savings or meaningful FPS improvement:
+
+| Log | Deferral | Placed pools / images / scratch, MiB | Frame1200 p50 frame/GPU, ms | Logged footprint (RSS), MiB |
+|---|---|---|---|---|
+| 09:28:35 | on, `DM_VK_PLACE_SHADER_POOLS=0` | 1619 / 1464 /80 | 20.71 /20.27 | 5982 |
+| 09:30:24 | off, `DM_VK_PLACE_SHADER_POOLS=1` | 1994 /1459 /80 | 20.89 /20.31 | 3922 |
+
+Both use Shared buffer, RAM Saver OFF, VRS OFF, shaderA omission OFF,
+shaderB omission ON. Deferral's live table reports333 MiB of shader-code
+pools at present300, with three pools/two MiB also used as actual GPU data.
+375 MiB fewer counted placed pools does NOT imply375 MiB less physical RAM:
+the CPU code remains, and placement used to replace its backing. RSS from
+`statm` also cannot settle the comparison. Separate timing windows include
+different loading portions, so small timing changes are not a claimed speedup.
+
+The prior real-Vulkan fixture proved addresses/data-use promotion and exact
+GPU output; it omitted production replacement of the existing CPU backing
+and was insufficient as a physical-memory benchmark. A new real Linux PSS
+regression includes production copy/Shared buffer MAP_FIXED code and both
+fully resident and partly populated guest storage. It demonstrates equal
+physical use with fully resident code despite a zero GPU allocation counter.
+No new APK, new menu option, or physical-memory success claim follows from
+these counts. Keep the nine-percentage-point system-RAM gap OPEN.
+
+Use the installed builds to collect a matched physical-memory snapshot:
+`android/tools/memory-audit.sh` records every Swap/Banana package process,
+`smaps_rollup`, per-mapping PSS/RSS/private dirty/SwapPss categories and large
+mappings, Android `dumpsys meminfo`/graphics memtrack, available KGSL counters,
+system memory and ZRAM. It neither changes options nor clears caches/stops
+processes; denied fields remain unavailable. Collect the same steady scene
+with one emulator at a time and equal RAM Saver/settings. The current logs
+lack PSS, file-backed residency, package subprocess memory and memtrack, so
+they cannot identify the remaining physical-RAM owner by themselves.
