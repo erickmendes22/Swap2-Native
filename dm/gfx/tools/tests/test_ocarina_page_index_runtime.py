@@ -8,6 +8,8 @@ XLATE = (ROOT / "dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Translation/
 PREFS = (ROOT / "android/app/src/main/java/dev/nxnative/android/Prefs.java").read_text()
 APP = (ROOT / "android/app/src/main/java/dev/nxnative/android/GameActivity.java").read_text()
 UI = (ROOT / "android/app/src/main/java/dev/nxnative/android/GameSettings.java").read_text()
+PACKSERVICE = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
+HOTBUILDER = (ROOT / "scripts/build_ocarina_hot_shaders.py").read_text()
 
 
 class PageIndexContracts(unittest.TestCase):
@@ -41,6 +43,8 @@ class PageIndexContracts(unittest.TestCase):
         self.assertIn('DM_VK_GMEM_PIDX=', APP)
         self.assertIn('Prefs.gpuPageIndex', UI)
         self.assertIn('s2_gpu_page_index_note', UI)
+        self.assertIn('PackEngine.setenv("DMSH_GMEM_PIDX", ocarinaShaders ? "1" : "0");', PACKSERVICE)
+        self.assertIn('DMSH_GMEM_PIDX="1"', HOTBUILDER)
 
 
 if __name__ == "__main__":
