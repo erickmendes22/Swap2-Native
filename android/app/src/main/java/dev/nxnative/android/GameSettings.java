@@ -226,6 +226,15 @@ final class GameSettings {
                     .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
             vegetation.value(a.getString(R.string.s2_full_vegetation_note));
             box.addView(vegetation.view);
+            if (OcarinaRenderProfile.direct720(Prefs.renderProfile(a,id))) {
+                Ui.Setting temporal = new Ui.Setting(a,R.drawable.s2_ic_image,
+                    "GSR2 temporal (teste 360p/540p → 720p)",null)
+                    .toggle(a,Prefs.ootGsr2(a,id),
+                            (button,on)->Prefs.ootGsr2(a,id,on));
+                temporal.value("Fluxo óptico real entre quadros, sem vetores de movimento do jogo. " +
+                    "Desligado por padrão; reinicie. Se o driver não suportar, mantém SGSR1.");
+                box.addView(temporal.view);
+            }
             // Shader A omission is retired: the real pass must render.
             Ui.Setting shaderB = new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Omitir shader B (teste)", null)

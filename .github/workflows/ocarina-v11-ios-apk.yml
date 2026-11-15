@@ -1,7 +1,7 @@
 name: Swap2-Native Ocarina 0.1.6 Android APK
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test]
+    branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, research/ocarina-gsr2-360p-20261115]
     paths:
       - ci/ocarina-ios-ready.txt
   workflow_dispatch:
@@ -51,6 +51,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_partial_texture_upload.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_depth_pass_optimizations.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pipeline_retirement.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gsr2_assets.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_banana_runtime.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_vegetation_supplement.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_vegetation_fast_path.py' -v
@@ -262,6 +263,13 @@ jobs:
           set -euxo pipefail
           python3 dm/gfx/vk_android/fsr/sgsr_spv.py
           python3 dm/gfx/vk_android/fsr/sgsr_spv.py --check
+      - name: Compile and validate opt-in Ocarina four-stage temporal GSR2
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py --check
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_gsr2_assets.py -v
       - name: Restore persistent V11 test signing key
         uses: actions/cache@v4
         with:

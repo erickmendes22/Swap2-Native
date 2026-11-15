@@ -140,3 +140,11 @@ Build179 validation-fix retry, 2026-11-15:
 - Retry the signed179 update; require an actual successful APK build and matching package, higher versionCode and a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad signer before delivery. Device FPS benefit remains unmeasured.
 
 Build179 retry after complete APK preflight review: cave report fixture now verifies begin/fresh metadata across128 paths; production rendering unchanged.
+
+Build180 research-only GSR2 optical 360/540->720; keep signed APK baseline intact, preserve VRS A/B.
+- Four GPU passes: actual per-frame patch-flow, Qualcomm GSR2 convert/activate/upscale, game output blit.
+- GSR2 only selected on 720p native internal output with source low-res; no fake depth or motion vectors; default off and full fallback.
+- Keep 177 RAM, 178 vegetation, and optional 179 GPU visibility; unchanged shader ABI.
+- User A/B 720p VRS2x2 vs OFF: VRS2x2 had neither observed ghosting nor stripes, OFF showed ghosting. Do not claim VRS is proven cause or force any VRS policy.
+- Validate shader SPIR-V, real Android native compile, APK signer SHA256 a1c468aff0b99e28c001991c94e7f1f5373493deb26e822b54a335801a76f4ad.
+- Signed APK build from isolated research branch; artifact must install over 179 with strictly higher versionCode.

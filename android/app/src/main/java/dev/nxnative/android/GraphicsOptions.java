@@ -164,6 +164,11 @@ final class GraphicsOptions {
             // through env.txt; ignore stale saved UI choices from beta.
             out.add("DM_VK_OOT_FPS_BOOST=0");
             out.add("DM_VK_OOT_HOTPASS_VRS=" + hotpassVrs(c, id));
+            // Native temporal GSR2 only runs on actual 1280x720 NDSR output.
+            // No shader preparation, render profile or VRS policy is changed.
+            out.add("DM_VK_OOT_GSR2=" +
+                    (OcarinaRenderProfile.direct720(Prefs.renderProfile(c,id)) &&
+                     Prefs.ootGsr2(c,id) ? 1 : 0));
             // Experimental iOS V19 0.25 chain bypass, but SGSR1 must have
             // ACTUALLY drawn a frame and the direct HDR source must validate.
             // OFF by default so existing shaders/playable graphics are safe.
@@ -212,7 +217,7 @@ final class GraphicsOptions {
     }
     static void reset(Context c, String id) {
         SharedPreferences.Editor e = Prefs.of(c).edit();
-        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup", "encoder_idle", "oot_fps_boost", "oot_sgsr_chain", "oot_hotpass_vrs"})
+        for (String k : new String[] {"present_filter", "picture_stretch", "bg_pipelines", "gpu_timestamps", "fsr_sharp", "reg_dedup", "encoder_idle", "oot_fps_boost", "oot_sgsr_chain", "oot_hotpass_vrs", "oot_gsr2"})
             e.remove(Prefs.gameKey(k, id));
         e.commit();
     }
