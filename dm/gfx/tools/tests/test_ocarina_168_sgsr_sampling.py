@@ -39,7 +39,11 @@ class SgsrLowResolutionSafety(unittest.TestCase):
     def test_extreme_hdr_contrast_never_divides_zero(self):
         # Deliberately leave the proven Qualcomm numeric weights untouched:
         # the earlier reciprocal cap changed too many valid pixels in Vulkan.
-        self.assertIn('float sumMean = 1.014185e+01/sum;',COMP)
+        self.assertIn('float sumMean = 1.014185e+01/max(sum, 1.0e-5);',COMP)
+        self.assertIn('precision highp float;',COMP)
+        self.assertIn('uniform highp sampler2D ps0;',COMP)
+        self.assertIn('abs(aWY.x) > 1.0e-6',COMP)
+        self.assertIn('!isnan(aWY.y) && !isinf(aWY.y)',COMP)
         self.assertIn('float std = (sumMean*sumMean);',COMP)
         self.assertIn('if (any(isnan(result)) || any(isinf(result)))',COMP)
         self.assertIn('highp vec3 fallback = textureLod(ps0,in_TEXCOORD0.xy,0.0).rgb;',COMP)
@@ -49,6 +53,20 @@ class SgsrLowResolutionSafety(unittest.TestCase):
         self.assertIn('if(ENC==1)result*=result;',COMP)
         self.assertIn('store(ivec2(p)+org,result);',COMP)
         self.assertIn('imageStore(dst, p, uvec4(w));',COMP)
+
+    def test_low_contrast_edge_weight_denominators_remain_finite(self):
+        # This tests the same guards, independently of the GPU. It does NOT
+        # claim that the whole reconstructed image matches on the device.
+        for total in (0.0, 1e-9, 1e-6, 1e-5, 0.001, 1.0):
+            mean = 1.014185e+01 / max(total, 1e-5)
+            std = mean * mean
+            self.assertTrue(math.isfinite(std))
+        for a, b in ((0.0, 1.0), (1e-9, 1e5),
+                     (1.0, 0.5), (-0.5, -0.25),
+                     (float('nan'), 1.0), (1.0, float('inf'))):
+            normal = (abs(a) > 1e-6 and math.isfinite(a) and math.isfinite(b))
+            correction = (b / a if normal else 0.0)
+            self.assertTrue(math.isfinite(correction))
 
     def test_cave_wall_backend_is_unconditionally_disabled(self):
         self.assertNotIn('R.string.s2_oot_classic_passes', (ROOT/"android/app/src/main/java/dev/nxnative/android/GameSettings.java").read_text())
