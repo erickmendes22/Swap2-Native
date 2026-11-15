@@ -18,6 +18,7 @@ class GuestBoundaryContract(unittest.TestCase):
   handler=ex[start:ex.index('        case OP_DRAW:',start)]
   code=r'''#include <assert.h>
 #include <stdint.h>
+#include <string.h>
 static int g_cb,g_dispatch_overlap_pending,g_dispatch_guest_merged;
 static int rp,profile,nan_scan,opt,dedup,full,flush;
 #define vka_gp_active profile
@@ -26,9 +27,11 @@ static int vka_rp_is_open(void){return rp;}
 static int vka_nan_on(void){return nan_scan;}
 static void vka_compute_write_barrier(int cb){assert(cb);flush++;}
 static void vka_barrier(int cb){assert(cb);full++;}
+static int narrow,deferred;
+static int vka_gbar_game(int cb,uint32_t bits){assert(cb);(void)bits;if(narrow)deferred++;return narrow;}
 ''' + helpers + r'''
 #define OP_BARRIER 1
-static void boundary(int bar_kept,int bar_covered){switch(OP_BARRIER){
+static void boundary(int bar_kept,int bar_covered){int32_t bits=0;const void*a=&bits;switch(OP_BARRIER){
 ''' + handler + r'''}}
 int main(void){
  for(rp=0;rp<2;rp++)for(profile=0;profile<2;profile++)
@@ -46,6 +49,8 @@ int main(void){
  // A preceding pass end already recorded the required full barrier.
  g_dispatch_overlap_pending=1;boundary(0,1);
  assert(full==1&&g_dispatch_guest_merged==2&&!g_dispatch_overlap_pending);
+ narrow=1;g_dispatch_overlap_pending=1;boundary(0,0);
+ assert(full==1&&deferred==1&&g_dispatch_guest_merged==3&&!g_dispatch_overlap_pending);
  return 0;
 }
 '''

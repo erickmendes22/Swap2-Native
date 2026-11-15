@@ -30,7 +30,9 @@ static int vka_nan_on(void){return nan_scan;}
 #include "guest_helpers.inc"
 enum{OP_DISPATCH,OP_BARRIER,OP_OTHER};
 static int overlap_state_record(uint32_t op){(void)op;return 0;}
+static int vka_gbar_game(VkCommandBuffer cb,uint32_t bits){(void)cb;(void)bits;return 0;} // legacy/default-off arm
 static void guest_boundary(int op,int bar_kept,int bar_covered){
+ int32_t bits=0;const void*a=&bits;
  struct{int op;}h={op};
 #include "guest_prefix.inc"
  switch(op){

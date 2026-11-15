@@ -35,7 +35,8 @@ class AttachmentDependencyTest(unittest.TestCase):
     def test_guest_barriers_always_order_all_prior_commands(self):
         self.assertIn("g_rp_force_full = 1;\n    vka_rp_end();\n    g_rp_force_full = 0;", DRAW)
         self.assertIn("bar_covered = vka_rp_end_covers_barrier();", EXEC)
-        self.assertIn("if (g_cb && !bar_kept && !bar_covered) vka_barrier(g_cb);", EXEC)
+        self.assertIn("if (!vka_gbar_game(g_cb,(uint32_t)bits)) vka_barrier(g_cb);", EXEC)
+        self.assertIn('VKA_ENV("DM_VK_BAR_NARROW", 0)', (ROOT/"dm/gfx/vk_android/vka_gbar.c").read_text())
         self.assertIn("VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT", TEX)
         self.assertIn("vka_barrier(g_cb);", DRAW)
         self.assertIn("vka_barrier(g_cb);", EXEC)
