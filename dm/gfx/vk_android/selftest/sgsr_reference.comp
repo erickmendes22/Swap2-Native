@@ -120,7 +120,9 @@ void main()
 
 	if ( OperationMode!=4)
 	{
-		highp vec2 imgCoord = ((in_TEXCOORD0.xy*ViewportInfo[0].zw)+vec2(-0.5,0.5));
+        // Vulkan's upper-left texture row: match input texel-centre
+        // mapping on both axes, correcting the original GL Y phase.
+		highp vec2 imgCoord = ((in_TEXCOORD0.xy*ViewportInfo[0].zw)+vec2(-0.5,-0.5));
 		highp vec2 imgCoordPixel = floor(imgCoord);
 		highp vec2 coord = (imgCoordPixel*ViewportInfo[0].xy);
 		vec2 pl = (imgCoord+(-imgCoordPixel));
