@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include "vka_gsr2_spv.h"
 #define CK(x) do { VkResult r=(x);if(r){fprintf(stderr,"%s:%d error %d\n",__FILE__,__LINE__,r);return 2;} }while(0)
@@ -48,8 +49,18 @@ int main(void){
  VkQueueFamilyProperties qs[16];vkGetPhysicalDeviceQueueFamilyProperties(pd,&nq,qs);
  int qi=-1;for(uint32_t i=0;i<nq;i++)if(qs[i].queueFlags&VK_QUEUE_COMPUTE_BIT){qi=(int)i;break;}REQ(qi>=0);
  float priority=1.0f;VkDeviceQueueCreateInfo qc={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueFamilyIndex=(uint32_t)qi,.queueCount=1,.pQueuePriorities=&priority};
- VkDeviceCreateInfo dc={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.queueCreateInfoCount=1,.pQueueCreateInfos=&qc};
+ const int push=getenv("GSR2_TEST_PUSH")!=NULL;
+ uint32_t ne=0;CK(vkEnumerateDeviceExtensionProperties(pd,NULL,&ne,NULL));
+ VkExtensionProperties extensions[1024];REQ(ne<=1024);
+ CK(vkEnumerateDeviceExtensionProperties(pd,NULL,&ne,extensions));
+ int supported=0;for(uint32_t i=0;i<ne;i++)if(!strcmp(extensions[i].extensionName,VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME))supported=1;
+ if(push && !supported){fprintf(stderr,"Mesa ICD has no VK_KHR_push_descriptor\n");return 77;}
+ const char *ext=VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME;
+ VkDeviceCreateInfo dc={.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,.queueCreateInfoCount=1,.pQueueCreateInfos=&qc,
+ .enabledExtensionCount=push?1u:0u,.ppEnabledExtensionNames=push?&ext:NULL};
  CK(vkCreateDevice(pd,&dc,0,&d));VkQueue q;vkGetDeviceQueue(d,(uint32_t)qi,0,&q);
+ PFN_vkCmdPushDescriptorSetKHR cmdPush=push?(PFN_vkCmdPushDescriptorSetKHR)vkGetDeviceProcAddr(d,"vkCmdPushDescriptorSetKHR"):NULL;
+ REQ(!push||cmdPush);fprintf(stderr,"GSR2 descriptor path: %s\n",push?"push":"allocated");
  vkGetPhysicalDeviceMemoryProperties(pd,&mm);
  for(int i=0;i<12;i++) {
  VkFormat fmt=i==4?VK_FORMAT_R32_UINT:i==5?VK_FORMAT_B10G11R11_UFLOAT_PACK32:VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -58,7 +69,8 @@ int main(void){
  }
  VkDescriptorSetLayoutBinding lb[6];for(int i=0;i<6;i++)lb[i]=(VkDescriptorSetLayoutBinding){
  .binding=i,.descriptorCount=1,.descriptorType=i<4?VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,.stageFlags=VK_SHADER_STAGE_COMPUTE_BIT};
- VkDescriptorSetLayoutCreateInfo lci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,.bindingCount=6,.pBindings=lb};
+ VkDescriptorSetLayoutCreateInfo lci={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+ .flags=push?VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR:0,.bindingCount=6,.pBindings=lb};
  VkDescriptorSetLayout sl;CK(vkCreateDescriptorSetLayout(d,&lci,0,&sl));
  VkPushConstantRange range={VK_SHADER_STAGE_COMPUTE_BIT,0,128};
  VkPipelineLayoutCreateInfo plci={.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -80,10 +92,13 @@ int main(void){
  VkSampler nearest,linear;CK(vkCreateSampler(d,&sci,0,&linear));sci.magFilter=sci.minFilter=VK_FILTER_NEAREST;CK(vkCreateSampler(d,&sci,0,&nearest));
  VkDescriptorPoolSize sizes[2]={{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,16},{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,8}};
  VkDescriptorPoolCreateInfo dpi={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,.maxSets=4,.poolSizeCount=2,.pPoolSizes=sizes};
+ VkDescriptorSet ds[4]={0};
+ if(!push){
  VkDescriptorPool pool;CK(vkCreateDescriptorPool(d,&dpi,0,&pool));
  VkDescriptorSetLayout lays[4]={sl,sl,sl,sl};
  VkDescriptorSetAllocateInfo sai={.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,.descriptorPool=pool,.descriptorSetCount=4,.pSetLayouts=lays};
- VkDescriptorSet ds[4];CK(vkAllocateDescriptorSets(d,&sai,ds));
+ CK(vkAllocateDescriptorSets(d,&sai,ds));
+ }
  const int ids[4][6]={
  {5,7,5,5,6,6},    // flow: current source and previous YCC -> flow
  {5,5,6,5,2,8},    // convert: colour, flow -> YCC, MDA
@@ -97,7 +112,7 @@ int main(void){
    wr[i]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,.dstSet=ds[st],.dstBinding=(uint32_t)i,
     .descriptorCount=1,.descriptorType=i<4?VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,.pImageInfo=&ii[i]};
   }
-  vkUpdateDescriptorSets(d,6,wr,0,0);
+  if(!push)vkUpdateDescriptorSets(d,6,wr,0,0);
  }
  VkBuffer buf;VkDeviceMemory bm;VkDeviceSize bytes=(VkDeviceSize)wo*ho*4;
  VkBufferCreateInfo bci={.sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,.size=bytes,.usage=VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT};
@@ -138,7 +153,16 @@ int main(void){
  PCConvert cv={{(float)wi,(float)hi},{1.0f/wi,1.0f/hi},{1.0f/wi,1.0f/hi},1.0f,1.0f,{0,0},1.0f,0.35f,0.3f,{0}};
  for(int st=0;st<4;st++){
   vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_COMPUTE,pipes[st]);
-  vkCmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,layout,0,1,&ds[st],0,0);
+  if(push){
+    VkDescriptorImageInfo pi[6];VkWriteDescriptorSet wr[6];
+    for(int i=0;i<6;i++){
+      pi[i]=(VkDescriptorImageInfo){i<2&&st==3?linear:i<4?nearest:VK_NULL_HANDLE,im[ids[st][i]].v,VK_IMAGE_LAYOUT_GENERAL};
+      wr[i]=(VkWriteDescriptorSet){.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstBinding=(uint32_t)i,.descriptorCount=1,
+      .descriptorType=i<4?VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,.pImageInfo=&pi[i]};
+    }
+    cmdPush(cb,VK_PIPELINE_BIND_POINT_COMPUTE,layout,0,6,wr);
+  } else vkCmdBindDescriptorSets(cb,VK_PIPELINE_BIND_POINT_COMPUTE,layout,0,1,&ds[st],0,0);
   vkCmdPushConstants(cb,layout,VK_SHADER_STAGE_COMPUTE_BIT,0,128,st==0||st==3?(const void*)&pc:(const void*)&cv);
   uint32_t w=st==3?wo:wi,h=st==3?ho:hi;
   vkCmdDispatch(cb,(w+7)/8,(h+7)/8,1);barrier(cb);
