@@ -6,8 +6,8 @@
 // in R32_UINT so Adreno never needs an unsupported B10 storage-image view.
 // History remains separate and untouched. Strength is from con0.x.
 layout(local_size_x = 8, local_size_y = 8) in;
-layout(set=0, binding=0) uniform highp usampler2D tex;
-layout(set=0, binding=4, r32ui) uniform writeonly highp uimage2D dst;
+layout(set = 0, binding = 0) uniform highp usampler2D tex;
+layout(set = 0, binding = 4, r32ui) uniform writeonly highp uimage2D dst;
 layout(push_constant) uniform P { uvec4 con0; ivec2 size; int itm; } pc;
 
 #define A_GPU 1
