@@ -1,4 +1,4 @@
-// Independent public Banana SGSR1 reference, algorithm unchanged.
+// Independent SGSR1 reference, with the same guarded HDR arithmetic as the production Vulkan adapter. Original Qualcomm edge weights are otherwise retained.
 // Test adapter only: the output header permits the Vulkan test storage format.
 #version 450
 #extension GL_GOOGLE_include_directive : require
@@ -52,10 +52,10 @@ layout(local_size_x = 8, local_size_y = 8) in;
 layout(push_constant) uniform P { vec4 ViewportInfo; uvec2 size; } pc;   // ViewportInfo: 1 / input width, 1 / input height, input width, input height
 #include "sgsr_reference_out.h"
 
-precision mediump float;
+precision highp float;
 precision highp int;
 
-layout(set = 0, binding = 0) uniform mediump sampler2D ps0;
+layout(set = 0, binding = 0) uniform highp sampler2D ps0;
 
 #define OperationMode 1
 #define UseEdgeDirection
@@ -145,7 +145,7 @@ void main()
 			color.w =color[OperationMode] - mean;
 
 			float sum = (((((abs(left.x)+abs(left.y))+abs(left.z))+abs(left.w))+(((abs(right.x)+abs(right.y))+abs(right.z))+abs(right.w)))+(((abs(upDown.x)+abs(upDown.y))+abs(upDown.z))+abs(upDown.w)));
-			float sumMean = 1.014185e+01/sum;
+			float sumMean = 1.014185e+01/max(sum, 1.0e-5);
 			float std = (sumMean*sumMean);
 
 #if defined(UseEdgeDirection)
@@ -166,13 +166,15 @@ void main()
 			aWY += weightY(pl.x-2.0, pl.y, right.z,data);
 			aWY += weightY(pl.x-1.0, pl.y, right.w,data);
 
-			float finalY = aWY.y/aWY.x;
-			float maxY = max(max(left.y,left.z),max(right.x,right.w));
-			float minY = min(min(left.y,left.z),min(right.x,right.w));
-			float deltaY = clamp(EdgeSharpness*finalY, minY, maxY) -color.w;
-
-			//smooth high contrast input
-			deltaY = clamp(deltaY, -23.0 / 255.0, 23.0 / 255.0);
+            float deltaY = 0.0;
+            if (abs(aWY.x) > 1.0e-6 && !isnan(aWY.x) && !isinf(aWY.x) &&
+                !isnan(aWY.y) && !isinf(aWY.y)) {
+                float finalY = aWY.y/aWY.x;
+                float maxY = max(max(left.y,left.z),max(right.x,right.w));
+                float minY = min(min(left.y,left.z),min(right.x,right.w));
+                deltaY = clamp(EdgeSharpness*finalY, minY, maxY) -color.w;
+                deltaY = clamp(deltaY, -23.0 / 255.0, 23.0 / 255.0);
+            }
 
 			color.x = max((color.x+deltaY),0.0);   // (Qualcomm: clamp(..., 0.0, 1.0); see above)
 			color.y = max((color.y+deltaY),0.0);
