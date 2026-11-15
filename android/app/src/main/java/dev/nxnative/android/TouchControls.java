@@ -87,6 +87,12 @@ final class TouchControls extends View {
     private final String[] label = new String[MAX];
     private float tx, ty, tr;      // the show / hide button
     private float picX, picY, picW = 1, picH = 1;   // the game's picture in the view, normalized
+    /** Match the low-resolution game SurfaceView to the same 16:9 rectangle
+     * used by touch mapping and the custom picture-position editor. */
+    interface PictureGeometryListener {
+        void onPictureGeometry(int viewW, int viewH, float picX, float picY, float picW, float picH);
+    }
+    PictureGeometryListener onPictureGeometry;
     private float safeLeft, safeTop, safeRight, safeBottom;
 
     // The user's layout, one per screen shape (prof: the view's size in steps of 40 units, so a foldable's two screens keep one each): each group (the left stick with L3,
@@ -216,6 +222,11 @@ final class TouchControls extends View {
         float[] p = GraphicsOptions.stretch(getContext(), gameTitleId) != 0
                 ? new float[] {0f, 0f, 1f, 1f} : picture(w, h, placeX, placeY);
         picX = p[0]; picY = p[1]; picW = p[2]; picH = p[3];
+        // The native 1280x720 SurfaceView must follow the picture editor;
+        // its physical view rectangle equals the legacy letterboxed image.
+        // The overlaid controls continue to use full-screen touch coordinates.
+        if (onPictureGeometry != null)
+            onPictureGeometry.onPictureGeometry(w, h, picX, picY, picW, picH);
         if (input) { Native.picturePlace(placeX, placeY); Native.touchLayout(w, h, picX, picY, picW, picH); }
         // On a short screen (under 340 units high) everything shrinks with it
         float fit = Math.min(1f, h / u / 340f), d = u * scale * fit, m = 14 * u;

@@ -225,6 +225,7 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
         return 0;
     }
     if(!init_pipeline() || G.last_frame==frame)return 0;
+    int sharpen=G.rcas_available && VKA_ENV("DM_VK_OOT_GSR2_RCAS",1);
     const uint32_t iw=src->w,ih=src->h,ow=dst->w,oh=dst->h;
     // Build195/196 colour corruption survives both HDR blit and bit-packed
     // output, and full synthetic GSR2 Vulkan shaders pass (including push
@@ -250,6 +251,7 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     }
     int reset=(G.last_frame==UINT64_MAX || frame!=G.last_frame+1);
     for(int k=0;k<W_COUNT;k++){
+        if(k==W_SHARP && !sharpen)continue;
         // Final output stores a packed B10G11R11 word through an R32_UINT
         // storage image; all other GSR2 resources remain true RGBA16F.
         VkFormat fmt=(k==W_OUTPUT||k==W_SHARP)?
@@ -307,9 +309,10 @@ int vka_gsr2_try(VkCommandBuffer cb, vka_img *src, vka_img *dst,
     // applies AMD RCAS (5 taps), and writes packed B10G11R11 again.
     // No temporal-history modification, no second upscaler, no UI option.
     // The default 0.20 linear strength is conservative to limit halos.
-    int sharpen=G.rcas_available && VKA_ENV("DM_VK_OOT_GSR2_RCAS",1);
     if(sharpen){
-        float sharp=0.20f;uint32_t bits=0;
+        // AMD RCAS con0.x takes 2^-sharpnessStops, not stops directly:
+        // 0.75 linear = ~0.42 stops, a conservative but visible finish.
+        float sharp=0.75f;uint32_t bits=0;
         memcpy(&bits,&sharp,sizeof bits);
         struct {
             uint32_t con0[4];int32_t size[2],itm,pad[25];

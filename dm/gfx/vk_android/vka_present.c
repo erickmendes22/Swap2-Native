@@ -722,6 +722,23 @@ static int present_one(const pq_item *it) {
     int present_filter = present_filter_setting(); // same live mode as swapchain and fsr_wanted()
     int nearest = present_filter == 1;
     int blit = im && im->inited && im->aspect == VK_IMAGE_ASPECT_COLOR_BIT && im->f.kind == 0 && im->samples == 1 && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT);
+    // 1280x720 fixed SurfaceView is identical for temporal ON and OFF.
+    // Its Android view is enlarged only by SurfaceFlinger to the 16:9
+    // physical rectangle; the Vulkan swapchain remains 1280x720.
+    int oot_surface720 = !strcmp(DM_GAME_ID,"0400486024DEC000")
+                          && VKA_ENV("DM_VK_OOT_SURFACE_720",0);
+    int one_to_one = oot_surface720 && im && blit &&
+                     cw == dw && ch == dh &&
+                     cw == 1280 && ch == 720 &&
+                     dx == 0 && dy == 0 &&
+                     cx == 0 && cy == 0 && !rot_rotates(g_pre) &&
+                     g_swap_fmt == im->f.vk &&
+                     (im->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    if(oot_surface720) {
+        static int logged;
+        if(!logged++)VLOG("Ocarina 720p compositor: swapchain=%ux%u guest=%dx%d -> panel layer view via Android compositor; same for GSR2 ON/OFF; 1:1 copy=%d",
+             g_ext.width,g_ext.height,cw,ch,one_to_one);
+    }
     // FSR in place of the blit or the rotated copy for a picture scaled up; switched on live, the swapchain has no attachment views yet: blitted once, and the next swapchain has them.
     // A view that failed on a swapchain made for FSR is not asked for again: each present would make a new swapchain (a queue idle) and fail the same way
     // The SGSR/FSR path renders by *sampling* the window image into a color
@@ -788,8 +805,19 @@ static int present_one(const pq_item *it) {
         vka_barrier(cb);   // the replay's writes to the window texture (earlier submissions, in submission order)
         int y0 = cy, y1 = cy + ch; if (vka_origin_ll()) { y0 = cy + ch; y1 = cy; }   // lower-left origin: the window texture is stored bottom-up
         VkImageBlit b = {{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{cx, y0, 0}, {cx + cw, y1, 1}}, {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, {{dx, dy, 0}, {dx + dw, dy + dh, 1}}};
-        vk.vkCmdBlitImage(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, g_simg[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b,
+        if(one_to_one){
+            // Exact same-size/format 720p transfer: no bilinear sampling.
+            VkImageCopy cp={
+                .srcSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+                .srcOffset={cx,cy,0},
+                .dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1},
+                .dstOffset={dx,dy,0},.extent={(uint32_t)cw,(uint32_t)ch,1}};
+            vk.vkCmdCopyImage(cb,im->img,VK_IMAGE_LAYOUT_GENERAL,
+                              g_simg[idx],VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&cp);
+        }else{
+            vk.vkCmdBlitImage(cb, im->img, VK_IMAGE_LAYOUT_GENERAL, g_simg[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b,
                           !nearest && (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+        }
     } else if (im && !blit) VRED_ONCE("window texture serial %llu (format %#x) cannot be blitted to the swapchain: presented black", (unsigned long long)im->serial, im->d.format);
     // Verify the option actually reached the GPU, and distinguish requested
     // FSR from a driver fallback to linear/nearest blit. Log only on a change.
@@ -813,7 +841,7 @@ static int present_one(const pq_item *it) {
         VLOG("present output filter=%d (0 auto,1 nearest,2 bilinear,3 FSR 720p,4 SGSR 720p), stretch=%d; image %dx%d -> %dx%d, method=%s%s",
              present_filter, stretch, cw, ch, dw, dh,
              fsr_applied ? (method == 4 ? "SGSR1-single-pass" : "FSR1-two-pass") : rotated_copy ? (nearest ? "rot-nearest" : "rot-linear") :
-             blit > 0 ? (nearest ? "blit-nearest" : "blit-linear-if-supported") : "unavailable",
+             blit > 0 ? (one_to_one?"copy-1:1-720p":nearest ? "blit-nearest" : "blit-linear-if-supported") : "unavailable",
              present_filter >= 3 && !fsr_applied ? " (upscale requested but fell back)" :
              present_filter == 4 && method == 3 ? " (SGSR pipeline unavailable, FSR fallback)" : "");
         last_mode = present_filter; last_stretch = stretch; last_w = cw; last_h = ch;

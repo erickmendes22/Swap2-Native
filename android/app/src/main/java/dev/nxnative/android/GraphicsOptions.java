@@ -143,8 +143,22 @@ final class GraphicsOptions {
         if (Prefs.OCARINA_TITLE.equals(id) &&
                 (OcarinaRenderProfile.direct720(Prefs.renderProfile(c, id)) || ootGsr2))
             m = 2; // Avoid a second SGSR1 pass after temporal reconstruction.
+        // Compare both 360p/540p -> 720p reconstructions without an
+        // additional GPU upscaler. SurfaceFlinger scales the fixed 720p
+        // SurfaceView to the physical panel equally for GSR2 ON and OFF.
+        // Only the low-resolution Banana profiles use this path.
+        boolean compositor720 = Prefs.OCARINA_TITLE.equals(id)
+                && OcarinaRenderProfile.temporalGsr2(Prefs.renderProfile(c,id))
+                && stretch(c,id)==0;
+        if(compositor720)m=2;
         out.add("DM_VK_PRESENT_FILTER=" + m);
         out.add("DM_VK_FSR=" + (m == 3 || m == 4 ? 1 : 0));
+        if(compositor720){
+            out.add("DM_VK_OOT_SURFACE_720=1");
+            // Avoid Vulkan pre-rotation of the 720p frame when the Android
+            // compositor can handle display orientation itself.
+            out.add("DM_VK_PRETRANSFORM=0");
+        }
         out.add("DM_VK_FSR_SHARP=" + sharp(c, id));
         out.add("DM_VK_PICTURE_STRETCH=" + (stretch(c, id) != 0 ? 1 : 0));
         // 0: avoid optimization thread and prewarm; 1: retain driver-supported

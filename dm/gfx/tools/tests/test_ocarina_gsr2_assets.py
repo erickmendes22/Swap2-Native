@@ -126,6 +126,24 @@ class Gsr2Assets(unittest.TestCase):
         self.assertIn("sharpen?W_SHARP:W_OUTPUT",native)
         self.assertIn('("vka_gsr2_rcas", "ocarina_rcas.comp")',gen)
 
+    def test_720p_compositor_same_with_gsr_on_off(self):
+        game=(ROOT/"android/app/src/main/java/dev/nxnative/android/GameActivity.java").read_text()
+        touch=(ROOT/"android/app/src/main/java/dev/nxnative/android/TouchControls.java").read_text()
+        graphics=(ROOT/"android/app/src/main/java/dev/nxnative/android/GraphicsOptions.java").read_text()
+        present=(ROOT/"dm/gfx/vk_android/vka_present.c").read_text()
+        self.assertIn("surface.getHolder().setFixedSize(1280, 720)",game)
+        self.assertIn("controls.onPictureGeometry",game)
+        self.assertIn("PictureGeometryListener onPictureGeometry",touch)
+        self.assertIn("DM_VK_OOT_SURFACE_720=1",graphics)
+        self.assertIn("DM_VK_PRETRANSFORM=0",graphics)
+        self.assertIn("if(compositor720)m=2;",graphics)
+        self.assertIn("vk.vkCmdCopyImage(cb,im->img",present)
+        self.assertIn("copy-1:1-720p",present)
+        self.assertIn("GSR2 ON/OFF",present)
+        # Compositor surface is selected by Banana profile only; the
+        # temporal enable state MUST NOT change its availability.
+        self.assertNotIn("if(ootGsr2) compositor720",graphics)
+
     def test_generator_matches_on_gpu_runner_if_available(self):
         sys.path.insert(0, str(D))
         import gsr2_spv
