@@ -1,0 +1,56 @@
+name: Ocarina foliage density and shadow caster GPU validation
+on:
+  push:
+    branches: [research/ocarina-foliage-density-shadow-resolution]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Run actual C ABI and GPU geometry-density regressions
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_foliage_density -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_visual_quality_patches -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_effect_quality -v
+      - name: Install Android NDK and Vulkan SPIR-V tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/ndk/28.2.13676358/shader-tools/linux-x86_64" >> "$GITHUB_PATH"
+      - name: Test actual generated mesh task SPIR-V with validators and UBSAN
+        shell: bash
+        run: |
+          set -euxo pipefail
+          clang -O1 -g -fsanitize=address,undefined \
+            dm/host/tests/t_android_memu.c \
+            dm/gfx/vk_android/vka_memu_spv.c \
+            dm/gfx/vk_android/vka_spvpatch.c \
+            dm/gfx/vk_android/vka_shlib.c \
+            dm/third_party/zstd/zstddeclib.c -lm -o "$RUNNER_TEMP/test-task-density"
+          ASAN_OPTIONS=detect_leaks=1 "$RUNNER_TEMP/test-task-density"
+      - name: Compile real Android application settings
+        shell: bash
+        run: |
+          cd android/app
+          chmod +x gradlew
+          ./gradlew --no-daemon -PnxGames=0400486024DEC000 -PnxApp=ootv11ios -PnxPackEngine=fake compileDebugJavaWithJavac
+      - name: Compile actual Vulkan backend and task flags with NDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/vk_android/fsr/ndsr_spv.py
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py
+          cmake -S android/host -B "$RUNNER_TEMP/density" -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=33 -DNX_RUNTIME_PROFILE=ON -DNX_LSFG=OFF
+          cmake --build "$RUNNER_TEMP/density" --target nxhost -j 4
