@@ -1,0 +1,20 @@
+name: Ocarina shadow RomFS inspector safety tests
+on:
+  push:
+    paths:
+      - 'dm/tools/gsys_shadowmaps.py'
+      - 'dm/tools/tests/test_oot_shadowmap_overlay.py'
+      - '.github/workflows/ocarina-shadowmap-tool-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test only verified shadow map BYML dimensions can be patched
+        run: python3 -m unittest dm.tools.tests.test_oot_shadowmap_overlay -v
+      - name: Check script CLI
+        run: python3 dm/tools/gsys_shadowmaps.py --help
