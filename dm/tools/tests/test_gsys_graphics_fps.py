@@ -18,6 +18,7 @@ KEYS = [
     ('CreateShadowPrePass', 0xd0, 1),
     ('CreateDof', 0xd0, 1),
     ('CreateBloom', 0xd0, 1),
+    ('ShadowPrePassUseRawDepth', 0xd0, 0),
 ]
 
 
@@ -48,8 +49,7 @@ class GraphicsPatches(unittest.TestCase):
         profiles = {
             1: {'DepthShadowCascadeNum0': 2},
             2: {'DepthShadowCascadeNum0': 1},
-            4: {'CreateShadowPrePass': 0},
-            5: {'CreateDof': 0, 'CreateBloom': 0},
+            4: {'ShadowPrePassUseRawDepth': 1},
         }
         for effect, selected in profiles.items():
             with self.subTest(effect=effect):
@@ -77,8 +77,7 @@ class GraphicsPatches(unittest.TestCase):
         raw = make_main()
         for effect, field, value in [
             (1, 'DepthShadowCascadeNum0', 4),
-            (4, 'CreateShadowPrePass', 0),
-            (5, 'CreateBloom', 0),
+            (4, 'ShadowPrePassUseRawDepth', 1),
         ]:
             with self.subTest(effect=effect):
                 with self.assertRaises(graphics.Error):
@@ -91,8 +90,15 @@ class GraphicsPatches(unittest.TestCase):
             graphics.patch(raw, 3, 1)
         with self.assertRaises(graphics.Error):
             graphics.patch(make_main({'DepthShadowTexWidth': 512}), 1, 1)
-        self.assertEqual(graphics.patch(raw, 0, 3), raw,
-                         'SSAO resources must remain allocated; only scene sample count may change')
+        for effect in (3, 5):
+            self.assertEqual(graphics.patch(raw, 0, effect), raw,
+                             'effect %d must not disable resource creation in the main BYML' % effect)
+        for effect in (3, 4, 5):
+            modified = graphics.patch(raw, 0, effect)
+            for index in (6, 7, 8, 9):
+                self.assertEqual(modified[0x404 + index * 8 + 4:0x40c + index * 8],
+                                 raw[0x404 + index * 8 + 4:0x40c + index * 8],
+                                 'all four output-producing resources must remain created')
 
 
 if __name__ == '__main__':
