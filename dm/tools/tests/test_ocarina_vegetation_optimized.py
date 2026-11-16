@@ -40,6 +40,7 @@ class Store {
   boolean getBoolean(String key, boolean fallback) { return values.getOrDefault(key, fallback); }
   Store edit() { return this; }
   Store putBoolean(String key, boolean value) { values.put(key, value); return this; }
+  Store remove(String key) { values.remove(key); return this; }
   boolean commit() { return true; }
 }
 class Prefs {
