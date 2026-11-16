@@ -131,3 +131,5 @@ static void *driver_open(void) {
     VLOG("custom GPU driver: %s%s (hooks in %s), separate pipeline cache (vk_pipelines-%s" VKA_PCACHE_GEN ".bin unless DM_VK_PCACHE overrides)", dir, name, hook, g_tag);
     return lib;
 }
+
+#endif // __ANDROID__
