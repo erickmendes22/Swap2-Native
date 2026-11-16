@@ -25,6 +25,8 @@ jobs:
       - name: Validate Ocarina graphics FPS patches before native APK compilation
         run: |
           python3 -m unittest dm.tools.tests.test_gsys_shadow dm.tools.tests.test_gsys_graphics_fps -v
+          python3 -m unittest dm.tools.tests.test_oot_ssao_samples -v
+          python3 -m py_compile dm/tools/oot_ssao_samples.py
           python3 -m unittest dm.tools.tests.test_oot_effect_crash_probe -v
           python3 -m py_compile dm/tools/oot_effect_crash_probe.py
           python3 -m py_compile dm/tools/gsys_shadow.py
