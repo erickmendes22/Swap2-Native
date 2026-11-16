@@ -203,6 +203,42 @@ public final class NupReader {
         matches.sort(Comparator.comparingInt((Package p)->p.kind).thenComparingInt(p->p.version));
         return matches;
     }
+    /**
+     * List the selected package's RomFS index, without reading game file bodies.
+     * Keeps a cycle guard and bounded traversal for malformed package metadata.
+     */
+    public List<String> listRomfsPaths(Package chosen) throws IOException {
+        ArrayList<String> out=new ArrayList<>();
+        if(chosen.romfs==NONE)return out;
+        java.util.ArrayDeque<DirectoryWalk> queue=new java.util.ArrayDeque<>();
+        java.util.HashSet<Integer> visited=new java.util.HashSet<>();
+        queue.add(new DirectoryWalk(chosen.romfs,""));
+        while(!queue.isEmpty()) {
+            DirectoryWalk current=queue.removeFirst();
+            if(!visited.add(current.directory))continue;
+            if(visited.size()>200000||out.size()>300000)
+                throw new IOException("Índice de arquivos excedeu limite seguro.");
+            int rec=dirsOffset+current.directory*DIR_SIZE;
+            int first=toc.getInt(rec+8), count=toc.getInt(rec+12);
+            for(int i=0;i<count;i++) {
+                int id=children[first+i];
+                String full=current.prefix+name(id);
+                if(full.length()>4096)throw new IOException("Caminho NUP grande demais.");
+                if(id<nd)queue.addLast(new DirectoryWalk(id,full+"/"));
+                else out.add(full);
+            }
+        }
+        return out;
+    }
+    private static final class DirectoryWalk {
+        final int directory;
+        final String prefix;
+        DirectoryWalk(int directory,String prefix) {
+            this.directory=directory;
+            this.prefix=prefix;
+        }
+    }
+
     public Resource resource(Package chosen,String path) throws IOException {
         int idx=find(chosen.romfs,path);
         Package source=chosen;
