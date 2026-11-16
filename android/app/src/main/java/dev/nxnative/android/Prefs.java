@@ -247,11 +247,11 @@ final class Prefs {
             int old = of(c).getInt(gameKey("oot_fps_patch", id), 0);
             mask = old >= 1 && old <= 5 ? (1 << (old - 1)) : 0;
         }
-        return mask >= 0 && mask <= 31 && (mask & 3) != 3 ? mask : 0;
+        return mask >= 0 && mask <= 63 && (mask & 3) != 3 ? mask : 0;
     }
     static void fpsPatchMask(Context c, String id, int mask) {
         if (!OCARINA_TITLE.equals(id)) return;
-        if (mask < 0 || mask > 31 || (mask & 3) == 3) return;
+        if (mask < 0 || mask > 63 || (mask & 3) == 3) return;
         of(c).edit().putInt(gameKey("oot_fps_patch_mask", id), mask)
                 .remove(gameKey("oot_fps_patch", id)).commit();
     }
