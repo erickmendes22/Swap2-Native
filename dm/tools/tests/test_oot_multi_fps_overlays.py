@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import gsys_shadow
-from tests.test_gsys_graphics_fps import make_main
+from dm.tools.tests.test_gsys_graphics_fps import make_main
 
 FIELDS = [
     ('SSAO', 0xc1, 0x300),
@@ -67,10 +67,10 @@ class MultiPatchIntegration(unittest.TestCase):
             new_scene = (out / scene.relative_to(base)).read_bytes()
             new_main = (out / main.relative_to(base)).read_bytes()
             self.assertEqual(struct.unpack_from('<i', new_scene, 0x308)[0], 2)
-            self.assertEqual(struct.unpack_from('<f', new_scene, 0x214)[0], 0.0)
-            self.assertEqual(struct.unpack_from('<f', new_scene, 0x21c)[0], 0.0)
-            self.assertEqual(struct.unpack_from('<i', new_scene, 0x224)[0], 1)
-            self.assertEqual(struct.unpack_from('<i', new_scene, 0x22c)[0], 1)
+            self.assertEqual(struct.unpack_from('<f', new_scene, 0x210)[0], 0.0)
+            self.assertEqual(struct.unpack_from('<f', new_scene, 0x218)[0], 0.0)
+            self.assertEqual(struct.unpack_from('<i', new_scene, 0x220)[0], 1)
+            self.assertEqual(struct.unpack_from('<i', new_scene, 0x228)[0], 1)
             self.assertEqual(struct.unpack_from('<i', new_main, 0x430)[0], 2)
             self.assertEqual(struct.unpack_from('<i', new_main, 0x458)[0], 1)
 
