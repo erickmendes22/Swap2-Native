@@ -40,7 +40,7 @@ class PackNative {
 class Profile { String shaderInputs="aa5e7196d926"; static Profile of(String s){return new Profile();} }
 class ShaderAbiCert {static boolean approved(String a,String b,String c,String d){return false;} }
 class ShaderLibs {
-    static class Header { String abi=BuildConfig.NX_DMSH_VK_ABI,inputs="aa5e7196d926",game="0400486024DEC000",vkChain="b6b21fb5753a";long entries=42339;boolean fits(long n){return true;} }
+    static class Header { String abi=BuildConfig.NX_DMSH_VK_ABI,inputs="aa5e7196d926",game="0400486024DEC000",vkChain="b6b21fb5753a";long entries=42339;int subgroupSize=64,ssboAlign=64;boolean fits(long n){return true;} }
     static File originalOcarina(File p,String t,String a,String i){return new File(p,"base.lib");}
     static Header header(File f){
         if(f.getName().equals("base.lib"))return new Header();
