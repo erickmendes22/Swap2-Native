@@ -1,4 +1,4 @@
-"""Synthetic BYML regression: each FPS A/B profile edits ONLY named game switches."""
+"""Synthetic BYML regression: A/B patches change only validated fields; SSAO retains resources."""
 import struct
 import sys
 import unittest
@@ -48,7 +48,6 @@ class GraphicsPatches(unittest.TestCase):
         profiles = {
             1: {'DepthShadowCascadeNum0': 2},
             2: {'DepthShadowCascadeNum0': 1},
-            3: {'CreateSsocclusion': 0},
             4: {'CreateShadowPrePass': 0},
             5: {'CreateDof': 0, 'CreateBloom': 0},
         }
@@ -70,7 +69,7 @@ class GraphicsPatches(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<i', combined, 0x410)[0], 256)
         self.assertEqual(struct.unpack_from('<i', combined, 0x418)[0], 1024)
         self.assertEqual(struct.unpack_from('<i', combined, 0x430)[0], 3)
-        self.assertEqual(struct.unpack_from('<i', combined, 0x438)[0], 0)
+        self.assertEqual(struct.unpack_from('<i', combined, 0x438)[0], 1)
         self.assertEqual(struct.unpack_from('<i', combined, 0x440)[0], 1)
         self.assertEqual(combined[0x420:0x430], raw[0x420:0x430])
 
@@ -78,7 +77,6 @@ class GraphicsPatches(unittest.TestCase):
         raw = make_main()
         for effect, field, value in [
             (1, 'DepthShadowCascadeNum0', 4),
-            (3, 'CreateSsocclusion', 0),
             (4, 'CreateShadowPrePass', 0),
             (5, 'CreateBloom', 0),
         ]:
@@ -93,10 +91,8 @@ class GraphicsPatches(unittest.TestCase):
             graphics.patch(raw, 3, 1)
         with self.assertRaises(graphics.Error):
             graphics.patch(make_main({'DepthShadowTexWidth': 512}), 1, 1)
-        corrupt = bytearray(raw)
-        corrupt[0x404 + 6 * 8 + 3] = 0xd1
-        with self.assertRaises(graphics.Error):
-            graphics.patch(bytes(corrupt), 0, 3)
+        self.assertEqual(graphics.patch(raw, 0, 3), raw,
+                         'SSAO resources must remain allocated; only scene sample count may change')
 
 
 if __name__ == '__main__':
