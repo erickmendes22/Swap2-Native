@@ -34,13 +34,16 @@ class DepthPassOptimizations(unittest.TestCase):
         macros = "\n".join(next(line for line in header.splitlines() if line.startswith("#define " + name))
                            for name in ("VKA_COLOR_OMITTED", "VKA_COLOR_ORIGINAL", "VKA_COLOR_RENDER"))
         tex = (VK / "vka_tex.c").read_text()
-        barrier = function(tex, "void vka_attachment_parts_barrier_at(")
+        barrier = (function(tex, "void vka_attachment_parts_access_barrier_at(") +
+                   "\n" + function(tex, "void vka_attachment_parts_barrier_at("))
         harness = r'''
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
 #include <vulkan/vulkan_core.h>
+#include "vka_attachment_stage_policy.h"
 static unsigned vka_n_attachment_bar, calls;
+static uint64_t vka_n_attachment_color_src_only, vka_n_attachment_depth_src_only;
 static uint64_t g_unused_color_passes, g_unused_color_views;
 static int vka_gp_active;
 static void vka_gp_mark(VkCommandBuffer cb,const char*f,int l){(void)cb;(void)f;(void)l;}
@@ -84,6 +87,7 @@ int main(void){
             src.write_text(harness)
             build = subprocess.run([shutil.which("cc"), "-Wall", "-Wextra", "-Werror", "-fsanitize=undefined",
                                     "-I", str(ROOT / "dm/third_party/vulkan-headers/include"),
+                                    "-I", str(VK),
                                     str(src), "-o", str(exe)], capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr)
             subprocess.run([str(exe)], check=True)
