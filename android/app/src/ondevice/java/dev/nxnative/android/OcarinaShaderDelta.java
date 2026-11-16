@@ -103,6 +103,21 @@ final class OcarinaShaderDelta {
         // not a different arbitrary subset after every repair attempt.
         java.util.Arrays.sort(captureFiles,
                 java.util.Comparator.comparing(File::getName));
+        // A source-verified mesh/task shader can still be impossible to
+        // translate without its real draw-time pixel/task association.
+        // The compiler records those deferred keys for this toolchain.
+        // A NEW source capture or mesh_pairs.tsv update re-enables them;
+        // otherwise the UI must not offer the same futile repair forever.
+        long newestPairEvidence = new File(captures, "mesh_pairs.tsv").lastModified();
+        for (File candidate : captureFiles) {
+            newestPairEvidence = Math.max(newestPairEvidence, candidate.lastModified());
+            String name = candidate.getName();
+            File control = new File(captures, name.substring(0, 16) + ".ctl");
+            newestPairEvidence = Math.max(newestPairEvidence, control.lastModified());
+        }
+        String compilerStamp = BuildConfig.NX_DMSH_CHAIN + "\t"
+                + BuildConfig.NX_DMSH_VK_CHAIN;
+        int deferred = 0;
         ArrayList<String> missing = new ArrayList<>();
         try {
             for (File f : captureFiles) {
@@ -112,6 +127,16 @@ final class OcarinaShaderDelta {
                         || f.length() < 4 || f.length() > (1 << 24)) continue;
                 if (ShaderLibs.hasKey(old, header, key)) continue;
                 if (hotVerified && ShaderLibs.hasKey(hot, hotHeader, key)) continue;
+                File blocked = new File(captures, key + ".deferred");
+                if (blocked.isFile() && blocked.length() <= 128
+                        && blocked.lastModified() >= newestPairEvidence) {
+                    List<String> stamp = Files.readAllLines(blocked.toPath(),
+                            StandardCharsets.US_ASCII);
+                    if (!stamp.isEmpty() && compilerStamp.equals(stamp.get(0))) {
+                        deferred++;
+                        continue;
+                    }
+                }
                 missing.add(key);
                 if (missing.size() == 128) break;
             }
@@ -120,6 +145,11 @@ final class OcarinaShaderDelta {
                     "Cannot inspect existing shader entries; refusing to guess missing keys", e);
             return List.of();
         }
+        if (deferred > 0)
+            android.util.Log.i("OcarinaShaderDelta",
+                    deferred + " genuinely missing mesh/task shaders waiting "
+                    + "for new real draw-time pairing evidence; not reoffering "
+                    + "an identical failed preparation");
         if (!missing.isEmpty())
             android.util.Log.i("OcarinaShaderDelta",
                     "Repairing " + missing.size() + " source-captured keys absent from BOTH "
