@@ -13,7 +13,7 @@ import romfs
 
 DIRECTORY = 'gsys/ModelSceneShadowParam'
 KEY = 'AlchemySamplePairNum'  # exact field in user's NUP v131072 diagnostics
-SOURCE_PAIRS = 5     # Named engine parameter documented by the game shader analysis.
+SOURCE_PAIRS = (3, 5)  # Both observed in the actual v131072 per-scene SSAO files.
 TRIAL_PAIRS = 2
 MAX_FILE = 2 * 1024 * 1024
 
@@ -45,19 +45,22 @@ def patch_byml(source):
                 if kind != D_INT:
                     raise Error('unexpected SSAO sample-pair field type')
                 actual = struct.unpack_from('<i', raw, word)[0]
-                if actual != SOURCE_PAIRS:
+                if actual in SOURCE_PAIRS:
+                    locations.append((word, actual))
+                elif actual == TRIAL_PAIRS:
+                    pass   # scene is already at the safe 2-pair target; leave unchanged
+                else:
                     raise Error('unexpected original SSAO sample-pair count: %d' % actual)
-                locations.append(word)
             elif kind in CONTAINERS:
                 visit(by.u32(word), depth + 1, in_ssao or name == 'SSAO')
 
     visit(by.root, 0)
-    if len(set(locations)) != len(locations):
+    if len({word for word, _old in locations}) != len(locations):
         raise Error('duplicate SSAO scalar offset')
-    for word in locations:
+    for word, _old in locations:
         struct.pack_into('<i', raw, word, TRIAL_PAIRS)
     differing = {i for i, (a, b) in enumerate(zip(source, raw)) if a != b}
-    allowed = {i for o in locations for i in range(o, o + 4)}
+    allowed = {i for o, _old in locations for i in range(o, o + 4)}
     if (locations and (not differing or not differing <= allowed)) or (not locations and differing):
         raise Error('SSAO patch modified unknown bytes')
     return bytes(raw), len(locations)
@@ -82,7 +85,7 @@ def generate(root, out, log=print):
         if num:
             matched.append((name, patched, num))
     if not matched:
-        raise Error('verified SSAO/AlchemySamplePairNum not found; no SSAO patch written')
+        raise Error('no SSAO/AlchemySamplePairNum 3 or 5 found to reduce; no patch written')
     # Only now commit the files; the Android preparer works in a private .tmp
     # folder and publishes an overlay only after the generator succeeds.
     for name, patched, num in matched:
@@ -90,6 +93,6 @@ def generate(root, out, log=print):
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, 'wb') as f:
             f.write(patched)
-        log('SSAO sample pairs: %s original %d -> trial %d (%d field%s)' %
-            (name, SOURCE_PAIRS, TRIAL_PAIRS, num, '' if num == 1 else 's'))
+        log('SSAO sample pairs: %s reduced %d field%s (allowed originals 3 or 5, target %d)' %
+            (name, num, '' if num == 1 else 's', TRIAL_PAIRS))
     return sum(n for _, _, n in matched)
