@@ -398,6 +398,31 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 else sceneNote = "[RED] [nxlaunch] Scene resolution 720p: the overlay " + SceneOverlay.dir(files, id) + " was not made for this pack (version " + pack.version
                         + ", scale " + Prefs.renderSceneScale(this, id, prof.sceneScale()) + "): using the game's own render scale this run; select the internal scene resolution again";
             }
+            // The host's existing RomFS overlay resolver accepts a colon-separated
+            // list of roots. Keep the already prepared scene_720p pack intact:
+            // the 9.8 KiB shadow BYML is a separate, higher-priority root.
+            if (Prefs.OCARINA_TITLE.equals(id) && Prefs.shadowProfile(this, id) != 0) {
+                int shadow = Prefs.shadowProfile(this, id);
+                if (ShadowOverlay.current(files, id, shadow, pack.version)) {
+                    String root = ShadowOverlay.dir(files, id, shadow).getPath();
+                    boolean combined = false;
+                    for (int i = 0; i < env.size(); i++) {
+                        String value = env.get(i);
+                        if (value.startsWith("DM_ROMFS_OVERLAY=")) {
+                            env.set(i, "DM_ROMFS_OVERLAY=" + root + ":" + value.substring("DM_ROMFS_OVERLAY=".length()));
+                            combined = true;
+                            break;
+                        }
+                    }
+                    if (!combined) env.add("DM_ROMFS_OVERLAY=" + root);
+                    Native.note("[nxlaunch] Ocarina shadow maps: profile " + shadow
+                            + " from separate verified RomFS overlay; scene overlay preserved");
+                } else {
+                    String msg = "[RED] [nxlaunch] Ocarina shadow maps: overlay missing or stale for pack "
+                            + pack.version + "; original shadow maps used; select the shadow profile again";
+                    sceneNote = sceneNote == null ? msg : sceneNote + "\\n" + msg;
+                }
+            }
             // Match the emulated Switch language to the selected app locale.
             // env.txt and per-game overrides are appended later and can
             // deliberately override this one line for advanced users.
