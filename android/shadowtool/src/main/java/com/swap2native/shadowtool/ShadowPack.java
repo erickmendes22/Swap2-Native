@@ -366,7 +366,7 @@ public final class ShadowPack {
     // Names and dimensions verified from the real Ocarina BASE v65536 RomFS
     // diagnosis. The UI variant differs: its 4096 depth map must not be
     // blindly reduced by the gameplay profile.
-    private static final String MAIN_CONFIG=
+    public static final String MAIN_CONFIG=
         "gsys/ModelSceneConfigParam/Main.gsys__ModelSceneConfigParam.bgyml";
 
     private static boolean isShadowField(Field v) {
