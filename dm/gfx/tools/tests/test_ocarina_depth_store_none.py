@@ -17,8 +17,8 @@ DRAW = (ROOT / "dm/gfx/vk_android/vka_draw.c").read_text()
 VRS = (ROOT / "dm/gfx/vk_android/vka_oot_heavy_pass_vrs.h").read_text()
 
 class ReadonlyDepthStoreTests(unittest.TestCase):
-    def test_title_default_and_runtime_reversible(self):
-        self.assertIn('VKA_ENV("DM_VK_OOT_DEPTH_STORE_NONE", 1)', DRAW)
+    def test_title_default_off_and_optin_reversible(self):
+        self.assertIn('VKA_ENV("DM_VK_OOT_DEPTH_STORE_NONE", 0)', DRAW)
         self.assertIn('!strcmp(DM_GAME_ID, "0400486024DEC000")', DRAW)
         self.assertIn('if (R.on && R.readonly_depth_store && d && d->ds.dt && d->ds.dw)', DRAW)
         self.assertIn('if (R.on && R.readonly_depth_store && c->ci < 0)', DRAW)
