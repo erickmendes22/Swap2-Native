@@ -28,10 +28,10 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: ocarina-shadowtool-stable-debug-key-v1
-      - name: Build independent Android NUP picker APK
+      - name: Test safe BYML rewriting and build independent Android APK
         run: |
           chmod +x android/app/gradlew
-          android/app/gradlew --no-daemon -p android/shadowtool :assembleDebug
+          android/app/gradlew --no-daemon -p android/shadowtool :testDebugUnitTest :assembleDebug
       - name: Check APK and signatures
         run: |
           set -euxo pipefail
