@@ -24,6 +24,10 @@ class MissingShaderRepair(unittest.TestCase):
         self.assertIn("if (missing.size() == 128) break;", selection)
         self.assertIn("vegetationSet.contains(key)", selection)
         self.assertIn("completeVegetationInstalled", selection)
+        self.assertIn("header.subgroupSize, header.ssboAlign", selection)
+        self.assertIn("h.subgroupSize != subgroup || h.ssboAlign != alignment", PICK)
+        self.assertIn("h.entries != required.size()", PICK)
+        self.assertIn("if (!ShaderLibs.hasKey(lib, h, key))", PICK)
         self.assertNotIn("vk_hot_delta.tsv", selection)
         self.assertNotIn("HEAVY.contains(key)", selection)
         self.assertNotIn("SCENE_FRAGMENTS.contains(key)", selection)
@@ -134,6 +138,15 @@ class MissingShaderRepair(unittest.TestCase):
         self.assertIn("if ((hot_task || missing_task)", NATIVE)
         self.assertIn("capture_ocarina_stage_pair(mesh_program, mesh_slot, mesh_key", NATIVE)
         self.assertNotIn("!a_key || !b_key || !g_hot_loaded", NATIVE)
+
+    def test_runtime_reuses_only_exact_verified_old_vegetation_supplement(self):
+        self.assertIn("if (!g_vegetation_loaded || st.st_mtime > newest)", NATIVE)
+        self.assertIn("vegetation_complete(&prior, &g_lib)", NATIVE)
+        self.assertIn("g_vegetation = prior;", NATIVE)
+        self.assertIn("vka_shlib_close(&prior)", NATIVE)
+        self.assertIn("memcmp(lib->h->abi, DMSH_VK_ABI, 12)", NATIVE)
+        self.assertIn("lib->h->ssbo_align != base->h->ssbo_align", NATIVE)
+        self.assertIn("lib->h->subgroup_size != base->h->subgroup_size", NATIVE)
 
     def test_compiler_writes_deferred_stamps_only_for_actual_unpaired_keys(self):
         self.assertIn("_key + '.deferred'", BUILDER)
