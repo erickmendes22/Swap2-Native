@@ -167,7 +167,8 @@ final class GameSettings {
             Prefs.ndsr(a, id, null);
             GraphicsOptions.reset(a, id);  // restore only per-game graphics overrides
             sceneWant(id, null);
-            shadowWant(id, 0);
+            graphicsWant(id, null);
+            Prefs.fpsPatch(a, id, 0);
             Prefs.shadowProfile(a, id, 0);
             Prefs.scene720(a, id, false);
             Prefs.renderProfile(a,id,0);
@@ -349,12 +350,17 @@ final class GameSettings {
             if (on) sceneCheck(a, g, prof, row, cur);
         }
         if (Prefs.OCARINA_TITLE.equals(id)) {
-            int shadow = Prefs.shadowProfile(a, id);
-            Ui.Setting row = new Ui.Setting(a, R.drawable.s2_ic_display,
+            int effect = Prefs.fpsPatch(a, id), shadow = Prefs.shadowProfile(a, id);
+            Ui.Setting fpsRow = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Patch de FPS do jogo (RomFS)", v -> fpsPatches(a, g, again))
+                    .value(fpsLabel(effect));
+            box.addView(fpsRow.chevron(a).view);
+            if (effect != 0) graphicsCheck(a, g, fpsRow, fpsLabel(effect));
+            Ui.Setting shadowRow = new Ui.Setting(a, R.drawable.s2_ic_display,
                     "Mapas de sombra (RomFS)", v -> shadowMaps(a, g, again))
                     .value(shadowLabel(shadow));
-            box.addView(row.chevron(a).view);
-            if (shadow != 0) shadowCheck(a, g, row);
+            box.addView(shadowRow.chevron(a).view);
+            if (shadow != 0) graphicsCheck(a, g, shadowRow, shadowLabel(shadow));
         }
         builtinMods(a, g, box);
         Ui.add(p, Ui.small(a, a.getString(R.string.s2_game_graphics_hint)), 8);
@@ -850,61 +856,90 @@ final class GameSettings {
         }
     }
 
-    /** Prepare shadow-only overlay for the current title update without shader rebuild. */
-    private static void shadowMaps(MainActivity a, Game g, Runnable done) {
+    /** One-at-a-time GPU work experiments; each restores exactly the original game flags. */
+    private static String fpsLabel(int effect) {
+        switch (effect) {
+            case 1: return "Cascatas de sombra: 3 → 2 (teste)";
+            case 2: return "Cascatas de sombra: 3 → 1 (teste)";
+            case 3: return "Oclusão de ambiente SSAO: OFF (teste)";
+            case 4: return "Pré-passe de sombras: OFF (teste)";
+            case 5: return "Profundidade de campo + Bloom: OFF (teste)";
+            default: return "Original do jogo · sem patch de FPS";
+        }
+    }
+
+    private static void fpsPatches(MainActivity a, Game g, Runnable done) {
         String id = g.titleId;
-        int current = Prefs.shadowProfile(a, id);
-        String[] choices = {shadowLabel(0), shadowLabel(1), shadowLabel(2)};
-        new AlertDialog.Builder(a).setTitle("Mapas de sombra · " + g.name)
-                .setSingleChoiceItems(choices, current, (dialog, which) -> {
+        String[] labels = new String[6];
+        for (int i = 0; i < labels.length; i++) labels[i] = fpsLabel(i);
+        new AlertDialog.Builder(a).setTitle("Patch de FPS · " + g.name)
+                .setSingleChoiceItems(labels, Prefs.fpsPatch(a, id), (dialog, choice) -> {
                     dialog.dismiss();
-                    if (which == 0) {
-                        shadowWant(id, 0);
-                        Prefs.shadowProfile(a, id, 0);
+                    int shadow = Prefs.shadowProfile(a, id);
+                    if (shadow == 0 && choice == 0) {
+                        graphicsWant(id, null);
+                        Prefs.fpsPatch(a, id, 0);
                         done.run();
-                    } else makeShadow(a, g, which);
+                    } else makeGraphicsPatch(a, g, shadow, choice);
                 }).setNegativeButton(android.R.string.cancel, null).show();
     }
 
-    private static final java.util.Map<String, Integer> SHADOW_WANT = new java.util.HashMap<>();
-    private static void shadowWant(String id, int profile) {
-        synchronized (SHADOW_WANT) {
-            if (profile == 0) SHADOW_WANT.remove(id);
-            else SHADOW_WANT.put(id, profile);
+    private static void shadowMaps(MainActivity a, Game g, Runnable done) {
+        String id = g.titleId;
+        String[] labels = {shadowLabel(0), shadowLabel(1), shadowLabel(2)};
+        new AlertDialog.Builder(a).setTitle("Mapas de sombra · " + g.name)
+                .setSingleChoiceItems(labels, Prefs.shadowProfile(a, id), (dialog, choice) -> {
+                    dialog.dismiss();
+                    int effect = Prefs.fpsPatch(a, id);
+                    if (choice == 0 && effect == 0) {
+                        graphicsWant(id, null);
+                        Prefs.shadowProfile(a, id, 0);
+                        done.run();
+                    } else makeGraphicsPatch(a, g, choice, effect);
+                }).setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    /** Last user selection wins over an older asynchronous preparation result. */
+    private static final java.util.Map<String, String> GRAPHICS_WANT = new java.util.HashMap<>();
+    private static void graphicsWant(String id, String choice) {
+        synchronized (GRAPHICS_WANT) {
+            if (choice == null) GRAPHICS_WANT.remove(id);
+            else GRAPHICS_WANT.put(id, choice);
         }
     }
-    private static boolean shadowWanted(String id, int profile) {
-        synchronized (SHADOW_WANT) { return Integer.valueOf(profile).equals(SHADOW_WANT.get(id)); }
+    private static boolean graphicsWanted(String id, String choice) {
+        synchronized (GRAPHICS_WANT) { return choice.equals(GRAPHICS_WANT.get(id)); }
     }
 
-    private static void shadowCheck(MainActivity a, Game g, Ui.Setting row) {
+    private static void graphicsCheck(MainActivity a, Game g, Ui.Setting row, String label) {
         File files = a.getExternalFilesDir(null);
-        int profile = Prefs.shadowProfile(a, g.titleId);
+        int shadow = Prefs.shadowProfile(a, g.titleId), effect = Prefs.fpsPatch(a, g.titleId);
         new Thread(() -> {
             String[] in = sceneInputs(g);
-            boolean valid = in != null && ShadowOverlay.current(files, g.titleId, profile, in[0]);
-            if (!valid) UI.post(() -> row.value(shadowLabel(profile) + " · Precisa preparar novamente"));
-        }, "nx-shadow-check").start();
+            boolean valid = in != null && ShadowOverlay.current(files, g.titleId, shadow, effect, in[0]);
+            if (!valid) UI.post(() -> row.value(label + " · Precisa preparar novamente"));
+        }, "nx-graphics-check").start();
     }
 
-    private static void makeShadow(MainActivity a, Game g, int profile) {
-        String id = g.titleId;
+    private static void makeGraphicsPatch(MainActivity a, Game g, int shadow, int effect) {
+        String id = g.titleId, choice = shadow + ":" + effect;
         File files = a.getExternalFilesDir(null);
-        shadowWant(id, profile);
-        AlertDialog wait = new AlertDialog.Builder(a).setMessage("Preparando mapas de sombra do NUP selecionado...")
-                .setCancelable(true).create();
+        graphicsWant(id, choice);
+        AlertDialog wait = new AlertDialog.Builder(a)
+                .setMessage("Preparando patch gráfico do NUP selecionado...").setCancelable(true).create();
         wait.show();
         new Thread(() -> {
             String[] in = sceneInputs(g);
-            boolean valid = in != null && ShadowOverlay.current(files, id, profile, in[0]);
+            boolean valid = in != null && ShadowOverlay.current(files, id, shadow, effect, in[0]);
             UI.post(() -> {
                 boolean gone = a.isFinishing() || a.isDestroyed();
                 if (in == null || files == null || valid) {
                     if (!gone) { try { wait.dismiss(); } catch (RuntimeException ignored) {} }
                     if (valid) {
-                        if (shadowWanted(id, profile)) {
-                            Prefs.shadowProfile(a, id, profile);
-                            modToast(a, "Mapas de sombra preparados; ativos no próximo início do jogo.");
+                        if (graphicsWanted(id, choice)) {
+                            Prefs.shadowProfile(a, id, shadow);
+                            Prefs.fpsPatch(a, id, effect);
+                            modToast(a, "Patch gráfico preparado; ativo no próximo início do jogo.");
                         }
                     } else {
                         String msg = "Jogo sem pacote preparado ou RomFS acessível.";
@@ -913,30 +948,31 @@ final class GameSettings {
                     if (!gone) a.gameSettingsChanged(g);
                     return;
                 }
-                SceneService.startShadow(a, id, in[1], profile, in[0], new android.os.ResultReceiver(UI) {
+                SceneService.startShadow(a, id, in[1], shadow, effect, in[0], new android.os.ResultReceiver(UI) {
                     @Override protected void onReceiveResult(int code, android.os.Bundle data) {
                         boolean end = a.isFinishing() || a.isDestroyed();
                         if (!end) { try { wait.dismiss(); } catch (RuntimeException ignored) {} }
                         if (code == 0) {
-                            if (shadowWanted(id, profile)) {
-                                Prefs.shadowProfile(a, id, profile);
-                                modToast(a, "Mapas de sombra " + shadowLabel(profile)
-                                        + " preparados; valem no próximo início.");
+                            if (graphicsWanted(id, choice)) {
+                                Prefs.shadowProfile(a, id, shadow);
+                                Prefs.fpsPatch(a, id, effect);
+                                modToast(a, "Patch gráfico pronto (sombras " + shadow + ", FPS " + effect
+                                        + "); ativo no próximo início.");
                             }
                         } else if (code == SceneService.RUNNING) {
-                            modToast(a, "Já existe um overlay RomFS em preparação.");
+                            modToast(a, "Outro overlay RomFS já está em preparação.");
                         } else {
                             String msg = data == null ? null : data.getString(SceneService.MESSAGE);
                             String why = code == SceneService.BUSY
                                     ? a.getString(R.string.s2_scene_busy) : msg != null ? msg : "exit " + code;
-                            if (end) modToast(a, "Falha ao preparar sombras: " + why);
-                            else a.error("Falha ao preparar sombras: " + why);
+                            if (end) modToast(a, "Falha no patch gráfico: " + why);
+                            else a.error("Falha no patch gráfico: " + why);
                         }
                         if (!end) a.gameSettingsChanged(g);
                     }
                 });
             });
-        }, "nx-shadow-make").start();
+        }, "nx-graphics-make").start();
     }
 
     /** The pack's version and the RomFS as the host takes it ({version, romfs}), or null with no pack or RomFS. Reads pack.tsv and the .nup: off the main thread */
