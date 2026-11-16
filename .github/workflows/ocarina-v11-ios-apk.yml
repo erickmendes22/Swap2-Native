@@ -22,6 +22,12 @@ jobs:
           else
             python3 -m pip install --user --break-system-packages backports.zstd==1.8.0
           fi
+      - name: Validate Ocarina graphics FPS patches before native APK compilation
+        run: |
+          python3 -m unittest dm.tools.tests.test_gsys_shadow dm.tools.tests.test_gsys_graphics_fps -v
+          python3 -m py_compile dm/tools/gsys_shadow.py
+          mkdir -p /tmp/oot-fps-patch-jvm
+          javac -d /tmp/oot-fps-patch-jvm android/app/src/main/java/dev/nxnative/android/ShadowOverlay.java
       - name: Validate optional GPU visibility defaults and safe counter blocks
         run: python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.tools.tests.test_ocarina_gpu_visibility_option -v
       - name: Validate shader ABI and internal scene resolution profiles
