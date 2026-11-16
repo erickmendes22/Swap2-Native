@@ -61,6 +61,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          export PATH="$ANDROID_NDK_HOME/shader-tools/linux-x86_64:$PATH"
+          python3 dm/gfx/vk_android/fsr/ndsr_spv.py
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py
           cmake -S android/host -B "$RUNNER_TEMP/qgl-native" -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=33 \
