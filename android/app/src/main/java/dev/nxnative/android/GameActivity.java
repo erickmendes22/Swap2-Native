@@ -406,7 +406,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 int shadow = Prefs.shadowProfile(this, id);
                 int mask = Prefs.fpsPatchMask(this, id);
                 if (shadow != 0 || mask != 0) {
-                    if (ShadowOverlay.currentMask(files, id, shadow, mask, pack.version)) {
+                    String gfxVersion = SceneService.graphicsVersion(this, id, pack.version, mask, files);
+                    if (ShadowOverlay.currentMask(files, id, shadow, mask, gfxVersion)) {
                         String graphicsRoot = ShadowOverlay.dirMask(files, id, shadow, mask).getPath();
                         boolean combined = false;
                         for (int i = 0; i < env.size(); i++) {
