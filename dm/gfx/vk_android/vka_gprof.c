@@ -225,8 +225,7 @@ void vka_gp_pass(const char *desc) {
         // "1280x720x1" is exactly 10 bytes; the next character of the
         // actual description is a SPACE before "c0:122 d:126", not NUL.
         // Matching 11 bytes accidentally excluded every useful scene pass.
-        g_pass_1280 = !strncmp(desc, "1280x720x1", 10) &&
-                      (!desc[10] || desc[10] == ' ');
+        g_pass_1280 = vka_scene_profile_1280(desc);
         // A draw may be outside the chosen scene pass: never carry its
         // timestamp group into the next render target.
         g_gfx_n = 0;
@@ -390,8 +389,7 @@ static void report(void) {
         } passes_1280[64] = {0};
         unsigned np = 0;
         for (int i = 1; i < g_n; i++) {
-            if (strncmp(g_m[i].desc, "1280x720x1", 10) ||
-                (g_m[i].desc[10] && g_m[i].desc[10] != ' ')) continue;
+            if (!vka_scene_profile_1280(g_m[i].desc)) continue;
             double ms = elapsed[i];
             unsigned blocks = 0;
             for (int j = i - 1; j > 0 && g_m[j].gfx_block; --j) {
