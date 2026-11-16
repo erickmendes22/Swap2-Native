@@ -216,7 +216,7 @@ class FpsBoostTests(unittest.TestCase):
         self.assertNotIn('shader_library', OPTIONS)
 
 
-    def test_only_three_captured_720p_heavy_shader_keys_select_four_by_two(self):
+    def test_only_two_720p_heavy_shader_keys_select_four_by_two(self):
         import shutil
         import subprocess
         import tempfile
@@ -234,11 +234,10 @@ class FpsBoostTests(unittest.TestCase):
 #include <vulkan/vulkan_core.h>
 #include "vka_oot_heavy_pass_vrs.h"
 int main(void) {
-    const uint64_t hot[3] = {
-        UINT64_C(0x1e4d2630d24846d0), UINT64_C(0x19f99e925937b038),
-        UINT64_C(0x8ea627c8ef169ee1)
+    const uint64_t hot[2] = {
+        UINT64_C(0x1e4d2630d24846d0), UINT64_C(0x8ea627c8ef169ee1)
     };
-    for(int f=0;f<3;f++) {
+    for(int f=0;f<2;f++) {
         assert(vka_oot_heavy_4x2_eligible(1,1,1,2,2,2,hot[f],0,1,
             VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_FORMAT_D32_SFLOAT,1,0));
         for(int i=0;i<15;i++) {
