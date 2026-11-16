@@ -26,12 +26,19 @@ class BananaRuntime(unittest.TestCase):
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include "dmsh_abi_vk.h"
 #include "vka_vegetation_profiles.h"
+#include "vka_vegetation_quality.h"
 #define VKA_NSTAGE 8
 #define DM_GAME_ID "0400486024DEC000"
-static int full = 1;
-#define VKA_ENV(name, fallback) full
+static int full = 1, tier = 0;
+static int vka_test_env(const char *name, int fallback) {
+    if (!strcmp(name, "DM_VK_VEGETATION")) return full;
+    if (!strcmp(name, "DM_VK_OOT_VEG_QUALITY")) return tier;
+    return fallback;
+}
+#define VKA_ENV(name, fallback) vka_test_env((name), (fallback))
 #define VLOG(...) ((void)0)
 typedef struct { int tf_on; } vka_dstate;
 typedef struct { const dmsh_vk_entry *e; const dmsh_vk_bind *b; uint64_t key; } vka_shader;
@@ -43,6 +50,10 @@ int main(void) {
     assert(vka_vegetation_key(DM_GAME_ID, mesh.key));
     assert(!vka_vegetation_key("other-game",mesh.key));
     assert(!vegetation_cut(&state,sh));
+    // Level 0 must match original full-vegetation behavior.
+    tier=2; assert(vegetation_cut(&state,sh)); // this is a reviewed level-2 pair
+    tier=1; assert(!vegetation_cut(&state,sh)); // level-1 preserves this pair
+    tier=0; assert(!vegetation_cut(&state,sh));
     full=0; assert(vegetation_cut(&state,sh));
     state.tf_on=1; assert(!vegetation_cut(&state,sh)); state.tf_on=0;
     entry.bind_count=1;
