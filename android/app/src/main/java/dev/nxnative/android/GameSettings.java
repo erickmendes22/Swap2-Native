@@ -304,6 +304,13 @@ final class GameSettings {
                             (b, on) -> Prefs.poolFeedbackDirect(a, id, on));
             feedback.value(a.getString(R.string.s2_texture_feedback_direct_note));
             box.addView(feedback.view);
+            Ui.Setting feedbackInvocation = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Cache do feedback por fragmento (teste)", null)
+                    .toggle(a, Prefs.feedbackInvocationCache(a, id),
+                            (b, on) -> Prefs.feedbackInvocationCache(a, id, on));
+            feedbackInvocation.value("Evita consultas repetidas do mesmo ID de textura entre blocos do shader. "
+                    + "Desligado por padrão; pode piorar a GPU. Reinicie e compare os logs de 720p.");
+            box.addView(feedbackInvocation.view);
         }
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip, "Economia de RAM (usa armazenamento)", null)
                 .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
