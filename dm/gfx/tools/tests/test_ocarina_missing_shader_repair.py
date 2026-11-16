@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[4]
 PICK = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
 UI = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/Ondevice.java").read_text()
 SERVICE = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/PackService.java").read_text()
+NATIVE = (ROOT / "dm/gfx/vk_android/vka_shader.c").read_text()
 BUILDER = (ROOT / "dm/gfx/tools/vk_android_build.py").read_text()
 
 
@@ -121,6 +122,26 @@ class MissingShaderRepair(unittest.TestCase):
             # after writing the library on the real phone.
             by_stage = collections.Counter(ns["STAGE_OF"][row[0]] for row in results)
             self.assertEqual(by_stage, {"cs": 2})
+
+    def test_actual_missing_mesh_draw_captures_verified_partner_sources(self):
+        self.assertIn("if (!e && p->sd[i].control && p->sd[i].data)", NATIVE)
+        self.assertIn("ctl[0x56] == 7", NATIVE)
+        self.assertIn("ctl[0x56] == 6", NATIVE)
+        self.assertIn("int missing_mesh = !vka_shlib_find(&g_lib, mesh_key)", NATIVE)
+        self.assertIn("int missing_task = have_task && !vka_shlib_find(&g_lib, task_key)", NATIVE)
+        self.assertIn("if (hot_mesh || missing_mesh)", NATIVE)
+        self.assertIn("if ((hot_task || missing_task)", NATIVE)
+        self.assertIn("capture_ocarina_stage_pair(mesh_program, mesh_slot, mesh_key", NATIVE)
+        self.assertNotIn("!a_key || !b_key || !g_hot_loaded", NATIVE)
+
+    def test_compiler_writes_deferred_stamps_only_for_actual_unpaired_keys(self):
+        self.assertIn("_key + '.deferred'", BUILDER)
+        self.assertIn("_f.write(CHAIN +", BUILDER)
+        self.assertIn("if deferred and 'CHAIN' in globals()", BUILDER)
+        self.assertIn("File blocked = new File(captures, key +", PICK)
+        self.assertIn("newestPairEvidence", PICK)
+        self.assertIn("compilerStamp.equals(stamp.get(0))", PICK)
+        self.assertIn("if (missing.size() == 128) break;", PICK)
 
     def test_packer_verifies_every_published_key_and_prior_source(self):
         self.assertIn("newHeader.entries != selectedKeys.size()", SERVICE)
