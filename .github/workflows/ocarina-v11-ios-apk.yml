@@ -1,7 +1,7 @@
 name: Swap2-Native Ocarina 0.1.6 Android APK
 on:
   push:
-    branches: [research/ocarina-fps-effect-crash-repair, ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, research/ocarina-gsr2-360p-20261115]
+    branches: [ocarina-v11-ios-perf-from-v101, research/ocarina-fps-effect-crash-repair, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, research/ocarina-gsr2-360p-20261115]
     paths:
       - ci/ocarina-ios-ready.txt
   workflow_dispatch:
