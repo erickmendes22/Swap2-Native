@@ -90,7 +90,7 @@ class GraphicsPatches(unittest.TestCase):
                 for idx in (6, 7, 8, 9):
                     at = 0x408 + idx * 8
                     self.assertEqual(out[at:at + 4], raw[at:at + 4])
-        for bad in (-1, 3, 7, 31, 32):
+        for bad in (-1, 3, 7, 31, 63, 64):
             with self.subTest(bad=bad), self.assertRaises(graphics.Error):
                 graphics.patch(raw, 0, effects_mask=bad)
         self.assertEqual(graphics.effect_ids(1 | 4 | 16), [1, 3, 5])
@@ -106,8 +106,11 @@ class GraphicsPatches(unittest.TestCase):
                     graphics.patch(make_main({field: value}), 0, effect)
         with self.assertRaises(graphics.Error):
             graphics.patch(raw, 0, 0)
+        self.assertEqual(graphics.patch(raw, 0, 6), raw)
+        self.assertEqual(graphics.patch(raw, 0, effects_mask=32), raw)
+        self.assertEqual(graphics.effect_ids(32), [6])
         with self.assertRaises(graphics.Error):
-            graphics.patch(raw, 0, 6)
+            graphics.patch(raw, 0, effects_mask=64)
         with self.assertRaises(graphics.Error):
             graphics.patch(raw, 3, 1)
         with self.assertRaises(graphics.Error):
