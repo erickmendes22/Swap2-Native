@@ -1,0 +1,27 @@
+name: Ocarina fragment feedback cache research (no APK)
+on:
+  push:
+    branches:
+      - research/ocarina-fragment-feedback-cache-20261116
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shader-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vulkan SPIR-V tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq glslang-tools spirv-tools clang
+      - name: Compile production SPIR-V rewriter and validate both paths
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_fb_invocation_cache -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_page_index_runtime -v
+      - name: Preserve separated raw-memory page-index operation
+        run: |
+          clang -std=c11 -O2 -Wall -Wextra -Werror \
+            -I dm/gfx/vk_android dm/gfx/vk_android/selftest/gmem_pidx.c \
+            -o /tmp/ocarina_page_index
+          /tmp/ocarina_page_index
