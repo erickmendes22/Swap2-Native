@@ -70,14 +70,27 @@ final class QglConfig {
         String[] options = {
                 "Render mode: " + MODES[r + 1],
                 "Force GMEM load: " + BOOLS[l + 1],
-                "Force GMEM store: " + BOOLS[s + 1]
+                "Force GMEM store: " + BOOLS[s + 1],
+                "ℹ Como funciona / compatibilidade"
         };
+        // Android AlertController gives setMessage priority over setItems.
+        // Keep the list visible; place the explanation in a separate item.
         new AlertDialog.Builder(a).setTitle("Qualcomm · qgl_config.txt")
-                .setMessage("Configurações experimentais do driver proprietário. "
-                        + "Sem alteração no sistema ou necessidade de root. "
-                        + "Reinicie o jogo. O driver pode ignorar os parâmetros; "
-                        + "Turnip/Mesa não utiliza esse mecanismo.")
-                .setItems(options, (d, which) -> select(a, id, which, refresh))
+                .setItems(options, (d, which) -> {
+                    if (which < 3) {
+                        select(a, id, which, refresh);
+                    } else {
+                        new AlertDialog.Builder(a)
+                                .setTitle("Qualcomm · qgl_config.txt")
+                                .setMessage("Configurações experimentais do driver proprietário. "
+                                        + "Sem alteração no sistema ou necessidade de root. "
+                                        + "Reinicie o jogo. O driver pode ignorar os parâmetros; "
+                                        + "Turnip/Mesa não utiliza esse mecanismo.")
+                                .setPositiveButton("Voltar às opções",
+                                        (x, w) -> dialog(a, id, refresh))
+                                .setNegativeButton("Fechar", null).show();
+                    }
+                })
                 .setNegativeButton("Fechar", null).show();
     }
     static void reset(Context c, String id) {
