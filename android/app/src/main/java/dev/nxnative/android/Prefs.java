@@ -232,16 +232,37 @@ final class Prefs {
     /** RAM saver per game: large guest texture pools use files in the private cache. */
     static boolean ramSaver(Context c, String titleId) { return of(c).getBoolean(gameKey("ram_saver", titleId), false); }
     static void ramSaver(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("ram_saver", titleId), on).commit(); }
-    /** Optional game-side FPS patches, isolated for measuring real GPU work saved. */
-    static int fpsPatch(Context c, String id) {
+    /**
+     * Independent FPS experiments: bit (effect-1), where effects 1 and 2
+     * compete for the same cascade-count field and must never coexist.
+     * Upgrade a previously chosen single patch without loading its stale
+     * (possibly crashed) RomFS overlay.
+     */
+    static int fpsPatchMask(Context c, String id) {
         if (!OCARINA_TITLE.equals(id)) return 0;
-        int p = of(c).getInt(gameKey("oot_fps_patch", id), 0);
-        return p >= 1 && p <= 5 ? p : 0;
+        String key = gameKey("oot_fps_patch_mask", id);
+        int mask;
+        if (of(c).contains(key)) mask = of(c).getInt(key, 0);
+        else {
+            int old = of(c).getInt(gameKey("oot_fps_patch", id), 0);
+            mask = old >= 1 && old <= 5 ? (1 << (old - 1)) : 0;
+        }
+        return mask >= 0 && mask <= 31 && (mask & 3) != 3 ? mask : 0;
+    }
+    static void fpsPatchMask(Context c, String id, int mask) {
+        if (!OCARINA_TITLE.equals(id)) return;
+        if (mask < 0 || mask > 31 || (mask & 3) == 3) return;
+        of(c).edit().putInt(gameKey("oot_fps_patch_mask", id), mask)
+                .remove(gameKey("oot_fps_patch", id)).commit();
+    }
+    /** Legacy single choice accessor, retained for callers that have not migrated. */
+    static int fpsPatch(Context c, String id) {
+        int mask = fpsPatchMask(c, id);
+        return Integer.bitCount(mask) == 1 ? Integer.numberOfTrailingZeros(mask) + 1 : 0;
     }
     static void fpsPatch(Context c, String id, int profile) {
-        if (!OCARINA_TITLE.equals(id)) return;
-        if (profile < 1 || profile > 5) of(c).edit().remove(gameKey("oot_fps_patch", id)).commit();
-        else of(c).edit().putInt(gameKey("oot_fps_patch", id), profile).commit();
+        if (profile >= 0 && profile <= 5)
+            fpsPatchMask(c, id, profile == 0 ? 0 : (1 << (profile - 1)));
     }
     /** 0: original game maps; 1: dynamic 512 / static 2048; 2: dynamic 256 / static 1024. */
     static int shadowProfile(Context c, String id) {
