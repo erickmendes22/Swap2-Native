@@ -47,6 +47,7 @@ class MissingShaderRepair(unittest.TestCase):
         # Execute the actual AST block from vk_android_build.py with small
         # synthetic verified modules. No proprietary shader capture is needed.
         import ast
+        import collections
         import os
         import struct
         import sys
@@ -102,6 +103,7 @@ class MissingShaderRepair(unittest.TestCase):
                 "ABI": "674db0a4ff79",
                 "ANSWERS": {"subgroup_size": 64, "ssbo_align": 256},
                 "STAGE": {"cs": 5}, "zstd": None,
+                "STAGE_OF": {selected_key: "cs"}, "REUSED": set(),
                 "results": results, "keys": keys,
             }
             with patch.dict(os.environ, {"DMSH_VK_OOT_PARTIAL": "1"}):
@@ -113,6 +115,12 @@ class MissingShaderRepair(unittest.TestCase):
             self.assertEqual(results[0][0], selected_key)
             self.assertEqual(results[1][0], old_key)
             self.assertEqual(results[1][3][0]["lib"]["binds"], b"bindings".hex())
+            self.assertEqual(ns["STAGE_OF"][old_key], "cs")
+            self.assertEqual(ns["REUSED"], {old_key})
+            # This was the EXACT final report expression raising KeyError
+            # after writing the library on the real phone.
+            by_stage = collections.Counter(ns["STAGE_OF"][row[0]] for row in results)
+            self.assertEqual(by_stage, {"cs": 2})
 
     def test_packer_verifies_every_published_key_and_prior_source(self):
         self.assertIn("newHeader.entries != selectedKeys.size()", SERVICE)
