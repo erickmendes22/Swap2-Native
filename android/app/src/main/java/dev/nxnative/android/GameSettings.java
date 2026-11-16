@@ -881,7 +881,56 @@ final class GameSettings {
                         Prefs.fpsPatch(a, id, 0);
                         done.run();
                     } else makeGraphicsPatch(a, g, shadow, choice);
-                }).setNegativeButton(android.R.string.cancel, null).show();
+                }).setNeutralButton("Analisar SSAO / sombras / DOF", (dialog, which) -> effectProbe(a, g))
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private static void effectProbe(MainActivity a, Game g) {
+        AlertDialog wait = new AlertDialog.Builder(a)
+                .setMessage("Inspecionando somente as instruções dos dois crashes e os parâmetros gráficos do NUP...")
+                .setCancelable(false).create();
+        wait.show();
+        new Thread(() -> {
+            String[] active = sceneInputs(g);
+            UI.post(() -> {
+                if (active == null || a.isFinishing() || a.isDestroyed()) {
+                    wait.dismiss();
+                    if (!a.isFinishing() && !a.isDestroyed())
+                        a.error("Prepare o NUP antes de analisar os patches.");
+                    return;
+                }
+                SceneService.startEffectProbe(a, g.titleId, active[1], new android.os.ResultReceiver(UI) {
+                    @Override protected void onReceiveResult(int code, android.os.Bundle data) {
+                        wait.dismiss();
+                        if (a.isFinishing() || a.isDestroyed()) return;
+                        String result = data == null ? null : data.getString(SceneService.MESSAGE);
+                        if (code != 0) {
+                            a.error("Inspeção de efeitos falhou: " + (result == null ? code : result));
+                            return;
+                        }
+                        new Thread(() -> {
+                            try {
+                                String report = new String(java.nio.file.Files.readAllBytes(
+                                        new File(result).toPath()), java.nio.charset.StandardCharsets.UTF_8);
+                                if (report.length() > 40000) report = report.substring(0, 40000);
+                                String share = report;
+                                UI.post(() -> {
+                                    if (a.isFinishing() || a.isDestroyed()) return;
+                                    Intent send = new Intent(Intent.ACTION_SEND);
+                                    send.setType("text/plain");
+                                    send.putExtra(Intent.EXTRA_SUBJECT, "Ocarina 237 - SSAO / ShadowPrePass / DOF crashes");
+                                    send.putExtra(Intent.EXTRA_TEXT, share);
+                                    a.startActivity(Intent.createChooser(send, "Compartilhar análise dos patches"));
+                                });
+                            } catch (IOException e) {
+                                UI.post(() -> { if (!a.isFinishing() && !a.isDestroyed())
+                                    a.error("Não foi possível abrir a análise: " + e); });
+                            }
+                        }, "nx-effect-report").start();
+                    }
+                });
+            });
+        }, "nx-effect-probe").start();
     }
 
     private static void shadowMaps(MainActivity a, Game g, Runnable done) {
