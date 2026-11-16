@@ -150,10 +150,10 @@ final class Prefs {
                 .remove(gameKey("oot_vegetation_detail", titleId))
                 .remove(gameKey("oot_vegetation_detail_v2", titleId)).commit();
     }
-    // v2: never migrate the old aggressive "leve/reduzida" 2/5-pair presets.
-    // Default FULL even when an old user preference exists. Previous full-
-    // vegetation OFF still maps to OFF; this does not turn foliage back on.
-    // 0 full, 1 pair A alone, 2 pair B alone, 3 pair A+B, 4 all supplement OFF.
+    // v2 compatibility: the player now controls A+B as one toggle.
+    // Previously stored A-only/B-only settings transparently become
+    // A+B; original complete 0 and legacy explicit all-off 4 remain
+    // understood so an update never unexpectedly restores all plants.
     static boolean shadowHard(Context c, String id) {
         return OCARINA_TITLE.equals(id) && of(c).getBoolean(gameKey("oot_shadow_hard", id), false);
     }
@@ -172,11 +172,12 @@ final class Prefs {
         if (!OCARINA_TITLE.equals(id)) return 0;
         int fallback = of(c).getBoolean(gameKey("full_vegetation", id), true) ? 0 : 4;
         int level = of(c).getInt(gameKey("oot_vegetation_detail_v2", id), fallback);
+        if (level == 1 || level == 2) return 3; // migrate old solo choices to A+B
         return level < 0 || level > 4 ? fallback : level;
     }
     static void vegetationDetail(Context c, String id, int level) {
         if (!OCARINA_TITLE.equals(id)) return;
-        int checked = Math.max(0, Math.min(4, level));
+        int checked = level == 3 ? 3 : 0; // only Full or both A+B are selectable
         of(c).edit()
                 .putInt(gameKey("oot_vegetation_detail_v2", id), checked)
                 .putBoolean(gameKey("full_vegetation", id), checked != 4)

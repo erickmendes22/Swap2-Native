@@ -61,7 +61,10 @@ class OcarinaQualityTest(unittest.TestCase):
         self.assertIn('getInt(gameKey("oot_vegetation_detail_v2", id), fallback)', pref)
         self.assertIn('checked != 4', pref)
         self.assertIn('Prefs.fullVegetation(a,id,true)', settings)
-        self.assertIn('Prefs.vegetationDetail(a, id, index)', settings)
+        self.assertIn('Prefs.vegetationDetail(a, id, on ? 3 : 0)', settings)
+        self.assertIn('Retirar shaders A+B (vegetação)', settings)
+        self.assertNotIn('Teste A ·', settings)
+        self.assertNotIn('Teste B ·', settings)
         self.assertIn('DM_VK_OOT_VEG_QUALITY=', activity)
         self.assertIn('DM_VK_VEGETATION=', activity)
 

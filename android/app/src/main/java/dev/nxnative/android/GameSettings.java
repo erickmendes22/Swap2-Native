@@ -230,28 +230,18 @@ final class GameSettings {
                     .toggle(a, Prefs.keepCaveWalls(a, id), (b, on) -> Prefs.keepCaveWalls(a, id, on));
             caveWalls.value(a.getString(R.string.s2_keep_cave_walls_note));
             box.addView(caveWalls.view);
-            // Replace the old ON/OFF switch with one explicit, reversible
-            // visual-quality preset. The old ON/OFF preference still works
-            // unchanged for users installing over V11.
-            String[] vegetationDetail = {"Completa (original, sem cortes)",
-                    "Teste A · apenas um par Foliage",
-                    "Teste B · somente o outro par Foliage",
-                    "Redução discreta · pares A e B",
-                    "Vegetação adicional desligada (modo antigo)"};
-            int vegLevel = Prefs.vegetationDetail(a, id);
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Detalhe da vegetação",
-                    v -> new AlertDialog.Builder(a)
-                            .setTitle("Vegetação · Ocarina")
-                            .setSingleChoiceItems(vegetationDetail, Prefs.vegetationDetail(a, id),
-                                    (dlg, index) -> {
-                                        Prefs.vegetationDetail(a, id, index);
-                                        dlg.dismiss();
-                                        again.run();
-                                    })
-                            .setNegativeButton(android.R.string.cancel, null).show())
-                    .value(vegetationDetail[vegLevel] +
-                            " · reinicie; os cinco pares do corte anterior NÃO serão removidos")
-                    .chevron(a).view);
+            // Only ONE reversible operation: omit both reviewed foliage
+            // shader pairs A+B together. No separate A/B test choices and
+            // no experimental 75/50 density or shadow-foliage controls.
+            Ui.Setting cutAb = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Retirar shaders A+B (vegetação)", null)
+                    .toggle(a, Prefs.vegetationDetail(a, id) == 3, (b, on) -> {
+                        Prefs.vegetationDetail(a, id, on ? 3 : 0);
+                        again.run();
+                    });
+            cutAb.value("Corta os dois pares juntos antes do mesh compute e da rasterização. "
+                    + "Desligado: vegetação completa. Reinicie o jogo.");
+            box.addView(cutAb.view);
             Ui.Setting shadowQuality = new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Sombras econômicas (contornos mais definidos)", null)
                     .toggle(a, Prefs.shadowHard(a, id), (b, on) -> Prefs.shadowHard(a, id, on));
