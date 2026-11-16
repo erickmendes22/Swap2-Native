@@ -226,3 +226,11 @@ Final verified vegetation/missing shader repair from shaders.log, 2026-11-15:
 - The Android Vulkan host now discovers a compatible earlier 508-stage vegetation library after a packer/tool version bump. It validates exact entry keys + stage types + base modules + dependencies against the original 42k base, preserving 508 already-compiled shaders. Older files are not rewritten or relabeled.
 - For actually missing non-vegetation shaders, draw-time capture records authentic missing mesh/pixel and task/mesh pairs. Unpaired sources are marked deferred only until new capture evidence is available.
 - Full incremental validation #43782446056 succeeded with real JVM probe, shader source tests, C synthetic exact-vegetation test and Android NDK source checks. This commit triggers a fresh signed update APK.
+
+Ocarina GPU performance instrumentation build, 2026-11-16 (no shader rebuild):
+- Expose exact named mesh_plane_store LUT matches/fallbacks, source/compute SPIR-V counts, and optional same-source forced branch ladder vs direct scatter A/B for six real hot keys (DM_VK_MEMU_PLANE_DIAG=1/2).
+- Enable vendor VK_KHR_pipeline_executable_properties only when DM_VK_PIPE_STATS=1/2 and advertised, query actual compute/graphics registers, shared memory, occupancy and spills when supported. No source or pipeline change by default.
+- Fix missing 1280x720x1 scene passes in the 16-draw GPU profiler and total up intermediate chunk timestamps. Report submitted geometry, depth/stencil, culling and true attachment load/store counts, without claiming scissor coverage is hardware overdraw or attachment operations are measured DRAM bytes.
+- DM_VK_SCENE_PASS_DIAG=2 optionally brackets sampled 1280x720 rendering with Vulkan pipelineStatisticsQuery for REAL vertex/fragment invocations and primitives; gracefully skip when unavailable.
+- Prior actual GPU logs show two 1280x720 color+depth passes of ~1.9-2.9ms each, depth-only passes ~0.52-0.69ms; see docs/ocarina-mesh-1280-gpu-study.md. 508 supplementary vegetation and complete 42,339 shader libraries untouched.
+- Incremental CI #43788241649 passed; native mesh correctness #43788203600 passed. The APK must retain the existing signer. Performance improvements are NOT claimed without on-phone A/B.
