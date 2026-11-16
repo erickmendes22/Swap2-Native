@@ -1,57 +1,39 @@
-# Ocarina Shadow Tool — Android (.nup via Arquivos)
+# Ocarina Shadow Tool 0.2 — aplicativo Android independente
 
-Aplicativo Android independente do emulador, com ID
-\`com.swap2native.ocarina.shadowtool\`. Não precisa de root, Termux,
-Python, e não altera o NUP original.
+Aplicativo Android `com.swap2native.ocarina.shadowtool` para selecionar um **NUP** usando o aplicativo Arquivos do Android. Não exige root, Termux, Python, nem acesso amplo ao armazenamento. O NUP é aberto **somente para leitura**.
 
-**O que faz**
+## Fluxo
 
-1. Abre o seletor de arquivos padrão do Android (**Arquivos**).
-2. Você seleciona um arquivo \`.nup\` e o app lê o índice de forma aleatória,
-   com verificação SHA-256, sem extrair o jogo inteiro.
-3. Mostra as versões base/atualização do título \`0400486024DEC000\`
-   que estiverem dentro do NUP.
-4. Localiza e descompacta \`Pack/Bootup.Nin_Ounce_NVN2.pack.zs\`
-   e \`Pack/ZsDic.pack.zs\`, inclusive arquivos comprimidos no próprio NUP.
-5. Lê \`ModelSceneConfigParam/*.bgyml\` e apresenta os parâmetros de
-   sombras. Permite **salvar relatório TXT** para investigação.
-6. **Só se os campos de resolução 1024/4096 forem identificados pelos
-   nomes exatos e sem ambiguidades**, habilita gerar overlay para
-   512/2048 ou 256/1024. O app recusa qualquer alteração por
-   offsets adivinhados ou nomes hash sem significado comprovado.
+1. Abrir o aplicativo e tocar em **Selecionar arquivo .nup**.
+2. Escolher uma base ou atualização do Ocarina (Title ID `0400486024DEC000`) contida no NUP.
+3. Tocar em **Analisar mapas de sombra**. A versão 0.2 percorre o índice **RomFS completo** da versão selecionada, incluindo recursos da base quando ela está no mesmo NUP. Procura arquivos `ModelSceneConfigParam` diretos e, na ausência deles, pesquisa os arquivos `Pack/*.pack.zs` (limites seguros de RAM, tamanho e contagem).
+4. O relatório mostra o caminho do recurso encontrado, packs tentados e falhas, campos legíveis e valores 1024/4096 **somente como candidatos de diagnóstico**, não como autorização automática para patch.
+5. **Somente** se campos de largura/altura/resolução no `CreateDepthShadow` e `CreateStaticDepthShadow` forem identificados sem ambiguidades, o aplicativo libera o overlay 512/2048 ou 256/1024. Se estiverem sob chaves hash não identificadas, a alteração continua bloqueada.
+6. Selecionar uma pasta para exportar. O arquivo corrigido usa **o mesmo caminho RomFS do recurso de origem**. O NUP original jamais é modificado.
 
-**Onde fica o overlay**
+O app já consegue gerar um overlay de um `.bgyml` direto e sem compressão ou de um SARC `.pack.zs` com dicionário reconhecido. Não presume que o arquivo esteja em `Bootup.Nin_Ounce_NVN2.pack.zs`.
 
-Após escolher uma pasta pelo Android, o aplicativo grava
-\`Pack/Bootup.Nin_Ounce_NVN2.pack.zs\` DENTRO daquela pasta,
-recriando a estrutura de overlay que o emulador usa. Ainda não
-importa/aplica o overlay automaticamente no emulador; é um helper
-separado. O NUP original nunca é sobrescrito.
+## O que o diagnóstico inicial demonstrou
 
-**Limitações desta versão experimental**
+O arquivo `Ocarina-shadow-diagnostico.txt` exportado pelo 0.1 apontou a base `v65536`: no Bootup inspecionado **não existe** `ModelSceneConfigParam/Main`. O programa 0.1 restringia sua inspeção a esse pack e, por isso, não provava a ausência da configuração em outros recursos.
 
-- A localização exata de \`ModelSceneConfigParam/Main\` no NUP v131072
-  **ainda não foi verificada com o arquivo real**. Pode estar em outro
-  pack, pode ter chaves hash; nesse caso o app apenas inspeciona o
-  Bootup e mostra o motivo do bloqueio do patch.
-- O APK gerado em CI executa lógica real de NUP/SARC/BYML, mas sem um
-  dump de recursos proprietário não é possível afirmar que reduz
-  sombras no dispositivo nem prever ganhos de FPS.
-- Alguns fornecedores do Android Arquivos (especialmente provedores
-  de nuvem) não suportam leitura aleatória. Se for o caso, salve
-  o NUP localmente no armazenamento interno e selecione-o por Arquivos.
-- Se o NUP contém somente atualização e o pack existe só no jogo base
-  em **outro NUP**, a ferramenta informa que não encontrou o recurso.
+A versão 0.2 foi criada para localizar o **recurso verdadeiro** antes de permitir a substituição. O fato de o código identificar caminhos candidatos não demonstra que a redução de 1024/4096 já funcionou no jogo. O emulador precisa usar o overlay para que haja qualquer mudança, e o ganho de FPS continua dependendo de teste em gameplay.
 
-**Compilação**
+## Limitações e segurança
 
-O projeto usa o wrapper Gradle já versionado em \`android/app\`.
+- A ferramenta **não injeta** o overlay no Swap2-Native, não altera as opções A+B de vegetação e não modifica shaders.
+- Pacotes grandes, NUP sem a base necessária, arquivos comprimidos em formato ainda não suportado e campos hash/ambíguos podem permanecer sem patch; o relatório explica o bloqueio.
+- Se o NUP contiver apenas a atualização, mas o recurso estiver somente na base em **outro NUP**, selecionar a base separadamente para identificar o arquivo.
+- Para evitar corrupção, arquivos existentes na pasta de saída **não são sobrescritos**.
+- A varredura tem teto de 60 packs inspecionados e 768 MiB cumulativos, com limite de 192 MiB por recurso; um resultado negativo pode ser parcial, e isso fica registrado no relatório.
+- O APK é independente do emulador; a compatibilidade de assinatura para atualizar o APK depende da preservação do certificado usado na compilação.
+
+## Compilar
+
 Da raiz do repositório:
 
-\`\`\`bash
-android/app/gradlew -p android/shadowtool assembleDebug
-\`\`\`
+```bash
+android/app/gradlew --no-daemon -p android/shadowtool :assembleDebug
+```
 
-O workflow \`ocarinashadow-android-apk.yml\` publica o APK como artefato.
-A build do emulador continua independente. O debug APK terá a assinatura
-do workflow; futuras atualizações devem usar uma chave estável.
+O workflow [Ocarina Shadow Tool — Android APK](../../.github/workflows/ocarina-shadowtool-android-apk.yml) compila o APK e publica `Ocarina-Shadow-Tool-Android-APK` como artefato das Actions.
