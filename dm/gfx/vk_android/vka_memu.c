@@ -72,12 +72,39 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
     uint32_t *w = vka_shader_memu_words(s, &nb, err, sizeof err);
     uint32_t direct_words = w ? vka_memu_direct_payload_words(w, nb / 4) : 0;
     uint32_t *fz = w ? vka_spv_spec_freeze(w, nb / 4, DMSH_VK_SPEC_GL_DEPTH, (uint32_t)gl, &fn) : NULL;   // (folded: Qualcomm's lanes read 0 in a compute module with a specialization constant)
-    uint32_t *o = w ? vka_memu_cs(fz ? fz : w, fz ? fn : nb / 4, &on, err, sizeof err) : NULL;
+    // Only once per actually requested source shader and GL variant.
+    // This does not rewrite or rebuild the imported 42k/508 libraries.
+    int plane_diag = VKA_ENV("DM_VK_MEMU_PLANE_DIAG", 0);
+    vka_memu_diag md = {0};
+    uint32_t *o = w ? (plane_diag
+        ? vka_memu_cs_diagnostic(fz ? fz : w, fz ? fn : nb / 4,
+                                 &on, err, sizeof err, &md)
+        : vka_memu_cs(fz ? fz : w, fz ? fn : nb / 4, &on, err, sizeof err)) : NULL;
+    if (plane_diag && w) {
+        const char *why = md.matched ? "DIRECT_TABLE" :
+            !md.named_helper ? "NO_NAMED_STORE" :
+            md.per_primitive ? "PER_PRIMITIVE_OUTPUT" :
+            !vka_memu_plane_lut() ? "LUT_DISABLED" : "UNSUPPORTED_HELPER_PATTERN";
+        VLOG("Ocarina mesh plane diagnostic: source=%016llx type=%s gl=%d "
+             "helper=%u eligible=%u LUT=%u fallback=%u reason=%s "
+             "sourceSPV=%u instructions/%u workgroup-vars/%u barriers/%u stores "
+             "computeSPV=%u instructions/%u workgroup-vars/%u barriers/%u stores",
+             (unsigned long long)s->key, d->L.task ? "task" : "mesh", gl,
+             md.named_helper, md.eligible, md.matched, md.fallback, why,
+             md.source_instructions, md.source_workgroup_vars,
+             md.source_barriers, md.source_stores,
+             md.compute_instructions, md.compute_workgroup_vars,
+             md.compute_barriers, md.compute_stores);
+    }
     VkShaderModule mod = o ? make_module(o, on) : VK_NULL_HANDLE;
     free(w); free(fz); free(o);
     if (!mod) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("%s shader %016llx: its compute form not made (%s); its draws are skipped", stage_name(s->e->stage), (unsigned long long)s->key, err[0] ? err : "vkCreateShaderModule failed"); return NULL; }
     if (direct_words) VLOG("mesh %016llx direct read-only payload ACTIVE: %u shared words and one emulation barrier omitted/group; guest barriers retained", (unsigned long long)s->key, direct_words);
     dmsh_vk_entry *e = malloc(sizeof *e); *e = d->ce; e->key ^= gl ? VKA_MEMU_KEY_GL : 0;
+    if (plane_diag)
+        VLOG("Ocarina mesh compute source-to-pipeline: source=%016llx compute=%016llx "
+             "(driver pipeline executable statistics use the compute key)",
+             (unsigned long long)s->key, (unsigned long long)e->key);
     e->flags &= (uint16_t)~DMSH_VK_F_GL_DEPTH;   // (the depth convention is in the module)
     vka_shader *v = derive(s, e, mod, 1);
     pthread_mutex_lock(&g_mu);
