@@ -168,6 +168,7 @@ static int resolve(const prog_t *p, int st, vka_shader **out, unsigned *bad) {
 }
 static int vka_ocarina_capture_mesh_draw_pair(const prog_t *a, const prog_t *b) { (void)a; (void)b; return 1; }
 static int oot_skip_one_fs(vka_shader *s) { (void)s; return 0; }
+static int oot_ground_mist_safe(vka_dstate *d, vka_shader **s) { (void)d; (void)s; return 0; }
 static int vegetation_cut(vka_dstate *d, vka_shader **s) { (void)d; (void)s; return 0; }
 static int vka_mesh_route(vka_dstate *d) { (void)d; return route; }
 static memu_ent *memu_find(void) { ++calls; return prepared ? &arena : NULL; }
@@ -212,7 +213,9 @@ int main(void) {
         walk = function(src, 'memu_walk')
         self.assertLess(walk.index('if (route == 0) {'),
                         walk.index('vka_memu_batch(phase'))
-        self.assertIn('phase >= 0 || vegetation_off || hybrid', walk)
+        self.assertIn('phase >= 0 || vegetation_off || quality_trim || mist_off || hybrid', walk)
+        self.assertIn('!vka_ground_mist_mesh_omit(&g_memu_st)', walk)
+        self.assertIn('!vka_vegetation_mesh_omit(&g_memu_st)', walk)
         self.assertIn('vka_mesh_route(&g_memu_st)', walk)
         before = function(src, 'memu_before_draw')
         self.assertLess(before.index('if (mesh && route == 0) return;'),
