@@ -62,6 +62,29 @@ public final class SceneService extends Service {
                 .putExtra(EXTRA_RECEIVER, r));
     }
 
+    /** Exactly the scene-resolution source that would be mounted on launch. */
+    static File scenePack(Context c, String id, String version, File files) {
+        if (files == null || !Prefs.OCARINA_TITLE.equals(id) ||
+                !Prefs.scene720(c, id)) return null;
+        Profile prof = Profile.of(id);
+        if (prof == null || !prof.hasScene()) return null;
+        String scale = Prefs.renderSceneScale(c, id, prof.sceneScale());
+        if (!SceneOverlay.current(files, id, scale, prof.sceneExpect(), version))
+            return null;
+        File source = new File(SceneOverlay.dir(files, id), "Pack/Bootup.Nin_Ounce_NVN2.pack.zs");
+        return source.isFile() && source.length() > 0 ? source : null;
+    }
+
+    /** A packed post-effect overlay is invalidated when scene resolution changes. */
+    static String graphicsVersion(Context c, String id, String version, int mask, File files) {
+        if ((mask & 16) == 0) return version;
+        File pack = scenePack(c, id, version, files);
+        if (pack == null) return version + "|scene=original";
+        Profile prof = Profile.of(id);
+        String scale = Prefs.renderSceneScale(c, id, prof.sceneScale());
+        return version + "|scene=" + scale + ":" + prof.sceneExpect();
+    }
+
     /** Disassemble the two crash sites and inspect effect BYML fields from the selected NUP. */
     static void startEffectProbe(Context c, String titleId, String romfs, ResultReceiver r) {
         c.startService(new Intent(c, SceneService.class).putExtra(EXTRA_ID, titleId)
@@ -162,6 +185,14 @@ public final class SceneService extends Service {
         if (!tmp.mkdirs()) return new String[] {"1", "cannot create " + tmp};
         String tool = "dm/tools/gsys_shadow.py";
         String[] argv = ShadowOverlay.argvMask(romfs, profile, mask, tmp);
+        if ((mask & 16) != 0) {
+            File sceneSource = scenePack(this, id, version, files);
+            if (sceneSource != null) {
+                argv = java.util.Arrays.copyOf(argv, argv.length + 2);
+                argv[argv.length - 2] = "--scene-pack";
+                argv[argv.length - 1] = sceneSource.getPath();
+            }
+        }
         String head = "== " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).format(new Date())
                 + " " + Prefs.buildTag(this) + ": " + tool + " " + String.join(" ", argv) + "\n";
         Files.write(log.toPath(), head.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -185,7 +216,9 @@ public final class SceneService extends Service {
         stamp.delete();
         Job.deleteTree(out);
         if (!tmp.renameTo(out)) return new String[] {"1", "cannot rename " + tmp + " to " + out};
-        Files.write(stamp.toPath(), ShadowOverlay.stampTextMask(profile, mask, version).getBytes(StandardCharsets.UTF_8));
+        Files.write(stamp.toPath(),
+                ShadowOverlay.stampTextMask(profile, mask,
+                        graphicsVersion(this, id, version, mask, files)).getBytes(StandardCharsets.UTF_8));
         return new String[] {"0", out.getPath()};
     }
 
