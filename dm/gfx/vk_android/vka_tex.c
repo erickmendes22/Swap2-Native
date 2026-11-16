@@ -157,15 +157,9 @@ void vka_attachment_parts_barrier_at(VkCommandBuffer cb, int color, int depth, c
         .srcAccessMask = (color ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : 0) |
                          (depth ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : 0),
         .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
-    // Synchronize only the attachment stages that could have produced writes.
-    // The pass-wide colour/depth flags include loadOp CLEAR and in-pass
-    // clears; when neither is known both classes retain the original scope.
-    // Destination ALL_COMMANDS and both read/write accesses are unchanged.
-    VkPipelineStageFlags src_stages =
-        (color ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT : 0) |
-        (depth ? (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                  VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT) : 0);
-    vk.vkCmdPipelineBarrier(cb, src_stages,
+    vk.vkCmdPipelineBarrier(cb,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
 }
