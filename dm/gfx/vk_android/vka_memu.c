@@ -161,6 +161,17 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
         }
     }
     VkShaderModule mod = o ? make_module(o, on) : VK_NULL_HANDLE;
+    if (!mod && unfed) {
+        // The source-shape test is not the device compiler: if the device
+        // refuses the transformed SPIR-V, retry the original source BEFORE
+        // returning a skipped mesh draw. Preserve all original output words.
+        free(o); o = NULL; on = 0; err[0] = 0;
+        const uint32_t *original = fz ? fz : w;
+        o = vka_memu_cs(original, fz ? fn : nb / 4, &on, err, sizeof err);
+        mod = o ? make_module(o, on) : VK_NULL_HANDLE;
+        VLOG("Ocarina mesh %016llx direct-output module refused; %s original Workgroup conversion",
+             (unsigned long long)s->key, mod ? "restored" : "could not restore");
+    }
     free(w); free(fz); free(unfed); free(o);
     if (!mod) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("%s shader %016llx: its compute form not made (%s); its draws are skipped", stage_name(s->e->stage), (unsigned long long)s->key, err[0] ? err : "vkCreateShaderModule failed"); return NULL; }
     if (direct_words) VLOG("mesh %016llx direct read-only payload ACTIVE: %u shared words and one emulation barrier omitted/group; guest barriers retained", (unsigned long long)s->key, direct_words);
@@ -266,6 +277,15 @@ vka_shader *vka_memu_cs_for_fs(vka_shader *mesh, int gl, vka_shader *fragment) {
                                 source_words, used,
                                 &mod_n, err, sizeof err) : NULL;
     VkShaderModule mod = spv ? make_module(spv, mod_n) : VK_NULL_HANDLE;
+    if (!mod && unfed) {
+        free(spv); spv = NULL; mod_n = 0; err[0] = 0;
+        spv = vka_memu_cs_masked(frozen ? frozen : raw,
+                                 frozen ? frozen_n : bytes / 4,
+                                 used, &mod_n, err, sizeof err);
+        mod = spv ? make_module(spv, mod_n) : VK_NULL_HANDLE;
+        VLOG("Ocarina masked mesh %016llx direct-output module refused; %s original Workgroup conversion",
+             (unsigned long long)mesh->key, mod ? "restored" : "could not restore");
+    }
     free(raw); free(frozen); free(unfed); free(spv);
     if (!mod) {
         static _Atomic int n;

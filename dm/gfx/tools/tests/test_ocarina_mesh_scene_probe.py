@@ -73,6 +73,11 @@ int main(void) {
         self.assertIn("VKA_MEMU_KEY_UNDEFER", cache)
         self.assertIn("VKA_MEMU_KEY_UNDEFER : 0", memu)
         self.assertIn("vka_memu_cs_masked(source,", memu)
+        self.assertIn("if (!mod && unfed)", memu)
+        self.assertIn("direct-output module refused", memu)
+        self.assertIn("vka_memu_cs(original, fz ? fn : nb / 4", memu)
+        self.assertIn("vka_memu_cs_masked(frozen ? frozen : raw,", memu)
+
         self.assertIn("vka_memu_cs(src, src_words,", memu)
         self.assertIn("if (nc != 2) goto done;", hdr)
         self.assertIn("if (calls < 16 || drops < 2) goto done;", hdr)
