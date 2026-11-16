@@ -26,7 +26,7 @@ import java.util.Locale;
  * "message" the overlay's folder, else the exit code (PackNative.BUSY, or the tool's) and "message" why (SceneOverlay.why from its log).
  */
 public final class SceneService extends Service {
-    static final String EXTRA_SHADOW_PROFILE = "shadow_profile", EXTRA_FPS_PATCH = "fps_patch";
+    static final String EXTRA_SHADOW_PROFILE = "shadow_profile", EXTRA_FPS_PATCH = "fps_patch", EXTRA_EFFECT_PROBE = "effect_probe";
     static final String EXTRA_ID = "title_id", EXTRA_ROMFS = "romfs", EXTRA_SCALE = "scale", EXTRA_EXPECT = "expect", EXTRA_VERSION = "version",
             EXTRA_RECEIVER = "receiver", MESSAGE = "message";
     static final int BUSY = PackNative.BUSY;
@@ -51,6 +51,12 @@ public final class SceneService extends Service {
                 .putExtra(EXTRA_VERSION, version).putExtra(EXTRA_RECEIVER, r));
     }
 
+    /** Disassemble the two crash sites and inspect effect BYML fields from the selected NUP. */
+    static void startEffectProbe(Context c, String titleId, String romfs, ResultReceiver r) {
+        c.startService(new Intent(c, SceneService.class).putExtra(EXTRA_ID, titleId)
+                .putExtra(EXTRA_ROMFS, romfs).putExtra(EXTRA_EFFECT_PROBE, true).putExtra(EXTRA_RECEIVER, r));
+    }
+
     @Override public IBinder onBind(Intent i) { return null; }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -60,7 +66,9 @@ public final class SceneService extends Service {
             int code;
             String msg;
             try {
-                String[] got = intent.hasExtra(EXTRA_SHADOW_PROFILE)
+                String[] got = intent.getBooleanExtra(EXTRA_EFFECT_PROBE, false)
+                        ? runEffectProbe(intent.getStringExtra(EXTRA_ID), intent.getStringExtra(EXTRA_ROMFS))
+                        : intent.hasExtra(EXTRA_SHADOW_PROFILE)
                         ? runShadow(intent.getStringExtra(EXTRA_ID), intent.getStringExtra(EXTRA_ROMFS),
                                 intent.getIntExtra(EXTRA_SHADOW_PROFILE, 0), intent.getIntExtra(EXTRA_FPS_PATCH, 0),
                                 intent.getStringExtra(EXTRA_VERSION))
@@ -79,6 +87,35 @@ public final class SceneService extends Service {
             stopSelf(startId);
         }, "nx-scene").start();
         return START_NOT_STICKY;
+    }
+
+    private String[] runEffectProbe(String id, String romfs) throws IOException {
+        if (!Prefs.OCARINA_TITLE.equals(id) || romfs == null)
+            return new String[] {"2", "effect probe requires the selected Ocarina update"};
+        if (!ACTIVE.compareAndSet(false, true))
+            return new String[] {String.valueOf(RUNNING), "another RomFS operation is running"};
+        try {
+            File files = getExternalFilesDir(null);
+            if (files == null) return new String[] {"1", "app files folder is unavailable"};
+            File dir = new File(files, "diagnostics");
+            if (!dir.isDirectory() && !dir.mkdirs())
+                return new String[] {"1", "cannot create diagnostic folder"};
+            File out = new File(dir, "ocarina-effects-v131072.txt");
+            PackEngine engine = PackEngine.create(this);
+            PackEngine.setenv("TMPDIR", getCacheDir().getPath());
+            String tool = "dm/tools/oot_effect_crash_probe.py";
+            String[] argv = {"--romfs", romfs};
+            int code = engine.simulated() ? engine.run(tool, argv, out.getPath())
+                    : PackNative.packTryRun(tool, argv, out.getPath());
+            Log.i(TAG, tool + " exit " + code + " log " + out);
+            if (code == BUSY) return new String[] {String.valueOf(BUSY), "preparation is running"};
+            if (code != 0) {
+                String detail = out.isFile() ? String.join("\n",
+                        Files.readAllLines(out.toPath(), StandardCharsets.UTF_8)) : "no report";
+                return new String[] {String.valueOf(code), detail.length() > 500 ? detail.substring(detail.length() - 500) : detail};
+            }
+            return new String[] {"0", out.getPath()};
+        } finally { ACTIVE.set(false); }
     }
 
     /** {exit code, message}: RUNNING before any file work while another run is on (it owns scene_720p.tmp/ and the log) */
