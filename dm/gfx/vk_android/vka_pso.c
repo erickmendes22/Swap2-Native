@@ -544,6 +544,10 @@ static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], con
     VkPipelineCreationFeedbackCreateInfo fbi = {VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO, .pNext = P->ci.pNext, .pPipelineCreationFeedback = &fb_all,
                                                 .pipelineStageCreationFeedbackCount = P->ns, .pPipelineStageCreationFeedbacks = fb_st};
     P->ci.pNext = &fbi;
+    // Optional driver resource study of the real graphics pipeline.
+    // The flag is only set when the extension was enabled on this device.
+    if (V.pipe_stats >= 2)
+        P->ci.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
     uint64_t t0 = now_ns();
     VkPipeline p = VK_NULL_HANDLE;
     const vka_shader *pre0 = P->mesh ? sh[7] : sh[0];
@@ -616,6 +620,10 @@ static VkPipeline full_pipeline(pstate *P, vka_shader *const sh[VKA_NSTAGE], con
             }
         }
     }
+    if (!r && p && V.pipe_stats >= 2)
+        vka_pipe_stats(p,
+            (P->mesh ? sh[7] : sh[0]) ? (P->mesh ? sh[7] : sh[0])->key : 0,
+            sh[1] ? sh[1]->key : 0, 1);
     const vka_shader *pre = P->mesh ? sh[7] : sh[0];   // the vertex shader, or a mesh pipeline's mesh shader
     if (r) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("graphics pipeline (%s %016llx fragment %016llx, %u colour targets, topology %u): %d; its draws are skipped", P->mesh ? "mesh" : "vertex",
                                                                          pre ? (unsigned long long)pre->key : 0ull, sh[1] ? (unsigned long long)sh[1]->key : 0ull, P->ri.colorAttachmentCount, P->mesh ? 0u : P->ia.topology, r); }
@@ -1340,7 +1348,10 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_img
     VkPipelineShaderStageRequiredSubgroupSizeCreateInfo rsg = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO, .requiredSubgroupSize = pin};
     int spill = 0;   // shared memory in the spill buffer (vka_draw.c spill_dispatch): dispatched in parts with a base workgroup
     for (unsigned i = 0; i < cs->e->bind_count; i++) if (cs->b[i].kind == DMSH_VK_KIND_SHARED_SPILL) spill = 1;
-    VkComputePipelineCreateInfo ci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, .flags = spill ? VK_PIPELINE_CREATE_DISPATCH_BASE_BIT : 0, .layout = lay->layout,
+    VkComputePipelineCreateInfo ci = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .flags = (spill ? VK_PIPELINE_CREATE_DISPATCH_BASE_BIT : 0) |
+                 (V.pipe_stats ? VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR : 0),
+        .layout = lay->layout,
         .stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = pin ? &rsg : NULL, .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = retiled ? vka_shader_oot_cs_retile_module(cs) : img ? vka_shader_img_module(cs, &k.rt) : vka_shader_cs_module(cs), .pName = "main"}};
     VkPipeline p = VK_NULL_HANDLE; VkResult r; int over = 0;
     // Shared memory past the device's limit is invalid usage (the driver may refuse, crash or run it with less). The translator keeps a program's shared memory past
@@ -1357,6 +1368,8 @@ static VkPipeline cs_obtain(vka_shader *cs, const vka_layout *lay, const vka_img
     { uint64_t dns = now_ns() - t0; g_create_ms += dns / 1e6; if (!prewarm) g_create_ns += dns; }
     g->p = p; g->busy = 0; pthread_cond_broadcast(&g_busy_cv);
     pthread_mutex_unlock(&g_mu);
+    if (!r && p && V.pipe_stats)
+        vka_pipe_stats(p, cs->key, 0, 0);
     if (r && !over) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("compute pipeline %016llx: %d; its dispatches are skipped", (unsigned long long)cs->key, r); }
     { double ms_ = (now_ns() - t0) / 1e6; static _Atomic int n; if (!r && ms_ > 50 && atomic_fetch_add(&n, 1) < 200) VLOG("compute pipeline %016llx took %.0f ms%s", (unsigned long long)cs->key, ms_, prewarm ? " (prewarm)" : ""); }
     if (!prewarm && !over && !retiled) { vka_shader *s5[5] = {cs, NULL, NULL, NULL, NULL}; pw_note(1, s5, img ? (const void *)&k.rt : "", img ? (uint32_t)sizeof k.rt : 0); }   // (one not made stays out of the prewarm list)
