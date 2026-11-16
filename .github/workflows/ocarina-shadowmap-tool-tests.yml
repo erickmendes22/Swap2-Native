@@ -3,6 +3,13 @@ on:
   push:
     paths:
       - 'dm/tools/gsys_shadowmaps.py'
+      - 'dm/tools/gsys_shadow.py'
+      - 'dm/tools/tests/test_gsys_shadow.py'
+      - 'android/app/src/main/java/dev/nxnative/android/ShadowOverlay.java'
+      - 'android/app/src/main/java/dev/nxnative/android/Prefs.java'
+      - 'android/app/src/main/java/dev/nxnative/android/GameActivity.java'
+      - 'android/app/src/main/java/dev/nxnative/android/GameSettings.java'
+      - 'android/app/src/ondevice/java/dev/nxnative/android/SceneService.java'
       - 'dm/tools/tests/test_oot_shadowmap_overlay.py'
       - '.github/workflows/ocarina-shadowmap-tool-tests.yml'
   workflow_dispatch:
@@ -16,5 +23,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test only verified shadow map BYML dimensions can be patched
         run: python3 -m unittest dm.tools.tests.test_oot_shadowmap_overlay -v
+      - name: Verify exact Ocarina shadow-map field changes
+        run: |
+          python3 -m unittest dm.tools.tests.test_gsys_shadow -v
+          python3 -m py_compile dm/tools/gsys_shadow.py
+          python3 dm/tools/gsys_shadow.py --help
+      - name: Compile independent Android shadow overlay descriptor
+        run: |
+          mkdir -p /tmp/shadow-overlay-jvm
+          javac -d /tmp/shadow-overlay-jvm android/app/src/main/java/dev/nxnative/android/ShadowOverlay.java
       - name: Check script CLI
         run: python3 dm/tools/gsys_shadowmaps.py --help
