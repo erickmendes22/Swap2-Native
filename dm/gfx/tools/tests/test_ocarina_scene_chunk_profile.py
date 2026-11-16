@@ -36,7 +36,9 @@ int main(void) {
  assert(vka_scene_profile_size("683x384x1 d:126"));
  assert(!vka_scene_profile_size("960x540x10"));
  assert(!vka_scene_profile_size("480x270x1 c0:97"));
- assert(!vka_scene_profile_size("1280x720x1"));
+ assert(vka_scene_profile_size("1280x720x1"));
+ assert(vka_scene_profile_size("1280x720x1 c0:122 d:126"));
+ assert(!vka_scene_profile_size("1280x720x10"));
  assert(!vka_scene_profile_size(""));assert(!vka_scene_profile_size(0));
 }
 '''
@@ -54,7 +56,10 @@ int main(void) {
         self.assertIn('void vka_gp_gfx_flush(void);', hdr)
         p = draw.index('void vka_rp_end(void)')
         end = draw.index('vk.vkCmdEndRendering(g_cb)', p)
-        self.assertIn('if (vka_gp_active) vka_gp_gfx_flush();', draw[p:end])
+        self.assertIn('vka_gp_gfx_flush();', draw[p:end])
+        self.assertIn('vka_gp_pass_end_query(g_cb);', draw[p:end])
+        self.assertLess(draw[p:end].index('vka_gp_gfx_flush();'),
+                        draw[p:end].index('vka_gp_pass_end_query(g_cb);'))
         # Never move/add/end guest draws, change attachments, viewport,
         # shader bytes or content: the profiler is observation-only.
         self.assertIn('g_gfx_enabled = !strcmp', profiler)
