@@ -13,7 +13,12 @@
 // The heavy scene regularly exhausted2048 marks before its final passes.
 // Only one frame in300 is sampled; ordinary frames still emit zero marks.
 enum { NQ = 8192, DESC = 256, SHADERS = 64 };
-typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint64_t gfx_key; uint8_t mesh_stage, gfx_block, gfx_draws, gfx_top; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
+typedef struct {
+    uint64_t scissor_sum, direct_triangles;
+    uint32_t depth_test, depth_write, stencil, no_color, no_cull, indirect;
+    uint16_t load_color, store_color, load_depth, store_depth, samples;
+} scene_observation;
+typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint64_t gfx_key; uint8_t mesh_stage, gfx_block, gfx_draws, gfx_top; scene_observation scene; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
 static gp_mark g_m[NQ]; static int g_n;
 static VkQueryPool g_qp; static int g_ok = -1; static double g_tick_ns;
 static PFN_vkCmdWriteTimestamp g_write; static PFN_vkCmdResetQueryPool g_reset; static PFN_vkGetQueryPoolResults g_get;
@@ -24,6 +29,7 @@ static uint64_t g_sub_frame; static int g_sub_frame_set;
 // Optional attribution for the currently timed pass; ordinary frames do no accounting.
 static struct { uint64_t key; unsigned count; } g_fs[SHADERS];
 static unsigned g_pass_draws, g_fs_over;
+static scene_observation g_scene;  // one sampled pass only; NEVER actual GPU pixel/DRAM counters
 static int g_nfs;
 static uint64_t g_first_vs, g_first_mesh, g_first_task;
 static uint32_t g_first_units, g_first_instances, g_first_indirect;
@@ -62,13 +68,22 @@ static void gfx_chunk_flush(void) {
 void vka_gp_gfx_flush(void) { if (vka_gp_active) gfx_chunk_flush(); }
 
 void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh, uint64_t task,
-                 uint32_t units, uint32_t instances, int indirect) {
+                 uint32_t units, uint32_t instances, int indirect,
+                 uint32_t scissor_pixels, uint32_t draw_flags, uint64_t triangles) {
     if (!vka_gp_active) return;
     if (!g_pass_draws) {
         g_first_vs = vertex; g_first_mesh = mesh; g_first_task = task;
         g_first_units = units; g_first_instances = instances; g_first_indirect = indirect != 0;
     }
     g_pass_draws++;
+    g_scene.scissor_sum += scissor_pixels;
+    g_scene.direct_triangles += triangles;
+    g_scene.depth_test += (draw_flags & 1) != 0;
+    g_scene.depth_write += (draw_flags & 2) != 0;
+    g_scene.stencil += (draw_flags & 4) != 0;
+    g_scene.no_color += (draw_flags & 8) != 0;
+    g_scene.no_cull += (draw_flags & 16) != 0;
+    g_scene.indirect += indirect != 0;
     if (g_gfx_enabled && vka_gp_active && g_gfx_n < GFX_CHUNK) {
         g_gfx_keys[g_gfx_n++] = fragment;
         if (g_gfx_n == GFX_CHUNK) gfx_chunk_flush();
@@ -102,6 +117,7 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
     gp_mark *m = &g_m[g_n]; m->file = file; m->line = line; m->kind = kind;
     m->mesh_key = 0; m->mesh_stage = 0;
     m->gfx_key = 0; m->gfx_block = m->gfx_draws = m->gfx_top = 0;
+    memset(&m->scene, 0, sizeof m->scene);
     // profiler query slots are reused on later sampled frames
     uint64_t sk, di, pi; vka_draw_stats(&m->draws, &sk, &di, &pi); (void)sk; (void)di; (void)pi;
     extern uint64_t vka_n_rp; m->passes = vka_n_rp; uint64_t subs, rec; vka_exec_counts(&m->ops, &subs, &rec);
@@ -110,6 +126,7 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
         // the final pass-end timestamp still describes the ENTIRE pass.
         m->desc[0] = 0;
     } else if (g_pass_new) {
+        m->scene = g_scene;
         snprintf(m->desc, DESC, "%s", g_pass);
         size_t used = strlen(m->desc);
         if (g_pass_draws && used < DESC) {
@@ -153,8 +170,18 @@ void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key) {
     m->mesh_key = key;
     m->mesh_stage = task ? 1 : 2;
 }
+void vka_gp_pass_io(unsigned load_color, unsigned store_color,
+                    unsigned load_depth, unsigned store_depth, unsigned samples) {
+    if (!vka_gp_active) return;
+    g_scene.load_color = (uint16_t)load_color;
+    g_scene.store_color = (uint16_t)store_color;
+    g_scene.load_depth = (uint16_t)load_depth;
+    g_scene.store_depth = (uint16_t)store_depth;
+    g_scene.samples = (uint16_t)samples;
+}
 void vka_gp_pass(const char *desc) {
     if (vka_gp_active) {
+        memset(&g_scene, 0, sizeof g_scene);
         // A draw may be outside the chosen scene pass: never carry its
         // timestamp group into the next render target.
         g_gfx_n = 0;
@@ -173,9 +200,11 @@ static void report(void) {
     static uint64_t t[NQ];
     if (g_get(V.dev, g_qp, 0, (uint32_t)g_n, sizeof t, t, 8, VK_QUERY_RESULT_64_BIT)) { VLOG("gpu prof: frame %llu: results not ready", (unsigned long long)g_frame); return; }
     static step s[NQ]; int ns = 0; double tot = 0, pass = 0, xfer = 0, bare = 0, first = 0, compute = 0; int npass = 0, ncompute = 0;
+    static double elapsed[NQ] = {0}; // index by GPU timestamp, before sorting steps
     for (int i = 1; i < g_n; i++) {
         if (g_m[i].kind == 1 || g_m[i].kind == 2) continue;   // the gap before a submission or part: the GPU waited for recording
         double ms = t[i] > t[i - 1] ? (t[i] - t[i - 1]) * g_tick_ns / 1e6 : 0;
+        elapsed[i] = ms;
         tot += ms; s[ns++] = (step){i, ms};
         if (g_m[i].gfx_block || g_m[i].passes > g_m[i - 1].passes) {
             pass += ms;
@@ -296,6 +325,58 @@ static void report(void) {
             VLOG("gpu prof scene chunk key: frame %llu fs %016llx %.3fms across %u dominated blocks (%u matching draws); includes fixed graphics stages",
                  (unsigned long long)g_frame, (unsigned long long)gh[best].key,
                  gh[best].ms, gh[best].groups, gh[best].draws);
+        }
+    }
+    // Existing samples exposed two dominant 1280x720 passes. The prior
+    // 16-draw fragment attribution only recognized 683/640/960 targets.
+    // For each pass, sum its 16-draw timestamp chunks PLUS the final
+    // partial chunk: counting only the pass-end mark undercounts it.
+    // Scissor coverage is an intentionally loose OVERDRAW PROXY, not the
+    // number of executed fragments. Attachment load/store counts are NOT
+    // observed DRAM transactions (the tiler may keep/merge them on chip).
+    if (VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0)) {
+        struct {
+            int i; double ms; unsigned chunks;
+        } passes_1280[64] = {0};
+        unsigned np = 0;
+        for (int i = 1; i < g_n; i++) {
+            if (strncmp(g_m[i].desc, "1280x720x1", 11)) continue;
+            double ms = elapsed[i];
+            unsigned blocks = 0;
+            for (int j = i - 1; j > 0 && g_m[j].gfx_block; --j) {
+                ms += elapsed[j];
+                blocks++;
+            }
+            if (np < sizeof(passes_1280)/sizeof(passes_1280[0]))
+                passes_1280[np++] = (typeof(passes_1280[0])){i, ms, blocks};
+        }
+        for (unsigned rank = 0; rank < np && rank < 12; rank++) {
+            unsigned best = rank;
+            for (unsigned j = rank + 1; j < np; j++)
+                if (passes_1280[j].ms > passes_1280[best].ms) best = j;
+            typeof(passes_1280[0]) swap = passes_1280[rank];
+            passes_1280[rank] = passes_1280[best];
+            passes_1280[best] = swap;
+            const gp_mark *m = &g_m[passes_1280[rank].i];
+            const scene_observation *o = &m->scene;
+            double scissor_equiv = (double)o->scissor_sum / (1280.0 * 720.0);
+            VLOG("gpu prof 1280x720 pass: frame %llu GPU %.3fms "
+                 "(%u timed 16-draw blocks) draws=%u direct-triangle-est=%llu "
+                 "indirect=%u depth-test=%u depth-write=%u stencil=%u "
+                 "no-color=%u cull-none=%u scissor-area/target-area=%.2f "
+                 "(NOT measured pixel overdraw), attachments load-color=%u "
+                 "store-color=%u load-depth=%u store-depth=%u samples=%u "
+                 "(NOT measured DRAM traffic), %s",
+                 (unsigned long long)g_frame, passes_1280[rank].ms,
+                 passes_1280[rank].chunks,  // samples, not all 16-draw blocks in a frame
+                 (unsigned)(m->draws - (passes_1280[rank].i > 0 ?
+                     g_m[passes_1280[rank].i - 1].draws : 0)),
+                 (unsigned long long)o->direct_triangles,
+                 o->indirect, o->depth_test, o->depth_write,
+                 o->stencil, o->no_color, o->no_cull, scissor_equiv,
+                 (unsigned)o->load_color, (unsigned)o->store_color,
+                 (unsigned)o->load_depth, (unsigned)o->store_depth,
+                 (unsigned)o->samples, m->desc);
         }
     }
     if (VKA_ENV("DM_VK_GPUPROF_LIST", 0))   // every step in order
