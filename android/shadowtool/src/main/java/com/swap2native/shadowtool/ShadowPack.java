@@ -275,7 +275,7 @@ public final class ShadowPack {
                 Byml config=new Byml(raw,filename,e.getValue());
                 if(!config.little) {
                     safeEndian=false;
-                    log.append("BYML big-endian: patch recusado até suporte explícito.\\n");
+                    log.append("BYML big-endian: patch recusado até suporte explícito.\n");
                 }
                 int hits=0;
                 for(Field v:config.entries) if(v.path.toLowerCase().contains("shadow")) {
@@ -287,7 +287,7 @@ public final class ShadowPack {
             }
         }
         if(candidateFiles==0) {
-            log.append("\nO ModelSceneConfigParam/Main não está neste Bootup pack.\n")
+            log.append("\nO ModelSceneConfigParam/Main não está neste pack inspecionado.\n")
                .append("Outros recursos relevantes:\n");
             sarc.parts.keySet().stream()
                 .filter(s->s.toLowerCase().contains("shadow") || s.contains("ModelScene"))
@@ -310,17 +310,17 @@ public final class ShadowPack {
     public static String describeStandalone(byte[] resource,String path) throws IOException {
         if(resource.length<20)throw new IOException("BYML vazio ou inválido.");
         Byml byml=new Byml(resource,path,new Part(0,resource.length));
-        StringBuilder text=new StringBuilder("Recurso BYML: ").append(path).append('\\n');
+        StringBuilder text=new StringBuilder("Recurso BYML: ").append(path).append('\n');
         int hits=0;
         for(Field field:byml.entries) {
             String name=field.path.toLowerCase(java.util.Locale.ROOT);
             if(name.contains("shadow")||name.contains("size")||name.contains("resolution")) {
-                text.append(" · ").append(field.line()).append('\\n');
-                if(++hits>=150) {text.append("... limitado a 150 campos\\n");break;}
+                text.append(" · ").append(field.line()).append('\n');
+                if(++hits>=150) {text.append("... limitado a 150 campos\n");break;}
             }
         }
-        if(hits==0)text.append("Nenhum campo legível relacionado a sombra/resolução.\\n");
-        text.append("Arquivo direto: exportação de patch ainda não habilitada.\\n");
+        if(hits==0)text.append("Nenhum campo legível relacionado a sombra/resolução.\n");
+        text.append("Arquivo direto: exportação de patch ainda não habilitada.\n");
         return text.toString();
     }
     private static Map<Integer,Integer> select(List<Field> fields,int dyn,int stat) throws IOException {
