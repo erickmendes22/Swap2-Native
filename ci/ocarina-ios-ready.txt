@@ -239,3 +239,9 @@ Ocarina GPU diagnostics signed-build retry, 2026-11-16:
 - Full APK validation #43788471428 failed solely because test_ocarina_scene_chunk_profile.py still asserted that 1280x720 was NOT a valid profiler scene and required the old single-line EndRendering hook. Both expectations were intentionally obsolete; the regression now validates 1280x720 exact shape, GPU-chunk flush and Vulkan query end before render-pass end.
 - Newly expanded incremental CI #43788743664 PASSED including the formerly obsolete scene-chunk assertions, native NDK Vulkan compilation and source shader tests.
 - Actual mesh converter old/new fixture and readback CI #43787612899 passed; signed APK must retain original package signer. Diagnostics default off, no actual gameplay performance gain claimed.
+
+Ocarina GPU diagnostic 1280x720 FIX (real user log from signed 355abc15), 2026-11-15:
+- The last APK correctly showed 56 mesh direct-LUT shaders, 1 fallback, source and converted SPIR-V diff; driver VK_KHR_pipeline_executable_properties exposed no executable statistics. However its new dominant 1280x720 pass reports were absent because the profiler compared an 11-byte NUL-terminated literal with pass descriptions that have a space and attachment suffix.
+- The matching logic is now a single *tested* helper vka_scene_profile_1280() used at recording and reporting, checks exactly 10 bytes and valid token boundary. C regression checks actual form "1280x720x1 c0:122 d:126" and rejects x10/non-matching dimensions.
+- GPU profiler now counts recognized passes and emits explicit error if none found in the end-of-frame report; resets old elapsed timing data on every sample to avoid ghost chunk costs.
+- NDK Android syntax test and full incremental CI #43790512814 PASSED after fix; the mesh correctness/readback source remains unchanged and compiler did not rebuild any full-game shaders. Trigger signed APK update, preserve prior signer.
