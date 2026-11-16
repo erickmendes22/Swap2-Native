@@ -196,8 +196,11 @@ static int certified_abi_open(vka_shlib *lib, const char *path, char *err, size_
 // Additive static-profile supplement, independent of the experimental hot
 // overlay. A missing stage/dependency rejects the whole supplemental set.
 static int vegetation_complete(const vka_shlib *lib, const vka_shlib *base) {
-    if (lib->by_abi ||
-        memcmp(lib->h->abi, DMSH_VK_ABI, 12) ||
+    // An earlier compiler tool version may still produce a safe, complete
+    // 508-stage supplement: the exact game, ABI, inputs, subgroup settings,
+    // stages, base modules AND dependencies are checked below. The host does
+    // not need to retranslate these static shaders after every APK update.
+    if (memcmp(lib->h->abi, DMSH_VK_ABI, 12) ||
         lib->h->entry_count != sizeof vka_veg_entries / sizeof *vka_veg_entries ||
         memcmp(lib->h->inputs, base->h->inputs, sizeof lib->h->inputs) ||
         lib->h->subgroup_size != base->h->subgroup_size ||
@@ -448,6 +451,49 @@ static int lib_load(void) {
                 }
             } else VRED("vegetation supplement rejected: %s", ve);
         } else VLOG("vegetation supplement missing: prepare the 508-stage static update; full base preserved");
+    }
+    if (!(e && *e) && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        !g_vegetation_loaded) {
+        // The current APK can change DMSH_VK_CHAIN just because the packer's
+        // Python code changed. Ocarina's verified 508 original static shaders
+        // need not be compiled again: the exact old supplement remains
+        // readable with the SAME Vulkan ABI, game inputs and stage manifest.
+        char folder[1024];
+        if (snprintf(folder, sizeof folder, "%s/shaders/vegetation", dir)
+            < (int)sizeof folder) {
+            DIR *d = opendir(folder);
+            struct dirent *de;
+            time_t newest = 0;
+            while (d && (de = readdir(d))) {
+                if (strncmp(de->d_name, DMSH_VK_DIR_PREFIX,
+                            strlen(DMSH_VK_DIR_PREFIX))) continue;
+                char candidate[1024], ve[256];
+                struct stat st;
+                if (snprintf(candidate, sizeof candidate,
+                             "%s/%s/" DMSH_VK_LIB_FILE, folder, de->d_name)
+                        >= (int)sizeof candidate ||
+                    stat(candidate, &st) || !S_ISREG(st.st_mode)) continue;
+                vka_shlib prior;
+                if (!vka_shlib_open(&prior, candidate, DMSH_CHAIN,
+                                    DMSH_VK_CHAIN, DM_GAME_ID, DMSH_VK_ABI,
+                                    ve, sizeof ve)) continue;
+                if (!vegetation_complete(&prior, &g_lib)) {
+                    vka_shlib_close(&prior);
+                    continue;
+                }
+                if (!g_vegetation_loaded || st.st_mtime > newest) {
+                    if (g_vegetation_loaded) vka_shlib_close(&g_vegetation);
+                    g_vegetation = prior;
+                    g_vegetation_loaded = 1;
+                    newest = st.st_mtime;
+                    VLOG("Ocarina vegetation: reusing verified complete "
+                         "508-shader supplement from %s (same GPU ABI, "
+                         "game inputs, exact stage and dependency manifest); "
+                         "no shader recompilation", candidate);
+                } else vka_shlib_close(&prior);
+            }
+            if (d) closedir(d);
+        }
     }
     // Separately imported, correctly versioned bounded AST experiment. Never
     // replace the base, six-shader repair or vegetation supplement on disk.
