@@ -17,10 +17,18 @@ typedef struct {
     uint64_t scissor_sum, direct_triangles;
     uint32_t draws, depth_test, depth_write, stencil, no_color, no_cull, indirect;
     uint16_t load_color, store_color, load_depth, store_depth, samples;
+    int pipeline_query; // exact pipeline query index, -1 when unavailable
 } scene_observation;
 typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint64_t gfx_key; uint8_t mesh_stage, gfx_block, gfx_draws, gfx_top; scene_observation scene; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
 static gp_mark g_m[NQ]; static int g_n;
 static VkQueryPool g_qp; static int g_ok = -1; static double g_tick_ns;
+// Not an overdraw approximation: a real Vulkan pipeline statistics query.
+// Enabled only on ONE frame out of every N (and only for 1280x720).
+enum { NPIPE_Q = 96, NSTATS = 4 };
+static VkQueryPool g_pipe_qp;
+static uint32_t g_pipe_count;
+static int g_pipe_active = -1, g_pass_1280;
+
 static PFN_vkCmdWriteTimestamp g_write; static PFN_vkCmdResetQueryPool g_reset; static PFN_vkGetQueryPoolResults g_get;
 static int g_state;                     // 0 idle, 1 recording the profiled frame, 2 waiting for its last fence
 static uint64_t g_frame, g_last_frame, g_fence; static VkCommandBuffer g_cb;
@@ -109,7 +117,23 @@ static int init(void) {
     PFN_vkCreateQueryPool create = (PFN_vkCreateQueryPool)vk.vkGetDeviceProcAddr(V.dev, "vkCreateQueryPool");
     VkQueryPoolCreateInfo ci = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_TIMESTAMP, .queryCount = NQ};
     if (!g_write || !g_reset || !g_get || !create || create(V.dev, &ci, NULL, &g_qp) || V.props.limits.timestampPeriod <= 0) { VRED("gpu prof: no timestamp query pool"); return 0; }
-    g_tick_ns = V.props.limits.timestampPeriod; g_ok = 1;
+    g_tick_ns = V.props.limits.timestampPeriod;
+    if (V.pipeline_query && VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2 &&
+        vk.vkCmdBeginQuery && vk.vkCmdEndQuery) {
+        VkQueryPoolCreateInfo q = {
+            VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, .queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS,
+            .queryCount = NPIPE_Q,
+            .pipelineStatistics =
+                VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT
+        };
+        VkResult r = create(V.dev, &q, NULL, &g_pipe_qp);
+        if (r) VLOG("scene pass pipeline statistics query unavailable: %d; timestamp profiling retained", r);
+    } else if (VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2)
+        VLOG("scene pass pipeline statistics unavailable: device does not support pipelineStatisticsQuery; using raster proxies only");
+    g_ok = 1;
     return 1;
 }
 static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
@@ -180,9 +204,25 @@ void vka_gp_pass_io(unsigned load_color, unsigned store_color,
     g_scene.store_depth = (uint16_t)store_depth;
     g_scene.samples = (uint16_t)samples;
 }
+void vka_gp_pass_begin_query(VkCommandBuffer cb) {
+    if (!vka_gp_active || !g_pipe_qp || !g_pass_1280 ||
+        g_pipe_count >= NPIPE_Q || g_pipe_active >= 0 || cb != g_cb) return;
+    uint32_t id = g_pipe_count++;
+    vk.vkCmdBeginQuery(cb, g_pipe_qp, id, 0);
+    g_pipe_active = (int)id;
+}
+void vka_gp_pass_end_query(VkCommandBuffer cb) {
+    if (g_pipe_active < 0 || cb != g_cb) return;
+    vk.vkCmdEndQuery(cb, g_pipe_qp, (uint32_t)g_pipe_active);
+    g_scene.pipeline_query = g_pipe_active;
+    g_pipe_active = -1;
+}
 void vka_gp_pass(const char *desc) {
     if (vka_gp_active) {
         memset(&g_scene, 0, sizeof g_scene);
+        g_scene.pipeline_query = -1;
+        g_pass_1280 = !strncmp(desc, "1280x720x1", 11) &&
+                      (!desc[11] || desc[11] == ' ');
         // A draw may be outside the chosen scene pass: never carry its
         // timestamp group into the next render target.
         g_gfx_n = 0;
@@ -200,6 +240,11 @@ static int by_ms(const void *a, const void *b) { double d = ((const step *)b)->m
 static void report(void) {
     static uint64_t t[NQ];
     if (g_get(V.dev, g_qp, 0, (uint32_t)g_n, sizeof t, t, 8, VK_QUERY_RESULT_64_BIT)) { VLOG("gpu prof: frame %llu: results not ready", (unsigned long long)g_frame); return; }
+    uint64_t pipe_data[NPIPE_Q * NSTATS] = {0};
+    int have_pipe_data = g_pipe_qp && g_pipe_count &&
+        !g_get(V.dev, g_pipe_qp, 0, g_pipe_count,
+               (size_t)g_pipe_count * NSTATS * sizeof(uint64_t),
+               pipe_data, NSTATS * sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
     static step s[NQ]; int ns = 0; double tot = 0, pass = 0, xfer = 0, bare = 0, first = 0, compute = 0; int npass = 0, ncompute = 0;
     static double elapsed[NQ] = {0}; // index by GPU timestamp, before sorting steps
     for (int i = 1; i < g_n; i++) {
@@ -361,6 +406,19 @@ static void report(void) {
             const gp_mark *m = &g_m[passes_1280[rank].i];
             const scene_observation *o = &m->scene;
             double scissor_equiv = (double)o->scissor_sum / (1280.0 * 720.0);
+            if (have_pipe_data && o->pipeline_query >= 0 &&
+                (uint32_t)o->pipeline_query < g_pipe_count) {
+                const uint64_t *q = pipe_data + o->pipeline_query * NSTATS;
+                VLOG("gpu prof 1280x720 Vulkan pipeline counters: frame %llu "
+                     "pass-end=%d input-primitives=%llu vertex-invocations=%llu "
+                     "clipping-primitives=%llu fragment-invocations=%llu "
+                     "fragment-invocations/target-pixel=%.3f "
+                     "(VRS/depth/MSAA can change this; NOT literal overdraw)",
+                     (unsigned long long)g_frame, passes_1280[rank].i,
+                     (unsigned long long)q[0], (unsigned long long)q[1],
+                     (unsigned long long)q[2], (unsigned long long)q[3],
+                     (double)q[3] / (1280.0 * 720.0));
+            }
             VLOG("gpu prof 1280x720 pass: frame %llu GPU %.3fms "
                  "(%u timed 16-draw blocks) draws=%u direct-triangle-est=%llu "
                  "indirect=%u depth-test=%u depth-write=%u stencil=%u "
@@ -420,7 +478,9 @@ void vka_gp_sub_begin(VkCommandBuffer cb, uint64_t frame) {
         if (every <= 0 || frame == g_frame || (g_last_frame && frame < g_last_frame + (uint64_t)every) || !init()) return;
         g_state = 1; g_frame = g_last_frame = frame; g_n = 0; vka_gp_active = 1; g_pass_new = 0; g_compute_new = 0; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
         g_gfx_n = 0; g_gfx_enabled = 0;
+        g_pass_1280 = 0; g_pipe_count = 0; g_pipe_active = -1;
         g_reset(cb, g_qp, 0, NQ);
+        if (g_pipe_qp) g_reset(cb, g_pipe_qp, 0, NPIPE_Q);
     }
     if (g_state == 1) { g_cb = cb; mark(cb, 1, "submission", 0); }
 }
