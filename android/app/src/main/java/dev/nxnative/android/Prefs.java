@@ -200,7 +200,15 @@ final class Prefs {
     static void poolFeedbackDirect(Context c, String titleId, boolean on) {
         of(c).edit().putBoolean(gameKey("pool_feedback_direct", titleId), on).commit();
     }
-    static boolean fragmentOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("fragment_optimized", titleId), true); }
+    static boolean fragmentOptimized(Context c, String titleId)    // Per-fragment-invocation texture feedback deduplication (experimental A/B).
+    // OFF is the known original behavior; no shader-library ABI change.
+    static boolean feedbackInvocationCache(Context c, String titleId) {
+        return OCARINA_TITLE.equals(titleId) && of(c).getBoolean(gameKey("fb_invocation_cache", titleId), false);
+    }
+    static void feedbackInvocationCache(Context c, String titleId, boolean on) {
+        of(c).edit().putBoolean(gameKey("fb_invocation_cache", titleId), on).commit();
+    }
+ { return of(c).getBoolean(gameKey("fragment_optimized", titleId), true); }
     static void fragmentOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("fragment_optimized", titleId), on).commit(); }
     static boolean computeOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("compute_optimized", titleId), true); }
     static void computeOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("compute_optimized", titleId), on).commit(); }
