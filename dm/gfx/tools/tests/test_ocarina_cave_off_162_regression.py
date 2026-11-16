@@ -37,7 +37,10 @@ class CaveOff162Regression(unittest.TestCase):
         # activation of the cave-split switch.
         self.assertIn('VKA_ENV("DM_VK_UNUSED_COLOR", 0)', DRAW)
         self.assertIn('VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0)', DRAW)
-        self.assertIn("vka_attachment_parts_barrier_at(", DRAW)
+        self.assertIn("vka_attachment_parts_access_barrier_at(", DRAW)
+        self.assertIn("vka_attachment_parts_access_barrier_at(", TEX)
+        # The original conservative API remains callable by other paths.
+        self.assertIn("vka_attachment_parts_barrier_at(", TEX)
         self.assertIn("vka_attachment_parts_barrier_at(", TEX)
         self.assertIn("if (R.on && R.color_omitted && !omit_color) vka_rp_end();", DRAW)
         self.assertIn("!g_unused_color_refused", DRAW)
