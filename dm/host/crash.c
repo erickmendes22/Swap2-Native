@@ -167,6 +167,43 @@ static void on_crash(int sig, siginfo_t *si, void *uc_) {
     fprintf(stderr, "[dm] CRASH sig=%d", sig);
     off("addr", (uint64_t)si->si_addr); off("pc", PLAT_UC_PC(uc)); off("lr", PLAT_UC_LR(uc));
     fprintf(stderr, " sp=%#llx\n", (unsigned long long)PLAT_UC_SP(uc));
+    // Ocarina: preserve the faulting AArch64 instructions in the SAME crash
+    // log so users are never asked to run a separate "analyze" menu command.
+    // The known effect-creation crashes each dereference a low address; the
+    // registers above give the base pointers but not the load instruction.
+    // Read guest text through the existing fault-tolerant reader, never by
+    // dereferencing the pc inside the signal handler. This is diagnostic
+    // only: no instruction is patched, skipped, or re-executed differently.
+    // Capture 32 instructions before / 12 after (176 bytes total), bounded
+    // and limited to the two verified v131072 guest crash PCs.
+    if (sig == SIGSEGV && si->si_addr &&
+        ((uintptr_t)si->si_addr == 0x308u || (uintptr_t)si->si_addr == 0x12c8u)) {
+        uint64_t pc = PLAT_UC_PC(uc);
+        module_t *guest = module_of((void *)(uintptr_t)pc);
+        if (guest && guest->name && strcmp(guest->name, "main") == 0) {
+            uint64_t offset = pc - (uint64_t)(uintptr_t)guest->base;
+            if ((offset == UINT64_C(0x47a924) && (uintptr_t)si->si_addr == 0x308u) ||
+                (offset == UINT64_C(0xdbea1c) && (uintptr_t)si->si_addr == 0x12c8u)) {
+                uint64_t start = pc - 32u * 4u;
+                uint32_t words[44] = {0};
+                if (!plat_mem_read(start, words, sizeof words)) {
+                    fprintf(stderr, "[dm] oot-effect-crash automatic AArch64 instructions: main+%#llx fault-pc main+%#llx\n",
+                            (unsigned long long)(offset - 32u * 4u),
+                            (unsigned long long)offset);
+                    for (int i = 0; i < 44; i++) {
+                        if ((i & 3) == 0)
+                            fprintf(stderr, "[dm] oot-effect-code main+%#llx:",
+                                    (unsigned long long)(offset - 32u * 4u + (uint64_t)i * 4u));
+                        fprintf(stderr, " %08x%s", words[i], i == 32 ? "<FAULT>" : "");
+                        if ((i & 3) == 3) fputc('\n', stderr);
+                    }
+                    // LR and the complete register set follow as usual.
+                } else {
+                    fprintf(stderr, "[dm] oot-effect-crash: instruction read unavailable; PC/LR/registers follow\n");
+                }
+            }
+        }
+    }
     for (int i = 0; i < 29; i++) fprintf(stderr, "x%d=%#llx%s", i, (unsigned long long)PLAT_UC_X(uc, i), i % 6 == 5 ? "\n" : " ");
     fprintf(stderr, "\n");
     // What the registers point at: the first six words of each readable target (read with vm_read_overwrite, which fails instead of faulting); a word inside a module prints as a module offset, so an object's vtable names its class
