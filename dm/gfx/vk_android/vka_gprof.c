@@ -131,6 +131,7 @@ static int init(void) {
         };
         VkResult r = create(V.dev, &q, NULL, &g_pipe_qp);
         if (r) VLOG("scene pass pipeline statistics query unavailable: %d; timestamp profiling retained", r);
+        else VLOG("scene pass pipeline statistics query enabled: up to %u real 1280x720 Vulkan render passes per sampled frame; zero impact on non-profiled frames", NPIPE_Q);
     } else if (VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2)
         VLOG("scene pass pipeline statistics unavailable: device does not support pipelineStatisticsQuery; using raster proxies only");
     g_ok = 1;
@@ -221,8 +222,11 @@ void vka_gp_pass(const char *desc) {
     if (vka_gp_active) {
         memset(&g_scene, 0, sizeof g_scene);
         g_scene.pipeline_query = -1;
-        g_pass_1280 = !strncmp(desc, "1280x720x1", 11) &&
-                      (!desc[11] || desc[11] == ' ');
+        // "1280x720x1" is exactly 10 bytes; the next character of the
+        // actual description is a SPACE before "c0:122 d:126", not NUL.
+        // Matching 11 bytes accidentally excluded every useful scene pass.
+        g_pass_1280 = !strncmp(desc, "1280x720x1", 10) &&
+                      (!desc[10] || desc[10] == ' ');
         // A draw may be outside the chosen scene pass: never carry its
         // timestamp group into the next render target.
         g_gfx_n = 0;
@@ -386,7 +390,8 @@ static void report(void) {
         } passes_1280[64] = {0};
         unsigned np = 0;
         for (int i = 1; i < g_n; i++) {
-            if (strncmp(g_m[i].desc, "1280x720x1", 11)) continue;
+            if (strncmp(g_m[i].desc, "1280x720x1", 10) ||
+                (g_m[i].desc[10] && g_m[i].desc[10] != ' ')) continue;
             double ms = elapsed[i];
             unsigned blocks = 0;
             for (int j = i - 1; j > 0 && g_m[j].gfx_block; --j) {
