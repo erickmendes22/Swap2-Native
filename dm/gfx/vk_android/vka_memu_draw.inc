@@ -203,7 +203,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
             // Count the direct task draws eligible for the new 8-step
             // GPU indexer; indirect counts are only known on the GPU.
             if (dw->ind) vka_memu_task_indirect++;
-            else if ((uint32_t)dw->count <= 256u) vka_memu_task_small++;
+            else if ((uint32_t)dw->count <= 256u) { vka_memu_task_small++; if ((uint32_t)dw->count <= 1u) vka_memu_task_single++; }
             else vka_memu_task_large++;
         }
         return;

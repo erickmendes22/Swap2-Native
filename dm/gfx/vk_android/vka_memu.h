@@ -27,6 +27,7 @@ typedef struct vka_memu_sh {
 #define VKA_MEMU_KEY_PLANE_LUT 0x504c414e455f4c55ull
 #define VKA_MEMU_KEY_DIRECT_PAYLOAD 0x5041594c4f414431ull
 #define VKA_MEMU_KEY_TASK_SHORT 0x53484f525454534bull
+#define VKA_MEMU_KEY_TASK_SINGLE 0x53494e474c455f54ull // additional structured branch for 0/1 task, independent pipeline cache
 // Must distinguish compiled mesh SPIR-V and its persistent Vulkan pipeline
 // identity when choosing the new task index search; never use old cache.
 
@@ -38,7 +39,7 @@ static inline uint64_t vka_memu_layout_tag(void) {
 static inline uint64_t vka_memu_cs_tag(int stage) {
     return stage == DMSH_VK_STAGE_MS ?
         ((vka_memu_plane_lut() ? VKA_MEMU_KEY_PLANE_LUT : 0) ^
-         (vka_memu_short_task_search() ? VKA_MEMU_KEY_TASK_SHORT : 0) ^
+         (vka_memu_short_task_search() ? (VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_TASK_SINGLE) : 0) ^
          (vka_memu_direct_payload() ? VKA_MEMU_KEY_DIRECT_PAYLOAD : 0)) : 0;
 }
 vka_memu_sh *vka_memu_of(struct vka_shader *s);                 // NULL: s cannot be drawn through compute (logged)
@@ -56,4 +57,4 @@ void vka_memu_retire(uint64_t fence);                            // the arena us
 int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layout);   // the setup and distribution pipelines, their layout (push descriptors: records, control, arena)
 void vka_memu_stats(char *b, size_t n);                          // the replay's statistics line part
 extern uint64_t vka_memu_n_batches, vka_memu_n_draws, vka_memu_n_splits, vka_memu_n_skip;
-extern uint64_t vka_memu_task_small, vka_memu_task_large, vka_memu_task_indirect;
+extern uint64_t vka_memu_task_small, vka_memu_task_large, vka_memu_task_indirect, vka_memu_task_single;
