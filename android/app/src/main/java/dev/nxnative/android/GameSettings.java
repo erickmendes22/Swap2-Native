@@ -861,7 +861,7 @@ final class GameSettings {
         switch (effect) {
             case 1: return "Cascatas de sombra: 3 → 2 (teste)";
             case 2: return "Cascatas de sombra: 3 → 1 (teste)";
-            case 3: return "Oclusão de ambiente SSAO: OFF (teste)";
+            case 3: return "SSAO: menos amostras, buffers preservados (teste)";
             case 4: return "Pré-passe de sombras: OFF (teste)";
             case 5: return "Profundidade de campo + Bloom: OFF (teste)";
             default: return "Original do jogo · sem patch de FPS";
