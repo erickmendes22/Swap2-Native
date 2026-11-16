@@ -221,7 +221,7 @@ class FpsBoostTests(unittest.TestCase):
         import subprocess
         import tempfile
         self.assertIn('#include "vka_oot_heavy_pass_vrs.h"', PSO)
-        self.assertIn('DM_VK_OOT_HEAVY_4X2", 1', PSO)
+        self.assertIn('DM_VK_OOT_HEAVY_4X2", 0', PSO)
         self.assertIn('rate_w = 4u; rate_h = 2u;', PSO)
         self.assertIn('V.fps_boost_has_4x2', PSO)
         self.assertIn('vka_oot_heavy_4x2_eligible(', PSO)

@@ -270,6 +270,47 @@ static void report(void) {
     VLOG("gpu prof: frame %llu: %d timestamps, %.2f ms GPU: passes %.2f ms (%d), clears / copies / dispatches %.2f ms, steps with nothing recorded (barriers, uploads, writebacks) %.2f ms",
          (unsigned long long)g_frame, g_n, tot, pass, npass, xfer, bare);
     VLOG("gpu prof: identified compute %.2f ms (%d dispatch intervals), other transfers %.2f ms", compute, ncompute, xfer);
+    // Summarize existing GPU timestamp intervals by compute shader key.
+    // The old top-16 log hid the bulk of the ~4.5ms scene compute work.
+    // NO additional timestamp commands or GPU/normal-frame instrumentation.
+    if (ncompute && !strcmp(DM_GAME_ID, "0400486024DEC000")) {
+        struct { uint64_t key; double ms; unsigned count; } cs[128] = {0};
+        unsigned ncs = 0, unclassified = 0;
+        double attributed = 0.0;
+        for (int k = 0; k < ns; k++) {
+            const gp_mark *m = &g_m[s[k].i];
+            if (strncmp(m->desc, "compute ", 8)) continue;
+            char *end = NULL;
+            uint64_t key = (uint64_t)strtoull(m->desc + 8, &end, 16);
+            if (end == m->desc + 8 || *end != ' ') { unclassified++; continue; }
+            unsigned j = 0;
+            while (j < ncs && cs[j].key != key) j++;
+            if (j == ncs) {
+                if (ncs == sizeof(cs)/sizeof(cs[0])) { unclassified++; continue; }
+                cs[ncs++].key = key;
+            }
+            cs[j].count++;
+            cs[j].ms += s[k].ms;
+            attributed += s[k].ms;
+        }
+        VLOG("gpu prof compute source breakdown: frame %llu %u shader keys, "
+             "%.3fms attributed of %.3fms identified (%u unclassified intervals); "
+             "already-recorded timestamps, no extra GPU instrumentation",
+             (unsigned long long)g_frame, ncs, attributed, compute, unclassified);
+        unsigned char chosen[128] = {0};
+        for (unsigned rank = 0; rank < ncs && rank < 12; rank++) {
+            int best = -1;
+            for (unsigned j = 0; j < ncs; j++)
+                if (!chosen[j] && (best < 0 || cs[j].ms > cs[best].ms)) best = (int)j;
+            if (best < 0) break;
+            chosen[best] = 1;
+            VLOG("gpu prof compute source key: frame %llu cs %016llx "
+                 "%.3fms across %u dispatch intervals (%.3fms mean); "
+                 "includes completion dependency, NOT pure shader ALU time",
+                 (unsigned long long)g_frame, (unsigned long long)cs[best].key,
+                 cs[best].ms, cs[best].count, cs[best].ms / cs[best].count);
+        }
+    }
     // Ocarina foliage: identify what the converted task/mesh GPU actually
     // costs. Every mark is after the corresponding phase, so a step's
     // destination name identifies the producer that finished. No per-frame

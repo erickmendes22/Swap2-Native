@@ -492,7 +492,7 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
         // The driver advertised 4x2; unsupported pipelines fall back to 2x2.
         // No other shader, render target, scene resolution or device changes.
         if (vka_oot_heavy_4x2_eligible(
-                game_oot, VKA_ENV("DM_VK_OOT_HEAVY_4X2", 1),
+                game_oot, VKA_ENV("DM_VK_OOT_HEAVY_4X2", 0),
                 V.fps_boost_has_4x2, hotpass_profile,
                 rate_w, rate_h, fs_hot,
                 mesh, k->ncolor, VKA_COLOR_ORIGINAL(k->cfmt[0]),

@@ -64,6 +64,17 @@ int main(void) {
         # shader bytes or content: the profiler is observation-only.
         self.assertIn('g_gfx_enabled = !strcmp', profiler)
 
+    def test_compute_breakdown_reuses_existing_sampled_gpu_timestamps(self):
+        src = (VK / "vka_gprof.c").read_text()
+        self.assertIn('gpu prof compute source breakdown:', src)
+        self.assertIn('gpu prof compute source key:', src)
+        self.assertIn('if (ncompute && !strcmp(DM_GAME_ID, "0400486024DEC000"))', src)
+        self.assertIn('if (strncmp(m->desc, "compute ", 8)) continue;', src)
+        self.assertIn('strtoull(m->desc + 8, &end, 16)', src)
+        self.assertIn('cs[j].ms += s[k].ms;', src)
+        self.assertIn('rank < 12', src)
+        self.assertEqual(src.count('g_write(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT'), 1)
+
     def test_full_pass_report_and_mixed_blocks_remain_independent(self):
         src = (VK / "vka_gprof.c").read_text()
         self.assertIn('if (file && !strcmp(file, "GFX_CHUNK"))', src)
