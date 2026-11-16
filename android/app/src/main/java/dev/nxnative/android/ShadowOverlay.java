@@ -60,7 +60,7 @@ final class ShadowOverlay {
     static String stampTextMask(int shadow, int mask, String version) {
         if (mask == 0) return stampText(shadow, 0, version);
         return "profile\t" + shadow + "\nmask\t" + mask
-                + "\nschema\tcombined-fps-v1\nversion\t" + version + "\n";
+                + "\nschema\tcombined-fps-v2-ssao-blur\nversion\t" + version + "\n";
     }
     static boolean currentMask(File files, String titleId, int shadow, int mask, String version) {
         if (files == null || titleId == null || version == null ||
