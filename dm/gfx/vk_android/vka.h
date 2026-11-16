@@ -85,6 +85,7 @@ typedef struct {
     int placed, placed_range, unmap_reserve, fd_alias /* validated exported CPU/GPU buffer mapping */, bda, uab, display_timing, has_android_surface;
     int mem_budget; // VK_EXT_memory_budget
     int pipe_stats; // opt-in VK_KHR_pipeline_executable_properties; 1=compute, 2=graphics too
+    int pipeline_query; // queried-and-enabled core pipelineStatisticsQuery physical device feature
     void *perf_hint;                                // vkQueueSetPerfHintQCOM (VK_QCOM_queue_perf_hint), NULL without it: vka_gpu_floor
     // The draw path's device facts: push descriptors (and how many a set may hold), vertex input dynamic state, robustness2's null descriptors, 8-bit indices,
     // instance-rate divisors, logic operations, dual-source blending, geometry and tessellation stages, depth clamp, fill mode lines, wide lines
@@ -338,6 +339,8 @@ extern int vka_gp_active;
 void vka_gp_mark(VkCommandBuffer cb, const char *file, int line);
 void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key);  // sampled exact compute mesh/task dispatch key
 void vka_gp_pass(const char *desc);
+void vka_gp_pass_begin_query(VkCommandBuffer cb); // inside Vulkan render pass, only on sampled 1280x720 passes
+void vka_gp_pass_end_query(VkCommandBuffer cb);   // paired end before vkCmdEndRendering
 void vka_gp_pass_io(unsigned load_color, unsigned store_color,
                     unsigned load_depth, unsigned store_depth,
                     unsigned samples); // attachment load/store is a traffic proxy, NOT measured DRAM bytes
