@@ -29,6 +29,7 @@ final class ShadowOverlay {
         // Existing map-only overlays retain the original stamp and remain valid.
         String head = "profile\t" + profile + "\n";
         if (effect != 0) head += "fps\t" + effect + "\n";
+        if (effect == 3) head += "schema\tssao-samples-v2\n";
         return head + "version\t" + version + "\n";
     }
     static boolean current(File files, String titleId, int profile, String version) {
