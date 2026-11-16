@@ -36,7 +36,6 @@ EFFECTS = {
     # Keep CreateDof/Bloom=1: false leaves x20+0x1a58 null and crashes.
     # Tune the scene's own post-effect commands, never their constructors.
     5: (),
-    6: (),  # host 4x2 shading rate in 3 measured heavy HDR fragment programs
 }
 
 
@@ -46,9 +45,9 @@ class Error(Exception):
 
 def effect_ids(mask):
     """Decode independent effect bits and reject conflicting cascade choices."""
-    if mask < 0 or mask > 63 or (mask & 3) == 3:
+    if mask < 0 or mask > 31 or (mask & 3) == 3:
         raise Error('invalid effect mask or incompatible 3->2 / 3->1 cascades')
-    return [i for i in range(1, 7) if mask & (1 << (i - 1))]
+    return [i for i in range(1, 6) if mask & (1 << (i - 1))]
 
 
 def patch(source, profile, effect=0, effects_mask=None):
@@ -92,7 +91,7 @@ def patch(source, profile, effect=0, effects_mask=None):
         struct.pack_into('<i', raw, words[name], target)
     allowed = {word + k for word in words.values() for k in range(4)}
     differences = [i for i, (a, b) in enumerate(zip(source, raw)) if a != b]
-    if (not differences and not any(e in (3, 5, 6) for e in selected)) or any(i not in allowed for i in differences):
+    if (not differences and not any(e in (3, 5) for e in selected)) or any(i not in allowed for i in differences):
         raise Error('unexpected bytes changed')
     return bytes(raw)
 
@@ -102,9 +101,9 @@ def main(argv=None):
     ap.add_argument('--romfs', required=True, help='RomFS of active update, including .nup:update/<version>/romfs')
     ap.add_argument('--profile', type=int, choices=sorted(MAPS), required=True, help='shadow map profile 0/1/2')
     ap.add_argument('--effect', type=int, choices=sorted(EFFECTS), default=0,
-                    help='legacy single FPS patch 0..6; do not mix with --effects-mask')
+                    help='legacy single FPS patch 0..5; do not mix with --effects-mask')
     ap.add_argument('--effects-mask', type=int, default=None,
-                    help='combined bits: 1=cascade 3->2, 2=cascade 3->1, 4=SSAO, 8=prepass, 16=post, 32=targeted 4x2 VRS')
+                    help='combined bits: 1=cascade 3->2, 2=cascade 3->1, 4=SSAO, 8=prepass, 16=post')
     ap.add_argument('--scene-pack', default=None,
                     help='original already-prepared active scene_720p Bootup pack, for safe AGL edits')
     ap.add_argument('--out', required=True, help='new RomFS overlay directory')
