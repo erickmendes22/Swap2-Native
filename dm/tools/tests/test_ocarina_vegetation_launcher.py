@@ -11,7 +11,7 @@ JAVA = ROOT / 'android/app/src/ondevice/java/dev/nxnative/android'
 
 class VegetationLauncher(unittest.TestCase):
     @unittest.skipUnless(shutil.which('java'), 'JDK required')
-    def test_launcher_without_native_context_selects_508_not_56_captures(self):
+    def test_vegetation_508_stage_mode_is_distinct_from_56_real_missing_captures(self):
         self.run_jvm()
 
     def run_jvm(self, delta_source=None, ui_source=None):
@@ -72,8 +72,10 @@ public class Probe {
             Files.write(new File(captures,key+".ctl").toPath(),new byte[0xd8]);
         }
         Job j=new Job(root);
-        List<String> keys=OcarinaShaderDelta.keys(j);
-        check(keys.size()==508,"Expected 508 static stages before pack startup; got "+keys.size());
+        List<String> missing=OcarinaShaderDelta.keys(j);
+        check(missing.size()==56,"Expected only 56 captured missing keys; got "+missing.size());
+        List<String> keys=OcarinaShaderDelta.vegetationKeys();
+        check(keys.size()==508,"Expected explicit vegetation mode to retain 508 static stages; got "+keys.size());
         check(PackNative.calls==0,"Launcher touched native pack process");
         check(new HashSet<>(keys).size()==508,"Duplicate keys");
         j.keys=keys;
@@ -86,7 +88,7 @@ public class Probe {
         check(screen.view.value==View.VISIBLE && screen.added==0,"Failed update/error hidden");
         j.state="done";screen.show();
         check(screen.view.value==View.GONE && screen.added==1,"Completed update not retired");
-        System.out.println("508 selected without native context; pending/failed update visible; stable base preserved");
+        System.out.println("56 missing captures and separate 508-stage vegetation mode without native context; stable base preserved");
     }
 }
 ''')
