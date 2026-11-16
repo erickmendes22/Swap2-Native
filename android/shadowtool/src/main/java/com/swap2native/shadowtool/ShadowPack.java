@@ -278,7 +278,7 @@ public final class ShadowPack {
                     log.append("BYML big-endian: patch recusado até suporte explícito.\n");
                 }
                 int hits=0;
-                for(Field v:config.entries) if(v.path.toLowerCase().contains("shadow")) {
+                for(Field v:config.entries) if(isShadowField(v)) {
                     fields.add(v);
                     log.append(" · ").append(v.line()).append('\n');
                     if(++hits>1500) throw new IOException("Configuração de sombras excedeu limite de campos.");
@@ -325,7 +325,7 @@ public final class ShadowPack {
         ArrayList<Field> shadow=new ArrayList<>();
         StringBuilder log=new StringBuilder("Ocarina Shadow Tool 0.2\n")
             .append("Origem: ").append(path).append('\n');
-        for(Field field:byml.entries) if(field.path.toLowerCase(java.util.Locale.ROOT).contains("shadow")) {
+        for(Field field:byml.entries) if(isShadowField(field)) {
             shadow.add(field);
             log.append(" · ").append(field.line()).append('\n');
         }
@@ -362,34 +362,47 @@ public final class ShadowPack {
         text.append("Arquivo direto: exportação de patch ainda não habilitada.\n");
         return text.toString();
     }
-    private static Map<Integer,Integer> select(List<Field> fields,int dyn,int stat) throws IOException {
-        Map<Integer,Integer> changes=new HashMap<>();
-        int[][] plans={{1024,dyn},{4096,stat}};
-        String[] pathMatch={"createdepthshadow","createstaticdepthshadow"};
-        for(int group=0;group<plans.length;group++) {
-            int orig=plans[group][0],target=plans[group][1];
-            if(Integer.bitCount(target)!=1||target<256||target>=orig)
-                throw new IOException("Tamanho de sombra fora dos níveis suportados.");
-            int matches=0;
-            for(Field v:fields) {
-                String path=v.path.toLowerCase(), leaf=v.leaf.toLowerCase();
-                if(!path.contains(pathMatch[group]) ||
-                   (group==0&&path.contains("createstaticdepthshadow")))continue;
-                if((leaf.contains("size")||leaf.contains("width")||
-                    leaf.contains("height")||leaf.contains("resolution"))
-                   && !leaf.startsWith("#") && (v.type==0xd1||v.type==0xd3)) {
-                    if(v.value!=orig)
-                        throw new IOException("O mesmo bloco de sombras contém dimensões inesperadas: "+v.line());
-                    changes.put(v.offset,target);
-                    matches++;
-                }
-            }
-            if(matches<1||matches>12)
-                throw new IOException("Campos explícitos de tamanho ("+orig+") não encontrados ou ambíguos em "+pathMatch[group]);
-        }
-        return changes;
+    private static Map<Integer,Integer> select(List<Field> fields,i
+    // Names and dimensions verified from the real Ocarina BASE v65536 RomFS
+    // diagnosis. The UI variant differs: its 4096 depth map must not be
+    // blindly reduced by the gameplay profile.
+    private static final String MAIN_CONFIG=
+        "gsys/ModelSceneConfigParam/Main.gsys__ModelSceneConfigParam.bgyml";
+
+    private static boolean isShadowField(Field v) {
+        String leaf=v.leaf.toLowerCase(java.util.Locale.ROOT);
+        return leaf.contains("shadow") || leaf.startsWith("staticsdw");
     }
-    /** Never mutates the selected .nup; prepares the full replacement SARC. */
+
+    private static Map<Integer,Integer> select(List<Field> fields,int dyn,int stat) throws IOException {
+        if(dyn!=512 && dyn!=256)
+            throw new IOException("Resolução dinâmica permitida: 512 ou 256.");
+        if(stat!=2048 && stat!=1024)
+            throw new IOException("Resolução estática permitida: 2048 ou 1024.");
+        String[] keys={"DepthShadowTexWidth","DepthShadowTexHeight","StaticSdwWidth"};
+        int[] expected={1024,1024,4096};
+        int[] targets={dyn,dyn,stat};
+        Map<Integer,Integer> edits=new HashMap<>();
+        for(int i=0;i<keys.length;i++) {
+            Field match=null;
+            for(Field v:fields) {
+                if(!MAIN_CONFIG.equals(v.file) || !keys[i].equals(v.leaf))continue;
+                if(match!=null)
+                    throw new IOException("Campo de sombra duplicado: "+keys[i]);
+                match=v;
+            }
+            if(match==null)
+                throw new IOException("Campo de sombra do Main ausente: "+keys[i]);
+            if(!keys[i].equals(match.path))
+                throw new IOException("Campo fora da raiz esperada: "+match.path);
+            if(match.type!=0xd1 || match.value!=expected[i])
+                throw new IOException("Tipo ou tamanho inesperado em "+keys[i]+": "+match.line());
+            if(edits.put(match.offset,targets[i])!=null)
+                throw new IOException("Dois campos compartilham o mesmo offset.");
+        }
+        return edits;
+    }
+ent SARC. */
     public static byte[] makeOverlay(Result r,int dynamic,int stat) throws IOException {
         if(!r.applicable)throw new IOException("Diagnóstico não autorizou um patch seguro.");
         Map<Integer,Integer> edits=select(r.fields,dynamic,stat);
