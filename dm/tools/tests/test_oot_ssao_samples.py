@@ -50,7 +50,7 @@ class TestSsaoReduce(unittest.TestCase):
         self.assertEqual(sum(a != b for a, b in zip(original, reduced)), 1)
 
     def test_original_values_are_guarded(self):
-        for samples in (0, 1, 2, 3, 4, 6, 10):
+        for samples in (0, 1, 4, 6, 10):
             with self.subTest(samples=samples):
                 with self.assertRaises(ssao.Error):
                     ssao.patch_byml(scene(samples=samples))
@@ -60,7 +60,15 @@ class TestSsaoReduce(unittest.TestCase):
         self.assertEqual(ssao.patch_byml(wrong), (wrong, 0))
         self.assertEqual(ssao.patch_byml(scene(within_ssao=False))[1], 0)
         self.assertEqual(ssao.KEY, 'AlchemySamplePairNum')
-        self.assertEqual((ssao.SOURCE_PAIRS, ssao.TRIAL_PAIRS), (5, 2))
+        self.assertEqual((ssao.SOURCE_PAIRS, ssao.TRIAL_PAIRS), ((3, 5), 2))
+        for original in (3, 5):
+            with self.subTest(original=original):
+                before = scene(samples=original)
+                after, count = ssao.patch_byml(before)
+                self.assertEqual(count, 1)
+                self.assertEqual(struct.unpack_from('<i', after, 0x188)[0], 2)
+        untouched = scene(samples=2)
+        self.assertEqual(ssao.patch_byml(untouched), (untouched, 0))
 
 
 if __name__ == '__main__':
