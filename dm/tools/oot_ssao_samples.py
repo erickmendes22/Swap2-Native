@@ -12,7 +12,7 @@ from gsys_dynres import Byml, CONTAINERS, D_INT
 import romfs
 
 DIRECTORY = 'gsys/ModelSceneShadowParam'
-KEY = 'alchemy_sample_pair_num'
+KEY = 'AlchemySamplePairNum'  # exact field in user's NUP v131072 diagnostics
 SOURCE_PAIRS = 5     # Named engine parameter documented by the game shader analysis.
 TRIAL_PAIRS = 2
 MAX_FILE = 2 * 1024 * 1024
@@ -32,7 +32,7 @@ def patch_byml(source):
         raise Error('unsupported SSAO parameter BYML endian/root')
     locations, visited = [], set()
 
-    def visit(node, depth):
+    def visit(node, depth, in_ssao=False):
         if depth > 24 or node in visited:
             return
         if node < 0 or node + 4 > len(raw):
@@ -41,7 +41,7 @@ def patch_byml(source):
         for name, kind, word in by.items(node):
             if word < 0 or word + 4 > len(raw):
                 raise Error('SSAO BYML scalar out of bounds')
-            if name == KEY:
+            if name == KEY and in_ssao:
                 if kind != D_INT:
                     raise Error('unexpected SSAO sample-pair field type')
                 actual = struct.unpack_from('<i', raw, word)[0]
@@ -49,7 +49,7 @@ def patch_byml(source):
                     raise Error('unexpected original SSAO sample-pair count: %d' % actual)
                 locations.append(word)
             elif kind in CONTAINERS:
-                visit(by.u32(word), depth + 1)
+                visit(by.u32(word), depth + 1, in_ssao or name == 'SSAO')
 
     visit(by.root, 0)
     if len(set(locations)) != len(locations):
@@ -82,7 +82,7 @@ def generate(root, out, log=print):
         if num:
             matched.append((name, patched, num))
     if not matched:
-        raise Error('verified alchemy_sample_pair_num not found; no SSAO patch written')
+        raise Error('verified SSAO/AlchemySamplePairNum not found; no SSAO patch written')
     # Only now commit the files; the Android preparer works in a private .tmp
     # folder and publishes an overlay only after the generator succeeds.
     for name, patched, num in matched:
