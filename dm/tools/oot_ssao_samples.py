@@ -79,8 +79,14 @@ def generate(root, out, log=print):
     if not names or len(names) > 128:
         raise Error('unrecognized SSAO model-scene configuration layout')
     for name in names:
-        with romfs.open(folder + '/' + name, 'rb') as f:
-            original = f.read(MAX_FILE + 1)
+        stage = os.path.join(out, DIRECTORY, name)
+        if os.path.isfile(stage):
+            # Preserve a previously generated DOF/Bloom edit in this same BYML.
+            with open(stage, 'rb') as f:
+                original = f.read(MAX_FILE + 1)
+        else:
+            with romfs.open(folder + '/' + name, 'rb') as f:
+                original = f.read(MAX_FILE + 1)
         patched, num = patch_byml(original)
         if num:
             matched.append((name, patched, num))
