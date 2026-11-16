@@ -104,7 +104,7 @@ public final class SceneService extends Service {
         String tool = "dm/tools/gsys_shadow.py";
         String[] argv = ShadowOverlay.argv(romfs, profile, tmp);
         String head = "== " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).format(new Date())
-                + " " + Prefs.buildTag(this) + ": " + tool + " " + String.join(" ", argv) + "\\n";
+                + " " + Prefs.buildTag(this) + ": " + tool + " " + String.join(" ", argv) + "\n";
         Files.write(log.toPath(), head.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         PackEngine engine = PackEngine.create(this);
         PackEngine.setenv("TMPDIR", getCacheDir().getPath());
