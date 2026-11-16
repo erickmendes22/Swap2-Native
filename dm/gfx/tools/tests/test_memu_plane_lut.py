@@ -69,6 +69,55 @@ class PlaneLut(common.CoalescedReadback):
                     self.assertLessEqual(b.run(0, 0)[2], 4)  # two bounds and z/w guards
                     self.assertGreater(a.run(0, 0)[2], b.run(0, 0)[2])
 
+    def test_same_mesh_source_real_converter_diagnostic_old_vs_direct(self):
+        """Run both actual C converter paths, compare SPIR-V word by word.
+
+        This tests the measurement and an equivalent fallback in the compiled
+        emulator translator, not a synthetic FPS prediction.
+        """
+        import ctypes as C
+
+        class Diagnostics(C.Structure):
+            _fields_ = [(k, U32) for k in (
+                "named_helper", "eligible", "matched", "fallback", "per_primitive",
+                "source_instructions", "compute_instructions",
+                "source_workgroup_vars", "compute_workgroup_vars",
+                "source_barriers", "compute_barriers",
+                "source_stores", "compute_stores")]
+
+        self.lib.vka_memu_cs_diagnostic_mode.argtypes = [
+            C.POINTER(U32), C.c_size_t, C.POINTER(C.c_size_t),
+            C.c_char_p, C.c_size_t, C.POINTER(Diagnostics), C.c_int]
+        self.lib.vka_memu_cs_diagnostic_mode.restype = C.POINTER(U32)
+        source = self.source(list(range(4)) + [4, 8, 12, 20], 128)
+        src = (U32 * len(source))(*source)
+        results = {}
+        for mode in (0, 1):
+            size, error, diagnostic = C.c_size_t(), C.create_string_buffer(256), Diagnostics()
+            output = self.lib.vka_memu_cs_diagnostic_mode(
+                src, len(source), C.byref(size), error, 256,
+                C.byref(diagnostic), mode)
+            self.assertTrue(output, error.value)
+            results[mode] = (list(output[:size.value]), diagnostic)
+            self.libc.free(output)
+            self.assertEqual(results[mode][0], self.variant(source, mode)[1])
+            self.assertEqual(diagnostic.named_helper, 1)
+            self.assertEqual(diagnostic.eligible, 1)
+            self.assertGreater(diagnostic.source_instructions, 0)
+            self.assertGreater(diagnostic.compute_instructions, 0)
+        self.assertNotEqual(results[0][0], results[1][0])
+        self.assertEqual(results[0][1].fallback, 1)
+        self.assertEqual(results[0][1].matched, 0)
+        self.assertEqual(results[1][1].matched, 1)
+        self.assertEqual(results[1][1].fallback, 0)
+        self.assertEqual(results[0][1].source_instructions,
+                         results[1][1].source_instructions)
+        self.assertEqual(source, list(src))  # neither A/B mutated the source
+        print("diagnostic A/B: old=%d instructions, direct=%d; "
+              "same original mesh shader, 1 verified direct replacement" %
+              (results[0][1].compute_instructions,
+               results[1][1].compute_instructions))
+
     def test_unknown_side_effects_keep_the_original_shader(self):
         for mutation in ("extra_store", "changed_mirror"):
             source = self.source(list(range(4)) + [4, 8, 12, 20], mutation=mutation)
