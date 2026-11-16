@@ -8,9 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import oot_ssao_samples as ssao
 
 
-def scene(samples=5, typ=0xd1, key='AlchemySamplePairNum', within_ssao=True):
+def scene(samples=5, typ=0xd1, key='AlchemySamplePairNum', within_ssao=True, strong=False):
     """Synthetic nested BYML matching /SSAO/AlchemySamplePairNum [0xd1] v5."""
     keys = ['SSAO' if within_ssao else 'Other', key, 'CreateSsocclusion', 'CreateShadowPrePass', 'UnrelatedTextureSize']
+    if strong: keys += ['BlurNum', 'SamplePairNum']
     b = bytearray(1024)
     struct.pack_into('<2sHIII', b, 0, b'YB', 7, 0x20, 0, 0x100)
     b[0x20:0x24] = bytes((0xc2, len(keys), 0, 0))
@@ -28,8 +29,9 @@ def scene(samples=5, typ=0xd1, key='AlchemySamplePairNum', within_ssao=True):
         b[at] = index; b[at + 3] = kind
         struct.pack_into('<I', b, at + 4, value)
     # actual per-scene SSAO dictionary and 2 unrelated fields
-    b[0x180:0x184] = bytes((0xc1, 2, 0, 0))
+    b[0x180:0x184] = bytes((0xc1, 4 if strong else 2, 0, 0))
     entries = [(1, typ, samples), (4, 0xd1, 4096)]
+    if strong: entries += [(5, 0xd1, 2), (6, 0xd1, 3)]
     for i, (index, kind, value) in enumerate(entries):
         at = 0x184 + i * 8
         b[at] = index
@@ -48,6 +50,17 @@ class TestSsaoReduce(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<i', reduced, 0x110)[0], 1)   # CreateSsocclusion
         self.assertEqual(struct.unpack_from('<i', reduced, 0x118)[0], 1)   # CreateShadowPrePass
         self.assertEqual(sum(a != b for a, b in zip(original, reduced)), 1)
+
+    def test_aggressive_ssao_blur_and_second_sampler_keep_output_allocations(self):
+        before = scene(samples=3, strong=True)
+        after, changed = ssao.patch_byml(before)
+        self.assertEqual(changed, 3)
+        self.assertEqual(struct.unpack_from('<i', after, 0x188)[0], 2)
+        self.assertEqual(struct.unpack_from('<i', after, 0x198)[0], 1)
+        self.assertEqual(struct.unpack_from('<i', after, 0x1a0)[0], 2)
+        self.assertEqual(struct.unpack_from('<i', after, 0x110)[0], 1)
+        self.assertEqual(struct.unpack_from('<i', after, 0x118)[0], 1)
+        self.assertEqual(ssao.patch_byml(after), (after, 0))
 
     def test_original_values_are_guarded(self):
         for samples in (0, 1, 4, 6, 10):
