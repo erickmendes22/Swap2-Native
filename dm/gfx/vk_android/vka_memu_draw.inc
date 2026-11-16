@@ -27,7 +27,9 @@ void vka_memu_oot_shadow_level(int level) {
 static int oot_foliage_density_safe(const vka_shader *ts, const vka_shader *ms) {
     if (!ts || !ms || !ts->e || !ms->e || !ts->b || !ms->b ||
         ts->key != UINT64_C(0x99280b7b8aae78df) ||
-        ms->key != UINT64_C(0xeb021183bf9b0092)) return 0;
+        (ms->key != UINT64_C(0xeb021183bf9b0092) &&
+         ms->key != UINT64_C(0x65a079a285d693a0) &&
+         ms->key != UINT64_C(0x96843c3dbdded1e7))) return 0;
     const vka_shader *sh[] = {ts, ms};
     for (unsigned s = 0; s < 2; ++s)
         for (unsigned i = 0; i < sh[s]->e->bind_count; ++i) {
