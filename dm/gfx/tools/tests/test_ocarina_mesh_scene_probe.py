@@ -31,6 +31,14 @@ class MeshSceneProbe(unittest.TestCase):
 #include "vka_scene_profile.h"
 int main(void) {
     assert(vka_scene_profile_size("1280x720x1 c0:37 d:126"));
+    assert(vka_scene_profile_1280("1280x720x1 c0:122 d:126"));
+    assert(vka_scene_profile_1280("1280x720x1 d:126"));
+    assert(vka_scene_profile_1280("1280x720x1"));
+    assert(!vka_scene_profile_1280("1280x720x10"));
+    assert(!vka_scene_profile_1280("1280x720x1_suffix"));
+    assert(!vka_scene_profile_1280("1280x720x2 c0:122"));
+    assert(!vka_scene_profile_1280(""));
+    assert(!vka_scene_profile_1280(0));
     assert(vka_scene_profile_size("1280x720x1"));
     assert(vka_scene_profile_size("960x540x1 d:126"));
     assert(vka_scene_profile_size("683x384x1"));
@@ -88,6 +96,15 @@ int main(void) {
         self.assertIn("VK_QUERY_RESULT_64_BIT", PROF)
         self.assertIn("fragment-invocations/target-pixel=", PROF)
         self.assertIn("for (int j = i - 1; j > 0 && g_m[j].gfx_block; --j)", PROF)
+        # Both the sample-time and the report-time branches MUST use the
+        # exact same tested token predicate. The old length=11 comparison
+        # silently dropped every real "1280x720x1 c0:122 ..." descriptor.
+        self.assertIn("g_pass_1280 = vka_scene_profile_1280(desc);", PROF)
+        self.assertIn("if (!vka_scene_profile_1280(g_m[i].desc)) continue;", PROF)
+        self.assertNotIn('strncmp(g_m[i].desc, "1280x720x1", 11)', PROF)
+        self.assertIn("if (g_seen_1280 && !np)", PROF)
+        self.assertIn("memset(elapsed, 0, sizeof elapsed);", PROF)
+        self.assertIn("g_seen_1280 = 0;", PROF)
 
 
 if __name__ == "__main__":
