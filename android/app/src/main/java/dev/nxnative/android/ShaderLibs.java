@@ -70,6 +70,7 @@ final class ShaderLibs {
     static final class Header {
         String chain, vkChain, game, inputs, abi;
         long entries, entryOff, bindCount, bindOff, modCount, modOff, blobOff, blobSize;
+        int subgroupSize, ssboAlign;  // Vulkan library header bytes 112..115
 
         /** Whether every table and the blob lie inside a file of this size (a library cut short, or a header of another file, does not) */
         boolean fits(long fileSize) {
@@ -121,6 +122,8 @@ final class ShaderLibs {
         r.modOff = u32(h, 92);
         r.blobOff = u32(h, 96) | u32(h, 100) << 32;   // a u64 above 2^63 reads negative: fits refuses it
         r.blobSize = u32(h, 104) | u32(h, 108) << 32;
+        r.subgroupSize = (h[112] & 0xff) | (h[113] & 0xff) << 8;
+        r.ssboAlign = (h[114] & 0xff) | (h[115] & 0xff) << 8;
         return r;
     }
 
