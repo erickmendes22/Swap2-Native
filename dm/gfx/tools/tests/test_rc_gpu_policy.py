@@ -97,6 +97,71 @@ int main(void) {
         self.assertIn("rc_gpu_report_pair(cond.addr, &jobs[n].a, &jobs[n].b)", inc)
         self.assertIn("rc_gpu_report_pair(cond.addr, &a, &b)", inc)
 
+    def test_production_pair_adapter_rebases_cumulative_counters_exactly(self):
+        from dm.gfx.tools.tests.test_ocarina_mesh_native_hybrid import function
+        inc = (VK / "vka_rc_gpu.inc").read_text()
+        source = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#include "vka_rc_gpu_policy.h"
+typedef struct {
+ uint64_t oq_begin,oq_end,oq_epoch,oq_lost,fence,gpu_write_epoch;
+ int kind,oq_fresh;
+} rc_rep;
+static rc_rep g_rcp[2];
+static uint64_t g_rc_gpu_write_epoch=7, g_oq_head=220;
+static struct {int precise;} OQ={0};
+static struct {uint64_t submission_first;} RG={100};
+static int rc_ix_find(uint64_t a) {
+ return a==0x1000?0:a==0x1010?1:-1;
+}
+static int rc_gpu_report(uint64_t addr,rc_rep *out) {
+ int i=rc_ix_find(addr); if(i<0)return 0;
+ *out=g_rcp[i];
+ return out->gpu_write_epoch==g_rc_gpu_write_epoch &&
+  vka_rc_gpu_range(out->kind,out->oq_fresh,out->fence,
+   out->oq_lost,out->oq_begin,out->oq_end,
+   RG.submission_first,g_oq_head);
+}
+""" + "static int " + function(inc, "rc_gpu_report_pair") + r"""
+int main(void) {
+ g_rcp[0]=(rc_rep){.kind=3,.oq_epoch=12,.oq_begin=120,
+   .oq_end=130,.gpu_write_epoch=7};
+ g_rcp[1]=(rc_rep){.kind=3,.oq_epoch=12,.oq_begin=130,
+   .oq_end=134,.gpu_write_epoch=7};
+ rc_rep a,b;
+ assert(rc_gpu_report_pair(0x1000,&a,&b));
+ assert(a.oq_begin==130&&a.oq_end==130&&a.oq_lost==0);
+ assert(b.oq_begin==130&&b.oq_end==134&&b.oq_lost==0);
+ assert(!rc_gpu_report_pair(0x1001,&a,&b));
+ g_rcp[1].oq_epoch=13;assert(!rc_gpu_report_pair(0x1000,&a,&b));
+ g_rcp[1].oq_epoch=12;g_rcp[1].oq_lost=1;
+ assert(!rc_gpu_report_pair(0x1000,&a,&b));
+ g_rcp[1].oq_lost=0;g_rcp[1].gpu_write_epoch=8;
+ assert(!rc_gpu_report_pair(0x1000,&a,&b));
+ g_rcp[1].gpu_write_epoch=7;g_rcp[1].fence=4;
+ assert(!rc_gpu_report_pair(0x1000,&a,&b));
+ g_rcp[1].fence=0;g_rcp[0].oq_end=90;
+ assert(!rc_gpu_report_pair(0x1000,&a,&b));
+ g_rcp[0].oq_end=130;OQ.precise=1;
+ assert(!rc_gpu_report_pair(0x1000,&a,&b));
+ // Old fully-fresh pair remains backwards compatible in precise mode.
+ g_rcp[0].oq_begin=130;g_rcp[0].oq_fresh=1;
+ g_rcp[1].oq_begin=134;g_rcp[1].oq_fresh=1;
+ assert(rc_gpu_report_pair(0x1000,&a,&b));
+ assert(a.oq_begin==130&&b.oq_begin==134);
+ return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/"adapter.c";exe=p.with_suffix("")
+            p.write_text(source)
+            subprocess.run([shutil.which("cc"),"-std=c11","-O2","-Wall",
+                            "-Wextra","-Werror","-I",str(VK),str(p),
+                            "-o",str(exe)],check=True)
+            subprocess.run([str(exe)],check=True)
+
     def test_actual_copy_planner_deduplication_merge_and_ring_wrap(self):
         source = r"""
 #include <assert.h>
