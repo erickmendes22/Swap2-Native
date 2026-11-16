@@ -1,39 +1,49 @@
-# Ocarina Shadow Tool 0.2 — aplicativo Android independente
+# Ocarina Shadow Tool 0.3 — Android (.nup via Arquivos)
 
-Aplicativo Android `com.swap2native.ocarina.shadowtool` para selecionar um **NUP** usando o aplicativo Arquivos do Android. Não exige root, Termux, Python, nem acesso amplo ao armazenamento. O NUP é aberto **somente para leitura**.
+Aplicativo Android independente, com pacote `com.swap2native.ocarina.shadowtool`. Lê o NUP pelo seletor **Arquivos**, sem root, sem Termux e sem modificar o NUP original.
 
-## Fluxo
+## Correção confirmada pelo diagnóstico da base v65536
 
-1. Abrir o aplicativo e tocar em **Selecionar arquivo .nup**.
-2. Escolher uma base ou atualização do Ocarina (Title ID `0400486024DEC000`) contida no NUP.
-3. Tocar em **Analisar mapas de sombra**. A versão 0.2 percorre o índice **RomFS completo** da versão selecionada, incluindo recursos da base quando ela está no mesmo NUP. Procura arquivos `ModelSceneConfigParam` diretos e, na ausência deles, pesquisa os arquivos `Pack/*.pack.zs` (limites seguros de RAM, tamanho e contagem).
-4. O relatório mostra o caminho do recurso encontrado, packs tentados e falhas, campos legíveis e valores 1024/4096 **somente como candidatos de diagnóstico**, não como autorização automática para patch.
-5. **Somente** se campos de largura/altura/resolução no `CreateDepthShadow` e `CreateStaticDepthShadow` forem identificados sem ambiguidades, o aplicativo libera o overlay 512/2048 ou 256/1024. Se estiverem sob chaves hash não identificadas, a alteração continua bloqueada.
-6. Selecionar uma pasta para exportar. O arquivo corrigido usa **o mesmo caminho RomFS do recurso de origem**. O NUP original jamais é modificado.
+O relatório `Ocarina-shadow-diagnostico (1).txt` identificou no RomFS o arquivo:
 
-O app já consegue gerar um overlay de um `.bgyml` direto e sem compressão ou de um SARC `.pack.zs` com dicionário reconhecido. Não presume que o arquivo esteja em `Bootup.Nin_Ounce_NVN2.pack.zs`.
+`gsys/ModelSceneConfigParam/Main.gsys__ModelSceneConfigParam.bgyml`
 
-## O que o diagnóstico inicial demonstrou
+Os campos verdadeiros da configuração de gameplay são:
 
-O arquivo `Ocarina-shadow-diagnostico.txt` exportado pelo 0.1 apontou a base `v65536`: no Bootup inspecionado **não existe** `ModelSceneConfigParam/Main`. O programa 0.1 restringia sua inspeção a esse pack e, por isso, não provava a ausência da configuração em outros recursos.
+| Campo no Main | Original | Padrão | Baixo |
+|---|---:|---:|---:|
+| `DepthShadowTexWidth` | 1024 | 512 | 256 |
+| `DepthShadowTexHeight` | 1024 | 512 | 256 |
+| `StaticSdwWidth` | 4096 | 2048 | 1024 |
 
-A versão 0.2 foi criada para localizar o **recurso verdadeiro** antes de permitir a substituição. O fato de o código identificar caminhos candidatos não demonstra que a redução de 1024/4096 já funcionou no jogo. O emulador precisa usar o overlay para que haja qualquer mudança, e o ganho de FPS continua dependendo de teste em gameplay.
+O código v0.1–0.2 bloqueava o patch porque só aceitava nomes genéricos como `CreateDepthShadow`; a configuração real do jogo utiliza os três nomes acima. Os testes usam um BYML sintético reproduzindo os nomes e valores do relatório. Eles **não substituem** um teste no NUP real e no renderizador.
 
-## Limitações e segurança
+**Não modificar:** `OcclusionQueryNum = 4096`, `CubemapMaxShapeNum = 4096`, `DepthShadowCascadeNum0` e `ModelSceneConfigParam/UI`. A configuração UI do arquivo real define mapas de profundidade de 4096, diferentes do Main, e fica intacta nesta versão.
 
-- A ferramenta **não injeta** o overlay no Swap2-Native, não altera as opções A+B de vegetação e não modifica shaders.
-- Pacotes grandes, NUP sem a base necessária, arquivos comprimidos em formato ainda não suportado e campos hash/ambíguos podem permanecer sem patch; o relatório explica o bloqueio.
-- Se o NUP contiver apenas a atualização, mas o recurso estiver somente na base em **outro NUP**, selecionar a base separadamente para identificar o arquivo.
-- Para evitar corrupção, arquivos existentes na pasta de saída **não são sobrescritos**.
-- A varredura tem teto de 60 packs inspecionados e 768 MiB cumulativos, com limite de 192 MiB por recurso; um resultado negativo pode ser parcial, e isso fica registrado no relatório.
-- O APK é independente do emulador; a compatibilidade de assinatura para atualizar o APK depende da preservação do certificado usado na compilação.
+## Como usar
 
-## Compilar
+1. Instalar o APK **Ocarina Shadow Tool** produzido nas Actions desta branch.
+2. Selecionar o arquivo `.nup` pelo aplicativo **Arquivos** do Android.
+3. Escolher `Base v65536` e tocar em **Analisar mapas de sombra**. O scanner lê diretamente o índice RomFS e, quando encontra `Main`, interrompe a busca sem tentar milhares de packs não relacionados.
+4. Escolher **512 / 2048** ou **256 / 1024** e selecionar uma pasta de saída. O app salva um overlay no caminho `gsys/ModelSceneConfigParam/Main.gsys__ModelSceneConfigParam.bgyml`, dentro da pasta escolhida.
+5. O overlay **ainda precisa ser aplicado ao emulador**. A ferramenta não altera o jogo instalado e não injeta o arquivo automaticamente.
 
-Da raiz do repositório:
+Se os valores, nomes, tipos ou estrutura do arquivo selecionado diferirem, a criação do patch é bloqueada. O NUP original nunca é sobrescrito.
+
+## Limitações
+
+- O mapeamento dos três campos foi observado no **NUP base v65536**. Outras versões exigem confirmação dos respectivos parâmetros; a ferramenta falha em vez de alterar valores não verificados.
+- O fato de gerar um overlay não comprova que o emulador o carregou nem que o FPS melhorou. Isso exige teste de jogo comparando a mesma cena.
+- Se a pasta de destino já tiver o mesmo overlay, a ferramenta não sobrescreve o arquivo existente.
+- O APK é separado do Swap2-Native; não modifica controles, shaders, opção A+B, perfil de vegetação ou a versão principal do emulador.
+- A pesquisa de arquivos de packs continua disponível como fallback quando o `Main` não aparece como recurso direto. O fallback é limitado por contagem e tamanho.
+
+## Compilar e testar
+
+Na raiz do repositório:
 
 ```bash
-android/app/gradlew --no-daemon -p android/shadowtool :assembleDebug
+android/app/gradlew --no-daemon -p android/shadowtool :testDebugUnitTest :assembleDebug
 ```
 
-O workflow [Ocarina Shadow Tool — Android APK](../../.github/workflows/ocarina-shadowtool-android-apk.yml) compila o APK e publica `Ocarina-Shadow-Tool-Android-APK` como artefato das Actions.
+O workflow [Ocarina Shadow Tool — Android APK](../../.github/workflows/ocarina-shadowtool-android-apk.yml) executa os testes da reescrita BYML, compila um APK e publica `Ocarina-Shadow-Tool-Android-APK` como artefato.
