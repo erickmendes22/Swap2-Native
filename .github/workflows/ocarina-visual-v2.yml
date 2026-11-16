@@ -1,0 +1,16 @@
+name: Ocarina visual quality A-B regression
+on:
+  push:
+    branches: [research/ocarina-visual-quality-v2]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate both retained foliage pairs, fog cut and shadow compare sampler
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_visual_quality_patches -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_effect_quality -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_banana_runtime.py -v
