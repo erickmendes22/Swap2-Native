@@ -1,7 +1,7 @@
 name: Swap2-Native Ocarina 0.1.6 Android APK
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, research/ocarina-gsr2-360p-20261115]
+    branches: [research/ocarina-fps-effect-crash-repair, ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, research/ocarina-gsr2-360p-20261115]
     paths:
       - ci/ocarina-ios-ready.txt
   workflow_dispatch:
@@ -25,6 +25,8 @@ jobs:
       - name: Validate Ocarina graphics FPS patches before native APK compilation
         run: |
           python3 -m unittest dm.tools.tests.test_gsys_shadow dm.tools.tests.test_gsys_graphics_fps -v
+          python3 -m unittest dm.tools.tests.test_oot_effect_crash_probe -v
+          python3 -m py_compile dm/tools/oot_effect_crash_probe.py
           python3 -m py_compile dm/tools/gsys_shadow.py
           mkdir -p /tmp/oot-fps-patch-jvm
           javac -d /tmp/oot-fps-patch-jvm android/app/src/main/java/dev/nxnative/android/ShadowOverlay.java
