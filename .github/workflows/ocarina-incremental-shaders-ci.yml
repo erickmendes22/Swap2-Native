@@ -17,6 +17,7 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_early_occlusion.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_shaders.py'
       - 'dm/gfx/tools/tests/test_ocarina_missing_shader_repair.py'
+      - 'dm/tools/tests/test_ocarina_vegetation_launcher.py'
       - 'dm/gfx/tools/tests/test_ocarina_cold_build_memory.py'
       - 'dm/gfx/tools/vk_android_build.py'
       - 'android/app/src/main/java/dev/nxnative/android/ShaderZip.java'
@@ -144,6 +145,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_early_occlusion.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_shaders.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_missing_shader_repair.py -v
+          python3 -m unittest discover -s dm/tools/tests -p test_ocarina_vegetation_launcher.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_cold_build_memory.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_alu_cse.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_graphics_barrier_scopes.py -v
