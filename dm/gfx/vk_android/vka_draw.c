@@ -645,12 +645,7 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d, int omi
         if (late[i]->ci < 0) pending_depth_clear = 1;
     if (vka_readonly_depth_store_eligible(
             !strcmp(DM_GAME_ID, "0400486024DEC000"),
-            // Experimental GPU-memory optimization, Ocarina only.
-            // The predicate below requires Vulkan 1.3, 720p, read-only
-            // depth without stencil/clear/MSAA; a subsequent depth writer
-            // reopens the attachment with STORE before its first draw.
-            // Set DM_VK_OOT_DEPTH_STORE_NONE=0 for exact A/B rollback.
-            VKA_ENV("DM_VK_OOT_DEPTH_STORE_NONE", 1),
+            VKA_ENV("DM_VK_OOT_DEPTH_STORE_NONE", 0),
             R.area.extent.width, R.area.extent.height, R.samples,
             V.props.apiVersion >= VK_API_VERSION_1_3,
             dp != NULL, sp != NULL,
