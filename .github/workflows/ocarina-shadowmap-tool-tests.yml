@@ -4,6 +4,9 @@ on:
     paths:
       - 'dm/tools/gsys_shadowmaps.py'
       - 'dm/tools/gsys_shadow.py'
+      - 'dm/gfx/vk_android/vka_draw.c'
+      - 'dm/gfx/vk_android/vka_readonly_depth_store.h'
+      - 'dm/gfx/tools/tests/test_ocarina_depth_store_none.py'
       - 'dm/tools/oot_ssao_samples.py'
       - 'dm/tools/oot_post_effects.py'
       - 'dm/tools/oot_agl_pmaa.py'
@@ -36,6 +39,8 @@ jobs:
           python3 -m unittest dm.tools.tests.test_gsys_shadow dm.tools.tests.test_gsys_graphics_fps dm.tools.tests.test_oot_ssao_samples dm.tools.tests.test_oot_post_effects dm.tools.tests.test_oot_agl_pmaa dm.tools.tests.test_oot_multi_fps_overlays -v
           python3 -m py_compile dm/tools/gsys_shadow.py dm/tools/oot_ssao_samples.py dm/tools/oot_post_effects.py dm/tools/oot_agl_pmaa.py
           python3 dm/tools/gsys_shadow.py --help
+      - name: Verify read-only 720p depth STORE_OP_NONE without changing VRS
+        run: python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_depth_store_none.py' -v
       - name: Compile independent Android shadow overlay descriptor
         run: |
           mkdir -p /tmp/shadow-overlay-jvm
