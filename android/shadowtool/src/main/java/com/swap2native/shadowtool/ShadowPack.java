@@ -42,11 +42,14 @@ public final class ShadowPack {
         public final byte[] raw,dict,compressed;
         public final List<Field> fields;
         public final String report;
-        public final boolean applicable;
+        public final boolean applicable,configFound;
+        public final String packPath;
         public final int dictId;
         public final boolean checksum;
-        Result(byte[] r,byte[] d,byte[] c,List<Field> f,String t,boolean a,int id,boolean ck) {
-            raw=r;dict=d;compressed=c;fields=f;report=t;applicable=a;dictId=id;checksum=ck;
+        Result(byte[] r,byte[] d,byte[] c,List<Field> f,String t,boolean a,int id,boolean ck,
+               boolean found,String path) {
+            raw=r;dict=d;compressed=c;fields=f;report=t;applicable=a;
+            dictId=id;checksum=ck;configFound=found;packPath=path;
         }
     }
     private static final class Part {
@@ -249,6 +252,10 @@ public final class ShadowPack {
     }
     /** Reads actual pack and emits a diagnosis without any destructive edits. */
     public static Result inspect(byte[] pack,byte[] zsdic,String provenance) throws IOException {
+        return inspect(pack,zsdic,provenance,PACK_PATH);
+    }
+    public static Result inspect(byte[] pack,byte[] zsdic,String provenance,
+                                 String sourcePath) throws IOException {
         Frame f=frame(pack);
         byte[] dict=dictionary(zsdic);
         byte[] raw=decompress(pack,dict,MAX_PACK);
@@ -259,12 +266,17 @@ public final class ShadowPack {
            .append("\nPack Zstd dictId=").append(Integer.toUnsignedString(f.dictId))
            .append(", checksum=").append(f.checksum).append('\n');
         int candidateFiles=0;
+        boolean safeEndian=true;
         for(Map.Entry<String,Part> e:sarc.parts.entrySet()) {
             String filename=e.getKey();
             if(filename.contains("ModelSceneConfigParam")&&filename.endsWith(".bgyml")) {
                 candidateFiles++;
                 log.append("\nBYML: ").append(filename).append('\n');
                 Byml config=new Byml(raw,filename,e.getValue());
+                if(!config.little) {
+                    safeEndian=false;
+                    log.append("BYML big-endian: patch recusado até suporte explícito.\\n");
+                }
                 int hits=0;
                 for(Field v:config.entries) if(v.path.toLowerCase().contains("shadow")) {
                     fields.add(v);
@@ -283,13 +295,33 @@ public final class ShadowPack {
         }
         boolean patchable=false;
         try {
-            select(fields,512,2048);patchable=true;
+            select(fields,512,2048);
+            if(!safeEndian)throw new IOException("BYML de sombra não é little-endian.");
+            patchable=true;
             log.append("\nCampos de dimensões reconhecidos; patch 512/2048 habilitado.\n");
         } catch(IOException e) {
             log.append("\nPatch BLOQUEADO: ").append(e.getMessage()).append('\n')
                 .append("Exporte este diagnóstico para análise; o NUP original não foi alterado.\n");
         }
-        return new Result(raw,dict,pack,fields,log.toString(),patchable,f.dictId,f.checksum);
+        return new Result(raw,dict,pack,fields,log.toString(),patchable,f.dictId,f.checksum,
+            candidateFiles>0,sourcePath);
+    }
+    /** Examine a named standalone BYML, even when it is not packed in Bootup. */
+    public static String describeStandalone(byte[] resource,String path) throws IOException {
+        if(resource.length<20)throw new IOException("BYML vazio ou inválido.");
+        Byml byml=new Byml(resource,path,new Part(0,resource.length));
+        StringBuilder text=new StringBuilder("Recurso BYML: ").append(path).append('\\n');
+        int hits=0;
+        for(Field field:byml.entries) {
+            String name=field.path.toLowerCase(java.util.Locale.ROOT);
+            if(name.contains("shadow")||name.contains("size")||name.contains("resolution")) {
+                text.append(" · ").append(field.line()).append('\\n');
+                if(++hits>=150) {text.append("... limitado a 150 campos\\n");break;}
+            }
+        }
+        if(hits==0)text.append("Nenhum campo legível relacionado a sombra/resolução.\\n");
+        text.append("Arquivo direto: exportação de patch ainda não habilitada.\\n");
+        return text.toString();
     }
     private static Map<Integer,Integer> select(List<Field> fields,int dyn,int stat) throws IOException {
         Map<Integer,Integer> changes=new HashMap<>();
