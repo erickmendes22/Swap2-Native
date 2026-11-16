@@ -44,6 +44,7 @@ typedef struct { uint32_t op, size; } op_hdr;
 typedef struct { uint32_t op, size; uint64_t arg; } record;
 typedef struct { int prim, mdi_cnt; } p_draw;
 typedef struct { int32_t mode,pad; uint64_t addr; } p_render_cond;
+typedef struct { uint32_t op, size; p_render_cond condition; } rc_record;
 typedef struct { int state; } vka_dstate;
 static struct { int memu, mesh, task; } V = {0,0,0};
 static struct { vka_dstate d; int rc_skip; } S;
@@ -51,9 +52,10 @@ static vka_dstate g_memu_st;
 static _Thread_local const uint8_t *g_memu_caller[16];
 static _Thread_local int g_memu_depth;
 static uint64_t g_memu_parent_resumes, g_memu_nested_batches;
+static uint64_t g_memu_rc_true_crossed;
 static uint64_t g_memu_boundary_op[OP_COUNT_ + 1];
 static int batched, states[32];
-static int memu_allowed(uint32_t op) { return op != OP_SET_RT; }
+static int memu_allowed(uint32_t op) { return op != OP_SET_RT && op != OP_RENDER_COND; }
 static const p_draw *draw_rec(const void *arg, uint32_t size, p_draw *tmp) {
     (void)size; (void)tmp; return (const p_draw *)arg;
 }
@@ -68,7 +70,7 @@ static void vka_memu_batch(int phase, const vka_dstate *s, const p_draw *d, cons
     assert(batched < 32);
     states[batched++] = s->state;
 }
-""" + "static int " + body(SRC, 'memu_walk') + r"""
+""" + "static int " + body(SRC, 'memu_transparent_rc') + "\n" + "static int " + body(SRC, 'memu_walk') + r"""
 int main(void) {
     // Called list: draw@10, end; parent: draw@20, end.
     record inner[] = {{OP_DRAW,16,5}, {OP_END,16,0}};
@@ -94,6 +96,37 @@ int main(void) {
     batched = 0; S.d.state = 10;
     assert(memu_walk((const uint8_t*)&inner[0], MEMU_ADD) == 2);
     assert(batched == 2 && states[0] == 10 && states[1] == 30);
+    // A real condition changing visibility remains a boundary. Only the
+    // unconditional TRUE condition (mode 2) is safe to cross.
+    struct {
+      record first;
+      rc_record condition;
+      record second;
+      record end;
+    } rc_list = {
+      {OP_DRAW,16,5},
+      {OP_RENDER_COND,sizeof(rc_record),{2,0,0}},
+      {OP_DRAW,16,5},
+      {OP_END,16,0}
+    };
+    g_memu_depth=0; S.d.state=17; batched=0;
+    uint64_t crossed=g_memu_rc_true_crossed;
+    assert(memu_walk((const uint8_t*)&rc_list, MEMU_ADD)==2);
+    assert(batched==2&&states[0]==17&&states[1]==17);
+    assert(g_memu_rc_true_crossed==crossed+1);
+    for (int mode=0;mode<=3;mode++) {
+      if(mode==2)continue;
+      rc_list.condition.condition.mode=mode;
+      batched=0;
+      assert(memu_walk((const uint8_t*)&rc_list, MEMU_ADD)==1);
+      assert(batched==1&&g_memu_rc_true_crossed==crossed+1);
+    }
+    // Truncated commands never authorize the special crossing.
+    rc_list.condition.condition.mode=2;
+    rc_list.condition.size=8;
+    batched=0;
+    assert(memu_walk((const uint8_t*)&rc_list, MEMU_ADD)==1);
+    rc_list.condition.size=sizeof(rc_record);
     // The existence probe remains side-effect-free and sees first mesh draw.
     batched = 0; assert(memu_walk((const uint8_t*)&inner[0], -1) == 1);
     assert(batched == 0);
@@ -119,7 +152,11 @@ int main(void) {
         self.assertIn('g_memu_depth = depth; // child returned:', exec_src)
         walk = body(SRC, 'memu_walk')
         self.assertIn('for (int i = 0; i < nret; i++) ret[i] = g_memu_caller[i];',walk)
-        self.assertIn('if (!memu_allowed(h.op) || h.size < 8) {',walk)
+        self.assertIn('const int transparent_rc = memu_transparent_rc(h.op, h.size, a);', walk)
+        self.assertIn('!transparent_rc && h.op != OP_DRAW_IDX', walk)
+        self.assertIn('!memu_transparent_rc(h.op, h.size, a)', exec_src)
+        self.assertIn('c.mode == 2;', body(SRC, 'memu_transparent_rc'))
+        self.assertIn('if ((!memu_allowed(h.op) && !transparent_rc) || h.size < 8) {',walk)
         self.assertIn('g_memu_boundary_op[h.op]++',walk)
 
 
