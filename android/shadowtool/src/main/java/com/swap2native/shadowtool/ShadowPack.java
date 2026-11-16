@@ -362,10 +362,8 @@ public final class ShadowPack {
         text.append("Arquivo direto: exportação de patch ainda não habilitada.\n");
         return text.toString();
     }
-    private static Map<Integer,Integer> select(List<Field> fields,i
-    // Names and dimensions verified from the real Ocarina BASE v65536 RomFS
-    // diagnosis. The UI variant differs: its 4096 depth map must not be
-    // blindly reduced by the gameplay profile.
+    // Names and dimensions verified against Ocarina BASE v65536 RomFS.
+    // Do not patch UI or 4096-sized cubemaps/occlusion query buffers.
     public static final String MAIN_CONFIG=
         "gsys/ModelSceneConfigParam/Main.gsys__ModelSceneConfigParam.bgyml";
 
@@ -402,7 +400,8 @@ public final class ShadowPack {
         }
         return edits;
     }
-ent SARC. */
+
+    /** Never mutates the selected .nup; builds a separate RomFS overlay file. */
     public static byte[] makeOverlay(Result r,int dynamic,int stat) throws IOException {
         if(!r.applicable)throw new IOException("Diagnóstico não autorizou um patch seguro.");
         Map<Integer,Integer> edits=select(r.fields,dynamic,stat);
