@@ -197,6 +197,21 @@ final class GameSettings {
     private static void graphics(MainActivity a, Game g, LinearLayout p, Runnable again) {
         String id = g.titleId;
         LinearLayout box = Ui.add(p, Ui.panel(a), 16);
+        // A/B switch must be the FIRST visible row of Graphics, not buried
+        // after the GPU experimental controls at the bottom of a long page.
+        if (Prefs.OCARINA_TITLE.equals(id)) {
+            boolean cacheOn = Prefs.feedbackInvocationCache(a, id);
+            Ui.Setting feedbackInvocation = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Feedback de texturas por fragmento · ON/OFF", null)
+                    .toggle(a, cacheOn, (b, on) -> {
+                        Prefs.feedbackInvocationCache(a, id, on);
+                        again.run();
+                    });
+            feedbackInvocation.value(cacheOn
+                    ? "ATIVADO (teste). Reinicie o jogo. Compare com DESLIGADO na mesma cena."
+                    : "DESLIGADO (original). Ative para testar e reinicie o jogo.");
+            box.addView(feedbackInvocation.view);
+        }
         Profile prof = Profile.of(id);
         if (prof != null && prof.hasResolution())   // only where it does something: a profile with window_fn or graphics_scale rows
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_display, a.getString(R.string.s2_game_resolution), v -> resolution(a, g, again)).value(a.getString(R.string.s2_resolution_note))
@@ -305,13 +320,6 @@ final class GameSettings {
                             (b, on) -> Prefs.poolFeedbackDirect(a, id, on));
             feedback.value(a.getString(R.string.s2_texture_feedback_direct_note));
             box.addView(feedback.view);
-            Ui.Setting feedbackInvocation = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Cache do feedback por fragmento (teste)", null)
-                    .toggle(a, Prefs.feedbackInvocationCache(a, id),
-                            (b, on) -> Prefs.feedbackInvocationCache(a, id, on));
-            feedbackInvocation.value("Evita consultas repetidas do mesmo ID de textura entre blocos do shader. "
-                    + "Desligado por padrão; pode piorar a GPU. Reinicie e compare os logs de 720p.");
-            box.addView(feedbackInvocation.view);
         }
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip, "Economia de RAM (usa armazenamento)", null)
                 .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
