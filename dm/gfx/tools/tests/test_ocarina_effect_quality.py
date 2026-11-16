@@ -109,10 +109,12 @@ int main(void) {
         prefs=(APP / "Prefs.java").read_text()
         ui=(APP / "GameSettings.java").read_text()
         launcher=(APP / "GameActivity.java").read_text()
-        for key in ("shadowHard","groundMistOff"):
-            self.assertIn("Prefs." + key + "(a, id)", ui)
-            self.assertIn("Prefs." + key + "(this, id)", launcher)
-        self.assertIn('"oot_shadow_hard", id), false',prefs)
+        self.assertIn("Prefs.shadowFoliage(a, id)", ui)
+        self.assertIn("Prefs.shadowFoliage(this, id)", launcher)
+        self.assertIn('getInt(gameKey("oot_shadow_foliage", id), 0)', prefs)
+        self.assertIn("DM_VK_OOT_SHADOW_HARD=0", launcher)  # previous PCF-only patch had no GPU gain
+        self.assertIn("Prefs.groundMistOff(a, id)", ui)
+        self.assertIn("Prefs.groundMistOff(this, id)", launcher)
         self.assertIn('"oot_ground_mist_off", id), false',prefs)
         self.assertIn("DM_VK_OOT_SHADOW_HARD=", launcher)
         self.assertIn("DM_VK_OOT_GROUND_MIST_OFF=", launcher)
