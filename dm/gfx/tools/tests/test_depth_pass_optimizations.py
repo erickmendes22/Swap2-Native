@@ -198,9 +198,7 @@ int main(void) {
     def test_ocarina_720p_depth_store_none_policy_and_write_safety(self):
         draw = (VK / "vka_draw.c").read_text()
         self.assertIn('da.storeOp = VK_ATTACHMENT_STORE_OP_NONE;', draw)
-        # This A/B branch enables the *verified read-only* case for Ocarina.
-        # DM_VK_OOT_DEPTH_STORE_NONE=0 remains a lossless baseline override.
-        self.assertIn('VKA_ENV("DM_VK_OOT_DEPTH_STORE_NONE", 1)', draw)
+        self.assertIn('VKA_ENV("DM_VK_OOT_DEPTH_STORE_NONE", 0)', draw)
         self.assertIn('V.props.apiVersion >= VK_API_VERSION_1_3', draw)
         self.assertIn('if (R.on && R.readonly_depth_store && d && d->ds.dt && d->ds.dw)', draw)
         self.assertIn('if (R.on && R.readonly_depth_store && c->ci < 0)', draw)
