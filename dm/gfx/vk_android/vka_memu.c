@@ -96,6 +96,52 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
              md.compute_instructions, md.compute_workgroup_vars,
              md.compute_barriers, md.compute_stores);
     }
+    // Exact same source, exact same guest GL-depth variant: compare the
+    // original branch ladder with the in-memory compute shader actually
+    // selected. This is a SPIR-V/driver hypothesis test, NOT an FPS claim.
+    // The alternate module is never installed or used for rendering.
+    if (plane_diag >= 2 && w) {
+        static const uint64_t hot[] = {
+            UINT64_C(0xfed302d791a4ba43),
+            UINT64_C(0xeb021183bf9b0092),
+            UINT64_C(0x3439aaa071d868ae),
+            UINT64_C(0x604134a5262ff670),
+            UINT64_C(0x73dc0b90c4082e43),
+            UINT64_C(0xd98076e4148db34f)
+        };
+        int picked = 0;
+        for (size_t i = 0; i < sizeof(hot)/sizeof(hot[0]); i++)
+            picked |= s->key == hot[i];
+        if (picked) {
+            vka_memu_diag old = {0}; size_t old_words = 0;
+            char alt_error[256] = "";
+            const uint32_t *src = fz ? fz : w;
+            size_t src_words = fz ? fn : nb / 4;
+            uint32_t *baseline = vka_memu_cs_diagnostic_mode(
+                src, src_words, &old_words, alt_error, sizeof alt_error,
+                &old, 0);
+            if (baseline && o)
+                VLOG("Ocarina hot mesh SPIR-V A/B: source=%016llx gl=%d "
+                     "old LUT0=%zu words/%u instructions/%u workgroup-vars/"
+                     "%u barriers/%u stores, selected LUT%d=%zu words/%u "
+                     "instructions/%u workgroup-vars/%u barriers/%u stores; "
+                     "selected LUT matches=%u fallback=%u; byte-identical=%d "
+                     "(no alternate pipeline created; compare actual GPU with "
+                     "DM_VK_PIPE_STATS=1 and paired scene logs)",
+                     (unsigned long long)s->key, gl, old_words,
+                     old.compute_instructions, old.compute_workgroup_vars,
+                     old.compute_barriers, old.compute_stores,
+                     vka_memu_plane_lut(), on,
+                     md.compute_instructions, md.compute_workgroup_vars,
+                     md.compute_barriers, md.compute_stores,
+                     md.matched, md.fallback,
+                     old_words == on && !memcmp(baseline, o, on * sizeof *o));
+            else VLOG("Ocarina hot mesh A/B: source=%016llx baseline=%s current=%s",
+                      (unsigned long long)s->key,
+                      baseline ? "made" : alt_error, o ? "made" : err);
+            free(baseline);
+        }
+    }
     VkShaderModule mod = o ? make_module(o, on) : VK_NULL_HANDLE;
     free(w); free(fz); free(o);
     if (!mod) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("%s shader %016llx: its compute form not made (%s); its draws are skipped", stage_name(s->e->stage), (unsigned long long)s->key, err[0] ? err : "vkCreateShaderModule failed"); return NULL; }
