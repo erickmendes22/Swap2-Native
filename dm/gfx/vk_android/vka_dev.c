@@ -106,6 +106,14 @@ static int init_once(void) {
     if (x_fd) dext[ndext++] = VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
     if (V.display_timing) dext[ndext++] = VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME;
     if (V.mem_budget) dext[ndext++] = VK_EXT_MEMORY_BUDGET_EXTENSION_NAME;
+    const int want_pipe_stats = VKA_ENV("DM_VK_PIPE_STATS", 0);
+    V.pipe_stats = want_pipe_stats > 0 &&
+        has_ext(de, nde, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)
+        ? (want_pipe_stats >= 2 ? 2 : 1) : 0;
+    if (V.pipe_stats)
+        dext[ndext++] = VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME;
+    else if (want_pipe_stats)
+        VLOG("driver pipeline stats unavailable: VK_KHR_pipeline_executable_properties not advertised; original pipeline creation retained");
     // The draw path (vka_draw.c): each one optional, with a fallback when absent
     int x_push = has_ext(de, nde, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME), x_vin = has_ext(de, nde, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
     const char *x_rob = has_ext(de, nde, VK_KHR_ROBUSTNESS_2_EXTENSION_NAME) ? VK_KHR_ROBUSTNESS_2_EXTENSION_NAME : has_ext(de, nde, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME) ? VK_EXT_ROBUSTNESS_2_EXTENSION_NAME : NULL;
@@ -267,6 +275,11 @@ static int init_once(void) {
     VKA_DEVICE_FNS(D)
 #undef D
     vka_shader_pfb_hook();
+    if (V.pipe_stats && (!vk.vkGetPipelineExecutablePropertiesKHR ||
+                         !vk.vkGetPipelineExecutableStatisticsKHR)) {
+        VLOG("driver pipeline stats disabled: device returned no executable query entry points");
+        V.pipe_stats = 0;
+    }
     if (!vk.vkMapMemory2KHR) vk.vkMapMemory2KHR = (PFN_vkMapMemory2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkMapMemory2");   // core in 1.4
     if (!vk.vkUnmapMemory2KHR) vk.vkUnmapMemory2KHR = (PFN_vkUnmapMemory2KHR)vk.vkGetDeviceProcAddr(V.dev, "vkUnmapMemory2");
     if (!vk.vkMapMemory2KHR || !vk.vkUnmapMemory2KHR) V.placed = V.placed_range = 0;
@@ -416,6 +429,88 @@ uint64_t vka_host_fp(const char *who) {
     return v;
 }
 void vka_fp_restore(uint64_t fpcr) { if (fpcr_get() != fpcr) __asm__ volatile("msr fpcr, %0" :: "r"(fpcr)); }
+// Diagnostic only. VK_KHR_pipeline_executable_properties reports what the
+// DRIVERS compiled, unlike source SPIR-V opcode counts. The property names and
+// availability differ across Turnip/Qualcomm, so do not fabricate occupancy.
+void vka_pipe_stats(VkPipeline pipeline, uint64_t source, uint64_t fragment, int graphics) {
+    if (!pipeline || V.pipe_stats < (graphics ? 2 : 1) ||
+        !vk.vkGetPipelineExecutablePropertiesKHR ||
+        !vk.vkGetPipelineExecutableStatisticsKHR) return;
+    static _Atomic unsigned seen;
+    int lim = VKA_ENV("DM_VK_PIPE_STATS_MAX", 96);
+    if (lim < 1) lim = 1;
+    if (lim > 512) lim = 512;
+    if (atomic_fetch_add(&seen, 1) >= (unsigned)lim) return;
+    VkPipelineInfoKHR pi = {VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR, NULL, pipeline};
+    uint32_t n = 0;
+    VkResult r = vk.vkGetPipelineExecutablePropertiesKHR(V.dev, &pi, &n, NULL);
+    if (r || !n) {
+        VLOG("driver pipeline stats: %s pre=%016llx fs=%016llx no executable properties (%d, %u)",
+             graphics ? "graphics" : "compute", (unsigned long long)source,
+             (unsigned long long)fragment, r, n);
+        return;
+    }
+    if (n > 24) n = 24;
+    VkPipelineExecutablePropertiesKHR e[24] = {0};
+    for (uint32_t i = 0; i < n; i++)
+        e[i].sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR;
+    r = vk.vkGetPipelineExecutablePropertiesKHR(V.dev, &pi, &n, e);
+    if (r) {
+        VLOG("driver pipeline stats: executable query failed %d", r);
+        return;
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        VkPipelineExecutableInfoKHR ei = {
+            VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR, NULL, pipeline, i};
+        uint32_t count = 0;
+        VkResult rc = vk.vkGetPipelineExecutableStatisticsKHR(V.dev, &ei, &count, NULL);
+        if (rc || !count) {
+            VLOG("driver pipeline stats: %s pre=%016llx fs=%016llx exec=%s stage=%#x: no statistics (%d)",
+                 graphics ? "graphics" : "compute", (unsigned long long)source,
+                 (unsigned long long)fragment, e[i].name, e[i].stages, rc);
+            continue;
+        }
+        if (count > 96) count = 96;
+        VkPipelineExecutableStatisticKHR st[96] = {0};
+        for (uint32_t j = 0; j < count; j++)
+            st[j].sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR;
+        rc = vk.vkGetPipelineExecutableStatisticsKHR(V.dev, &ei, &count, st);
+        if (rc) continue;
+        VLOG("driver pipeline stats: %s pre=%016llx fs=%016llx exec=%s stages=%#x statistics=%u",
+             graphics ? "graphics" : "compute", (unsigned long long)source,
+             (unsigned long long)fragment, e[i].name, e[i].stages, count);
+        unsigned printed = 0;
+        for (uint32_t j = 0; j < count && printed < 32; j++) {
+            const char *name = st[j].name;
+            // Always preserve the raw name: a vendor may report occupancy
+            // and local memory with unconventional labels. Show all with
+            // DM_VK_PIPE_STATS_VERBOSE=1, otherwise the resource subset.
+            int verbose = VKA_ENV("DM_VK_PIPE_STATS_VERBOSE", 0);
+            if (!verbose && !strcasestr(name, "occup") &&
+                !strcasestr(name, "register") && !strcasestr(name, "vgpr") &&
+                !strcasestr(name, "sgpr") && !strcasestr(name, "spill") &&
+                !strcasestr(name, "shared") && !strcasestr(name, "local mem") &&
+                !strcasestr(name, "lds") && !strcasestr(name, "instruction") &&
+                !strcasestr(name, "scratch") && !strcasestr(name, "wave"))
+                continue;
+            double value;
+            switch (st[j].format) {
+                case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR:
+                    value = st[j].value.b32 ? 1.0 : 0.0; break;
+                case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR:
+                    value = (double)st[j].value.i64; break;
+                case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR:
+                    value = (double)st[j].value.u64; break;
+                case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_FLOAT64_KHR:
+                    value = st[j].value.f64; break;
+                default: continue;
+            }
+            VLOG("driver pipeline stat: pre=%016llx fs=%016llx %s = %.6g",
+                 (unsigned long long)source, (unsigned long long)fragment, name, value);
+            printed++;
+        }
+    }
+}
 static PFN_vkCreateShaderModule g_real_csm; static PFN_vkCreateGraphicsPipelines g_real_cgp; static PFN_vkCreateComputePipelines g_real_ccp;
 static VkResult VKAPI_CALL host_csm(VkDevice d, const VkShaderModuleCreateInfo *ci, const VkAllocationCallbacks *a, VkShaderModule *m) {
     uint64_t fp = vka_host_fp(NULL); VkResult r = g_real_csm(d, ci, a, m); vka_fp_restore(fp); return r; }
