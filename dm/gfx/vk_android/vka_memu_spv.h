@@ -67,6 +67,12 @@ typedef struct {
 uint32_t *vka_memu_cs_diagnostic(const uint32_t *w, size_t nw,
                                  size_t *out_nw, char *err, size_t errn,
                                  vka_memu_diag *diag);
+// Build an alternate compute SPIR-V from the SAME original source with the
+// plane LUT explicitly off/on. Diagnostic-only, never touches the active
+// pipeline, shader library, cache, or process environment.
+uint32_t *vka_memu_cs_diagnostic_mode(const uint32_t *w, size_t nw,
+                                      size_t *out_nw, char *err, size_t errn,
+                                      vka_memu_diag *diag, int enable_lut);
 // The task or mesh module w as a GLCompute module (malloc'd, *out_nw words; NULL with the reason in err): its entry point dispatched over the draw's workgroups
 // (WorkgroupId.x + WorkgroupId.y x NumWorkgroups.x, past VKA_MEMU_R_NTASK / _TOTAL returning), its record at the push constant. A task module writes its payload and its
 // mesh workgroup count into the arena where OpEmitMeshTasksEXT was; a mesh module finds its task by a binary search of the offsets and copies that task's payload into
