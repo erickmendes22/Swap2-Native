@@ -105,6 +105,8 @@ def main(argv=None):
                     help='legacy single FPS patch 0..6; do not mix with --effects-mask')
     ap.add_argument('--effects-mask', type=int, default=None,
                     help='combined bits: 1=cascade 3->2, 2=cascade 3->1, 4=SSAO, 8=prepass, 16=post, 32=targeted 4x2 VRS')
+    ap.add_argument('--scene-pack', default=None,
+                    help='original already-prepared active scene_720p Bootup pack, for safe AGL edits')
     ap.add_argument('--out', required=True, help='new RomFS overlay directory')
     args = ap.parse_args(argv)
     try:
@@ -122,7 +124,7 @@ def main(argv=None):
         if 5 in selected:
             from oot_post_effects import generate as generate_post, Error as PostError
             try:
-                count = generate_post(args.romfs, args.out)
+                count = generate_post(args.romfs, args.out, scene_pack=args.scene_pack)
             except PostError as exc:
                 raise Error(str(exc)) from exc
             print('Post effects still allocated; %d validated source settings modified' % count)
