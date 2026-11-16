@@ -1,3 +1,9 @@
+Build 210 heavy-pass GPU VRS A/B, derived from actual user log 0400486024DEC000-20261115-233840 (frame 1501):
+- Two scene passes 1280x720 use 512/250 draws, ~2.782/2.105ms GPU, and 447856/122524 fragment invocations, despite 2x2 VRS and 1e4d AST. Main GPU work is fragment/colour/geometry; depth STORE_OP_NONE in Build209 removed store-depth=1 but had no conclusive gain (GPU 21.66->21.54ms p50, fps ~45).
+- New narrow 4x2 candidate applies ONLY to fs 1e4d2630d24846d0 and 8ea627c8ef169ee1 in original single-colour B10G11R11 + D32, non-mesh, sample1, alpha-to-coverage disabled, when user already chose VRS 2x2 and Adreno advertises 4x2. Other scene shaders are 2x2, no broad 4x4/pixelation sweep; original2x2 via DM_VK_OOT_HEAVY_4X2=0. Driver pipeline rejection safely falls back to2x2.
+- Disable read-only depth STORE_OP_NONE by default (DM_VK_OOT_DEPTH_STORE_NONE=1 re-enables) to avoid two extra pass splits/frame from an unproductive optimization.
+- Preserve exact guest draws/shaders/depth queries, original 42k shader ABI, existing VRS UI, cave-off rendering and signer. Potential reduced fragment invocations is not equivalent to measured FPS, and 4x2 can alter detail. Next log should compare same scene/profile against Build209 and test visual fidelity.
+
 Build 199 validation retry: adjust old isolated omitted-colour test slice to exclude the distinct new depth-store policy (its compiled 13 negative cases already pass). No runtime code change.
 
 Build 199: captured 1280x720 graphics passes preserve untouched depth via Vulkan 1.3 STORE_OP_NONE; split before any future depth write/clear; old STORE via DM_VK_OOT_DEPTH_STORE_NONE=0. No shader ABI change, retain original package/signature and GPU output. FPS gain must be measured on device.\n\nBuild162 combined GPU producer-dependency candidate; continue from approved157/current161.

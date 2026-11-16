@@ -216,5 +216,69 @@ class FpsBoostTests(unittest.TestCase):
         self.assertNotIn('shader_library', OPTIONS)
 
 
+    def test_only_two_720p_heavy_shader_keys_select_four_by_two(self):
+        import shutil
+        import subprocess
+        import tempfile
+        self.assertIn('#include "vka_oot_heavy_pass_vrs.h"', PSO)
+        self.assertIn('DM_VK_OOT_HEAVY_4X2", 1', PSO)
+        self.assertIn('rate_w = 4u; rate_h = 2u;', PSO)
+        self.assertIn('V.fps_boost_has_4x2', PSO)
+        self.assertIn('vka_oot_heavy_4x2_eligible(', PSO)
+        self.assertIn('P->fsrate.fragmentSize.width = choices[i].w;', PSO)
+        self.assertIn('{2u, 2u, V.fps_boost_has_2x2}', PSO)
+        self.assertIn('vk.vkCreateGraphicsPipelines(V.dev, g_pc, 1, &P->ci, NULL, &p);', PSO)
+        code = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <vulkan/vulkan_core.h>
+#include "vka_oot_heavy_pass_vrs.h"
+int main(void) {
+    const uint64_t hot[2] = {
+        UINT64_C(0x1e4d2630d24846d0), UINT64_C(0x8ea627c8ef169ee1)
+    };
+    for(int f=0;f<2;f++) {
+        assert(vka_oot_heavy_4x2_eligible(1,1,1,2,2,2,hot[f],0,1,
+            VK_FORMAT_B10G11R11_UFLOAT_PACK32,VK_FORMAT_D32_SFLOAT,1,0));
+        for(int i=0;i<15;i++) {
+            int x[]={1,1,1,2,2,2,0,1,1,0};
+            uint64_t key=hot[f]; VkFormat color=VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+            VkFormat depth=VK_FORMAT_D32_SFLOAT;
+            switch(i) {
+                case 0:x[0]=0;break;
+                case 1:x[1]=0;break;
+                case 2:x[2]=0;break;
+                case 3:x[3]=1;break;
+                case 4:x[4]=4;break;
+                case 5:x[5]=1;break;
+                case 6:key=UINT64_C(0x00ce4088af2c8e12);break;
+                case 7:x[6]=1;break;
+                case 8:x[7]=2;break;
+                case 9:color=VK_FORMAT_R8G8B8A8_UNORM;break;
+                case 10:depth=VK_FORMAT_UNDEFINED;break;
+                case 11:x[8]=4;break;
+                case 12:x[9]=1;break;
+                case 13:key=0;break;
+                case 14:x[3]=4;break;
+            }
+            assert(!vka_oot_heavy_4x2_eligible(x[0],x[1],x[2],x[3],x[4],x[5],
+                key,x[6],x[7],color,depth,x[8],x[9]));
+        }
+    }
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "heavy.c"
+            exe = Path(tmp) / "heavy"
+            src.write_text(code)
+            cmd = [shutil.which("cc"), "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+                   "-I", str(ROOT / "dm/third_party/vulkan-headers/include"),
+                   "-I", str(ROOT / "dm/gfx/vk_android"), str(src), "-o", str(exe)]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            subprocess.run([str(exe)], check=True)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@
 #include "vka_memu_abi.h"
 #include "vka_memu.h"
 #include "vka_vrs_filter.h"
+#include "vka_oot_heavy_pass_vrs.h"
 #include "../nvn/nvn_mtl.h"
 #include <stdlib.h>
 #include <string.h>
@@ -485,6 +486,22 @@ static int pstate_fill(pstate *P, vka_shader *const sh[VKA_NSTAGE], const vka_la
         // NEVER restore the blanket HDR shader sweep that turned >128
         // unknown programs into 4x4 and ruined image quality in build 73.
         uint32_t rate_w = V.fps_boost_width, rate_h = V.fps_boost_height;
+        // A/B candidate from captured frames 901/1201/1501/1801. Only two
+        // source-identified fragment programs in the single-colour D32 scene,
+        // and only when the user's explicit VRS choice is already 2x2.
+        // The driver advertised 4x2; unsupported pipelines fall back to 2x2.
+        // No other shader, render target, scene resolution or device changes.
+        if (vka_oot_heavy_4x2_eligible(
+                game_oot, VKA_ENV("DM_VK_OOT_HEAVY_4X2", 1),
+                V.fps_boost_has_4x2, hotpass_profile,
+                rate_w, rate_h, fs_hot,
+                mesh, k->ncolor, VKA_COLOR_ORIGINAL(k->cfmt[0]),
+                k->dfmt, k->samples, k->a2c)) {
+            rate_w = 4u; rate_h = 2u;
+            static _Atomic int logged_4x2;
+            if (!atomic_exchange(&logged_4x2, 1))
+                VLOG("Ocarina 720p heavy 4x2 VRS candidate: two captured scene FS keys only; 2x2 original via DM_VK_OOT_HEAVY_4X2=0");
+        }
         if (rate_w) {
             // A 1x1 rate is never substituted for a selected rate on one
             // of the verified shaders. Vulkan's exact rate was queried on
