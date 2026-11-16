@@ -10,6 +10,7 @@
 #if defined(__ANDROID__)
 #include "vka.h"
 #include "vka_memu.h"
+#include "vka_memu_undefer.h"
 #include "vka_memu_abi.h"
 #include "vka_memu_helpers_spv.h"
 #include "vka_memu_coalesced_helpers_spv.h"
@@ -21,6 +22,12 @@
 uint64_t vka_memu_n_batches, vka_memu_n_draws, vka_memu_n_splits, vka_memu_n_skip;
 uint64_t vka_memu_task_small, vka_memu_task_large, vka_memu_task_indirect;
 static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
+static int ocarina_undefer_enabled(const vka_shader *s) {
+    return s && !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+           vka_memu_undefer_hot(s->key) &&
+           VKA_ENV("DM_VK_OOT_MEMU_UNDEFER", 1) &&
+           vka_memu_plane_lut();
+}
 static const char *stage_name(int st) { return st == DMSH_VK_STAGE_TS ? "task" : "mesh"; }
 
 // ---------- Shaders ----------
@@ -43,7 +50,8 @@ vka_memu_sh *vka_memu_of(vka_shader *s) {
         d->nsb += 2;
         if (d->nsb > V.props.limits.maxPerStageDescriptorStorageBuffers) { snprintf(err, sizeof err, "%u storage buffers with the arena and the records, the device's compute stage takes %u", d->nsb, V.props.limits.maxPerStageDescriptorStorageBuffers); d->state = -1; }
         if (d->L.threads > V.props.limits.maxComputeWorkGroupInvocations) { snprintf(err, sizeof err, "a workgroup of %u invocations", d->L.threads); d->state = -1; }
-        d->ce = *s->e; d->ce.stage = DMSH_VK_STAGE_CS; d->ce.key = s->key ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^ vka_memu_cs_tag(s->e->stage);
+        d->ce = *s->e; d->ce.stage = DMSH_VK_STAGE_CS; d->ce.key = s->key ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^ vka_memu_cs_tag(s->e->stage) ^
+                    (ocarina_undefer_enabled(s) ? VKA_MEMU_KEY_UNDEFER : 0);
         memset(&d->ve, 0, sizeof d->ve); d->ve.key = s->key ^ VKA_MEMU_KEY_VS ^ vka_memu_layout_tag(); d->ve.stage = DMSH_VK_STAGE_VS;
     } else d->state = -1;
     free(w);
@@ -72,14 +80,26 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
     uint32_t *w = vka_shader_memu_words(s, &nb, err, sizeof err);
     uint32_t direct_words = w ? vka_memu_direct_payload_words(w, nb / 4) : 0;
     uint32_t *fz = w ? vka_spv_spec_freeze(w, nb / 4, DMSH_VK_SPEC_GL_DEPTH, (uint32_t)gl, &fn) : NULL;   // (folded: Qualcomm's lanes read 0 in a compute module with a specialization constant)
+    const uint32_t *src = fz ? fz : w;
+    size_t src_words = fz ? fn : nb / 4, un = 0;
+    uint32_t un_calls = 0;
+    uint32_t *unfed = w && ocarina_undefer_enabled(s)
+        ? vka_memu_undefer(src, src_words, &un, &un_calls) : NULL;
+    if (unfed) {
+        src = unfed; src_words = un;
+        VLOG("Ocarina mesh %016llx direct output: removed deferred Workgroup copy and mask, restored %u original plane stores; old shader pack unchanged (DM_VK_OOT_MEMU_UNDEFER=0 rollback)",
+             (unsigned long long)s->key, un_calls);
+    } else if (w && ocarina_undefer_enabled(s))
+        VLOG("Ocarina mesh %016llx source did not match safe Workgroup undefer pattern: original module retained",
+             (unsigned long long)s->key);
     // Only once per actually requested source shader and GL variant.
     // This does not rewrite or rebuild the imported 42k/508 libraries.
     int plane_diag = VKA_ENV("DM_VK_MEMU_PLANE_DIAG", 0);
     vka_memu_diag md = {0};
     uint32_t *o = w ? (plane_diag
-        ? vka_memu_cs_diagnostic(fz ? fz : w, fz ? fn : nb / 4,
+        ? vka_memu_cs_diagnostic(src, src_words,
                                  &on, err, sizeof err, &md)
-        : vka_memu_cs(fz ? fz : w, fz ? fn : nb / 4, &on, err, sizeof err)) : NULL;
+        : vka_memu_cs(src, src_words, &on, err, sizeof err)) : NULL;
     if (plane_diag && w) {
         const char *why = md.matched ? "DIRECT_TABLE" :
             !md.named_helper ? "NO_NAMED_STORE" :
@@ -115,8 +135,6 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
         if (picked) {
             vka_memu_diag old = {0}; size_t old_words = 0;
             char alt_error[256] = "";
-            const uint32_t *src = fz ? fz : w;
-            size_t src_words = fz ? fn : nb / 4;
             uint32_t *baseline = vka_memu_cs_diagnostic_mode(
                 src, src_words, &old_words, alt_error, sizeof alt_error,
                 &old, 0);
@@ -143,7 +161,7 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
         }
     }
     VkShaderModule mod = o ? make_module(o, on) : VK_NULL_HANDLE;
-    free(w); free(fz); free(o);
+    free(w); free(fz); free(unfed); free(o);
     if (!mod) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 16) VRED("%s shader %016llx: its compute form not made (%s); its draws are skipped", stage_name(s->e->stage), (unsigned long long)s->key, err[0] ? err : "vkCreateShaderModule failed"); return NULL; }
     if (direct_words) VLOG("mesh %016llx direct read-only payload ACTIVE: %u shared words and one emulation barrier omitted/group; guest barriers retained", (unsigned long long)s->key, direct_words);
     dmsh_vk_entry *e = malloc(sizeof *e); *e = d->ce; e->key ^= gl ? VKA_MEMU_KEY_GL : 0;
@@ -238,11 +256,17 @@ vka_shader *vka_memu_cs_for_fs(vka_shader *mesh, int gl, vka_shader *fragment) {
     char err[256] = ""; size_t bytes = 0, frozen_n = 0, mod_n = 0;
     uint32_t *raw = vka_shader_memu_words(mesh, &bytes, err, sizeof err);
     uint32_t *frozen = raw ? vka_spv_spec_freeze(raw, bytes / 4, DMSH_VK_SPEC_GL_DEPTH, (uint32_t)gl, &frozen_n) : NULL;
-    uint32_t *spv = raw ? vka_memu_cs_masked(frozen ? frozen : raw,
-                                frozen ? frozen_n : bytes / 4, used,
+    const uint32_t *source = frozen ? frozen : raw;
+    size_t source_words = frozen ? frozen_n : bytes / 4, un = 0;
+    uint32_t un_calls = 0;
+    uint32_t *unfed = raw && ocarina_undefer_enabled(mesh)
+        ? vka_memu_undefer(source, source_words, &un, &un_calls) : NULL;
+    if (unfed) { source = unfed; source_words = un; }
+    uint32_t *spv = raw ? vka_memu_cs_masked(source,
+                                source_words, used,
                                 &mod_n, err, sizeof err) : NULL;
     VkShaderModule mod = spv ? make_module(spv, mod_n) : VK_NULL_HANDLE;
-    free(raw); free(frozen); free(spv);
+    free(raw); free(frozen); free(unfed); free(spv);
     if (!mod) {
         static _Atomic int n;
         if (atomic_fetch_add(&n, 1) < 4)

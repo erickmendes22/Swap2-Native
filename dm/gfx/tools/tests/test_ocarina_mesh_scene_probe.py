@@ -60,6 +60,48 @@ int main(void) {
                 "-I", str(VKA), str(src), "-o", str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
+    def test_hot_mesh_undefer_is_narrow_and_keeps_old_pack(self):
+        hdr = (VKA / "vka_memu_undefer.h").read_text()
+        memu = (VKA / "vka_memu.c").read_text()
+        cache = (VKA / "vka_memu.h").read_text()
+        self.assertIn("mesh_plane_defer", hdr)
+        self.assertIn("mesh_plane_clear", hdr)
+        self.assertIn("mesh_plane_flush", hdr)
+        self.assertIn("removed deferred Workgroup copy", memu)
+        self.assertIn('DM_VK_OOT_MEMU_UNDEFER", 1', memu)
+        self.assertIn("vka_memu_undefer_hot(s->key)", memu)
+        self.assertIn("VKA_MEMU_KEY_UNDEFER", cache)
+        self.assertIn("VKA_MEMU_KEY_UNDEFER : 0", memu)
+        self.assertIn("vka_memu_cs_masked(source,", memu)
+        self.assertIn("vka_memu_cs(src, src_words,", memu)
+        self.assertIn("if (nc != 2) goto done;", hdr)
+        self.assertIn("if (calls < 16 || drops < 2) goto done;", hdr)
+        self.assertIn("out[o+3] = f[0];", hdr)
+
+    def test_undefer_header_compiles_and_refuses_unknown_sources(self):
+        cc = shutil.which("cc")
+        if not cc: self.skipTest("C compiler missing")
+        c = r"""
+#include "vka_memu_undefer.h"
+#include <assert.h>
+int main(void) {
+  uint32_t bad[]={0x07230203,0x00010600,0,256,0,0x00020011,1};
+  size_t n=7;uint32_t nc=9;
+  assert(vka_memu_undefer(bad,7,&n,&nc)==0 && n==0 && nc==0);
+  assert(vka_memu_undefer_hot(UINT64_C(0xeb021183bf9b0092)));
+  assert(vka_memu_undefer_hot(UINT64_C(0xfed302d791a4ba43)));
+  assert(!vka_memu_undefer_hot(UINT64_C(0x73dc0b90c4082e43)));
+  return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "check.c"
+            exe = Path(td) / "check"
+            path.write_text(c)
+            subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", str(VKA), str(path), "-o", str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_actual_scene_profile_selects_both_1280x720_passes(self):
         compiler = shutil.which("cc")
         if not compiler:
