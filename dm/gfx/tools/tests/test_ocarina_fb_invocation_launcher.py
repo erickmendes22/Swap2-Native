@@ -31,6 +31,7 @@ class FeedbackInvocationLauncherTest(unittest.TestCase):
         s = (CORE / "vka_spvpatch.c").read_text()
         self.assertIn('env.add("DM_VK_OOT_FB_INVOCATION_CACHE="', a)
         self.assertIn("Prefs.feedbackInvocationCache(this, id)", a)
+        self.assertIn('env.add("DM_VK_SCENE_PASS_DIAG=1")', a)
         self.assertIn('VKA_ENV("DM_VK_OOT_FB_INVOCATION_CACHE", 0)', t)
         self.assertIn("VKA_PFB_INVOCATION_CACHE", s)
         self.assertIn("model == PF_Fragment", s)
