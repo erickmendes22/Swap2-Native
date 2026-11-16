@@ -18,6 +18,27 @@
 #include "vka_memu_direct_dispatch.h"
 enum { MEMU_MAX = VKA_MEMU_ORDER_MAX };
 typedef struct { int ok, rec, indexed, points; uint32_t direct_groups; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; } memu_ent;
+// The replay updates this once at the beginning of each depth-only 1024 or
+// 4096 square shadow-map batch. No other pass can use this shadow preset.
+static int g_memu_oot_shadow_level;
+void vka_memu_oot_shadow_level(int level) {
+    g_memu_oot_shadow_level = level >= 1 && level <= 2 ? level : 0;
+}
+static int oot_foliage_density_safe(const vka_shader *ts, const vka_shader *ms) {
+    if (!ts || !ms || !ts->e || !ms->e || !ts->b || !ms->b ||
+        ts->key != UINT64_C(0x99280b7b8aae78df) ||
+        ms->key != UINT64_C(0xeb021183bf9b0092)) return 0;
+    const vka_shader *sh[] = {ts, ms};
+    for (unsigned s = 0; s < 2; ++s)
+        for (unsigned i = 0; i < sh[s]->e->bind_count; ++i) {
+            const dmsh_vk_bind *v = &sh[s]->b[i];
+            if (v->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC | DMSH_VK_BF_NOSLOT))
+                return 0;
+            if (v->kind == DMSH_VK_KIND_GMEM_LOG || v->kind == DMSH_VK_KIND_UNKNOWN)
+                return 0;
+        }
+    return 1;
+}
 static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws; } MB;
 static memu_ent *g_memu_cur;
 // Capture guest bindings once at the original MEMU_ADD pass. Subsequent
@@ -171,6 +192,25 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         if (ts) { c5[5] = E->tcs; if (!vka_layout_of(c5, 1, &E->tl) || !(E->tp = vka_cs_pipeline(E->tcs, &E->tl))) return; }
         vka_memu_rec_mesh(&mi->L, r);
         r[VKA_MEMU_R_FLAGS] |= ts ? VKA_MEMU_F_TASK : 0; r[VKA_MEMU_R_WT] = ts ? ti->L.payload_words : 0;
+        // TRUE density reduction: task shader emits zero mesh groups for
+        // 1/4 or 1/2 of the uniformly distributed task IDs. The distribution
+        // pass then launches fewer mesh workgroups and draws fewer vertices.
+        // Exact reviewed task->mesh pair only, with no storage side effects.
+        // Does not hide any of the five visually important V1 shader pairs.
+        if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
+            VKA_ENV("DM_VK_VEGETATION", 1) &&
+            oot_foliage_density_safe(ts, ms)) {
+            int level = VKA_ENV("DM_VK_OOT_FOLIAGE_DENSITY", 0);
+            if (g_memu_oot_shadow_level > level) level = g_memu_oot_shadow_level;
+            if (level == 1) r[VKA_MEMU_R_FLAGS] |= VKA_MEMU_F_FOLIAGE_75;
+            if (level == 2) r[VKA_MEMU_R_FLAGS] |= VKA_MEMU_F_FOLIAGE_50;
+            if (level >= 1 && level <= 2) {
+                static uint64_t eligible;
+                if (++eligible == 1 || !(eligible & 2047))
+                    VLOG("Ocarina task density: %llu matching Foliage task+mesh draws, task output count sampled at %s; actual GPU mesh dispatch and raster workload lowered, rest of game untouched",
+                         (unsigned long long)eligible, level == 1 ? "75%" : "50%");
+            }
+        }
         r[VKA_MEMU_R_MAXG] = V.cs_groups < 65535 ? V.cs_groups : 65535;
         if (dw->ind) {   // {count, first}, as the GPU holds it now
             VkBuffer b; VkDeviceSize o;

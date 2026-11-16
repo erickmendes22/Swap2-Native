@@ -1441,6 +1441,17 @@ int vka_ground_mist_mesh_omit(const vka_dstate *d); // exact fog mesh pair; defa
 int vka_vegetation_mesh_omit(const vka_dstate *d);  // identical no-side-effect test to final raster cut
 int vka_mesh_route(const vka_dstate *d);  // -1 omit new supplement, 0 original native, 1 supplemental compute
 static int g_memu_cover; static uint64_t g_memu_sub = ~0ull; static vka_dstate g_memu_st;
+void vka_memu_oot_shadow_level(int level); // records flags only, no host draw skipping
+static int oot_shadow_foliage_pass(void) {
+    if (strcmp(DM_GAME_ID, "0400486024DEC000") || !S.has_rt ||
+        !S.rt.depth || !S.d.ds.dt || !S.d.ds.dw) return 0;
+    // Full-screen/depth prepass is 1280x720 or another non-square size.
+    // Only real guest depth-only 1024/4096 shadow maps match.
+    if (S.rt.n) for (int i = 0; i < S.rt.n && i < 8; ++i)
+        if (S.rt.color[i]) return 0;
+    unsigned w = S.rt.depth->d.width, h = S.rt.depth->d.height;
+    return w == h && (w == 1024 || w == 4096);
+}
 // The replay executes OP_CALL recursively. A mesh look-ahead launched FROM
 // a nested list must resume its parent(s) at OP_END, just as the iterative
 // Banana Native replay does. Otherwise it stops at the first inner OP_END:
@@ -1565,6 +1576,11 @@ static int memu_walk(const uint8_t *p, int phase) {
 // Mark actual GPU work by phase on the (rare) sampled GPU-profiler frame.
 // Normal frames add ZERO commands. GPU timing markers do not modify shaders.
 static void memu_scan(const uint8_t *p) {
+    // Shadow-only additional foliage-density limit, no changes to static or
+    // cascade render-target dimensions or non-foliage caster geometry.
+    int shadow = oot_shadow_foliage_pass() ?
+        VKA_ENV("DM_VK_OOT_SHADOW_FOLIAGE", 0) : 0;
+    vka_memu_oot_shadow_level(shadow);
     g_memu_cover = 1;
     if (S.rc_skip || !memu_walk(p, -1)) return;
     if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_START", 0);

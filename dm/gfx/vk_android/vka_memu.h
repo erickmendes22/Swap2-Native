@@ -27,7 +27,8 @@ typedef struct vka_memu_sh {
 #define VKA_MEMU_KEY_PLANE_LUT 0x504c414e455f4c55ull
 #define VKA_MEMU_KEY_DIRECT_PAYLOAD 0x5041594c4f414431ull
 #define VKA_MEMU_KEY_TASK_SHORT 0x53484f525454534bull
-#define VKA_MEMU_KEY_TASK_SINGLE 0x53494e474c455f54ull // additional structured branch for 0/1 task, independent pipeline cache
+#define VKA_MEMU_KEY_TASK_SINGLE 0x53494e474c455f54ull
+#define VKA_MEMU_KEY_TASK_DENSITY 0x5441534b5f44454eull // task_out now reads per-draw density bits: NEW pipeline identity // additional structured branch for 0/1 task, independent pipeline cache
 // Must distinguish compiled mesh SPIR-V and its persistent Vulkan pipeline
 // identity when choosing the new task index search; never use old cache.
 
@@ -40,7 +41,8 @@ static inline uint64_t vka_memu_cs_tag(int stage) {
     return stage == DMSH_VK_STAGE_MS ?
         ((vka_memu_plane_lut() ? VKA_MEMU_KEY_PLANE_LUT : 0) ^
          (vka_memu_short_task_search() ? (VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_TASK_SINGLE) : 0) ^
-         (vka_memu_direct_payload() ? VKA_MEMU_KEY_DIRECT_PAYLOAD : 0)) : 0;
+         (vka_memu_direct_payload() ? VKA_MEMU_KEY_DIRECT_PAYLOAD : 0)) :
+         stage == DMSH_VK_STAGE_TS ? VKA_MEMU_KEY_TASK_DENSITY : 0;
 }
 vka_memu_sh *vka_memu_of(struct vka_shader *s);                 // NULL: s cannot be drawn through compute (logged)
 struct vka_shader *vka_memu_cs_of(struct vka_shader *s, int gl);

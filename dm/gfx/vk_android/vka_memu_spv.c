@@ -998,7 +998,26 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
             }
         }
         uint32_t mg = fn_if(&f, op2(&f, OpIEqual, B.t_bool, lid, c0));
-        INS(&O, OpStore, AREA(&f, op2(&f, OpIAdd, B.t_u32, ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_COUNTS)), ts)), cnt);
+        // GPU-side per-task thinning. The original task shader and its
+        // payload still run, but selected task groups emit ZERO mesh
+        // workgroups. The distribution pass consumes the exact reduced
+        // count, so no stale vertex/index arena data can be accessed.
+        // No masked index writes or mismatched compute/raster decisions.
+        uint32_t flags = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_FLAGS));
+        uint32_t qtr = op2(&f, OpINotEqual, B.t_bool,
+            op2(&f, OpBitwiseAnd, B.t_u32, flags, cu(&B, VKA_MEMU_F_FOLIAGE_75)), c0);
+        uint32_t half = op2(&f, OpINotEqual, B.t_bool,
+            op2(&f, OpBitwiseAnd, B.t_u32, flags, cu(&B, VKA_MEMU_F_FOLIAGE_50)), c0);
+        uint32_t idx_mod4 = op2(&f, OpBitwiseAnd, B.t_u32, ts, cu(&B, 3));
+        uint32_t skip_quarter = op2(&f, OpLogicalAnd, B.t_bool, qtr,
+            op2(&f, OpIEqual, B.t_bool, idx_mod4, cu(&B, 3)));
+        uint32_t skip_half = op2(&f, OpLogicalAnd, B.t_bool, half,
+            op2(&f, OpINotEqual, B.t_bool,
+                op2(&f, OpBitwiseAnd, B.t_u32, ts, c1), c0));
+        uint32_t cut = op2(&f, OpLogicalOr, B.t_bool, skip_quarter, skip_half);
+        uint32_t emit_count = sel(&f, B.t_u32, cut, c0, cnt);
+        INS(&O, OpStore, AREA(&f, op2(&f, OpIAdd, B.t_u32,
+            ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_COUNTS)), ts)), emit_count);
         fn_endif(&f, mg);
         INS(&O, OpReturn); INS(&O, OpFunctionEnd);
     }
