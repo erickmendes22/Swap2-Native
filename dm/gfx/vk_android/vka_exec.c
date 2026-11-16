@@ -1511,13 +1511,15 @@ static int memu_walk(const uint8_t *p, int phase) {
     for (int i = 0; i < nret; i++) ret[i] = g_memu_caller[i];
     if (phase == MEMU_ADD && nret) g_memu_nested_batches++;
     const int vegetation_off = !VKA_ENV("DM_VK_VEGETATION", 1);
+    const int quality_trim = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+                             VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0) > 0;
     const int hybrid = V.memu && V.mesh && V.task &&
                        !strcmp(DM_GAME_ID, "0400486024DEC000") &&
                        VKA_ENV("DM_VK_OOT_NATIVE_BASE_MESH", 1);
     // The look-ahead must use the bindings AT EACH DRAW when routing
     // original-library mesh draws to native. Never move supplemental
     // compute ahead of a native mesh draw, which may write buffers/images.
-    if (phase >= 0 || vegetation_off || hybrid)
+    if (phase >= 0 || vegetation_off || quality_trim || hybrid)
         memcpy(&g_memu_st, &S.d, sizeof g_memu_st);
     for (int guard = 0; guard < 200000; guard++) {
         op_hdr h; memcpy(&h, p, sizeof h); const void *a = p + 8;
@@ -1543,7 +1545,8 @@ static int memu_walk(const uint8_t *p, int phase) {
                     break; // native mesh is an ordering boundary
                 }
                 if (route == 1 &&
-                    (!vegetation_off || !vka_vegetation_mesh_omit(&g_memu_st))) {
+                    (!(vegetation_off || quality_trim) ||
+                     !vka_vegetation_mesh_omit(&g_memu_st))) {
                     if (n == 128) break;
                     if (phase < 0) return 1;
                     vka_memu_batch(phase, &g_memu_st, d, p, n); n++;

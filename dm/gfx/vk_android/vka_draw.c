@@ -17,6 +17,7 @@
 #include "vka_memu_abi.h"
 #include "vka_prepass.h"
 #include "vka_vegetation_profiles.h"
+#include "vka_vegetation_quality.h"
 #include "vka_vegetation_supplement.h"  // generated 508 original task/mesh shader keys (kept ABI-stable)
 #include "vka_gmem_pidx.h"
 #include "vka_readonly_depth_store.h"
@@ -1928,8 +1929,14 @@ int vka_mesh_route(const vka_dstate *d) {
     return hybrid ? (supplement ? 1 : 0) : (V.memu ? 1 : 0);
 }
 static int vegetation_omittable(const vka_dstate *d, vka_shader *const *sh) {
-    if (VKA_ENV("DM_VK_VEGETATION", 1) || d->tf_on || !sh[7] ||
-        !vka_vegetation_key(DM_GAME_ID, sh[7]->key)) return 0;
+    if (!d || d->tf_on || !sh[7]) return 0;
+    int on = VKA_ENV("DM_VK_VEGETATION", 1);
+    int tier = VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0);
+    // Default unchanged: full vegetation has zero draw-omission work.
+    // Medium/low omit BOTH original reviewed depth and colour shaders,
+    // never a random mesh. OFF retains the older full cut predicate.
+    if (on ? !vka_vegetation_quality_key(DM_GAME_ID, sh[7]->key, tier) :
+             !vka_vegetation_key(DM_GAME_ID, sh[7]->key)) return 0;
     for (int stage = 0; stage < VKA_NSTAGE; stage++) {
         const vka_shader *shader = sh[stage];
         if (!shader) continue;
@@ -1946,7 +1953,9 @@ static int vegetation_omittable(const vka_dstate *d, vka_shader *const *sh) {
 // same task/mesh/pixel program pair used in vka_draw; never suppress shaders
 // with memory side effects, unverified inputs, or transform feedback.
 int vka_vegetation_mesh_omit(const vka_dstate *d) {
-    if (VKA_ENV("DM_VK_VEGETATION", 1) || !d || d->tf_on) return 0;
+    if (!d || d->tf_on) return 0;
+    if (VKA_ENV("DM_VK_VEGETATION", 1) &&
+        VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0) <= 0) return 0;
     vka_shader *sh[VKA_NSTAGE] = {0}, *m = NULL;
     unsigned bad = 0, b2 = 0;
     const prog_t *mp = d->bst[7];
@@ -1962,7 +1971,8 @@ static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
     if (!vegetation_omittable(d, sh)) return 0;
     static uint64_t omitted;
     if (++omitted == 1 || omitted % 4096 == 0)
-        VLOG("lower vegetation detail: %llu mesh draws omitted", (unsigned long long)omitted);
+        VLOG("Ocarina visual vegetation patch: %llu reviewed cosmetic mesh draws omitted before raster (tier=%d; per-game only)",
+             (unsigned long long)omitted, VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0));
     return 1;
 }
 // Shader A omission is retired after white artifacts on the device.
