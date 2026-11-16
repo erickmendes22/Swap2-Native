@@ -184,6 +184,7 @@ final class GameSettings {
                     .remove(Prefs.gameKey("oot_short_task_search", id))
                     .remove(Prefs.gameKey("gpu_partial_upload", id))
                     .remove(Prefs.gameKey("fb_invocation_cache", id))
+                    .remove(Prefs.gameKey("oot_depth_store_none", id))
                     .remove(Prefs.gameKey("gpu_unused_color", id))
                     .remove(Prefs.gameKey("gpu_attachment_parts", id))
                     .remove(Prefs.gameKey("oot_hidden_layers", id))
@@ -211,6 +212,20 @@ final class GameSettings {
                     ? "ATIVADO (teste). Reinicie o jogo. Compare com DESLIGADO na mesma cena."
                     : "DESLIGADO (original). Ative para testar e reinicie o jogo.");
             box.addView(feedbackInvocation.view);
+            // Already implemented in vka_draw.c, with Vulkan 1.3, no-stencil,
+            // depth-read-only, no-clear and later-writer split guards.
+            // Separate A/B from fragment feedback; no hidden auto-enable.
+            boolean depthNone = Prefs.ootDepthStoreNone(a, id);
+            Ui.Setting depthStore = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Profundidade 720p sem store · ON/OFF (teste)", null)
+                    .toggle(a, depthNone, (b, on) -> {
+                        Prefs.ootDepthStoreNone(a, id, on);
+                        again.run();
+                    });
+            depthStore.value(depthNone
+                    ? "ATIVADO (teste). Reinicie o jogo; compare FPS e possíveis artefatos."
+                    : "DESLIGADO (original). Poupa gravações de profundidade somente quando seguro.");
+            box.addView(depthStore.view);
         }
         Profile prof = Profile.of(id);
         if (prof != null && prof.hasResolution())   // only where it does something: a profile with window_fn or graphics_scale rows
