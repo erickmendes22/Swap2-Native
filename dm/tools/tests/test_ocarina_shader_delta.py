@@ -117,16 +117,21 @@ class SelectedUpdateTests(unittest.TestCase):
         self.assertIn('"--hot-keys", String.join(",", publishedHotKeys)', source)
         self.assertIn('new File(pack, "shaders/hot/v-"', source)
         self.assertIn('unique.size() != selectedKeys.size()', source)
-        self.assertIn('!hotKeys.containsAll(selectedKeys)', source)
+        self.assertIn('ShaderLibs.hasKey(prior, previous, key)', source)
+        self.assertIn('ShaderLibs.hasKey(newLib, newHeader, key)', source)
+        self.assertIn('if (fresh == 0)', source)
         self.assertIn('selected_keys.tsv', source)
 
-    def test_per_release_scope_is_pinned_not_guessed(self):
+    def test_missing_repair_is_not_an_experimental_shader_scope(self):
         code = (ROOT / "android/app/src/ondevice/java/dev/nxnative/android/OcarinaShaderDelta.java").read_text()
-        self.assertIn('header.vkChain.equals(columns[0])', code)
-        self.assertIn('BuildConfig.NX_DMSH_VK_CHAIN.equals(columns[1])', code)
-        self.assertIn('profile.shaderInputs.equals(columns[2])', code)
-        self.assertIn('BuildConfig.NX_DMSH_VK_ABI.equals(columns[3])', code)
-        self.assertIn('!unique.add(k)', code)
+        selection = code.split("static List<String> keys(Job job) {", 1)[1].split(
+            "/** The installed overlay already", 1)[0]
+        self.assertNotIn("vk_hot_delta.tsv", selection)
+        self.assertNotIn("vegetationKeys()", selection)
+        self.assertNotIn("HEAVY.contains(key)", selection)
+        self.assertIn("if (ShaderLibs.hasKey(old, header, key)) continue;", selection)
+        self.assertIn("if (hotVerified && ShaderLibs.hasKey(hot, hotHeader, key)) continue;", selection)
+        self.assertIn("java.util.Arrays.sort(captureFiles,", selection)
         scope = (ROOT / "dm/games/0400486024DEC000/vk_hot_delta.tsv").read_text()
         self.assertFalse(any(l.strip() and not l.startswith("#") for l in scope.splitlines()))
 
