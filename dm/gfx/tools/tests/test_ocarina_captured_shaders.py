@@ -326,7 +326,7 @@ class CapturedTests(unittest.TestCase):
         # A retry without any changed real-pair evidence should not
         # repeatedly ask the user to compile this unsupported mesh.
         self.assertEqual((self.capture/(key+".deferred")).read_text(),
-                         "test-translator\\t123456789abc\\n")
+                         "test-translator\t123456789abc\n")
 
     def test_captured_mesh_has_real_layout_without_full_split(self):
         key = self.write_mesh_task(7, 13)
