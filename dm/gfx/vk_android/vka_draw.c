@@ -19,6 +19,7 @@
 #include "vka_vegetation_profiles.h"
 #include "vka_vegetation_supplement.h"  // generated 508 original task/mesh shader keys (kept ABI-stable)
 #include "vka_gmem_pidx.h"
+#include "vka_readonly_depth_store.h"
 #include "game_profile.h"
 #include <math.h>
 #include <stdio.h>
@@ -285,6 +286,7 @@ static VkDescriptorSet set_alloc(VkDescriptorSetLayout l) {
 
 // ---------- The render pass ----------
 static uint64_t g_attachment_discards, g_attachment_loads_avoided, g_attachment_stores_avoided;
+static uint64_t g_readonly_depth_none_passes, g_readonly_depth_writer_splits;
 static uint32_t g_store_discard_colors;
 static int g_store_discard_depth;
 // Only for a new pass opened by this draw, immediately before a contiguous sequence
@@ -302,6 +304,7 @@ static struct {
     int swrite;                                          // a draw of the pass wrote memory (storage buffers or images, raw global stores, a geometry shader's claim)
     int awrite;                                          // an actual colour/depth/stencil write or clear occurred; depth-test-only occlusion passes stay read-only
     int color_omitted; // every colour image is physically unbound; formats/area retain the original targets
+    int readonly_depth_store; // STORE_OP_NONE selected; first depth writer/clear must reopen
     int cave_cwrite, cave_dwrite; // tracks actual colour/depth writes; depth-dirty protects cave pass splitting
     int bar_pending;                                     // a game barrier came inside the pass and was taken there (vka_rp_game_barrier): the draws after it are checked (bar_hazard)
 } R;
@@ -502,6 +505,12 @@ int vka_classic_rp(void) {
 }
 #include "vka_renderpass_cache.h"
 static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d, int omit_color) {
+    // NONE preserves old depth values only if the whole pass leaves them untouched.
+    // A later depth writer must reopen a STORE pass before it executes.
+    if (R.on && R.readonly_depth_store && d && d->ds.dt && d->ds.dw) {
+        g_readonly_depth_writer_splits++;
+        vka_rp_end();
+    }
     if (R.on && R.color_omitted && !omit_color) vka_rp_end();
     omit_color = omit_color && !PC.n && !vka_classic_rp();
     if (R.on) { if (!g_pass_keep || rt_same(rt, has_rt, &R.rt, R.has_rt)) return 1; vka_rp_end(); }   // a new SET_RT of other targets ends the pass at its first draw (exec does not)
@@ -612,6 +621,28 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d, int omi
             g_unused_color_passes++; g_unused_color_views += (unsigned)bound;
         }
     }
+    // Two measured Ocarina 1280x720 colour passes issue 239-523 draws, test
+    // existing depth but never update it. Vulkan 1.3 STORE_OP_NONE avoids an
+    // unnecessary store/GMEM flush without invalidating existing depth.
+    // Do not use DONT_CARE: subsequent passes still depend on these values.
+    int pending_depth_clear = da.loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR;
+    for (int i = 0; i < nlate; i++)
+        if (late[i]->ci < 0) pending_depth_clear = 1;
+    if (vka_readonly_depth_store_eligible(
+            !strcmp(DM_GAME_ID, "0400486024DEC000"),
+            VKA_ENV("DM_VK_OOT_DEPTH_STORE_NONE", 1),
+            R.area.extent.width, R.area.extent.height, R.samples,
+            V.props.apiVersion >= VK_API_VERSION_1_3,
+            dp != NULL, sp != NULL,
+            dp && dp->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD,
+            dp && dp->storeOp == VK_ATTACHMENT_STORE_OP_STORE,
+            pending_depth_clear,
+            d && d->ds.dt && d->ds.dw,
+            vka_classic_rp())) {
+        da.storeOp = VK_ATTACHMENT_STORE_OP_NONE;
+        R.readonly_depth_store = 1;
+        g_readonly_depth_none_passes++;
+    }
     VkRenderingInfo ri = {VK_STRUCTURE_TYPE_RENDERING_INFO, .renderArea = R.area, .layerCount = layers, .colorAttachmentCount = (uint32_t)n, .pColorAttachments = ca,
                           .pDepthAttachment = dp, .pStencilAttachment = sp};
     if (vka_gp_active) {   // DM_VK_GPUPROF: what the pass is, for the step it ends
@@ -707,6 +738,12 @@ void vka_rp_bar_stats(char *b, size_t n, double frames) {
              (g_unused_color_passes-omit0)/frames, (g_unused_color_views-views0)/frames,
              (g_attachment_part_passes-parts0)/frames);
     omit0=g_unused_color_passes; views0=g_unused_color_views; parts0=g_attachment_part_passes;
+    static uint64_t dn0, dw0;
+    if (g_readonly_depth_none_passes != dn0 || g_readonly_depth_writer_splits != dw0)
+        VLOG("Ocarina 720p depth: %.1f STORE_OP_NONE read-only passes/frame, %.1f depth-writer splits/frame (DM_VK_OOT_DEPTH_STORE_NONE=0 restores old stores)",
+             (g_readonly_depth_none_passes - dn0) / frames,
+             (g_readonly_depth_writer_splits - dw0) / frames);
+    dn0 = g_readonly_depth_none_passes; dw0 = g_readonly_depth_writer_splits;
     static uint64_t pe0, pr0;
     if (g_pool_bind_emit != pe0 || g_pool_bind_reuse != pr0)
         VLOG("GPU pool bindings: %.1f emitted, %.1f exact repeats omitted/frame; feedback and layout changes retained", (g_pool_bind_emit-pe0)/frames, (g_pool_bind_reuse-pr0)/frames);
@@ -764,6 +801,12 @@ void vka_rp_prep_clear(const p_set_rt *rt, int has_rt) {
 int vka_rp_clear(const p_set_rt *rt, int has_rt, const vka_dstate *d, const vka_pclear *c) {
     (void)d;
     if (!g_cb || !has_rt || !draws_on()) return 0;
+    // An in-pass depth clear is a write. Reuse the original outside-clear
+    // path after closing the read-only depth store pass.
+    if (R.on && R.readonly_depth_store && c->ci < 0) {
+        vka_rp_end();
+        return 0;
+    }
     if (R.on && (!rt_same(rt, has_rt, &R.rt, R.has_rt) || (R.color_omitted && c->ci >= 0))) return 0;
     if (!R.on) {
         if (PC.n && (!rt_same(rt, has_rt, &PC.rt, 1) || PC.n == NPC)) pc_flush();

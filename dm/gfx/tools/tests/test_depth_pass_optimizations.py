@@ -96,6 +96,38 @@ int main(void){
         self.assertIn("!d->chmask.mask && !d->ms.a2c", draw)
         self.assertIn("!draw_writes(sh, d)", draw)
 
+    def test_ocarina_720p_depth_store_none_policy_and_write_safety(self):
+        draw = (VK / "vka_draw.c").read_text()
+        self.assertIn('da.storeOp = VK_ATTACHMENT_STORE_OP_NONE;', draw)
+        self.assertIn('VKA_ENV("DM_VK_OOT_DEPTH_STORE_NONE", 1)', draw)
+        self.assertIn('V.props.apiVersion >= VK_API_VERSION_1_3', draw)
+        self.assertIn('if (R.on && R.readonly_depth_store && d && d->ds.dt && d->ds.dw)', draw)
+        self.assertIn('if (R.on && R.readonly_depth_store && c->ci < 0)', draw)
+        header = (VK / "vka_readonly_depth_store.h").read_text()
+        self.assertIn('width == 1280u && height == 720u', header)
+        self.assertIn('depth_load && original_store && !pending_depth_clear', header)
+        harness = """
+#include <assert.h>
+#include "vka_readonly_depth_store.h"
+int main(void) {
+    int args[13]={1,1,1280,720,1,1,1,0,1,1,0,0,0};
+    assert(vka_readonly_depth_store_eligible(1,1,1280,720,1,1,1,0,1,1,0,0,0));
+    for(int i=0;i<13;i++){
+       int a[13];for(int j=0;j<13;j++)a[j]=args[j];
+       a[i]=(i==2)?960:(i==3)?540:(i==4)?4:(i==7||i>=10)?1:0;
+       assert(!vka_readonly_depth_store_eligible(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12]));
+    }
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            src, exe = Path(tmp) / "depth_store.c", Path(tmp) / "depth_store"
+            src.write_text(harness)
+            run = subprocess.run([shutil.which("cc"), "-std=c11", "-Wall", "-Wextra", "-Werror",
+                                  "-I", str(VK), str(src), "-o", str(exe)], capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            subprocess.run([str(exe)], check=True)
+
     @unittest.skipUnless(os.getenv("MEMU_TEST_VULKAN") == "1", "real Vulkan ICD required")
     def test_real_query_colour_and_depth_parity_for_all_switch_combinations(self):
         with tempfile.TemporaryDirectory() as tmp:
