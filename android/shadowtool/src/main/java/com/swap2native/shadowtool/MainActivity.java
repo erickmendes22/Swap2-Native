@@ -90,9 +90,9 @@ public final class MainActivity extends Activity {
         patchLow=button(body,"3 · Exportar sombras 256 / 1024",()->requestOverlay(256,1024));
         patchNormal.setEnabled(false);
         patchLow.setEnabled(false);
-        TextView explain=text("O patch é salvo em uma pasta escolhida por você, em "
-            +"Pack/Bootup.Nin_Ounce_NVN2.pack.zs. Não é instalado automaticamente "
-            +"no emulador nesta versão.",13,0xff90a9bd);
+        TextView explain=text("O patch é salvo na pasta escolhida, preservando "
+            +"o caminho original do recurso encontrado no NUP. Não é instalado "
+            +"automaticamente no emulador nesta versão.",13,0xff90a9bd);
         explain.setPadding(0,10,0,0);body.addView(explain);
         setContentView(scroll);
     }
@@ -183,12 +183,12 @@ public final class MainActivity extends Activity {
             final ShadowPack.Result snapshot=result;
             runTask("Verificando e criando o overlay…",()->{
                 byte[] patch=ShadowPack.makeOverlay(snapshot,dyn,stat);
-                Uri target=writeTree(uri,ShadowPack.PACK_PATH,patch);
+                Uri target=writeTree(uri,snapshot.packPath,patch);
                 runOnUiThread(()->{
                     status.setText("Overlay criado com sucesso.");
                     new AlertDialog.Builder(this).setTitle("Patch exportado")
-                        .setMessage("Arquivo salvo em Pack/Bootup.Nin_Ounce_NVN2.pack.zs "
-                            +"na pasta selecionada.\n\nO NUP original está intacto.\n"
+                        .setMessage("Arquivo salvo em "+snapshot.packPath
+                            +" na pasta selecionada.\n\nO NUP original está intacto.\n"
                             +"O overlay ainda precisa ser importado no emulador.\n"+target)
                         .setPositiveButton("OK",null).show();
                     locked(false);
@@ -202,23 +202,20 @@ public final class MainActivity extends Activity {
         if(pos<0||pos>=versions.size())return;
         final NupReader.Package chosen=versions.get(pos);
         final Uri uri=selected;
-        result=null;
-        runTask("Lendo configuração do Ocarina no NUP…",()->{
-            ShadowPack.Result found;
+        result=null;report="";
+        runTask("Procurando parâmetros em todo o índice RomFS do NUP…",()->{
+            ShadowDiscovery.Scan found;
             try(ParcelFileDescriptor fd=getContentResolver().openFileDescriptor(uri,"r");
                 FileInputStream input=new FileInputStream(fd.getFileDescriptor())) {
                 NupReader nup=new NupReader(input.getChannel());
-                NupReader.Resource gamePack=nup.resource(chosen,ShadowPack.PACK_PATH);
-                NupReader.Resource dict=nup.resource(chosen,ShadowPack.DICT_PATH);
-                found=ShadowPack.inspect(gamePack.bytes,dict.bytes,
-                    "Pacote "+chosen.label()+"\nFonte pack: "+gamePack.from
-                      +"\nFonte dicionário: "+dict.from);
+                found=ShadowDiscovery.scan(nup,chosen);
             }
             runOnUiThread(()->{
-                result=found;report=found.report;
+                result=found.result;report=found.report;
                 details.setText(report);
-                status.setText(found.applicable ? "Dimensões reconhecidas. Pode exportar o overlay."
-                    : "Leitura concluída; patch bloqueado até identificar dimensões com segurança.");
+                status.setText(result!=null && result.applicable ?
+                    "Dimensões reconhecidas no recurso "+result.packPath+". Pode exportar."
+                    : "Varredura concluída; nenhum patch seguro identificado.");
                 locked(false);
             });
         });
