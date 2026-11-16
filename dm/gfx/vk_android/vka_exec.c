@@ -250,6 +250,7 @@ void mtl_set_depth_zero(int on) { g_depth_zero = on != 0; }
 // CPU per draw (recording: mtl_sub_begin to vkEndCommandBuffer)
 extern uint64_t vka_n_rp, vka_n_bar, vka_n_transfer_bar, vka_n_compute_bar; static uint64_t g_n_ub, g_n_sub, g_rec_ns, g_n_pclear, g_n_chunks;
 static uint64_t g_ub_copy_cmds, g_ub_copy_regions;  // actual Vulkan copy commands versus independently staged inline regions
+static uint64_t g_ub_buffer_dependencies;  // exact destination-buffer availability/visibility, not global GPU memory
 static uint64_t g_ub_deferred, g_ub_shadows, g_ub_flushed, g_ub_after_guest_bar, g_ub_scoped_before_copy; // in-pass deferred updates, snapshots, saves after retained guest barriers
 static uint64_t g_ub_dead_writes, g_ub_dead_bytes;
 static _Atomic uint64_t g_fstart[64], g_fstart_f[64];   // when the replay began recording each frame's first submission (its number mod 64): the adaptive floor's spans
@@ -277,6 +278,10 @@ void mtl_set_frame(uint64_t f) {
                   (g_selective_transfer_deps-tx0)/n, (g_selective_clear_deps-cl0)/n, (cs-cs0)/n, (args-arg0)/n);
           tx0=g_selective_transfer_deps; cl0=g_selective_clear_deps; cs0=cs; arg0=args; }
         { static uint64_t tb0; VLOG("Vulkan scoped transfer dependencies: %.1f transfer-write -> ALL_COMMANDS barriers/frame (inline updates and selective transfer operations)", (vka_n_transfer_bar - tb0) / n); tb0 = vka_n_transfer_bar; }
+        { static uint64_t scoped0;
+          VLOG("Ocarina inline uniform buffer dependencies: %.1f exact buffer barriers/frame, all other memory unblocked (DM_VK_OOT_UB_BUFFER_BARRIER=0 restores global barrier)",
+               (g_ub_buffer_dependencies-scoped0)/n);
+          scoped0 = g_ub_buffer_dependencies; }
         { static uint64_t c0, r0; VLOG("inline uniform GPU batching: %.1f staged copy regions -> %.1f vkCmdCopyBuffer calls/frame (%.1f commands removed; disjoint destination ranges only; DM_VK_UB_BATCH=0 disables)",
               (g_ub_copy_regions-r0)/n, (g_ub_copy_cmds-c0)/n, (g_ub_copy_regions-r0-g_ub_copy_cmds+c0)/n);
           c0=g_ub_copy_cmds; r0=g_ub_copy_regions; }
@@ -1034,10 +1039,36 @@ void vka_ub_overlay(uint64_t addr, void *out, uint64_t size) {
         memcpy((uint8_t *)out + lo - addr, w->bytes + lo - w->addr, (size_t)(hi - lo));
     }
 }
+// Existing per-copy global Vulkan memory barrier is overly broad for inline
+// NVN uniform updates: the source is a scratch VkBuffer, the destination is
+// ONE placed-memory VkBuffer shared by all regions in this batch. A later
+// shader/vertex/indirect/transfer reader needs only visibility of bytes in
+// that buffer, not writes to unrelated textures, attachments or allocations.
+// Preserve the original ALL_COMMANDS destination stages and READ|WRITE
+// access. VK_WHOLE_SIZE conservatively covers every alias inside this buffer,
+// including device-address SSBO and other guest-memory views. Copies into a
+// different buffer flush the previous batch first (ub_add), so each buffer
+// receives its own dependency. A prior pass still orders WAR before this copy.
+// Ocarina-only A/B: set DM_VK_OOT_UB_BUFFER_BARRIER=0 to use the old global
+// memory barrier exactly. No VRS or shader ABI change.
 static void ub_flush(ub_batch *b) {
     if (!b->n) return;
     vk.vkCmdCopyBuffer(g_cb, b->src, b->dst, b->n, b->region);
-    vka_transfer_write_barrier(g_cb);
+    if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_UB_BUFFER_BARRIER", 1) && b->dst != VK_NULL_HANDLE) {
+        VkBufferMemoryBarrier vb = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = b->dst, .offset = 0, .size = VK_WHOLE_SIZE};
+        vk.vkCmdPipelineBarrier(g_cb,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            0, 0, NULL, 1, &vb, 0, NULL);
+        g_ub_buffer_dependencies++;
+    } else {
+        vka_transfer_write_barrier(g_cb);
+    }
     g_ub_copy_cmds++;
     b->n = 0;
 }
