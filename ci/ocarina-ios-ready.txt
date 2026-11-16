@@ -1,3 +1,9 @@
+Build 212 Ocarina taskless mesh compute direct launch candidate (2026-11-16):
+- Exact Build211 user capture 0400486024DEC000-20261116-002651: 2407 draws, 150 passes, heavy 1280x720 3.399/1.510ms, mesh compute 3.1+ms, 33 mesh batches in sampled GPU frame; vka_memu_draw.inc still uses vkCmdDispatchIndirect even when no task stage and dw->count is CPU-known.
+- For Ocarina only, small taskless non-indirect mesh draws with CPU-known 1..64 groups, group count <= device max and full request <= arena capacity, issue vkCmdDispatch(x,1,1). MEMU_SETUP still allocates GPU arena and writes R_TOTAL/draw arguments, existing compute shader returns if flat >= R_TOTAL. Never skip mesh outputs, guest barriers, occlusion or shader work. If arena earlier allocation consumed space, surplus groups exit by existing R_TOTAL guard. All task, indirect, oversized and other-game cases continue indirect.
+- DM_VK_OOT_MEMU_DIRECT_DISPATCH=0 restores original exact launches. No shader library build/replacement. Device A/B required, GPU FPS unproven.
+- VRS 4x2 remains default off and all shader pack/ABI/signature preserved.
+
 Follow-up analysis to Build 210 (2026-11-16): User confirms 4x2/4x4 on already covered shaders has no real FPS gain. DM_VK_OOT_HEAVY_4X2 now defaults OFF, VRS 2x2 remains the preferred maximum for further coverage, not the focus of this experiment.
 Captured GPU frame 1501: graphics blocks 12.939ms, general compute 4.48ms across 137 dispatch intervals (vka_draw.c:93 is the GPU completion barrier, NOT 4.48ms barrier-only overhead), vegetation mesh compute 3.381ms and task 0.519ms. Added low-volume summary per source compute shader using existing 1/300 GPU timestamps; no additional timestamps or runtime graphics changes. Mesh emulation 7523 pass splits/300 frames (~25.1/frame) from conditional, barrier and RT constraints. Next optimization should be chosen after grouped shader costs, not another VRS escalation.
 

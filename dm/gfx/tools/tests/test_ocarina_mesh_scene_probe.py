@@ -22,6 +22,44 @@ HEAD = (VKA / "vka.h").read_text()
 
 
 class MeshSceneProbe(unittest.TestCase):
+    def test_cpu_known_taskless_mesh_direct_dispatch_is_bounded(self):
+        inc = (VKA / "vka_memu_draw.inc").read_text()
+        conv = (VKA / "vka_memu_spv.c").read_text()
+        setup = (VKA / "memu/memu_common.glsl").read_text()
+        self.assertIn('DM_VK_OOT_MEMU_DIRECT_DISPATCH", 1', inc)
+        self.assertIn('if (st == 7 && MB.e[idx].direct_groups)', inc)
+        self.assertIn('vk.vkCmdDispatch(g_cb, MB.e[idx].direct_groups, 1, 1);', inc)
+        self.assertIn('else\\n        vk.vkCmdDispatchIndirect', inc)
+        self.assertIn('R[VKA_MEMU_R_TOTAL]', setup.replace("r[R + VKA_MEMU_R_TOTAL]", "R[VKA_MEMU_R_TOTAL]"))
+        self.assertIn('OpULessThan, B.t_bool, flat, lim', conv)
+        cc = shutil.which("cc")
+        if not cc: self.skipTest("C compiler missing")
+        code = r"""
+#include "vka_memu_direct_dispatch.h"
+#include <assert.h>
+int main(void) {
+  assert(vka_memu_direct_groups(1,1,0,0,32,65535,65536,64,32,0)==32);
+  assert(vka_memu_direct_groups(1,1,0,0,64,65535,65536,64,32,0)==64);
+  assert(vka_memu_direct_groups(1,1,0,0,64,65535,4096,64,32,0)==0);
+  assert(vka_memu_direct_groups(1,1,0,0,64,65535,4096,64,32,1)==64);
+  assert(vka_memu_direct_groups(0,1,0,0,1,65535,65536,1,1,0)==0);
+  assert(vka_memu_direct_groups(1,0,0,0,1,65535,65536,1,1,0)==0);
+  assert(vka_memu_direct_groups(1,1,1,0,1,65535,65536,1,1,0)==0);
+  assert(vka_memu_direct_groups(1,1,0,1,1,65535,65536,1,1,0)==0);
+  assert(vka_memu_direct_groups(1,1,0,0,65,65535,65536,1,1,0)==0);
+  assert(vka_memu_direct_groups(1,1,0,0,32,16,65536,1,1,0)==0);
+  assert(vka_memu_direct_groups(1,1,0,0,1,65535,65536,0,0,0)==0);
+  assert(vka_memu_direct_groups(1,1,0,0,32,65535,32,4294967295u,4294967295u,0)==0);
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td)/"memu_direct.c"
+            exe = Path(td)/"memu_direct"
+            src.write_text(code)
+            subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", str(VKA), str(src), "-o", str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_actual_scene_profile_selects_both_1280x720_passes(self):
         compiler = shutil.which("cc")
         if not compiler:

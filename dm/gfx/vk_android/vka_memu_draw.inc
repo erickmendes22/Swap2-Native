@@ -15,8 +15,9 @@
 // A mesh draw met inside an open pass that the look-ahead did not reach ends the pass and has the look-ahead run from it (counted: "render passes split"). GPL-3.0-or-later.
 // A draw's entry is the next one of its record in walk order, not the first one of its record (vka_memu_order.h: one look-ahead can meet a record more than once)
 #include "vka_memu_order.h"
+#include "vka_memu_direct_dispatch.h"
 enum { MEMU_MAX = VKA_MEMU_ORDER_MAX };
-typedef struct { int ok, rec, indexed, points; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; } memu_ent;
+typedef struct { int ok, rec, indexed, points; uint32_t direct_groups; vka_shader *vs, *ts, *ms, *tcs, *mcs; vka_layout tl, ml; VkPipeline tp, mp; } memu_ent;
 static struct { int live; vka_memu_order o; memu_ent e[MEMU_MAX]; vka_span rec; VkBuffer arena, ctl; uint32_t cap, task_draws; } MB;
 static memu_ent *g_memu_cur;
 // Capture guest bindings once at the original MEMU_ADD pass. Subsequent
@@ -78,7 +79,15 @@ static void memu_dispatch(const vka_dstate *d, int st, vka_shader *cs, const vka
     uint32_t pc[4] = {(uint32_t)idx, 0, 0, 0};
     vk.vkCmdPushConstants(g_cb, lay->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, VKA_MEMU_PUSH_BYTES, pc);
     vk.vkCmdBindPipeline(g_cb, VK_PIPELINE_BIND_POINT_COMPUTE, p);
-    vk.vkCmdDispatchIndirect(g_cb, MB.rec.buf, MB.rec.off + ((VkDeviceSize)idx * VKA_MEMU_REC_WORDS + argw) * 4);
+    // GPU allocation and per-group bounds still come from MEMU_SETUP's
+    // R_TOTAL. For an explicitly counted, taskless Ocarina mesh draw the
+    // requested group count is already immutable on the CPU. Direct dispatch
+    // avoids a GPU indirect-argument fetch; any surplus groups after arena
+    // exhaustion exit at the generated shader's flat < R_TOTAL guard.
+    if (st == 7 && MB.e[idx].direct_groups)
+        vk.vkCmdDispatch(g_cb, MB.e[idx].direct_groups, 1, 1);
+    else
+        vk.vkCmdDispatchIndirect(g_cb, MB.rec.buf, MB.rec.off + ((VkDeviceSize)idx * VKA_MEMU_REC_WORDS + argw) * 4);
     // The GL/depth converted shader key is XOR-tagged. Log the ORIGINAL
     // NVN2 library source key so the precise GPU hotspot maps to its
     // captured .ctl/.code without ever changing shader compilation.
@@ -169,6 +178,17 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
             VkBufferCopy c = {o, MB.rec.off + ((VkDeviceSize)E->rec * VKA_MEMU_REC_WORDS + VKA_MEMU_R_COUNT) * 4, 8}; vk.vkCmdCopyBuffer(g_cb, b, MB.rec.buf, 1, &c);
         } else { r[VKA_MEMU_R_COUNT] = dw->count > 0 ? (uint32_t)dw->count : 0; r[VKA_MEMU_R_FIRST] = dw->first > 0 ? (uint32_t)dw->first : 0; }
         E->indexed = mi->L.indexed; E->points = mi->L.points;
+        // The setup compute still allocates arena words, writes indirect
+        // draw arguments and clamps R_TOTAL. Only the MESH COMPUTE launch
+        // of small, CPU-counted taskless draws may use a direct group count.
+        // Unknown GPU-generated counts and all task draws remain indirect.
+        E->direct_groups = vka_memu_direct_groups(
+            !strcmp(DM_GAME_ID, "0400486024DEC000"),
+            VKA_ENV("DM_VK_OOT_MEMU_DIRECT_DISPATCH", 1),
+            ts != NULL, dw->ind != 0, r[VKA_MEMU_R_COUNT],
+            r[VKA_MEMU_R_MAXG], MB.cap,
+            r[VKA_MEMU_R_VSTRIDE], r[VKA_MEMU_R_PSTRIDE],
+            (r[VKA_MEMU_R_FLAGS] & VKA_MEMU_F_INTERLEAVED) != 0);
         if (vka_memu_snapshot_on()) {
             memu_snapshot_capture(&g_memu_draw_snapshot[ei], d);
             static int noted;
