@@ -516,17 +516,54 @@ uint32_t vka_memu_direct_payload_words(const uint32_t *w, size_t nw) {
     mod_free(&m);
     return words;
 }
+// The exact same scanner is used before and after conversion. Never
+// interpret workgroup variable bytes as occupancy: the driver's executable
+// properties report the actual resource allocation.
+static void memu_diag_spv(const uint32_t *w, size_t n, uint32_t *instructions,
+                          uint32_t *workgroups, uint32_t *barriers, uint32_t *stores) {
+    if (!w || n < 5) return;
+    for (size_t i = 5; i < n;) {
+        uint32_t words = w[i] >> 16, op = w[i] & 65535;
+        if (!words || i + words > n) return;
+        ++*instructions;
+        if (op == OpVariable && words >= 4 && w[i + 3] == SCWorkgroup)
+            ++*workgroups;
+        if (op == OpControlBarrier) ++*barriers;
+        if (op == OpStore) ++*stores;
+        i += words;
+    }
+}
 static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
                                    uint64_t used_locations,
-                                   size_t *out_nw, char *err, size_t errn) {
+                                   size_t *out_nw, char *err, size_t errn,
+                                   vka_memu_diag *diag) {
     mod_t m; bld_t B; memset(&B, 0, sizeof B); sb_t A = {0}, F = {0}, O = {0};
     chain_t *ch = NULL; uint32_t *oid = NULL;   // oid: per id, 1 + the output it is (an output variable or a chain into one), 0 none
     uint8_t *wgch = NULL;   // per id: a chain into the workgroup ID variable (retyped as Private)
     uint32_t *payload_idx = NULL;
     outvar ov[64]; int nov = 0; vka_memu_layout L; uint32_t payload = 0, lidvar = 0, wgvar = 0;
     err[0] = 0;
+    if (diag) {
+        memset(diag, 0, sizeof *diag);
+        memu_diag_spv(w, nw, &diag->source_instructions,
+                      &diag->source_workgroup_vars, &diag->source_barriers,
+                      &diag->source_stores);
+    }
     if (!mod_read(&m, w, nw, err, errn)) { mod_free(&m); return NULL; }
     if (!layout_read(&m, &L, ov, &nov, &payload, &lidvar, &wgvar, err, errn)) goto fail;
+    uint32_t plane_helper = 0;
+    if (diag && !L.task) {
+        diag->per_primitive = L.nploc > 0;
+        for (size_t off = 5; off < m.first_fn; off += m.w[off] >> 16)
+            if ((m.w[off] & 65535) == OpName &&
+                (m.w[off] >> 16) > 2 &&
+                memchr(m.w + off + 2, 0, ((m.w[off] >> 16) - 2) * 4) &&
+                !strcmp((const char *)(m.w + off + 2), "mesh_plane_store")) {
+                plane_helper = m.w[off + 1];
+                diag->named_helper = 1;
+                break;
+            }
+    }
     payload_idx = payload_read_indices(&m, payload);
     B.m = &m; B.next = m.bound;
     bld_base_types(&B);
@@ -637,8 +674,11 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
             continue;
         }
         if (op == OpFunction) {
+            int candidate = diag && !L.task && plane_helper && x[2] == plane_helper;
+            if (candidate) diag->eligible++;
             plane_lut_t P;
             if (vka_memu_plane_lut() && plane_lut_match(&m, i - len, &L, ov, nov, B.t_u32, &P)) {
+                if (candidate) diag->matched++;
                 sb_raw(&O, x, P.prefix - (i - len));
                 fn_t f = {&B, &O};
                 plane_lut_emit(&f, &m, &L, &P, arena, p_sb_u32, pv_a);
@@ -646,6 +686,7 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
                 i = P.end;
                 continue;
             }
+            if (candidate) diag->fallback++;
         }
         if ((op == OpAccessChain || op == OpInBoundsAccessChain) && len >= 4) {
             uint32_t base = x[3], res = x[2];
@@ -946,6 +987,9 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
         uint32_t *o = malloc((O.n + B.T.n) * 4); if (!o) FAIL("out of memory");
         memcpy(o, O.w, tpos * 4); memcpy(o + tpos, B.T.w, B.T.n * 4); memcpy(o + tpos + B.T.n, O.w + tpos, (O.n - tpos) * 4);
         o[3] = B.next; *out_nw = O.n + B.T.n;
+        if (diag) memu_diag_spv(o, *out_nw, &diag->compute_instructions,
+                                &diag->compute_workgroup_vars,
+                                &diag->compute_barriers, &diag->compute_stores);
         free(O.w); free(A.w); free(B.T.w); free(F.w); free(ch); free(oid); free(wgch); free(payload_idx); mod_free(&m);
         return o;
     }
@@ -958,11 +1002,19 @@ fail:
 // arena and pipeline cache keys retain their original ABI. Specialization is
 // opt-in only for a fully parsed actual bound fragment shader's input mask.
 uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
-    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn);
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, NULL);
 }
 uint32_t *vka_memu_cs_masked(const uint32_t *w, size_t nw, uint64_t used_locations,
                              size_t *out_nw, char *err, size_t errn) {
-    return vka_memu_cs_impl(w, nw, used_locations, out_nw, err, errn);
+    return vka_memu_cs_impl(w, nw, used_locations, out_nw, err, errn, NULL);
+}
+
+// Diagnostic is deliberately separate from the normal entry point: on
+// ordinary frames neither an additional module scan nor logging happens.
+uint32_t *vka_memu_cs_diagnostic(const uint32_t *w, size_t nw,
+                                 size_t *out_nw, char *err, size_t errn,
+                                 vka_memu_diag *diag) {
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, diag);
 }
 
 // ---------- The vertex shader ----------
