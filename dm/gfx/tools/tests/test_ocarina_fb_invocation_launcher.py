@@ -21,8 +21,17 @@ class FeedbackInvocationLauncherTest(unittest.TestCase):
 
     def test_ui_and_reset(self):
         g = (JAVA / "GameSettings.java").read_text()
-        self.assertIn("Cache do feedback por fragmento (teste)", g)
+        self.assertIn("Feedback de texturas por fragmento · ON/OFF", g)
         self.assertIn("Prefs.feedbackInvocationCache(a, id, on)", g)
+        # This must be visible before the ordinary Graphics settings; the old
+        # row was buried near the end of a long page and easy to miss.
+        graphics = g.split("private static void graphics(MainActivity", 1)[1]
+        self.assertLess(graphics.index("Feedback de texturas por fragmento"),
+                        graphics.index("Profile prof = Profile.of(id);"))
+        self.assertIn(".toggle(a, cacheOn,", graphics)
+        self.assertIn("ATIVADO (teste)", graphics)
+        self.assertIn("DESLIGADO (original)", graphics)
+        self.assertEqual(g.count("Feedback de texturas por fragmento · ON/OFF"), 1)
         self.assertIn('.remove(Prefs.gameKey("fb_invocation_cache", id))', g)
 
     def test_flag_reaches_runtime(self):
