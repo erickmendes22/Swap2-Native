@@ -1969,10 +1969,14 @@ int vka_vegetation_mesh_omit(const vka_dstate *d) {
 }
 static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
     if (!vegetation_omittable(d, sh)) return 0;
-    static uint64_t omitted;
-    if (++omitted == 1 || omitted % 4096 == 0)
-        VLOG("Ocarina visual vegetation patch: %llu reviewed cosmetic mesh draws omitted before raster (tier=%d; per-game only)",
-             (unsigned long long)omitted, VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0));
+    static uint64_t omitted, pair_a, pair_b;
+    int pair = vka_vegetation_quality_pair(DM_GAME_ID, sh[7]->key);
+    if (pair == 1) ++pair_a;
+    if (pair == 2) ++pair_b;
+    if (++omitted == 1 || omitted % 2048 == 0)
+        VLOG("Ocarina visual vegetation cut: %llu total mesh draws omitted after matching compute lookahead, A=%llu, B=%llu, tier=%d; default 0 preserves all",
+             (unsigned long long)omitted, (unsigned long long)pair_a,
+             (unsigned long long)pair_b, VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0));
     return 1;
 }
 // Shader A omission is retired after white artifacts on the device.

@@ -147,24 +147,25 @@ final class Prefs {
     }
     static void fullVegetation(Context c, String titleId, boolean on) {
         of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on)
-                .remove(gameKey("oot_vegetation_detail", titleId)).commit();
+                .remove(gameKey("oot_vegetation_detail", titleId))
+                .remove(gameKey("oot_vegetation_detail_v2", titleId)).commit();
     }
-    // A scene-content option, not a Vulkan driver or shader-emulator optimization:
-    // 0 full, 1 remove 2 reviewed cosmetic mesh depth/colour pairs, 2 remove 5,
-    // 3 legacy vegetation OFF (all 508 supplemental stages). Installed V11
-    // preferences remain unchanged until the player selects a different level.
+    // v2: never migrate the old aggressive "leve/reduzida" 2/5-pair presets.
+    // Default FULL even when an old user preference exists. Previous full-
+    // vegetation OFF still maps to OFF; this does not turn foliage back on.
+    // 0 full, 1 pair A alone, 2 pair B alone, 3 pair A+B, 4 all supplement OFF.
     static int vegetationDetail(Context c, String id) {
         if (!OCARINA_TITLE.equals(id)) return 0;
-        int old = of(c).getBoolean(gameKey("full_vegetation", id), true) ? 0 : 3;
-        int level = of(c).getInt(gameKey("oot_vegetation_detail", id), old);
-        return level < 0 || level > 3 ? old : level;
+        int fallback = of(c).getBoolean(gameKey("full_vegetation", id), true) ? 0 : 4;
+        int level = of(c).getInt(gameKey("oot_vegetation_detail_v2", id), fallback);
+        return level < 0 || level > 4 ? fallback : level;
     }
     static void vegetationDetail(Context c, String id, int level) {
         if (!OCARINA_TITLE.equals(id)) return;
-        int checked = Math.max(0, Math.min(3, level));
+        int checked = Math.max(0, Math.min(4, level));
         of(c).edit()
-                .putInt(gameKey("oot_vegetation_detail", id), checked)
-                .putBoolean(gameKey("full_vegetation", id), checked != 3)
+                .putInt(gameKey("oot_vegetation_detail_v2", id), checked)
+                .putBoolean(gameKey("full_vegetation", id), checked != 4)
                 .commit();
     }
     static boolean vegetationOptimized(Context c, String titleId) { return fullVegetation(c, titleId); }
