@@ -239,6 +239,18 @@ public final class NupReader {
         }
     }
 
+    /** TOC-only length check; does not load an archive into memory. */
+    public long resourceLength(Package chosen,String path) throws IOException {
+        int idx=find(chosen.romfs,path);
+        if(idx<0 && chosen.kind==1)
+            for(Package p:packages) if(p.kind==0 && p.titleId==OCARINA && p.romfs!=NONE) {
+                idx=find(p.romfs,path);
+                if(idx>=0)break;
+            }
+        if(idx<0)throw new IOException("Arquivo não existe no índice: "+path);
+        return toc.getLong(filesOffset+(idx-nd)*FILE_SIZE+8);
+    }
+
     public Resource resource(Package chosen,String path) throws IOException {
         int idx=find(chosen.romfs,path);
         Package source=chosen;
