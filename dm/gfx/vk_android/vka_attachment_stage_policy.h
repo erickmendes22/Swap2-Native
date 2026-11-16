@@ -16,7 +16,8 @@ static inline VkPipelineStageFlags vka_attachment_access_src_stages(
     // When bookkeeping contradicts the actual attachments, or none can be
     // proven bound, preserve the original execution scope rather than
     // guessing. Guest OP_BARRIER and storage writers never call this path.
-    if ((!color_bound && !depth_bound) ||
+    if ((!color_written && !depth_written) ||
+        (!color_bound && !depth_bound) ||
         (color_written && !color_bound) ||
         (depth_written && !depth_bound))
         return both;

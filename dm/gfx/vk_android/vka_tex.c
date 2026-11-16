@@ -156,6 +156,10 @@ uint64_t vka_n_attachment_color_src_only, vka_n_attachment_depth_src_only;
 void vka_attachment_parts_access_barrier_at(VkCommandBuffer cb, int color_write, int depth_write,
                                            int color_bound, int depth_bound, const char *file, int line) {
     vka_n_attachment_bar++;
+    // An unknown/no-write pass used both write access masks in the original
+    // implementation. Keep the matching stages broad too: a colour WRITE
+    // access mask with only depth-test source stages violates Vulkan.
+    if (!color_write && !depth_write) color_write = depth_write = 1;
     VkPipelineStageFlags stages = vka_attachment_access_src_stages(
         color_write, depth_write, color_bound, depth_bound);
     if (stages == VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
@@ -163,7 +167,6 @@ void vka_attachment_parts_access_barrier_at(VkCommandBuffer cb, int color_write,
     else if (stages == (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT))
         vka_n_attachment_depth_src_only++;
-    if (!color_write && !depth_write) color_write = depth_write = 1;
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = (color_write ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : 0) |
                          (depth_write ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : 0),

@@ -44,12 +44,19 @@ class DepthPassOptimizations(unittest.TestCase):
 #include "vka_attachment_stage_policy.h"
 static unsigned vka_n_attachment_bar, calls;
 static uint64_t vka_n_attachment_color_src_only, vka_n_attachment_depth_src_only;
+static VkPipelineStageFlags expected_src =
+ VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|
+ VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 static uint64_t g_unused_color_passes, g_unused_color_views;
 static int vka_gp_active;
 static void vka_gp_mark(VkCommandBuffer cb,const char*f,int l){(void)cb;(void)f;(void)l;}
 static void barrier(VkCommandBuffer cb,VkPipelineStageFlags src,VkPipelineStageFlags dst,VkDependencyFlags flags,uint32_t n,const VkMemoryBarrier *mb,uint32_t nb,const VkBufferMemoryBarrier*b,uint32_t ni,const VkImageMemoryBarrier*i){
  (void)cb;(void)b;(void)i;
- assert(src==(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT));
+ assert(src==expected_src);
+ if(mb->srcAccessMask&VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)
+  assert(src&VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+ if(mb->srcAccessMask&VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)
+  assert(src&(VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT));
  assert(dst==VK_PIPELINE_STAGE_ALL_COMMANDS_BIT&&!flags&&n==1&&!nb&&!ni);
  assert(mb->dstAccessMask==(VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT));
  calls=mb->srcAccessMask;
@@ -62,6 +69,12 @@ int main(void){
   assert(calls==((color||!depth?VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT:0)|(depth||!color?VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT:0)));
  }
  assert(vka_n_attachment_bar==4);
+ for(int cw=0;cw<2;cw++)for(int dw=0;dw<2;dw++)
+ for(int cb=0;cb<2;cb++)for(int db=0;db<2;db++){
+  expected_src=vka_attachment_access_src_stages(cw,dw,cb,db);
+  vka_attachment_parts_access_barrier_at(0,cw,dw,cb,db,"test",1);
+ }
+ assert(vka_n_attachment_bar==20);
  for(int requested=0;requested<2;requested++)for(int dep=0;dep<2;dep++)
  for(int samples=1;samples<=4;samples*=4)for(int load=0;load<3;load++)
  for(int store=0;store<2;store++)for(int bound=0;bound<2;bound++){

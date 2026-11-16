@@ -54,7 +54,7 @@ int main(void) {
     for(int cw=0;cw<=1;cw++)for(int dw=0;dw<=1;dw++)
     for(int cb=0;cb<=1;cb++)for(int db=0;db<=1;db++){
         VkPipelineStageFlags actual=vka_attachment_access_src_stages(cw,dw,cb,db);
-        VkPipelineStageFlags expected=(!cb&&!db)||(cw&&!cb)||(dw&&!db) ?
+        VkPipelineStageFlags expected=(!cw&&!dw)||(!cb&&!db)||(cw&&!cb)||(dw&&!db) ?
                                   C|D : (cb?C:0)|(db?D:0);
         assert(actual==expected);
         // A depth-only bound pass with NO depth writes still orders depth
@@ -66,6 +66,8 @@ int main(void) {
     assert(vka_attachment_access_src_stages(0,1,0,1)==D);
     assert(vka_attachment_access_src_stages(0,0,1,1)==(C|D));
     assert(vka_attachment_access_src_stages(0,0,0,0)==(C|D));
+    assert(vka_attachment_access_src_stages(0,0,0,1)==(C|D));
+    assert(vka_attachment_access_src_stages(0,0,1,0)==(C|D));
     return 0;
 }
 """
