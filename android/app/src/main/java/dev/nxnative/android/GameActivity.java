@@ -476,6 +476,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // A/B research only: the existing profiler samples one frame in 300.
             // Diagnose full 1280x720 Vulkan passes on BOTH OFF and ON runs.
             // No extra instrumentation in the 299 ordinary frames.
+            // This changes only the existing conservative vka_draw.c depth
+            // STORE_OP_NONE eligibility. Does not alter the default path.
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_DEPTH_STORE_NONE="
+                    + (Prefs.ootDepthStoreNone(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_SCENE_PASS_DIAG=1");
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FRAGMENT_AST=" + (Prefs.fragmentOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_CS_RETILE=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
