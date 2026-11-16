@@ -69,8 +69,9 @@ class GraphicsPatches(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<i', combined, 0x408)[0], 256)
         self.assertEqual(struct.unpack_from('<i', combined, 0x410)[0], 256)
         self.assertEqual(struct.unpack_from('<i', combined, 0x418)[0], 1024)
-        self.assertEqual(struct.unpack_from('<i', combined, 0x438)[0], 3)
-        self.assertEqual(struct.unpack_from('<i', combined, 0x440)[0], 0)
+        self.assertEqual(struct.unpack_from('<i', combined, 0x430)[0], 3)
+        self.assertEqual(struct.unpack_from('<i', combined, 0x438)[0], 0)
+        self.assertEqual(struct.unpack_from('<i', combined, 0x440)[0], 1)
         self.assertEqual(combined[0x420:0x430], raw[0x420:0x430])
 
     def test_reject_malformed_and_unknown_update(self):
