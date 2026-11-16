@@ -759,7 +759,7 @@ final class Ondevice {
                 // keys from the stored real pipeline associations without
                 // requiring new gameplay or touching the full library.
                 boolean done = OcarinaShaderDelta.alreadyRepaired(probe, selected);
-                if (selected.isEmpty() || done && !explicit && !retryRequested) {
+                if (selected.isEmpty() || done) {
                     if (explicit) {
                         quiet();
                         a.error(a.getString(R.string.s2_ocarina_repair_none));
@@ -850,6 +850,11 @@ final class Ondevice {
                 File pd = f.packDir;
                 String lp = PackCheck.shaders(pd, r.titleId);
                 boolean code = f.build != null || again && !Boolean.TRUE.equals(f.code), shaders = lp != null;
+                // A missing current chain is NOT a missing guest shader. If
+                // a source-captured key is absent from both playable libraries,
+                // offer only that bounded repair before any full-build warning.
+                if (again && !card && "0400486024DEC000".equals(r.titleId)
+                        && offerOcarinaHotRepair(r, pd, code, f.tools, true, true)) return;
                 if (shaders && "0400486024DEC000".equals(r.titleId)
                         && !Pack.libraryVersions(pd).isEmpty()
                         && deltaShaders(pd, r.titleId) < 0) {
