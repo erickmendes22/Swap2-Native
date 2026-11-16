@@ -536,7 +536,7 @@ static void memu_diag_spv(const uint32_t *w, size_t n, uint32_t *instructions,
 static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
                                    uint64_t used_locations,
                                    size_t *out_nw, char *err, size_t errn,
-                                   vka_memu_diag *diag) {
+                                   vka_memu_diag *diag, int lut_mode) {
     mod_t m; bld_t B; memset(&B, 0, sizeof B); sb_t A = {0}, F = {0}, O = {0};
     chain_t *ch = NULL; uint32_t *oid = NULL;   // oid: per id, 1 + the output it is (an output variable or a chain into one), 0 none
     uint8_t *wgch = NULL;   // per id: a chain into the workgroup ID variable (retyped as Private)
@@ -677,7 +677,8 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
             int candidate = diag && !L.task && plane_helper && x[2] == plane_helper;
             if (candidate) diag->eligible++;
             plane_lut_t P;
-            if (vka_memu_plane_lut() && plane_lut_match(&m, i - len, &L, ov, nov, B.t_u32, &P)) {
+            if ((lut_mode < 0 ? vka_memu_plane_lut() : lut_mode) &&
+                plane_lut_match(&m, i - len, &L, ov, nov, B.t_u32, &P)) {
                 if (candidate) diag->matched++;
                 sb_raw(&O, x, P.prefix - (i - len));
                 fn_t f = {&B, &O};
@@ -1002,11 +1003,11 @@ fail:
 // arena and pipeline cache keys retain their original ABI. Specialization is
 // opt-in only for a fully parsed actual bound fragment shader's input mask.
 uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
-    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, NULL);
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, NULL, -1);
 }
 uint32_t *vka_memu_cs_masked(const uint32_t *w, size_t nw, uint64_t used_locations,
                              size_t *out_nw, char *err, size_t errn) {
-    return vka_memu_cs_impl(w, nw, used_locations, out_nw, err, errn, NULL);
+    return vka_memu_cs_impl(w, nw, used_locations, out_nw, err, errn, NULL, -1);
 }
 
 // Diagnostic is deliberately separate from the normal entry point: on
@@ -1014,7 +1015,14 @@ uint32_t *vka_memu_cs_masked(const uint32_t *w, size_t nw, uint64_t used_locatio
 uint32_t *vka_memu_cs_diagnostic(const uint32_t *w, size_t nw,
                                  size_t *out_nw, char *err, size_t errn,
                                  vka_memu_diag *diag) {
-    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, diag);
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, diag, -1);
+}
+
+uint32_t *vka_memu_cs_diagnostic_mode(const uint32_t *w, size_t nw,
+                                      size_t *out_nw, char *err, size_t errn,
+                                      vka_memu_diag *diag, int enable_lut) {
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn,
+                            diag, enable_lut != 0);
 }
 
 // ---------- The vertex shader ----------
