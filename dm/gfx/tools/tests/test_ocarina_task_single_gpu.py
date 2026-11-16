@@ -2,7 +2,7 @@
 import pathlib
 import unittest
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+ROOT = pathlib.Path(__file__).resolve().parents[4]
 VK = ROOT / "dm/gfx/vk_android"
 
 
