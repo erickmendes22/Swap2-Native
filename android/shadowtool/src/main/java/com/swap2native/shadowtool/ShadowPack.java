@@ -42,14 +42,14 @@ public final class ShadowPack {
         public final byte[] raw,dict,compressed;
         public final List<Field> fields;
         public final String report;
-        public final boolean applicable,configFound;
+        public final boolean applicable,configFound,standalone;
         public final String packPath;
         public final int dictId;
         public final boolean checksum;
         Result(byte[] r,byte[] d,byte[] c,List<Field> f,String t,boolean a,int id,boolean ck,
-               boolean found,String path) {
+               boolean found,String path,boolean direct) {
             raw=r;dict=d;compressed=c;fields=f;report=t;applicable=a;
-            dictId=id;checksum=ck;configFound=found;packPath=path;
+            dictId=id;checksum=ck;configFound=found;packPath=path;standalone=direct;
         }
     }
     private static final class Part {
@@ -304,8 +304,35 @@ public final class ShadowPack {
                 .append("Exporte este diagnóstico para análise; o NUP original não foi alterado.\n");
         }
         return new Result(raw,dict,pack,fields,log.toString(),patchable,f.dictId,f.checksum,
-            candidateFiles>0,sourcePath);
+            candidateFiles>0,sourcePath,false);
     }
+    /**
+     * Full patch support for a verified, uncompressed standalone BYML in RomFS.
+     * A .zs resource is intentionally not treated as plain BYML.
+     */
+    public static Result inspectStandalone(byte[] raw,String path) throws IOException {
+        if(!path.contains("ModelSceneConfigParam") || !path.endsWith(".bgyml"))
+            throw new IOException("Não é um ModelSceneConfigParam .bgyml.");
+        Byml byml=new Byml(raw,path,new Part(0,raw.length));
+        ArrayList<Field> shadow=new ArrayList<>();
+        StringBuilder log=new StringBuilder("Ocarina Shadow Tool 0.2\n")
+            .append("Origem: ").append(path).append('\n');
+        for(Field field:byml.entries) if(field.path.toLowerCase(java.util.Locale.ROOT).contains("shadow")) {
+            shadow.add(field);
+            log.append(" · ").append(field.line()).append('\n');
+        }
+        boolean canPatch=false;
+        try {
+            if(!byml.little)throw new IOException("BYML big-endian não pode ser alterado.");
+            select(shadow,512,2048);
+            canPatch=true;
+            log.append("Dimensões de sombra reconhecidas. Overlay direto autorizado.\n");
+        } catch(IOException ex) {
+            log.append("Patch BLOQUEADO: ").append(ex.getMessage()).append('\n');
+        }
+        return new Result(raw,null,raw,shadow,log.toString(),canPatch,0,false,true,path,true);
+    }
+
     /** Examine a named standalone BYML, even when it is not packed in Bootup. */
     public static String describeStandalone(byte[] resource,String path) throws IOException {
         if(resource.length<20)throw new IOException("BYML vazio ou inválido.");
@@ -367,6 +394,7 @@ public final class ShadowPack {
             if(!allowed)throw new IOException("Modificação fora dos campos validados.");
         }
         if(!changed)throw new IOException("Nenhuma dimensão foi alterada.");
+        if(r.standalone) return modified;
         byte[] compressed;
         try(ZstdCompressCtx ctx=new ZstdCompressCtx()) {
             compressed=ctx.setLevel(15).setChecksum(r.checksum).setContentSize(true)
