@@ -1,14 +1,14 @@
 name: Swap2-Native Ocarina 0.1.6 Android APK
 on:
   push:
-    branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, research/ocarina-gsr2-360p-20261115]
+    branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, research/ocarina-gsr2-360p-20261115 , research/ocarina-fragment-feedback-cache-20261116]
     paths:
       - ci/ocarina-ios-ready.txt
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ocarina-v11-ios-apk
+  group: ocarina-v11-ios-apk-${{ github.ref_name }}
   cancel-in-progress: true
 jobs:
   validate:
@@ -140,6 +140,7 @@ jobs:
           # Page-index host correctness and both shader compilation entrypoints;
           # fail before compiling the APK if the opt-in integration regresses.
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_page_index_runtime.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_fb_invocation_launcher.py' -v
           cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
             dm/gfx/vk_android/selftest/gmem_pidx.c -o /tmp/ocarina_page_index
           ASAN_OPTIONS=detect_leaks=1 /tmp/ocarina_page_index
