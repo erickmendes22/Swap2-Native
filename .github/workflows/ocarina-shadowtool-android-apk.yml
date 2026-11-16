@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: ocarina-shadowtool-android-signing
@@ -29,9 +30,43 @@ jobs:
           path: ~/.android/debug.keystore
           key: ocarina-shadowtool-stable-debug-key-v1
       - name: Test safe BYML rewriting and build independent Android APK
+        id: build
         run: |
+          set -o pipefail
           chmod +x android/app/gradlew
-          android/app/gradlew --no-daemon -p android/shadowtool :testDebugUnitTest :assembleDebug
+          android/app/gradlew --no-daemon --stacktrace -p android/shadowtool :testDebugUnitTest :assembleDebug 2>&1 | tee shadowtool-build.log
+      - name: Record concise build result in commit status
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.build.outcome }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN_LINK: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$OUTCOME" = success ]; then
+            state=success
+            description="Shadow Tool Android tests and APK build passed"
+          else
+            state=failure
+            description="$(grep -E '^[[:space:]]*> Task .* FAILED|^.*error: |^.*Could not (find|resolve)|^.*FAILURE:' shadowtool-build.log 2>/dev/null | head -1 || true)"
+            if [ -z "$description" ]; then description="Build failed; open workflow for detailed log"; fi
+          fi
+          description="$(printf '%.135s' "$description")"
+          gh api -X POST "repos/$REPO/statuses/$SHA" \
+            -f state="$state" -f context="shadowtool/android-apk" \
+            -f description="$description" -f target_url="$RUN_LINK"
+      - name: Preserve build output for diagnosis
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ocarina-Shadow-Tool-Diagnostics
+          path: |
+            shadowtool-build.log
+            android/shadowtool/build/test-results/
+            android/shadowtool/build/reports/tests/
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Check APK and signatures
         run: |
           set -euxo pipefail
