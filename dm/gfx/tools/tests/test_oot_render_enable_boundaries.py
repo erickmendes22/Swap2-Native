@@ -70,6 +70,7 @@ static const p_draw *draw_rec(const void *p, uint32_t size, p_draw *tmp) {
 }
 static int vka_mesh_route(const vka_dstate *s) {(void)s; return 1;}
 static int vka_vegetation_mesh_omit(const vka_dstate *s) {(void)s; return 0;}
+static int vka_ground_mist_mesh_omit(const vka_dstate *s) {(void)s; return 0;}
 static void vka_state_op(vka_dstate *s,uint32_t op,const void *a) {
     if (op == OP_BIND_PROGRAM) {int x;memcpy(&x,a,4);s->state=x;}
 }
