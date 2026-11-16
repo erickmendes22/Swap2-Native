@@ -16,7 +16,7 @@ android {
 dependencies {
     // Official Android AAR: native Zstd for the NUP container and Ocarina's
     // dictionary-compressed SARC resources. It includes an arm64-v8a .so.
-    implementation 'com.github.luben:zstd-jni:1.5.7-16@aar'
+    implementation 'com.github.luben:zstd-jni:1.5.7-7@aar'
     testImplementation 'junit:junit:4.13.2'
-    testImplementation 'com.github.luben:zstd-jni:1.5.7-16'
+    testImplementation 'com.github.luben:zstd-jni:1.5.7-7'
 }
