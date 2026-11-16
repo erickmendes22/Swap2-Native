@@ -46,6 +46,37 @@ final class ShadowOverlay {
                     StandardCharsets.UTF_8).equals(stampText(profile, effect, version));
         } catch (IOException e) { return false; }
     }
+    /** A combined experimental profile never reuses an older single-effect overlay. */
+    static boolean validMask(int mask) {
+        return mask >= 0 && mask <= 31 && (mask & 3) != 3;
+    }
+    static File dirMask(File files, String titleId, int shadow, int mask) {
+        if (mask == 0) return dir(files, titleId, shadow, 0);
+        return new File(files, "overlay/" + titleId + "/shadow_" + shadow + "_fps_mask_" + mask);
+    }
+    static File stampMask(File files, String titleId, int shadow, int mask) {
+        return new File(dirMask(files, titleId, shadow, mask).getPath() + ".txt");
+    }
+    static String stampTextMask(int shadow, int mask, String version) {
+        if (mask == 0) return stampText(shadow, 0, version);
+        return "profile\t" + shadow + "\nmask\t" + mask
+                + "\nschema\tcombined-fps-v1\nversion\t" + version + "\n";
+    }
+    static boolean currentMask(File files, String titleId, int shadow, int mask, String version) {
+        if (files == null || titleId == null || version == null ||
+                shadow < 0 || shadow > 2 || !validMask(mask) ||
+                (shadow == 0 && mask == 0)) return false;
+        if (!new File(dirMask(files, titleId, shadow, mask), MAIN).isFile()) return false;
+        try {
+            return new String(Files.readAllBytes(stampMask(files, titleId, shadow, mask).toPath()),
+                    StandardCharsets.UTF_8).equals(stampTextMask(shadow, mask, version));
+        } catch (IOException e) { return false; }
+    }
+    static String[] argvMask(String romfs, int shadow, int mask, File out) {
+        if (!validMask(mask)) throw new IllegalArgumentException("incompatible FPS patch combination");
+        return new String[] {"--romfs", romfs, "--profile", Integer.toString(shadow),
+                "--effects-mask", Integer.toString(mask), "--out", out.getPath()};
+    }
     static String[] argv(String romfs, int profile, File out) {
         return argv(romfs, profile, 0, out);
     }
