@@ -856,6 +856,26 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
                     INS(&O, OpSelectionMerge, lm, 0);
                     INS(&O, OpBranchConditional, small, ls, ll);
                     INS(&O, OpLabel, ls);
+                    // GPU-only optimization: a mesh draw with exactly ONE
+                    // task has task index zero regardless of its cumulative
+                    // workgroup counts. The 8-step index search would read
+                    // the same offset[0] eight times, then load it once more
+                    // to compute own=flat-offset[0]. Skip those 8 device
+                    // memory reads; retain the last offset read and every
+                    // task payload, occlusion query and draw.
+                    //
+                    // nt is constant across a workgroup; no divergent work
+                    // is introduced. For nt=0 the original search also
+                    // returns index 0; setup's count bounds remain intact.
+                    // A distinct pipeline key prevents using old SPIR-V.
+                    uint32_t one = op2(&f, OpULessThanEqual, B.t_bool, nt, c1);
+                    uint32_t one_label = B.next++, many_label = B.next++, sm = B.next++;
+                    INS(&O, OpSelectionMerge, sm, 0);
+                    INS(&O, OpBranchConditional, one, one_label, many_label);
+                    INS(&O, OpLabel, one_label);
+                    INS(&O, OpStore, pv_taskidx, c0);
+                    INS(&O, OpBranch, sm);
+                    INS(&O, OpLabel, many_label);
                     uint32_t its = c0, rems = nt;
                     for (int j = 0; j < 8; ++j) {
                         uint32_t half = op2(&f, OpShiftRightLogical, B.t_u32, rems, c1);
@@ -866,6 +886,8 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
                         rems = op2(&f, OpISub, B.t_u32, rems, half);
                     }
                     INS(&O, OpStore, pv_taskidx, its);
+                    INS(&O, OpBranch, sm);
+                    INS(&O, OpLabel, sm);
                     INS(&O, OpBranch, lm);
                     INS(&O, OpLabel, ll);
                     uint32_t itl = c0, reml = nt;
