@@ -326,6 +326,9 @@ void vka_graphics_write_barrier_at(VkCommandBuffer cb, const char *file, int lin
 void vka_compute_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // compute + transfer producers -> all later consumers
 void vka_transfer_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // after a buffer copy: transfer write -> any later consumer
 void vka_attachment_parts_barrier_at(VkCommandBuffer cb, int color, int depth, const char *file, int line);
+void vka_attachment_parts_access_barrier_at(VkCommandBuffer cb, int color_write, int depth_write,
+                                           int color_bound, int depth_bound, const char *file, int line);
+extern uint64_t vka_n_attachment_color_src_only, vka_n_attachment_depth_src_only;
 void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int line); // after an attachment-only render pass: fragment attachment writes -> any later consumer
 void vka_graphics_read_barrier_at(VkCommandBuffer cb, const char *file, int line); // read-only pass: execution-only WAR dependency, no cache memory flush
 #define vka_attachment_write_barrier(cb) vka_attachment_write_barrier_at(cb, __FILE_NAME__, __LINE__)

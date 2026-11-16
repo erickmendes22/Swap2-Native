@@ -6,6 +6,7 @@
 // one object and a present through another meet. Every image stays in VK_IMAGE_LAYOUT_GENERAL after its first use: no layout tracking until the draw path needs it
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_attachment_stage_policy.h"
 #include "../nvn/nvn_mtl.h"
 #include "../tex/nvn_deswizzle.h"
 #include "../nvn/dmsh_abi_vk.h"
@@ -146,22 +147,33 @@ void vka_attachment_write_barrier_at(VkCommandBuffer cb, const char *file, int l
         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
 }
-// Keep the EXACT execution stages and every later consumer of the original
-// attachment barrier (including WAR against fragment reads). Restrict only
-// memory availability to attachment types actually written by this pass.
-// Unknown/no write flags conservatively retain both cache scopes.
-void vka_attachment_parts_barrier_at(VkCommandBuffer cb, int color, int depth, const char *file, int line) {
+// Preserve the FULL execution stage mask for the legacy API and any caller
+// that cannot prove which attachments were physically bound in the pass.
+// The active Ocarina path supplies both the *written* and *bound* classes;
+// the former controls memory availability, the latter protects depth tests,
+// attachment LOADs and blend reads (WAR) even when writes are masked.
+uint64_t vka_n_attachment_color_src_only, vka_n_attachment_depth_src_only;
+void vka_attachment_parts_access_barrier_at(VkCommandBuffer cb, int color_write, int depth_write,
+                                           int color_bound, int depth_bound, const char *file, int line) {
     vka_n_attachment_bar++;
-    if (!color && !depth) color = depth = 1;
+    VkPipelineStageFlags stages = vka_attachment_access_src_stages(
+        color_write, depth_write, color_bound, depth_bound);
+    if (stages == VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT)
+        vka_n_attachment_color_src_only++;
+    else if (stages == (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT))
+        vka_n_attachment_depth_src_only++;
+    if (!color_write && !depth_write) color_write = depth_write = 1;
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-        .srcAccessMask = (color ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : 0) |
-                         (depth ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : 0),
+        .srcAccessMask = (color_write ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT : 0) |
+                         (depth_write ? VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT : 0),
         .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
-    vk.vkCmdPipelineBarrier(cb,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+    vk.vkCmdPipelineBarrier(cb, stages,
         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     if (vka_gp_active) vka_gp_mark(cb, file, line);
+}
+void vka_attachment_parts_barrier_at(VkCommandBuffer cb, int color, int depth, const char *file, int line) {
+    vka_attachment_parts_access_barrier_at(cb, color, depth, 1, 1, file, line);
 }
 // A pass that truly did not write any colour/depth/stencil attachment or
 // shader memory still READS depth, shaders' descriptor buffers and sampled

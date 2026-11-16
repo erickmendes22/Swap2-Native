@@ -32,6 +32,55 @@ class AttachmentDependencyTest(unittest.TestCase):
         self.assertIn("vka_n_attachment_bar++", body)
         self.assertIn("if (vka_gp_active) vka_gp_mark(cb, file, line);", body)
 
+    def test_bound_attachments_preserve_war_while_unused_stages_drop(self):
+        import shutil, subprocess, tempfile
+        draw = (ROOT / "dm/gfx/vk_android/vka_draw.c").read_text()
+        tex = (ROOT / "dm/gfx/vk_android/vka_tex.c").read_text()
+        self.assertIn("vka_attachment_parts_access_barrier_at(g_cb,", draw)
+        self.assertIn("if (!R.color_omitted)", draw)
+        self.assertIn("color_bound |= R.cf[i] != VK_FORMAT_UNDEFINED;", draw)
+        self.assertIn("R.df != VK_FORMAT_UNDEFINED || R.sf != VK_FORMAT_UNDEFINED", draw)
+        self.assertIn("vka_attachment_access_src_stages(", tex)
+        self.assertIn("VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &mb", tex)
+        self.assertIn('depth-read WAR retained when depth bound', draw)
+        source = r"""
+#include <assert.h>
+#include <vulkan/vulkan_core.h>
+#include "vka_attachment_stage_policy.h"
+int main(void) {
+    VkPipelineStageFlags C=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkPipelineStageFlags D=VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                           VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    for(int cw=0;cw<=1;cw++)for(int dw=0;dw<=1;dw++)
+    for(int cb=0;cb<=1;cb++)for(int db=0;db<=1;db++){
+        VkPipelineStageFlags actual=vka_attachment_access_src_stages(cw,dw,cb,db);
+        VkPipelineStageFlags expected=(!cb&&!db)||(cw&&!cb)||(dw&&!db) ?
+                                  C|D : (cb?C:0)|(db?D:0);
+        assert(actual==expected);
+        // A depth-only bound pass with NO depth writes still orders depth
+        // tests (WAR) against later depth replacements.
+        if (db && !cb && !cw) assert((actual&D)==D);
+        if (cb && !db && !dw) assert((actual&C)==C);
+    }
+    assert(vka_attachment_access_src_stages(1,0,1,0)==C);
+    assert(vka_attachment_access_src_stages(0,1,0,1)==D);
+    assert(vka_attachment_access_src_stages(0,0,1,1)==(C|D));
+    assert(vka_attachment_access_src_stages(0,0,0,0)==(C|D));
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            p=Path(td)/"stage.c";exe=Path(td)/"stage"
+            p.write_text(source)
+            cc=shutil.which("cc")
+            if not cc: self.skipTest("C compiler missing")
+            proc=subprocess.run([cc,"-std=c11","-Wall","-Wextra","-Werror",
+                "-I",str(ROOT / "dm/third_party/vulkan-headers/include"),
+                "-I",str(ROOT / "dm/gfx/vk_android"),
+                str(p),"-o",str(exe)],capture_output=True,text=True)
+            self.assertEqual(proc.returncode,0,proc.stderr)
+            subprocess.run([str(exe)],check=True)
+
     def test_guest_barriers_always_order_all_prior_commands(self):
         self.assertIn("g_rp_force_full = 1;\n    vka_rp_end();\n    g_rp_force_full = 0;", DRAW)
         self.assertIn("bar_covered = vka_rp_end_covers_barrier();", EXEC)

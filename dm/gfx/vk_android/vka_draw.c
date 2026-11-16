@@ -458,7 +458,19 @@ void vka_rp_end(void) {
             g_rp_scoped++;
             if (!strcmp(DM_GAME_ID, "0400486024DEC000") && VKA_ENV("DM_VK_ATTACHMENT_PARTS", 0)) {
                 g_attachment_part_passes++;
-                vka_attachment_parts_barrier_at(g_cb, R.cave_cwrite, R.cave_dwrite, __FILE_NAME__, __LINE__);
+                // The colour views may exist in the key while the actual
+                // VkRenderingAttachmentInfo.imageView is NULL (omit_color).
+                // Depth/stencil are never omitted in this path. Do NOT infer
+                // depth-stage execution from R.cave_dwrite: a read-only
+                // depth-test query still needs an execution (WAR) dependency.
+                int color_bound = 0;
+                if (!R.color_omitted)
+                    for (unsigned i = 0; i < R.ncolor; i++)
+                        color_bound |= R.cf[i] != VK_FORMAT_UNDEFINED;
+                int depth_bound = R.df != VK_FORMAT_UNDEFINED || R.sf != VK_FORMAT_UNDEFINED;
+                vka_attachment_parts_access_barrier_at(g_cb,
+                    R.cave_cwrite, R.cave_dwrite, color_bound, depth_bound,
+                    __FILE_NAME__, __LINE__);
             } else vka_attachment_write_barrier(g_cb);
         }
     }
@@ -734,11 +746,17 @@ int vka_rp_game_barrier(uint32_t bits) {
 void vka_rp_bar_stats(char *b, size_t n, double frames) {
     static uint64_t i0, k0, l0, d0, a0, s0, dup0, scoped0, graphics0, full0, pending0, reused0, ro0;
     if (frames <= 0) { if (n) b[0] = 0; return; }
-    static uint64_t omit0, views0, parts0;
+    static uint64_t omit0, views0, parts0, cs0, ds0;
     if (g_unused_color_passes != omit0 || g_attachment_part_passes != parts0)
         VLOG("GPU optional optimizations: %.1f unused-colour passes/frame; %.1f colour load/store pairs omitted/frame; %.1f selective attachment memory barriers/frame",
              (g_unused_color_passes-omit0)/frames, (g_unused_color_views-views0)/frames,
              (g_attachment_part_passes-parts0)/frames);
+    if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        (vka_n_attachment_color_src_only != cs0 || vka_n_attachment_depth_src_only != ds0))
+        VLOG("Ocarina attachment execution scopes: %.1f colour-only, %.1f depth-only barriers/frame; depth-read WAR retained when depth bound",
+             (vka_n_attachment_color_src_only - cs0) / frames,
+             (vka_n_attachment_depth_src_only - ds0) / frames);
+    cs0=vka_n_attachment_color_src_only; ds0=vka_n_attachment_depth_src_only;
     omit0=g_unused_color_passes; views0=g_unused_color_views; parts0=g_attachment_part_passes;
     static uint64_t depth_fs_eligible0, depth_fs_elided0;
     if (!strcmp(DM_GAME_ID, "0400486024DEC000"))
