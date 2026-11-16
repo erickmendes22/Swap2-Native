@@ -205,7 +205,10 @@ int main(void) {
     assert(library_for_key(be[m-1].key)==&g_lib);
     vh.entry_count--;assert(!vegetation_complete(&g_vegetation,&g_lib));vh.entry_count++;
     ve[0].stage=DMSH_VK_STAGE_CS;assert(!vegetation_complete(&g_vegetation,&g_lib));ve[0].stage=vka_veg_entries[0].stage;
-    g_vegetation.by_abi=1;assert(!vegetation_complete(&g_vegetation,&g_lib));g_vegetation.by_abi=0;
+    // A complete original 508-stage supplement remains valid across a
+    // compiler-only version change when the exact Vulkan ABI matches.
+    g_vegetation.by_abi=1;assert(vegetation_complete(&g_vegetation,&g_lib));g_vegetation.by_abi=0;
+    vh.abi[0]='0';assert(!vegetation_complete(&g_vegetation,&g_lib));vh.abi[0]=DMSH_VK_ABI[0];
     vh.inputs[0]=1;assert(!vegetation_complete(&g_vegetation,&g_lib));vh.inputs[0]=0;
     dmsh_vk_header fh={.entry_count=2};
     dmsh_vk_entry fe[2]={{.key=UINT64_C(0x19f99e925937b038)}, {.key=UINT64_C(0x1e4d2630d24846d0)}};
