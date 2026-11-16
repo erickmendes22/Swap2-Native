@@ -420,7 +420,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 } else {
                     String msg = "[RED] [nxlaunch] Ocarina shadow maps: overlay missing or stale for pack "
                             + pack.version + "; original shadow maps used; select the shadow profile again";
-                    sceneNote = sceneNote == null ? msg : sceneNote + "\\n" + msg;
+                    sceneNote = sceneNote == null ? msg : sceneNote + "\n" + msg;
                 }
             }
             // Match the emulated Switch language to the selected app locale.
