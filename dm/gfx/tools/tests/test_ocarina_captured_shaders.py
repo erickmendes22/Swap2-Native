@@ -92,7 +92,8 @@ class CapturedTests(unittest.TestCase):
                   FACTS=self.facts, CAPTURED_MESH_FACTS=decoder['mesh_facts'],
                   borrow_mesh_layout=lambda: decoder['mesh_facts'],
                   cache_root=str(self.cache_root),
-                  GAME=types.SimpleNamespace(id="0400486024DEC000"))
+                  GAME=types.SimpleNamespace(id="0400486024DEC000"),
+                  CHAIN="test-translator", VKV="123456789abc")
         exec(compile(ast.Module(body=[PW_FN, FN], type_ignores=[]),
                      "<production capture functions>", "exec"), ns)
         self.repair = ns["captured_oot_records"]
@@ -322,6 +323,10 @@ class CapturedTests(unittest.TestCase):
             self.repair({key}, {}, {}, str(self.pkg))
         self.assertIn("no verified runtime mesh/pixel", str(caught.exception))
         self.assertFalse(self.pkg.exists())
+        # A retry without any changed real-pair evidence should not
+        # repeatedly ask the user to compile this unsupported mesh.
+        self.assertEqual((self.capture/(key+".deferred")).read_text(),
+                         "test-translator\\t123456789abc\\n")
 
     def test_captured_mesh_has_real_layout_without_full_split(self):
         key = self.write_mesh_task(7, 13)
