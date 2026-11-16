@@ -242,12 +242,6 @@ final class GameSettings {
             cutAb.value("Corta os dois pares juntos antes do mesh compute e da rasterização. "
                     + "Desligado: vegetação completa. Reinicie o jogo.");
             box.addView(cutAb.view);
-            Ui.Setting shadowQuality = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Sombras econômicas (contornos mais definidos)", null)
-                    .toggle(a, Prefs.shadowHard(a, id), (b, on) -> Prefs.shadowHard(a, id, on));
-            shadowQuality.value("Força filtro mais simples SOMENTE nos samplers de comparação de profundidade (PCF). "
-                    + "Mantém os mapas e a geometria das sombras. Padrão desligado; reinicie.");
-            box.addView(shadowQuality.view);
             Ui.Setting mistQuality = new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Neblina baixa reduzida (teste)", null)
                     .toggle(a, Prefs.groundMistOff(a, id), (b, on) -> Prefs.groundMistOff(a, id, on));
