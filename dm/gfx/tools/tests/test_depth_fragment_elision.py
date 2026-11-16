@@ -87,8 +87,11 @@ void main(){c.x=1;c.y=1;c.z=1;c.w=1;}'''
     def test_gpu_depth_colour_and_precise_query_parity_without_fragment_stage(self):
         tex = (VK / 'vka_tex.c').read_text()
         (self.d / 'attachment_parts.inc').write_text(
-            function(tex, 'void vka_attachment_write_barrier_at(') + '\n' +
-            function(tex, 'void vka_attachment_parts_barrier_at('))
+            '#include "vka_attachment_stage_policy.h"\n'
+            'static uint64_t vka_n_attachment_color_src_only, vka_n_attachment_depth_src_only;\n'
+            + function(tex, 'void vka_attachment_write_barrier_at(') + '\n'
+            + function(tex, 'void vka_attachment_parts_access_barrier_at(') + '\n'
+            + function(tex, 'void vka_attachment_parts_barrier_at('))
         env = dict(os.environ)
         for name, stage, source in [('CAVE_VERT', 'vert', VERT), ('CAVE_FRAG', 'frag', FRAG),
                                     ('CAVE_PURE_FRAG', 'frag', PURE)]:
