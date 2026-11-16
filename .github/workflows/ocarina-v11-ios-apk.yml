@@ -123,6 +123,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_sgsr_mesh_prewarm.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_hot_shader_overlay.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_captured_shaders.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_missing_shader_repair.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_v22_gpu_raw_vector_hints.py'
           # Page-index host correctness and both shader compilation entrypoints;
           # fail before compiling the APK if the opt-in integration regresses.
