@@ -213,3 +213,9 @@ Ocarina final missing-repair packaging retry, 2026-11-15:
 - Missing-only repair remains separate from explicit 508-stage vegetation preparation. The earlier APK workflow #43779233990 validated source selection but failed its old vegetation-JVM expectation; the production behavior is intentional and the JVM fixture now verifies BOTH flows independently.
 - Complete incremental CI #43779400347 succeeded, including the Java probe, corrected shader delta tests, real cumulative-overlay synthetic execution and NDK syntax.
 - Preserve prior signing key and original full library; compile APK from this branch and publish only after all validation passes.
+
+Ocarina repair follow-up from user shaders.log (2026-11-15):
+- The latest build 13bd7df compiled four new plus four preserved shaders, published eight, then failed in vk_android_build.py final summary with KeyError '066f5daf12e43c71'. The compiler now assigns each carried shader its verified stage and validates all stages BEFORE publication.
+- Original mesh/task capture only recorded pairing when the shader already existed in the hot overlay. Missing guest shaders now capture real draw-time mesh->pixel and task->mesh sources as well, without guessing interfaces or modifying the full 42,339 library.
+- Unpaired missing shaders persist a versioned .deferred stamp; the launcher will not offer the same doomed compilation again until actual source or pairing evidence changes. This does not prevent genuine newly captured repairs.
+- Full Ocarina incremental CI #43781362206 passed including JVM/NDK/Python regressions. This triggers signed APK installation-over build, preserving the existing signing key.
