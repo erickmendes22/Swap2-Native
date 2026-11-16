@@ -183,6 +183,7 @@ final class GameSettings {
                     .remove(Prefs.gameKey("oot_mesh_route", id))
                     .remove(Prefs.gameKey("oot_short_task_search", id))
                     .remove(Prefs.gameKey("gpu_partial_upload", id))
+                    .remove(Prefs.gameKey("fb_invocation_cache", id))
                     .remove(Prefs.gameKey("gpu_unused_color", id))
                     .remove(Prefs.gameKey("gpu_attachment_parts", id))
                     .remove(Prefs.gameKey("oot_hidden_layers", id))
