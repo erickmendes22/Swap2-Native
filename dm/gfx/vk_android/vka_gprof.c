@@ -38,6 +38,7 @@ static uint64_t g_sub_frame; static int g_sub_frame_set;
 static struct { uint64_t key; unsigned count; } g_fs[SHADERS];
 static unsigned g_pass_draws, g_fs_over;
 static scene_observation g_scene;  // one sampled pass only; NEVER actual GPU pixel/DRAM counters
+static uint32_t g_seen_1280; // detect a missing report rather than silently reusing a broken selector
 static int g_nfs;
 static uint64_t g_first_vs, g_first_mesh, g_first_task;
 static uint32_t g_first_units, g_first_instances, g_first_indirect;
@@ -226,6 +227,7 @@ void vka_gp_pass(const char *desc) {
         // actual description is a SPACE before "c0:122 d:126", not NUL.
         // Matching 11 bytes accidentally excluded every useful scene pass.
         g_pass_1280 = vka_scene_profile_1280(desc);
+        if (g_pass_1280) g_seen_1280++;
         // A draw may be outside the chosen scene pass: never carry its
         // timestamp group into the next render target.
         g_gfx_n = 0;
@@ -249,7 +251,10 @@ static void report(void) {
                (size_t)g_pipe_count * NSTATS * sizeof(uint64_t),
                pipe_data, NSTATS * sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
     static step s[NQ]; int ns = 0; double tot = 0, pass = 0, xfer = 0, bare = 0, first = 0, compute = 0; int npass = 0, ncompute = 0;
-    static double elapsed[NQ] = {0}; // index by GPU timestamp, before sorting steps
+    static double elapsed[NQ]; // index by GPU timestamp, before sorting steps
+    // Submission/part markers are skipped in this report. Reusing old
+    // values from a previous sampled frame would invent graphics time.
+    memset(elapsed, 0, sizeof elapsed);
     for (int i = 1; i < g_n; i++) {
         if (g_m[i].kind == 1 || g_m[i].kind == 2) continue;   // the gap before a submission or part: the GPU waited for recording
         double ms = t[i] > t[i - 1] ? (t[i] - t[i - 1]) * g_tick_ns / 1e6 : 0;
@@ -399,6 +404,15 @@ static void report(void) {
             if (np < sizeof(passes_1280)/sizeof(passes_1280[0]))
                 passes_1280[np++] = (typeof(passes_1280[0])){i, ms, blocks};
         }
+        if (g_seen_1280 && !np)
+            VRED("Ocarina GPU profiler: %u 1280x720 scene passes were "
+                 "recognized when recording, but NONE matched the report; "
+                 "diagnostic inconsistent (no FPS/overdraw conclusion)",
+                 g_seen_1280);
+        if (np)
+            VLOG("Ocarina GPU profiler: sampled %u 1280x720 pass(es), "
+                 "%u recognized at record time; timestamp and raster "
+                 "state report below", np, g_seen_1280);
         for (unsigned rank = 0; rank < np && rank < 12; rank++) {
             unsigned best = rank;
             for (unsigned j = rank + 1; j < np; j++)
@@ -481,7 +495,8 @@ void vka_gp_sub_begin(VkCommandBuffer cb, uint64_t frame) {
         if (every <= 0 || frame == g_frame || (g_last_frame && frame < g_last_frame + (uint64_t)every) || !init()) return;
         g_state = 1; g_frame = g_last_frame = frame; g_n = 0; vka_gp_active = 1; g_pass_new = 0; g_compute_new = 0; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
         g_gfx_n = 0; g_gfx_enabled = 0;
-        g_pass_1280 = 0; g_pipe_count = 0; g_pipe_active = -1;
+        g_pass_1280 = 0; g_seen_1280 = 0;
+        g_pipe_count = 0; g_pipe_active = -1;
         g_reset(cb, g_qp, 0, NQ);
         if (g_pipe_qp) g_reset(cb, g_pipe_qp, 0, NPIPE_Q);
     }
