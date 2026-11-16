@@ -616,6 +616,20 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d, int omi
         for (int i = 0; i < n && bn < sizeof b; i++) if (ca[i].imageView) bn += (size_t)snprintf(b + bn, sizeof b - bn, " c%d:%d%s", i, R.cf[i], ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ? "C" : "");
         if (dp || sp) snprintf(b + bn, bn < sizeof b ? sizeof b - bn : 0, " d:%d%s", R.df ? R.df : R.sf, (dp ? dp : sp)->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ? "C" : "");
         vka_gp_pass(b);
+        unsigned lc = 0, scount = 0, ld = 0, sd = 0;
+        for (int i = 0; i < n; i++) if (ca[i].imageView) {
+            lc += ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD;
+            scount += ca[i].storeOp == VK_ATTACHMENT_STORE_OP_STORE;
+        }
+        if (dp) {
+            ld += dp->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD;
+            sd += dp->storeOp == VK_ATTACHMENT_STORE_OP_STORE;
+        }
+        if (sp && sp != dp) {
+            ld += sp->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD;
+            sd += sp->storeOp == VK_ATTACHMENT_STORE_OP_STORE;
+        }
+        vka_gp_pass_io(lc, scount, ld, sd, R.samples);
     }
     // A loadOp CLEAR is a real attachment write even if no subsequent draw
     // touches it. Late vkCmdClearAttachments is also an attachment writer.
@@ -2307,10 +2321,29 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
             } else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
         } else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
     }
-    if (vka_gp_active)
-        vka_gp_draw(sh[0] ? sh[0]->key : 0, sh[1] ? sh[1]->key : 0, sh[7] ? sh[7]->key : 0,
+    if (vka_gp_active) {
+        // Only report what NVN/Vulkan actually submitted; the scissor's
+        // possible coverage is NOT a hardware fragment invocation counter.
+        uint32_t gf = (hd && d->ds.dt ? 1u : 0u) |
+                      (hd && d->ds.dt && d->ds.dw ? 2u : 0u) |
+                      (hs && d->ds.st ? 4u : 0u) |
+                      (!d->chmask.mask ? 8u : 0u) |
+                      (d->poly.cull != NVN_FACE_FRONT &&
+                       d->poly.cull != NVN_FACE_BACK &&
+                       d->poly.cull != NVN_FACE_FRONT_AND_BACK ? 16u : 0u);
+        uint64_t triangles = !ind && !mesh && !memu_e &&
+            topo == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST && !expand
+            ? (uint64_t)(dw ? (dw->count > 0 ? dw->count : 0) :
+                                (di->count > 0 ? di->count : 0)) / 3 * inst : 0;
+        uint64_t scpx = (uint64_t)scr.extent.width * scr.extent.height;
+        if (scpx > UINT32_MAX) scpx = UINT32_MAX;
+        vka_gp_draw(sh[0] ? sh[0]->key : 0,
+                    sh[1] ? sh[1]->key : 0,
+                    sh[7] ? sh[7]->key : 0,
                     sh[6] ? sh[6]->key : 0,
-                    (uint32_t)(dw ? dw->count : di->count), inst, ind != 0);
+                    (uint32_t)(dw ? dw->count : di->count), inst, ind != 0,
+                    (uint32_t)scpx, gf, triangles);
+    }
     draw_log(d, sh, dw, di);
     g_draws++;
     texstat_at();   // (diagnostic: DM_VK_TEXSTAT_AT)
