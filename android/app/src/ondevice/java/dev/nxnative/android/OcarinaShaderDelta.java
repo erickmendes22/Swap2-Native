@@ -64,6 +64,44 @@ final class OcarinaShaderDelta {
     );
 
     /**
+     * The 508 verified original vegetation shaders live in their own library,
+     * NOT the 42k base or the captured hot overlay. ABI-compatible older
+     * versions remain usable after a packer/toolchain-only APK update. Do not
+     * repeatedly offer those already installed mesh/task keys as "missing".
+     * Mirror the runtime's strict exact stage-set membership check before
+     * declaring that a complete vegetation supplement is installed.
+     */
+    static boolean completeVegetationInstalled(File pack, String inputs) {
+        File root = new File(pack, "shaders/vegetation");
+        File[] versions = root.listFiles(File::isDirectory);
+        if (versions == null) return false;
+        List<String> required = vegetationKeys();
+        for (File dir : versions) {
+            if (!dir.getName().startsWith("v-")) continue;
+            File lib = new File(dir, "dmsh_vk.lib");
+            ShaderLibs.Header h = ShaderLibs.header(lib);
+            if (h == null || !h.fits(lib.length()) ||
+                    h.entries != required.size() || !TITLE.equals(h.game) ||
+                    !inputs.equals(h.inputs) ||
+                    !BuildConfig.NX_DMSH_VK_ABI.equals(h.abi)) continue;
+            try {
+                boolean complete = true;
+                for (String key : required) {
+                    if (!ShaderLibs.hasKey(lib, h, key)) {
+                        complete = false;
+                        break;
+                    }
+                }
+                if (complete) return true;
+            } catch (IOException ex) {
+                android.util.Log.w("OcarinaShaderDelta",
+                        "Ignoring invalid vegetation supplement " + lib, ex);
+            }
+        }
+        return false;
+    }
+
+    /**
      * Repair ONLY genuine missing playable shader keys. A captured heavy
      * shader, a planned vegetation supplement, or a translator revision does
      * not make a key missing. Those are distinct optimization/update workflows.
@@ -84,6 +122,10 @@ final class OcarinaShaderDelta {
                         || ShaderAbiCert.approved(TITLE, header.vkChain, header.abi, header.inputs)))
             return List.of();
 
+        boolean vegetationPresent = completeVegetationInstalled(
+                job.pack(), profile.shaderInputs);
+        java.util.Set<String> vegetationSet = vegetationPresent
+                ? new HashSet<>(vegetationKeys()) : java.util.Set.of();
         File hot = overlay(job, false);
         ShaderLibs.Header hotHeader = ShaderLibs.header(hot);
         boolean hotVerified = hotHeader != null && hotHeader.fits(hot.length())
@@ -126,6 +168,7 @@ final class OcarinaShaderDelta {
                 if (!ctl.isFile() || ctl.length() < 0xd8 || ctl.length() > 65536
                         || f.length() < 4 || f.length() > (1 << 24)) continue;
                 if (ShaderLibs.hasKey(old, header, key)) continue;
+                if (vegetationSet.contains(key)) continue;
                 if (hotVerified && ShaderLibs.hasKey(hot, hotHeader, key)) continue;
                 File blocked = new File(captures, key + ".deferred");
                 if (blocked.isFile() && blocked.length() <= 128
