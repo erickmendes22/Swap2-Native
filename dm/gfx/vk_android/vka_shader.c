@@ -12,6 +12,7 @@
 #include "../nvn/dmsh_chain_vk.h"
 #include "game_profile.h"
 #include "vka_spvpatch.h"
+#include "vka_fs_elide.h"
 #include "vka_abi_compat.h"  // audited source-level ABI extension certificates
 #include "vka_vegetation_supplement.h"
 #include "vka_fragment_patch.h"
@@ -693,6 +694,23 @@ static uint32_t *lib_words(const vka_shlib *L, const dmsh_vk_entry *e, const dms
         else if (e2[0]) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 8) VRED("pixel shader %016llx: per-primitive inputs not made flat (%s): its pipelines are refused", (unsigned long long)e->key, e2); }
     }
     return w;
+}
+// Check once per original library fragment shader; never analyze a different
+// source than the one actually loaded. A diagnostic SPIR-V override forces the
+// complete original pipeline so no unknown rewritten effects are elided.
+int vka_shader_oot_fs_pure(vka_shader *s) {
+    if (!s || !s->e || s->e->stage != DMSH_VK_STAGE_FS ||
+        (s->e->flags & (DMSH_VK_F_ALPHA_TEST | DMSH_VK_F_INTERLOCK)) ||
+        getenv("DM_VK_SPV_OVERRIDE") || strcmp(DM_GAME_ID, "0400486024DEC000"))
+        return 0;
+    if (s->oot_fs_pure) return s->oot_fs_pure == 1;
+    const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, DMSH_VK_MOD_BASE);
+    size_t nb = 0; char err[160] = "";
+    uint32_t *w = m ? lib_words(s->lib, s->e, m, &nb, err, sizeof err) : NULL;
+    int pure = w && vka_spv_pure_fragment_output(w, nb / 4);
+    free(w);
+    s->oot_fs_pure = pure ? 1 : 2;
+    return pure;
 }
 static VkShaderModule spv_module(const vka_shlib *L, const dmsh_vk_entry *e, const dmsh_vk_module *m, uint64_t key, const char **why, char *err, size_t errn) {
     size_t nb = 0; uint32_t *w = spv_override(key, m->variant, &nb);

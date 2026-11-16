@@ -96,6 +96,68 @@ int main(void){
         self.assertIn("!d->chmask.mask && !d->ms.a2c", draw)
         self.assertIn("!draw_writes(sh, d)", draw)
 
+    def test_depth_only_fragment_elision_preserves_all_occlusion_queries(self):
+        draw = (VK / "vka_draw.c").read_text()
+        shader = (VK / "vka_shader.c").read_text()
+        h = (VK / "vka_fs_elide.h").read_text()
+        self.assertIn('VKA_ENV("DM_VK_OOT_DEPTH_NO_FS", 1)', draw)
+        self.assertIn('vka_shader_oot_fs_pure(sh[1])', draw)
+        self.assertIn('if (!p && elide)', draw)
+        self.assertIn('p = vka_gfx_pipeline(sh, &lay, &k);', draw)
+        self.assertIn('without_fs[1] = NULL;', draw)
+        self.assertIn('vka_oq_draw();', draw)
+        self.assertIn('ptr[a[2]] = ptr[a[3]];', h)
+        self.assertIn('if (built[i] && ptr[i] == 1)', h)
+        self.assertIn('vka_spv_pure_fragment_output(w, nb / 4)', shader)
+        cc = shutil.which("cc")
+        if not cc: self.skipTest("C compiler missing")
+        c = r"""
+#include "vka_fs_elide.h"
+#include <assert.h>
+static uint32_t w[128]; static size_t n;
+static void add(unsigned op,unsigned count,const uint32_t *p){
+ w[n++]=((count+1u)<<16)|op;
+ for(unsigned i=0;i<count;i++)w[n++]=p[i];
+}
+#define I(op,...) do { uint32_t x[]={__VA_ARGS__};add(op,sizeof(x)/4,x);}while(0)
+static void basic(void){
+ n=5;w[0]=0x07230203;w[1]=0x00010600;w[2]=0;w[3]=64;w[4]=0;
+ I(15,4,2,0x6e69616d,0);
+ I(16,2,7);I(59,1,4,3);I(59,1,5,7);
+ I(54,1,2,0,3);I(248,8);I(62,4,10);
+}
+int main(void) {
+ assert(vka_oot_fs_elide_state(1,1,1,0,1,1,0,0,0,0,0));
+ assert(!vka_oot_fs_elide_state(1,1,1,0,1,1,1,0,0,0,0));
+ assert(!vka_oot_fs_elide_state(1,1,1,0,1,1,0,1,0,0,0));
+ assert(!vka_oot_fs_elide_state(1,1,1,0,1,1,0,0,1,0,0));
+ assert(!vka_oot_fs_elide_state(1,1,1,0,1,1,0,0,0,0,1));
+ assert(!vka_oot_fs_elide_state(1,1,1,0,1,4,0,0,0,0,0));
+ basic(); I(62,5,10);I(253,0);I(56,0);
+ assert(vka_spv_pure_fragment_output(w,n));
+ basic(); I(252,0);I(253,0);I(56,0);
+ assert(!vka_spv_pure_fragment_output(w,n));
+ basic(); I(99,1,10);I(253,0);I(56,0);
+ assert(!vka_spv_pure_fragment_output(w,n));
+ basic(); I(62,6,10);I(253,0);I(56,0);
+ assert(!vka_spv_pure_fragment_output(w,n));
+ basic(); I(253,0);I(56,0);I(71,4,11,22);
+ assert(!vka_spv_pure_fragment_output(w,n));
+ basic(); I(253,0);I(56,0);I(16,2,12);
+ assert(!vka_spv_pure_fragment_output(w,n));
+ return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td)/"elide.c"
+            exe = Path(td)/"elide"
+            src.write_text(c)
+            run = subprocess.run([cc, "-std=c11", "-O2", "-Wall", "-Wextra",
+                "-Werror", "-I", str(VK), str(src), "-o", str(exe)],
+                capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            subprocess.run([str(exe)], check=True)
+
     def test_ocarina_720p_depth_store_none_policy_and_write_safety(self):
         draw = (VK / "vka_draw.c").read_text()
         self.assertIn('da.storeOp = VK_ATTACHMENT_STORE_OP_NONE;', draw)

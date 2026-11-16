@@ -20,6 +20,7 @@
 #include "vka_vegetation_supplement.h"  // generated 508 original task/mesh shader keys (kept ABI-stable)
 #include "vka_gmem_pidx.h"
 #include "vka_readonly_depth_store.h"
+#include "vka_fs_elide.h"
 #include "game_profile.h"
 #include <math.h>
 #include <stdio.h>
@@ -2222,7 +2223,34 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     PT(3);
     if (!mesh) vin_build_kept(d, sh[0], &k);
     PT(4);
-    VkPipeline p = vka_gfx_pipeline(sh, &lay, &k);
+    // Ocarina depth-only/occlusion draws: when every colour write is masked,
+    // the original fragment shader may be unnecessary. Do not bypass shader
+    // discard, alpha-to-coverage, depth/sample writes, framebuffer interlock
+    // or any guest storage writes. The SPIR-V source is checked once, and
+    // the original descriptor layout and all Vulkan query commands remain.
+    static int fs_elide_enabled = -1, fs_elide_driver_ok = 1;
+    if (fs_elide_enabled < 0)
+        fs_elide_enabled = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+                           VKA_ENV("DM_VK_OOT_DEPTH_NO_FS", 1);
+    unsigned colmask = 0;
+    for (uint32_t i = 0; i < k.ncolor; i++) colmask |= k.att[i].mask;
+    vka_shader *without_fs[VKA_NSTAGE];
+    int elide = sh[1] && vka_oot_fs_elide_state(
+        fs_elide_enabled, 1, fs_elide_driver_ok,
+        d->rast_discard, R.df != VK_FORMAT_UNDEFINED ||
+        R.sf != VK_FORMAT_UNDEFINED, k.samples,
+        k.a2c, k.alpha_func || (sh[1]->e->flags & DMSH_VK_F_ALPHA_TEST),
+        draw_writes(sh, d), d->tf_on, colmask) &&
+        vka_shader_oot_fs_pure(sh[1]);
+    if (elide) { memcpy(without_fs, sh, sizeof without_fs); without_fs[1] = NULL; }
+    VkPipeline p = vka_gfx_pipeline(elide ? without_fs : sh, &lay, &k);
+    if (!p && elide) {
+        // A driver's graphics pipeline may reject a no-fragment stage even
+        // for a depth-only query. Never drop its geometry or sample result.
+        fs_elide_driver_ok = 0;
+        VLOG("Ocarina safe depth-only fragment omission rejected by Vulkan; original fragment pipelines restored");
+        p = vka_gfx_pipeline(sh, &lay, &k);
+    }
     if (!p && R.color_omitted) {
         // A driver refusing the optional depth-only format variant must
         // still draw the ORIGINAL pass, not drop geometry or query samples.
