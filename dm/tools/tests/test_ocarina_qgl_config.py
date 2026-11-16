@@ -71,15 +71,28 @@ package android.app;
 import android.content.Context;
 import android.content.DialogInterface;
 public class AlertDialog {
+    public static int lastListLength = 0, mixedMessageList = 0;
+    public static DialogInterface.OnClickListener lastItemsCallback, lastChoiceCallback;
     public static class Builder {
+        private boolean hasMessage, hasList;
+        private int listLength;
         public Builder(Context ctx) {}
         public Builder setTitle(String t) { return this; }
-        public Builder setMessage(String t) { return this; }
-        public Builder setSingleChoiceItems(String[] v,int current,DialogInterface.OnClickListener cb) { return this; }
-        public Builder setItems(String[] v,DialogInterface.OnClickListener cb) { return this; }
+        public Builder setMessage(String t) { hasMessage = true; return this; }
+        public Builder setSingleChoiceItems(String[] v,int current,DialogInterface.OnClickListener cb) {
+            hasList = true; listLength = v.length; lastChoiceCallback = cb; return this;
+        }
+        public Builder setItems(String[] v,DialogInterface.OnClickListener cb) {
+            hasList = true; listLength = v.length; lastItemsCallback = cb; return this;
+        }
+        public Builder setPositiveButton(String v,DialogInterface.OnClickListener cb) { return this; }
         public Builder setNegativeButton(int v,DialogInterface.OnClickListener cb) { return this; }
         public Builder setNegativeButton(String v,DialogInterface.OnClickListener cb) { return this; }
-        public AlertDialog show() { return new AlertDialog(); }
+        public AlertDialog show() {
+            if (hasMessage && hasList) mixedMessageList++;
+            if (hasList) lastListLength = listLength;
+            return new AlertDialog();
+        }
     }
 }
 """,
@@ -131,6 +144,17 @@ public class QglSmoke {
     }
     public static void main(String[] args) throws Exception {
         MainActivity c = new MainActivity();
+        QglConfig.dialog(c, "OCARINA", () -> {});
+        check(android.app.AlertDialog.lastListLength == 4, "GMEM/Sysmem menu has no selectable rows");
+        check(android.app.AlertDialog.mixedMessageList == 0, "message hides QGL menu items");
+        // Select main menu item 0, then choose index 2 = rendermode 1 (GMEM+binning).
+        android.app.AlertDialog.lastItemsCallback.onClick(null, 0);
+        check(android.app.AlertDialog.lastListLength == 5, "render mode picker missing");
+        android.app.AlertDialog.lastChoiceCallback.onClick(new android.content.DialogInterface() {
+            public void dismiss() {}
+        }, 2);
+        check(QglConfig.renderMode(c, "OCARINA") == 1, "selected GMEM mode not stored");
+        QglConfig.reset(c, "OCARINA");
         ArrayList<String> env = new ArrayList<>();
         check(QglConfig.renderMode(c, "OCARINA") == -1, "default render mode");
         QglConfig.env(c, "OCARINA", env);
