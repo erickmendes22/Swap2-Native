@@ -172,6 +172,8 @@ final class GameSettings {
             Prefs.classicPasses(a,id,false);
             Prefs.keepCaveWalls(a,id,false);
             Prefs.fullVegetation(a,id,true); // also removes any saved visual-quality level
+            Prefs.shadowHard(a,id,false);
+            Prefs.groundMistOff(a,id,false);
             Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
             // Experimental GPU skips must not survive Restore defaults.
             Prefs.of(a).edit()
@@ -231,8 +233,11 @@ final class GameSettings {
             // Replace the old ON/OFF switch with one explicit, reversible
             // visual-quality preset. The old ON/OFF preference still works
             // unchanged for users installing over V11.
-            String[] vegetationDetail = {"Completa (original)", "Leve (2 tipos cosméticos a menos)",
-                    "Reduzida (5 tipos cosméticos a menos)", "Vegetação adicional desligada"};
+            String[] vegetationDetail = {"Completa (original, sem cortes)",
+                    "Teste A · apenas um par Foliage",
+                    "Teste B · somente o outro par Foliage",
+                    "Redução discreta · pares A e B",
+                    "Vegetação adicional desligada (modo antigo)"};
             int vegLevel = Prefs.vegetationDetail(a, id);
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Detalhe da vegetação",
                     v -> new AlertDialog.Builder(a)
@@ -245,8 +250,20 @@ final class GameSettings {
                                     })
                             .setNegativeButton(android.R.string.cancel, null).show())
                     .value(vegetationDetail[vegLevel] +
-                            " · reinicie o jogo; modifica a cena, sem preparar shaders")
+                            " · reinicie; os cinco pares do corte anterior NÃO serão removidos")
                     .chevron(a).view);
+            Ui.Setting shadowQuality = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Sombras econômicas (contornos mais definidos)", null)
+                    .toggle(a, Prefs.shadowHard(a, id), (b, on) -> Prefs.shadowHard(a, id, on));
+            shadowQuality.value("Força filtro mais simples SOMENTE nos samplers de comparação de profundidade (PCF). "
+                    + "Mantém os mapas e a geometria das sombras. Padrão desligado; reinicie.");
+            box.addView(shadowQuality.view);
+            Ui.Setting mistQuality = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Neblina baixa reduzida (teste)", null)
+                    .toggle(a, Prefs.groundMistOff(a, id), (b, on) -> Prefs.groundMistOff(a, id, on));
+            mistQuality.value("Omite o efeito de névoa do chão confirmado por pares de shaders. "
+                    + "A neblina volumétrica distante permanece; padrão desligado. Reinicie.");
+            box.addView(mistQuality.view);
             // Shader A omission is retired: the real pass must render.
             Ui.Setting shaderB = new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Omitir shader B (teste)", null)

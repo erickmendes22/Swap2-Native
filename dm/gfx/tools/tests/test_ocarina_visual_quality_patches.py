@@ -20,18 +20,23 @@ class OcarinaQualityTest(unittest.TestCase):
         ]
         self.assertEqual(len(profiles), 7)
         hdr = (VK / "vka_vegetation_quality.h").read_text()
-        chosen = re.findall(
-            r'\{\s*UINT64_C\(0x([0-9a-f]{16})\),\s*UINT64_C\(0x([0-9a-f]{16})\),\s*([12])\s*\}', hdr
-        )
-        self.assertEqual(len(chosen), 5)
-        self.assertEqual(sorted(int(level) for _, _, level in chosen), [1, 1, 2, 2, 2])
-        self.assertEqual(len({key for a,b,_ in chosen for key in (a,b)}), 10)
-        for a, b, level in chosen:
-            self.assertIn((a,b), profiles, (a,b,level))
+        # The v2 profile selects only the formerly retained pair A and B.
+        keep = [profiles[3], profiles[6]]
+        for first, second in keep:
+            self.assertIn(first, hdr)
+            self.assertIn(second, hdr)
+        self.assertEqual(hdr.count("return 1;"), 1)
+        self.assertEqual(hdr.count("return 2;"), 1)
+        self.assertIn("tier == 3 || tier == pair", hdr)
+        self.assertIn("tier <= 0 || tier >= 4", hdr)
+        for first, second in profiles:
+            if (first, second) not in keep:
+                self.assertNotIn(first, hdr)
+                self.assertNotIn(second, hdr)
         # No backdoor for unrelated games, other original Ocarina shaders,
         # or the other two full-vegetation original cosmetic pairs.
         self.assertIn('strcmp(title, "0400486024DEC000")', hdr)
-        self.assertIn("tier <= 0 || tier >= 3", hdr)
+        self.assertIn("tier <= 0 || tier >= 4", hdr)
         self.assertNotIn("mesh_vegetation_cut", (VK / "vka_memu_spv.c").read_text())
 
     def test_native_cut_before_expensive_mesh_compute_and_final_raster(self):
@@ -53,8 +58,8 @@ class OcarinaQualityTest(unittest.TestCase):
         settings = (APP / "GameSettings.java").read_text()
         activity = (APP / "GameActivity.java").read_text()
         self.assertIn('getBoolean(gameKey("full_vegetation", id), true)', pref)
-        self.assertIn('getInt(gameKey("oot_vegetation_detail", id), old)', pref)
-        self.assertIn('checked != 3', pref)
+        self.assertIn('getInt(gameKey("oot_vegetation_detail_v2", id), fallback)', pref)
+        self.assertIn('checked != 4', pref)
         self.assertIn('Prefs.fullVegetation(a,id,true)', settings)
         self.assertIn('Prefs.vegetationDetail(a, id, index)', settings)
         self.assertIn('DM_VK_OOT_VEG_QUALITY=', activity)
@@ -79,7 +84,7 @@ int main(void) {
       {0xd98076e4148db34full,0xfed302d791a4ba43ull},
       {0x839241636fce850aull,0x4c7d6be5a7717c8dull}
     };
-    for(int level=0;level<=3;level++){
+    for(int level=0;level<=4;level++){
         int selected=0;
         for(int i=0;i<7;i++) {
             int a=vka_vegetation_quality_key(title,pairs[i][0],level);
@@ -88,10 +93,10 @@ int main(void) {
             if(a)selected++;
             assert(vka_vegetation_key(title,pairs[i][0]));
         }
-        assert(selected==(level==1?2:level==2?5:0));
+        assert(selected==(level==1?1:level==2?1:level==3?2:0));
     }
-    assert(!vka_vegetation_quality_key("another-title", pairs[5][0], 2));
-    assert(!vka_vegetation_quality_key(title, 0x123456789abcdef0ull, 2));
+    assert(!vka_vegetation_quality_key("another-title", pairs[3][0], 3));
+    assert(!vka_vegetation_quality_key(title, 0x123456789abcdef0ull, 3));
     return 0;
 }
 '''

@@ -6,6 +6,7 @@
 // one object and a present through another meet. Every image stays in VK_IMAGE_LAYOUT_GENERAL after its first use: no layout tracking until the draw path needs it
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "game_profile.h"  // exact per-game shadow quality gate
 #include "vka_attachment_stage_policy.h"
 #include "../nvn/nvn_mtl.h"
 #include "../tex/nvn_deswizzle.h"
@@ -2707,6 +2708,28 @@ static VkSampler sampler_of(const samp_par *p, int iv) {
             VLOG("an integer view sampled with a filtering sampler (mag %d min %d): its nearest twin", p->magf, p->minf); }
         ci.magFilter = ci.minFilter = VK_FILTER_NEAREST; ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
         ci.borderColor = white ? VK_BORDER_COLOR_INT_OPAQUE_WHITE : opaque ? VK_BORDER_COLOR_INT_OPAQUE_BLACK : VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+    }
+    // Visual-quality shader patch: Shadow compare samplers only. Replacing
+    // linear PCF with nearest shadow comparison reduces the texel filter
+    // footprint without skipping shadow geometry, depth writes or fog.
+    // Default remains bit-for-bit original. Reset requires game restart;
+    // the per-process VkSampler cache never mixes variants.
+    if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_SHADOW_HARD", 0) &&
+        ci.compareEnable && !iv) {
+        if (ci.minFilter == VK_FILTER_LINEAR ||
+            ci.magFilter == VK_FILTER_LINEAR ||
+            ci.mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR ||
+            ci.anisotropyEnable) {
+            static _Atomic unsigned hard_samplers;
+            unsigned n = atomic_fetch_add(&hard_samplers, 1) + 1;
+            if (n == 1 || !(n & 31))
+                VLOG("Ocarina shadow quality: %u compare samplers now nearest PCF, hard shadow edges; guest compare operation and shadow-map production untouched", n);
+        }
+        ci.magFilter = ci.minFilter = VK_FILTER_NEAREST;
+        ci.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        ci.anisotropyEnable = VK_FALSE;
+        ci.maxAnisotropy = 1.0f;
     }
     if (p->reduction) VRED_ONCE("sampler reduction mode %d not applied", p->reduction);
     VkSampler s = VK_NULL_HANDLE;

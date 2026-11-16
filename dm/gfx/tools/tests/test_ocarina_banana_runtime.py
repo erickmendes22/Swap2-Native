@@ -51,9 +51,14 @@ int main(void) {
     assert(!vka_vegetation_key("other-game",mesh.key));
     assert(!vegetation_cut(&state,sh));
     // Level 0 must match original full-vegetation behavior.
-    tier=2; assert(vegetation_cut(&state,sh)); // this is a reviewed level-2 pair
-    tier=1; assert(!vegetation_cut(&state,sh)); // level-1 preserves this pair
-    tier=0; assert(!vegetation_cut(&state,sh));
+    tier=3; assert(!vegetation_cut(&state,sh)); // formerly aggressive pair removed from v2
+    mesh.key=UINT64_C(0x5b737961ae3e1b10); tier=1;
+    assert(vegetation_cut(&state,sh));
+    tier=2; assert(!vegetation_cut(&state,sh)); // B is independent from A
+    mesh.key=UINT64_C(0x839241636fce850a); tier=2;
+    assert(vegetation_cut(&state,sh));
+    tier=3; assert(vegetation_cut(&state,sh));
+    mesh.key=UINT64_C(0x0c1ffecd02018fb0); tier=0; assert(!vegetation_cut(&state,sh));
     full=0; assert(vegetation_cut(&state,sh));
     state.tf_on=1; assert(!vegetation_cut(&state,sh)); state.tf_on=0;
     entry.bind_count=1;

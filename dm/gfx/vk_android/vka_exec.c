@@ -1437,6 +1437,7 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
 int vka_memu_snapshot_on(void);
 void vka_memu_batch_snapshot(int phase);
 int vka_memu_on(void); int vka_memu_has(const uint8_t *p); void vka_memu_cur(const uint8_t *p);
+int vka_ground_mist_mesh_omit(const vka_dstate *d); // exact fog mesh pair; default OFF
 int vka_vegetation_mesh_omit(const vka_dstate *d);  // identical no-side-effect test to final raster cut
 int vka_mesh_route(const vka_dstate *d);  // -1 omit new supplement, 0 original native, 1 supplemental compute
 static int g_memu_cover; static uint64_t g_memu_sub = ~0ull; static vka_dstate g_memu_st;
@@ -1513,13 +1514,15 @@ static int memu_walk(const uint8_t *p, int phase) {
     const int vegetation_off = !VKA_ENV("DM_VK_VEGETATION", 1);
     const int quality_trim = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
                              VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0) > 0;
+    const int mist_off = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+                         VKA_ENV("DM_VK_OOT_GROUND_MIST_OFF", 0);
     const int hybrid = V.memu && V.mesh && V.task &&
                        !strcmp(DM_GAME_ID, "0400486024DEC000") &&
                        VKA_ENV("DM_VK_OOT_NATIVE_BASE_MESH", 1);
     // The look-ahead must use the bindings AT EACH DRAW when routing
     // original-library mesh draws to native. Never move supplemental
     // compute ahead of a native mesh draw, which may write buffers/images.
-    if (phase >= 0 || vegetation_off || quality_trim || hybrid)
+    if (phase >= 0 || vegetation_off || quality_trim || mist_off || hybrid)
         memcpy(&g_memu_st, &S.d, sizeof g_memu_st);
     for (int guard = 0; guard < 200000; guard++) {
         op_hdr h; memcpy(&h, p, sizeof h); const void *a = p + 8;
@@ -1545,6 +1548,7 @@ static int memu_walk(const uint8_t *p, int phase) {
                     break; // native mesh is an ordering boundary
                 }
                 if (route == 1 &&
+                    (!mist_off || !vka_ground_mist_mesh_omit(&g_memu_st)) &&
                     (!(vegetation_off || quality_trim) ||
                      !vka_vegetation_mesh_omit(&g_memu_st))) {
                     if (n == 128) break;
@@ -1589,6 +1593,12 @@ static void memu_before_draw(const uint8_t *p, const p_draw *d) {
     // the look-ahead: no arena, no compute or render-pass split.
     int route = mesh ? vka_mesh_route(&S.d) : 1;
     if (mesh && route == 0) return;
+    if (mesh && vka_ground_mist_mesh_omit(&S.d)) {
+        static uint64_t early_mist;
+        if (++early_mist == 1 || !(early_mist & 1023))
+            VLOG("Ocarina ground mist: %llu exact paired draws omitted before mesh compute and renderpass split", (unsigned long long)early_mist);
+        return;
+    }
     if (mesh && (route < 0 || vka_vegetation_mesh_omit(&S.d))) {
         static uint64_t early_omits;
         if (++early_omits == 1 || (early_omits & 4095) == 0)

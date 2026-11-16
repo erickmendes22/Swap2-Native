@@ -1928,6 +1928,49 @@ int vka_mesh_route(const vka_dstate *d) {
     if (test_route == 2 && V.mesh && V.task) return 0;
     return hybrid ? (supplement ? 1 : 0) : (V.memu ? 1 : 0);
 }
+// A/B-only patch for the separately identified ground-mist mesh composite:
+// the game's captured pairing connects 066f5daf/554cf8c0 to fragment
+// 5ad65c0e (also identified upstream as ground mist). This is NOT the
+// 9ed48d10 froxel injection shader and does not remove all volumetric fog.
+// Drop only when the exact mesh+fragment pair is bound and none of its
+// stages has unknown memory writes/atomics/transform feedback. This saves
+// the mesh compute staging as well as the visible mist draw.
+static int oot_ground_mist_safe(const vka_dstate *d, vka_shader *const *sh) {
+    if (!d || d->tf_on || strcmp(DM_GAME_ID, "0400486024DEC000") ||
+        !VKA_ENV("DM_VK_OOT_GROUND_MIST_OFF", 0) ||
+        !sh[1] || !sh[7] ||
+        sh[1]->key != UINT64_C(0x5ad65c0eefd09c7f) ||
+        (sh[7]->key != UINT64_C(0x066f5daf12e43c71) &&
+         sh[7]->key != UINT64_C(0x554cf8c05126a133)))
+        return 0;
+    for (int stage = 0; stage < VKA_NSTAGE; ++stage) {
+        const vka_shader *s = sh[stage];
+        if (!s) continue;
+        for (unsigned j = 0; j < s->e->bind_count; ++j) {
+            const dmsh_vk_bind *x = &s->b[j];
+            if ((x->flags & (DMSH_VK_BF_RW | DMSH_VK_BF_ATOMIC | DMSH_VK_BF_NOSLOT)) ||
+                x->kind == DMSH_VK_KIND_GMEM_LOG ||
+                x->kind == DMSH_VK_KIND_UNKNOWN)
+                return 0;
+        }
+    }
+    return 1;
+}
+int vka_ground_mist_mesh_omit(const vka_dstate *d) {
+    if (!d || !VKA_ENV("DM_VK_OOT_GROUND_MIST_OFF", 0) ||
+        strcmp(DM_GAME_ID, "0400486024DEC000") || d->tf_on)
+        return 0;
+    vka_shader *sh[VKA_NSTAGE] = {0}, *m = NULL;
+    unsigned bad = 0, b2 = 0;
+    const prog_t *mp = d->bst[7];
+    if (d->bst[1] && d->bst[1] != mp &&
+        resolve(d->bst[1], 7, &m, &b2) &&
+        (m || (b2 & (1u << 7)))) mp = d->bst[1];
+    if (!resolve(mp, 6, &sh[6], &bad) ||
+        !resolve(mp, 7, &sh[7], &bad) ||
+        !resolve(d->bst[1], 1, &sh[1], &bad) || bad) return 0;
+    return oot_ground_mist_safe(d, sh);
+}
 static int vegetation_omittable(const vka_dstate *d, vka_shader *const *sh) {
     if (!d || d->tf_on || !sh[7]) return 0;
     int on = VKA_ENV("DM_VK_VEGETATION", 1);
@@ -1969,10 +2012,14 @@ int vka_vegetation_mesh_omit(const vka_dstate *d) {
 }
 static int vegetation_cut(const vka_dstate *d, vka_shader *const *sh) {
     if (!vegetation_omittable(d, sh)) return 0;
-    static uint64_t omitted;
-    if (++omitted == 1 || omitted % 4096 == 0)
-        VLOG("Ocarina visual vegetation patch: %llu reviewed cosmetic mesh draws omitted before raster (tier=%d; per-game only)",
-             (unsigned long long)omitted, VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0));
+    static uint64_t omitted, pair_a, pair_b;
+    int pair = vka_vegetation_quality_pair(DM_GAME_ID, sh[7]->key);
+    if (pair == 1) ++pair_a;
+    if (pair == 2) ++pair_b;
+    if (++omitted == 1 || omitted % 2048 == 0)
+        VLOG("Ocarina visual vegetation cut: %llu total mesh draws omitted after matching compute lookahead, A=%llu, B=%llu, tier=%d; default 0 preserves all",
+             (unsigned long long)omitted, (unsigned long long)pair_a,
+             (unsigned long long)pair_b, VKA_ENV("DM_VK_OOT_VEG_QUALITY", 0));
     return 1;
 }
 // Shader A omission is retired after white artifacts on the device.
@@ -2064,6 +2111,12 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         if (dw->first && !V.memu) { static _Atomic int n; if (atomic_fetch_add(&n, 1) < 4) VRED("mesh draw with first workgroup %d (count %d): drawn from 0 (the translated task / mesh shaders read their workgroup index with no base; open)", dw->first, dw->count); }
         if (!dw->ind && dw->count <= 0) return;   // (an indirect draw's count is the GPU's)
         if (d->tf_on) VRED_ONCE("transform feedback with a mesh draw: drawn without capture");
+        if (oot_ground_mist_safe(d, sh)) {
+            static uint64_t mist_drops;
+            if (++mist_drops == 1 || !(mist_drops & 1023))
+                VLOG("Ocarina ground mist quality: %llu exact fog mesh+fragment draws suppressed (and eligible compute before pass), froxel injection unchanged", (unsigned long long)mist_drops);
+            return;
+        }
         if (vegetation_cut(d, sh)) return;
         int route = vka_mesh_route(d);
         if (route < 0) {
