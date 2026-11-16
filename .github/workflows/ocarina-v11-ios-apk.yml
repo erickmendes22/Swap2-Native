@@ -4,12 +4,6 @@ on:
     branches: [ocarina-v11-ios-perf-from-v101, wip-ocarina-v22-gpu-structural, ocarina-sgsr1-hidden-layers-test, research/ocarina-gsr2-360p-20261115]
     paths:
       - ci/ocarina-ios-ready.txt
-  # Build proposed test code with the V11 signer cache scoped to this base branch.
-  # Never publish or export the signing keystore itself.
-  pull_request:
-    branches: [ocarina-v11-ios-perf-from-v101]
-    paths:
-      - ci/ocarina-ios-ready.txt
   workflow_dispatch:
 permissions:
   contents: read
