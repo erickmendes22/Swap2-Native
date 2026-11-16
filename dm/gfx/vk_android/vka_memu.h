@@ -41,8 +41,7 @@ static inline uint64_t vka_memu_cs_tag(int stage) {
     return stage == DMSH_VK_STAGE_MS ?
         ((vka_memu_plane_lut() ? VKA_MEMU_KEY_PLANE_LUT : 0) ^
          (vka_memu_short_task_search() ? (VKA_MEMU_KEY_TASK_SHORT ^ VKA_MEMU_KEY_TASK_SINGLE) : 0) ^
-         (vka_memu_direct_payload() ? VKA_MEMU_KEY_DIRECT_PAYLOAD : 0)) :
-         stage == DMSH_VK_STAGE_TS ? VKA_MEMU_KEY_TASK_DENSITY : 0;
+         (vka_memu_direct_payload() ? VKA_MEMU_KEY_DIRECT_PAYLOAD : 0)) : 0;
 }
 vka_memu_sh *vka_memu_of(struct vka_shader *s);                 // NULL: s cannot be drawn through compute (logged)
 struct vka_shader *vka_memu_cs_of(struct vka_shader *s, int gl);

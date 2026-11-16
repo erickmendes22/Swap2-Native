@@ -536,7 +536,7 @@ static void memu_diag_spv(const uint32_t *w, size_t n, uint32_t *instructions,
 static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
                                    uint64_t used_locations,
                                    size_t *out_nw, char *err, size_t errn,
-                                   vka_memu_diag *diag, int lut_mode) {
+                                   vka_memu_diag *diag, int lut_mode, int task_density) {
     mod_t m; bld_t B; memset(&B, 0, sizeof B); sb_t A = {0}, F = {0}, O = {0};
     chain_t *ch = NULL; uint32_t *oid = NULL;   // oid: per id, 1 + the output it is (an output variable or a chain into one), 0 none
     uint8_t *wgch = NULL;   // per id: a chain into the workgroup ID variable (retyped as Private)
@@ -1003,19 +1003,26 @@ static uint32_t *vka_memu_cs_impl(const uint32_t *w, size_t nw,
         // workgroups. The distribution pass consumes the exact reduced
         // count, so no stale vertex/index arena data can be accessed.
         // No masked index writes or mismatched compute/raster decisions.
+        uint32_t emit_count = cnt;
+        if (task_density) {
         uint32_t flags = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_FLAGS));
         uint32_t qtr = op2(&f, OpINotEqual, B.t_bool,
             op2(&f, OpBitwiseAnd, B.t_u32, flags, cu(&B, VKA_MEMU_F_FOLIAGE_75)), c0);
         uint32_t half = op2(&f, OpINotEqual, B.t_bool,
             op2(&f, OpBitwiseAnd, B.t_u32, flags, cu(&B, VKA_MEMU_F_FOLIAGE_50)), c0);
-        uint32_t idx_mod4 = op2(&f, OpBitwiseAnd, B.t_u32, ts, cu(&B, 3));
+        // Use the guest-provided first task-group ID for stable spatial
+        // masks across depth/color draws with shifted dispatch starts.
+        uint32_t first = ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_FIRST));
+        uint32_t world_index = op2(&f, OpIAdd, B.t_u32, ts, first);
+        uint32_t idx_mod4 = op2(&f, OpBitwiseAnd, B.t_u32, world_index, cu(&B, 3));
         uint32_t skip_quarter = op2(&f, OpLogicalAnd, B.t_bool, qtr,
             op2(&f, OpIEqual, B.t_bool, idx_mod4, cu(&B, 3)));
         uint32_t skip_half = op2(&f, OpLogicalAnd, B.t_bool, half,
             op2(&f, OpINotEqual, B.t_bool,
-                op2(&f, OpBitwiseAnd, B.t_u32, ts, c1), c0));
+                op2(&f, OpBitwiseAnd, B.t_u32, world_index, c1), c0));
         uint32_t cut = op2(&f, OpLogicalOr, B.t_bool, skip_quarter, skip_half);
-        uint32_t emit_count = sel(&f, B.t_u32, cut, c0, cnt);
+        emit_count = sel(&f, B.t_u32, cut, c0, cnt);
+        }
         INS(&O, OpStore, AREA(&f, op2(&f, OpIAdd, B.t_u32,
             ld(&f, B.t_u32, RECW(&f, rb, VKA_MEMU_R_COUNTS)), ts)), emit_count);
         fn_endif(&f, mg);
@@ -1044,11 +1051,14 @@ fail:
 // arena and pipeline cache keys retain their original ABI. Specialization is
 // opt-in only for a fully parsed actual bound fragment shader's input mask.
 uint32_t *vka_memu_cs(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
-    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, NULL, -1);
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, NULL, -1, 0);
+}
+uint32_t *vka_memu_cs_task_density(const uint32_t *w, size_t nw, size_t *out_nw, char *err, size_t errn) {
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, NULL, -1, 1);
 }
 uint32_t *vka_memu_cs_masked(const uint32_t *w, size_t nw, uint64_t used_locations,
                              size_t *out_nw, char *err, size_t errn) {
-    return vka_memu_cs_impl(w, nw, used_locations, out_nw, err, errn, NULL, -1);
+    return vka_memu_cs_impl(w, nw, used_locations, out_nw, err, errn, NULL, -1, 0);
 }
 
 // Diagnostic is deliberately separate from the normal entry point: on
@@ -1056,14 +1066,14 @@ uint32_t *vka_memu_cs_masked(const uint32_t *w, size_t nw, uint64_t used_locatio
 uint32_t *vka_memu_cs_diagnostic(const uint32_t *w, size_t nw,
                                  size_t *out_nw, char *err, size_t errn,
                                  vka_memu_diag *diag) {
-    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, diag, -1);
+    return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn, diag, -1, 0);
 }
 
 uint32_t *vka_memu_cs_diagnostic_mode(const uint32_t *w, size_t nw,
                                       size_t *out_nw, char *err, size_t errn,
                                       vka_memu_diag *diag, int enable_lut) {
     return vka_memu_cs_impl(w, nw, UINT64_MAX, out_nw, err, errn,
-                            diag, enable_lut != 0);
+                            diag, enable_lut != 0, 0);
 }
 
 // ---------- The vertex shader ----------

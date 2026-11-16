@@ -61,7 +61,10 @@ class FoliageTaskDensity(unittest.TestCase):
         self.assertIn("emit_count = sel(&f, B.t_u32, cut, c0, cnt);", spv)
         self.assertIn("R_COUNTS)), ts)), emit_count", spv)
         self.assertIn("VKA_MEMU_KEY_TASK_DENSITY", tags)
-        self.assertIn("stage == DMSH_VK_STAGE_TS ? VKA_MEMU_KEY_TASK_DENSITY", tags)
+        self.assertIn("vka_memu_cs_task_density", (VK / "vka_memu.c").read_text())
+        self.assertIn("0x99280b7b8aae78df", (VK / "vka_memu.c").read_text())
+        self.assertIn("if (task_density)", spv)
+        self.assertIn("VKA_MEMU_KEY_TASK_DENSITY", (VK / "vka_memu.c").read_text())
         self.assertNotIn("vkCmdDrawIndexedIndirect", spv)
 
     def test_shadow_pass_restricted_to_1024_4096_depth_only(self):
