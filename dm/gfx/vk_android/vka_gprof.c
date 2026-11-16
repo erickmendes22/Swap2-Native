@@ -15,7 +15,7 @@
 enum { NQ = 8192, DESC = 256, SHADERS = 64 };
 typedef struct {
     uint64_t scissor_sum, direct_triangles;
-    uint32_t depth_test, depth_write, stencil, no_color, no_cull, indirect;
+    uint32_t draws, depth_test, depth_write, stencil, no_color, no_cull, indirect;
     uint16_t load_color, store_color, load_depth, store_depth, samples;
 } scene_observation;
 typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint64_t gfx_key; uint8_t mesh_stage, gfx_block, gfx_draws, gfx_top; scene_observation scene; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
@@ -126,6 +126,7 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
         // the final pass-end timestamp still describes the ENTIRE pass.
         m->desc[0] = 0;
     } else if (g_pass_new) {
+        g_scene.draws = g_pass_draws;
         m->scene = g_scene;
         snprintf(m->desc, DESC, "%s", g_pass);
         size_t used = strlen(m->desc);
@@ -369,8 +370,7 @@ static void report(void) {
                  "(NOT measured DRAM traffic), %s",
                  (unsigned long long)g_frame, passes_1280[rank].ms,
                  passes_1280[rank].chunks,  // samples, not all 16-draw blocks in a frame
-                 (unsigned)(m->draws - (passes_1280[rank].i > 0 ?
-                     g_m[passes_1280[rank].i - 1].draws : 0)),
+                 (unsigned)o->draws,
                  (unsigned long long)o->direct_triangles,
                  o->indirect, o->depth_test, o->depth_write,
                  o->stencil, o->no_color, o->no_cull, scissor_equiv,
