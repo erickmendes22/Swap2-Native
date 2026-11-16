@@ -373,6 +373,7 @@ int vka_rp_has_depth(void) { return R.on && (R.df || R.sf); }
 int vka_rp_cave_depth_dirty(void) { return R.on && R.cave_dwrite; }
 static int g_unused_color_refused;
 static uint64_t g_unused_color_passes, g_unused_color_views, g_attachment_part_passes;
+static uint64_t g_depth_fs_eligible, g_depth_fs_elided;
 static uint64_t g_cave_original_splits, g_cave_unused_color, g_cave_depth_readonly;
 void vka_rp_cave_end(void) {
     // Observations only: every report still executes the original pass end.
@@ -739,6 +740,13 @@ void vka_rp_bar_stats(char *b, size_t n, double frames) {
              (g_unused_color_passes-omit0)/frames, (g_unused_color_views-views0)/frames,
              (g_attachment_part_passes-parts0)/frames);
     omit0=g_unused_color_passes; views0=g_unused_color_views; parts0=g_attachment_part_passes;
+    static uint64_t depth_fs_eligible0, depth_fs_elided0;
+    if (!strcmp(DM_GAME_ID, "0400486024DEC000"))
+        VLOG("Ocarina pure depth-only FS: %.1f eligible draws/frame, %.1f fragment stages eliminated/frame; original occlusion query count preserved",
+             (g_depth_fs_eligible - depth_fs_eligible0) / frames,
+             (g_depth_fs_elided - depth_fs_elided0) / frames);
+    depth_fs_eligible0 = g_depth_fs_eligible;
+    depth_fs_elided0 = g_depth_fs_elided;
     static uint64_t dn0, dw0;
     if (g_readonly_depth_none_passes != dn0 || g_readonly_depth_writer_splits != dw0)
         VLOG("Ocarina 720p depth: %.1f STORE_OP_NONE read-only passes/frame, %.1f depth-writer splits/frame (DM_VK_OOT_DEPTH_STORE_NONE=0 restores old stores)",
@@ -2242,7 +2250,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         k.a2c, k.alpha_func || (sh[1]->e->flags & DMSH_VK_F_ALPHA_TEST),
         draw_writes(sh, d), d->tf_on, colmask) &&
         vka_shader_oot_fs_pure(sh[1]);
-    if (elide) { memcpy(without_fs, sh, sizeof without_fs); without_fs[1] = NULL; }
+    if (elide) {
+        g_depth_fs_eligible++;
+        memcpy(without_fs, sh, sizeof without_fs); without_fs[1] = NULL;
+    }
     VkPipeline p = vka_gfx_pipeline(elide ? without_fs : sh, &lay, &k);
     if (!p && elide) {
         // A driver's graphics pipeline may reject a no-fragment stage even
@@ -2251,6 +2262,7 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         VLOG("Ocarina safe depth-only fragment omission rejected by Vulkan; original fragment pipelines restored");
         p = vka_gfx_pipeline(sh, &lay, &k);
     }
+    if (p && elide && fs_elide_driver_ok) g_depth_fs_elided++;
     if (!p && R.color_omitted) {
         // A driver refusing the optional depth-only format variant must
         // still draw the ORIGINAL pass, not drop geometry or query samples.
