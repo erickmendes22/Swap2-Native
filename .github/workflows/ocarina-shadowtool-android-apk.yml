@@ -1,0 +1,49 @@
+name: Ocarina Shadow Tool — Android APK
+
+on:
+  push:
+    branches:
+      - feature/ocarina-shadow-patcher-android
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocarina-shadowtool-android-signing
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Reuse signing key for future install-over updates
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: ocarina-shadowtool-stable-debug-key-v1
+      - name: Build independent Android NUP picker APK
+        run: |
+          chmod +x android/app/gradlew
+          android/app/gradlew --no-daemon -p android/shadowtool :assembleDebug
+      - name: Check APK and signatures
+        run: |
+          set -euxo pipefail
+          APK=android/shadowtool/build/outputs/apk/debug/shadowtool-debug.apk
+          test -s "$APK"
+          APK_SIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APK_SIGNER" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E 'package:|sdkVersion:|launchable-activity'
+          sha256sum "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ocarina-Shadow-Tool-Android-APK
+          path: android/shadowtool/build/outputs/apk/debug/shadowtool-debug.apk
+          retention-days: 14
+          if-no-files-found: error
