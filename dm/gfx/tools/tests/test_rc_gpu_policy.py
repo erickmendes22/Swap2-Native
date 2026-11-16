@@ -48,6 +48,55 @@ int main(void) {
                             '-I', str(VK), str(p), '-o', str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
+    def test_same_epoch_cumulative_query_delta_strict_current_submission(self):
+        source = r"""
+#include <assert.h>
+#include <stdint.h>
+#include "vka_rc_gpu_policy.h"
+int main(void) {
+    // Report A is nonfresh; B is nonfresh but their prefix cancels.
+    assert(vka_rc_gpu_delta_range(3,3,8,8,0,0,0,0,90,95,50,100));
+    assert(vka_rc_gpu_delta_range(3,3,8,8,0,0,22,22,90,90,50,100));
+    // Any uncounted/lost query, stale ring entry, new reset, previous
+    // submission, or too-long interval retains conservative CPU drawing.
+    assert(!vka_rc_gpu_delta_range(2,3,8,8,0,0,0,0,90,95,50,100));
+    assert(!vka_rc_gpu_delta_range(3,3,8,9,0,0,0,0,90,95,50,100));
+    assert(!vka_rc_gpu_delta_range(3,3,8,8,1,0,0,0,90,95,50,100));
+    assert(!vka_rc_gpu_delta_range(3,3,8,8,0,1,0,0,90,95,50,100));
+    assert(!vka_rc_gpu_delta_range(3,3,8,8,0,0,0,1,90,95,50,100));
+    assert(!vka_rc_gpu_delta_range(3,3,8,8,0,0,0,0,49,95,50,100));
+    assert(!vka_rc_gpu_delta_range(3,3,8,8,0,0,0,0,90,89,50,100));
+    assert(!vka_rc_gpu_delta_range(3,3,8,8,0,0,0,0,90,101,50,100));
+    assert(vka_rc_gpu_delta_range(3,3,8,8,0,0,0,0,90,346,50,1000));
+    assert(!vka_rc_gpu_delta_range(3,3,8,8,0,0,0,0,90,347,50,1000));
+    uint64_t seed=271;
+    for (int i=0;i<100000;i++) {
+        seed=seed*6364136223846793005ULL+1;
+        uint64_t lo=seed>>16, range=(seed>>7)&511, hi=lo+range;
+        int same=(seed&3)!=0, lost=(seed>>3)&1, stale=(seed>>8)&1;
+        int expect=same && !lost && !stale && range<=256;
+        assert(vka_rc_gpu_delta_range(3,3,19,19+!same,0,stale,
+                                      0,lost,lo,hi,lo,hi) == expect);
+    }
+    return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/"delta.c";exe=p.with_suffix("")
+            p.write_text(source)
+            subprocess.run([shutil.which("cc"),"-std=c11","-O2","-Wall",
+                            "-Wextra","-Werror","-I",str(VK),str(p),"-o",
+                            str(exe)],check=True)
+            subprocess.run([str(exe)],check=True)
+        inc = (VK / "vka_rc_gpu.inc").read_text()
+        self.assertIn("static int rc_gpu_report_pair(", inc)
+        self.assertIn("vka_rc_gpu_delta_range(a->kind, b->kind,", inc)
+        self.assertIn("!OQ.precise", inc)
+        self.assertIn("a->oq_begin = first; a->oq_end = first; a->oq_lost = 0;", inc)
+        self.assertIn("b->oq_begin = first; b->oq_lost = 0;", inc)
+        self.assertIn("rc_gpu_report_pair(cond.addr, &jobs[n].a, &jobs[n].b)", inc)
+        self.assertIn("rc_gpu_report_pair(cond.addr, &a, &b)", inc)
+
     def test_actual_copy_planner_deduplication_merge_and_ring_wrap(self):
         source = r"""
 #include <assert.h>
@@ -115,6 +164,9 @@ static struct {vka_dstate d;}S;
 static int g_memu_depth;
 static const uint8_t *g_memu_caller[16];
 static int rc_gpu_report(uint64_t a,rc_rep *r){r->oq_begin=1;r->oq_end=2;return a!=0xbad;}
+static int rc_gpu_report_pair(uint64_t a,rc_rep *r,rc_rep *s){
+ return rc_gpu_report(a,r)&&rc_gpu_report(a+16,s);
+}
 static int vka_rc_gpu_state_safe(const vka_dstate*d){return d->safe&&!d->tf_on&&!d->rast_discard;}
 static const p_draw*draw_rec(const void*a,uint32_t n,p_draw*t){(void)n;(void)t;return a;}
 static const p_draw_idx*draw_idx_rec(const void*a,uint32_t n,p_draw_idx*t){(void)n;(void)t;return a;}
@@ -222,6 +274,11 @@ class RCGpuArithmetic(unittest.TestCase):
                 append(1, 1, mask, 0, 1, 0, mode, precise)  #64-bit carry/wrap
                 append(0, 0, 1 << 32, 0, 0, 0, mode, precise)  # equal low words, different high
                 append(0, 0, mask, 0, 0, mask, mode, precise)  # empty fresh reports
+        # Same-reset report-pair delta: empty A prefix and actual inter-report
+        # query interval B, verified against the original cumulative equality.
+        for i in range(40):
+            for mode in (0, 1):
+                append(0, 0, 0, i, 1, 0, mode, 0)
         for i in range(1000):
             fa, fb = rng.randrange(40), rng.randrange(40)
             append(fa, rng.randrange(8), rng.getrandbits(64), fb, rng.randrange(8),

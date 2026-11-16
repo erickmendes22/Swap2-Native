@@ -55,6 +55,33 @@ static int rc_gpu_report(uint64_t addr, rc_rep *out) {
         vka_rc_gpu_range(out->kind, out->oq_fresh, out->fence, out->oq_lost, out->oq_begin, out->oq_end,
                          RG.submission_first, g_oq_head);
 }
+// Report pairs from the same NVN samples-passed reset are cumulative.
+// When both are owned by the CURRENT submission, compare only the queries
+// between their endpoints: prefix counts cancel. This does not guess from
+// previous frames or change the CPU-side counter/report path.
+static int rc_gpu_report_pair(uint64_t addr, rc_rep *a, rc_rep *b) {
+    if ((addr & 15) || addr > UINT64_MAX - 16) return 0;
+    int ia = rc_ix_find(addr), ib = rc_ix_find(addr + 16);
+    if (ia < 0 || ib < 0) return 0;
+    *a = g_rcp[ia]; *b = g_rcp[ib];
+    if (!OQ.precise &&
+        a->gpu_write_epoch == g_rc_gpu_write_epoch &&
+        b->gpu_write_epoch == g_rc_gpu_write_epoch &&
+        vka_rc_gpu_delta_range(a->kind, b->kind,
+                               a->oq_epoch, b->oq_epoch,
+                               a->fence, b->fence,
+                               a->oq_lost, b->oq_lost,
+                               a->oq_end, b->oq_end,
+                               RG.submission_first, g_oq_head)) {
+        uint64_t first = a->oq_end;
+        a->oq_begin = first; a->oq_end = first; a->oq_lost = 0;
+        b->oq_begin = first; b->oq_lost = 0;
+        return 1;
+    }
+    // Previous proven case: two separately fresh, fully known counters.
+    // Other cases keep the existing unknown => draw behavior.
+    return rc_gpu_report(addr, a) && rc_gpu_report(addr + 16, b);
+}
 static int rc_gpu_init(void) {
     if (RG.pipeline) return 1;
     VkDescriptorSetLayoutBinding b[3];
@@ -104,8 +131,8 @@ static int rc_gpu_collect(const uint8_t *p, rc_gpu_job *jobs) {
             pending = -1; draws = 0;
             if (n == VKA_RC_GPU_MAX_JOBS || h.size < 8 + sizeof(p_render_cond)) break;
             p_render_cond cond; memcpy(&cond, arg, sizeof cond);
-            if ((cond.mode == 0 || cond.mode == 1) && cond.addr <= UINT64_MAX - 16 &&
-                rc_gpu_report(cond.addr, &jobs[n].a) && rc_gpu_report(cond.addr + 16, &jobs[n].b)) {
+            if ((cond.mode == 0 || cond.mode == 1) &&
+                rc_gpu_report_pair(cond.addr, &jobs[n].a, &jobs[n].b)) {
                 if (jobs[n].a.oq_begin == jobs[n].a.oq_end && jobs[n].b.oq_begin == jobs[n].b.oq_end) {
                     p += h.size; continue; // rc_gpu_bind resolves these exact empty counters on the CPU.
                 }
@@ -196,8 +223,7 @@ static void rc_gpu_bind(const uint8_t *p) {
     p_render_cond cond; memcpy(&cond, p + 8, sizeof cond);
     if (cond.mode != 0 && cond.mode != 1) return;
     rc_rep a, b;
-    if (!rc_gpu_report(cond.addr, &a) || cond.addr > UINT64_MAX - 16 ||
-        !rc_gpu_report(cond.addr + 16, &b)) return;
+    if (!rc_gpu_report_pair(cond.addr, &a, &b)) return;
     if (a.oq_begin == a.oq_end && b.oq_begin == b.oq_end) {
         // Fresh + zero lost + no queries proves both counters are exactly zero,
         // independently of GPU completion. Do not dispatch a predicate helper.

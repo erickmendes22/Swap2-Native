@@ -10,6 +10,30 @@ static inline int vka_rc_gpu_range(int kind, int fresh, uint64_t fence, uint64_t
            end >= begin && end <= head && end - begin <= VKA_RC_GPU_MAX_RANGE;
 }
 
+// The game's occlusion test compares two cumulative counter reports.
+// For reports from the SAME reset epoch, their difference is exactly the
+// sum of the queries issued between their endpoints. The older prefix
+// cancels, so neither report needs to be fresh. Both reports must still be
+// in the current submission, have unchanged guest addresses and identical
+// counts of lost queries. Query slots remain fenced until copied.
+//
+// With Ocarina's Boolean queries the interval can only be classified as
+// zero or nonzero; that is precisely what its render condition needs.
+// This gate must not be used for arbitrary numeric-counter comparisons.
+static inline int vka_rc_gpu_delta_range(
+    int kind_a, int kind_b,
+    uint64_t epoch_a, uint64_t epoch_b,
+    uint64_t fence_a, uint64_t fence_b,
+    uint64_t lost_a, uint64_t lost_b,
+    uint64_t end_a, uint64_t end_b,
+    uint64_t submission_begin, uint64_t head) {
+    return kind_a == 3 && kind_b == 3 &&
+           epoch_a == epoch_b && !fence_a && !fence_b &&
+           lost_a == lost_b &&
+           vka_rc_gpu_range(3, 1, 0, 0, end_a, end_b,
+                            submission_begin, head);
+}
+
 typedef struct { uint64_t begin, end; uint32_t offset; } vka_rc_gpu_qrange;
 typedef struct { uint32_t first, count, offset; } vka_rc_gpu_copy;
 typedef struct {
