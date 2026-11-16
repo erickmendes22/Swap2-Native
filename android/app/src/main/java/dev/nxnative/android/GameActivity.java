@@ -404,17 +404,17 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (Prefs.OCARINA_TITLE.equals(id) && Prefs.shadowProfile(this, id) != 0) {
                 int shadow = Prefs.shadowProfile(this, id);
                 if (ShadowOverlay.current(files, id, shadow, pack.version)) {
-                    String root = ShadowOverlay.dir(files, id, shadow).getPath();
+                    String shadowRoot = ShadowOverlay.dir(files, id, shadow).getPath();
                     boolean combined = false;
                     for (int i = 0; i < env.size(); i++) {
                         String value = env.get(i);
                         if (value.startsWith("DM_ROMFS_OVERLAY=")) {
-                            env.set(i, "DM_ROMFS_OVERLAY=" + root + ":" + value.substring("DM_ROMFS_OVERLAY=".length()));
+                            env.set(i, "DM_ROMFS_OVERLAY=" + shadowRoot + ":" + value.substring("DM_ROMFS_OVERLAY=".length()));
                             combined = true;
                             break;
                         }
                     }
-                    if (!combined) env.add("DM_ROMFS_OVERLAY=" + root);
+                    if (!combined) env.add("DM_ROMFS_OVERLAY=" + shadowRoot);
                     Native.note("[nxlaunch] Ocarina shadow maps: profile " + shadow
                             + " from separate verified RomFS overlay; scene overlay preserved");
                 } else {
