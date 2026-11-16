@@ -1321,7 +1321,7 @@ static int stage_in_program(const prog_t *p, int stage, uint64_t *key, unsigned 
         uint8_t md[8];
         if (!prog_key(p, i, md)) continue;
         uint64_t k = vka_shlib_key(md);
-        const dmsh_vk_entry *e = g_hot_loaded ? vka_shlib_find(&g_hot, k) : NULL;
+        const dmsh_vk_entry *e = g_hot_loaded > 0 ? vka_shlib_find(&g_hot, k) : NULL;
         if (!e) e = vka_shlib_find(library_for_key(k), k);
         int nvn_stage = e ? vka_nvn_stage(e->stage) : -1;
         // A real missing shader has NO entry in either Vulkan library.
@@ -1368,15 +1368,15 @@ int vka_ocarina_capture_mesh_draw_pair(const prog_t *mesh_program, const prog_t 
     unsigned mesh_slot = 0, frag_slot = 0, task_slot = 0;
     if (!stage_in_program(mesh_program, vka_nvn_stage(DMSH_VK_STAGE_MS),
                           &mesh_key, &mesh_slot)) return 0;
-    int hot_mesh = g_hot_loaded && vka_shlib_find(&g_hot, mesh_key) != NULL;
+    int hot_mesh = g_hot_loaded > 0 && vka_shlib_find(&g_hot, mesh_key) != NULL;
     int missing_mesh = !vka_shlib_find(&g_lib, mesh_key) && !hot_mesh &&
-                       !(g_vegetation_loaded && vka_shlib_find(&g_vegetation, mesh_key));
+                       !(g_vegetation_loaded > 0 && vka_shlib_find(&g_vegetation, mesh_key));
     int have_task = stage_in_program(mesh_program, vka_nvn_stage(DMSH_VK_STAGE_TS),
                                      &task_key, &task_slot);
-    int hot_task = have_task && g_hot_loaded &&
+    int hot_task = have_task && g_hot_loaded > 0 &&
                    vka_shlib_find(&g_hot, task_key) != NULL;
     int missing_task = have_task && !vka_shlib_find(&g_lib, task_key) &&
-                       !hot_task && !(g_vegetation_loaded &&
+                       !hot_task && !(g_vegetation_loaded > 0 &&
                                       vka_shlib_find(&g_vegetation, task_key));
     if (!hot_mesh && !hot_task && !missing_mesh && !missing_task)
         return 1; // stable complete library: no extra per-draw file work
