@@ -632,7 +632,7 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
             _marker = os.path.join(source, _key + '.deferred')
             try:
                 with open(_marker + '.tmp', 'w', encoding='ascii') as _f:
-                    _f.write(CHAIN + '\\t' + VKV + '\\n')
+                    _f.write(CHAIN + '\t' + VKV + '\n')
                 os.replace(_marker + '.tmp', _marker)
             except OSError as _e:
                 print(f'[YELLOW] cannot persist pending pair for {_key}: {_e}',
