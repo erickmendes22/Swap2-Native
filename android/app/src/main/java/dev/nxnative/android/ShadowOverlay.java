@@ -29,7 +29,9 @@ final class ShadowOverlay {
         // Existing map-only overlays retain the original stamp and remain valid.
         String head = "profile\t" + profile + "\n";
         if (effect != 0) head += "fps\t" + effect + "\n";
-        if (effect == 3) head += "schema\tssao-samples-v2\n";
+        if (effect == 3) head += "schema\tssao-alchemy-pairs-v3\n";
+        if (effect == 4) head += "schema\tshadow-raw-depth-v2\n";
+        if (effect == 5) head += "schema\tpost-resource-retained-v2\n";
         return head + "version\t" + version + "\n";
     }
     static boolean current(File files, String titleId, int profile, String version) {
