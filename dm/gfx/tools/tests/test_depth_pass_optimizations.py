@@ -28,7 +28,7 @@ class DepthPassOptimizations(unittest.TestCase):
     def test_production_policy_preserves_original_geometry_and_cache_order(self):
         draw = (VK / "vka_draw.c").read_text()
         start = draw.index("    if (omit_color && (dp || sp)")
-        end = draw.index("    VkRenderingInfo ri =", start)
+        end = draw.index("    // Two measured Ocarina 1280x720", start)
         policy = draw[start:end]
         header = (VK / "vka.h").read_text()
         macros = "\n".join(next(line for line in header.splitlines() if line.startswith("#define " + name))

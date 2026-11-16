@@ -1,3 +1,5 @@
+Build 199 validation retry: adjust old isolated omitted-colour test slice to exclude the distinct new depth-store policy (its compiled 13 negative cases already pass). No runtime code change.
+
 Build 199: captured 1280x720 graphics passes preserve untouched depth via Vulkan 1.3 STORE_OP_NONE; split before any future depth write/clear; old STORE via DM_VK_OOT_DEPTH_STORE_NONE=0. No shader ABI change, retain original package/signature and GPU output. FPS gain must be measured on device.\n\nBuild162 combined GPU producer-dependency candidate; continue from approved157/current161.
 - Remove the duplicate full dependency only when texture preparation records no possible GPU work. Always keep the first host/previous-submission dependency.
 - Existing Selective GPU synchronization option additionally enables three reductions: pure transfer producer scopes independently of the obsolete internal FPS Boost flag; transfer/attachment scopes after whole/rectangular external clears; compute/transfer scopes for ungrouped dispatch completion and copied indirect arguments.
