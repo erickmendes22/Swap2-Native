@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fee649af646b16698af1179b688bfac42c0e38fb # temporary signed research APK checkout; restore after build
       - name: Install Zstandard for dictionary-compressed NUP regression
         run: |
           if python3 -c 'from compression import zstd'; then
@@ -168,6 +170,8 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fee649af646b16698af1179b688bfac42c0e38fb # temporary signed research APK checkout; restore after build
       - name: Generate matching shader headers for the actual APK build
         shell: bash
         run: |
