@@ -79,6 +79,14 @@ int main(void) {
         self.assertIn("1280x720 pass: frame", PROF)
         self.assertIn("NOT measured pixel overdraw", PROF)
         self.assertIn("NOT measured DRAM traffic", PROF)
+        self.assertIn("VK_QUERY_TYPE_PIPELINE_STATISTICS", PROF)
+        self.assertIn("VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT", PROF)
+        self.assertIn("vka_gp_pass_begin_query(g_cb)", DRAW)
+        self.assertIn("vka_gp_pass_end_query(g_cb)", DRAW)
+        self.assertIn("g_scene.pipeline_query = g_pipe_active;", PROF)
+        self.assertIn("pipelineStatisticsQuery != VK_FALSE", DEVICE)
+        self.assertIn("VK_QUERY_RESULT_64_BIT", PROF)
+        self.assertIn("fragment-invocations/target-pixel=", PROF)
         self.assertIn("for (int j = i - 1; j > 0 && g_m[j].gfx_block; --j)", PROF)
 
 
