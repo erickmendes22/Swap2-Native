@@ -621,6 +621,22 @@ def captured_oot_records(keys, loc, pc_of, package_dir):
         if rec.find(bytes.fromhex('34127698')) != 0x38 + len(code) or rec.count(b'BTCDBTCD') != 1:
             sys.exit(f'[RED] {key}: captured shader record has ambiguous separators')
         records.setdefault(stage, []).append((key, bytes(rec)))
+    if deferred and 'CHAIN' in globals() and 'VKV' in globals():
+        # These captured mesh/task sources cannot be translated safely until
+        # a REAL pixel/task pairing is captured. Remember the result for this
+        # exact translator version. The Android launcher ignores it only
+        # while source and pairing evidence have not changed; an updated
+        # mesh_pairs.tsv or newly captured partner re-enables the repair.
+        # This also avoids the same futile request when EVERY key defers.
+        for _key, _reason in deferred:
+            _marker = os.path.join(source, _key + '.deferred')
+            try:
+                with open(_marker + '.tmp', 'w', encoding='ascii') as _f:
+                    _f.write(CHAIN + '\\t' + VKV + '\\n')
+                os.replace(_marker + '.tmp', _marker)
+            except OSError as _e:
+                print(f'[YELLOW] cannot persist pending pair for {_key}: {_e}',
+                      flush=True)
     if not keys:
         first = deferred[0] if deferred else ('?', 'no verified shaders')
         sys.exit(f'[RED] no independently verified Ocarina shaders to build; '
