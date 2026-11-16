@@ -15,8 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: f646a4a6eb7366dafacd67b35308d3d78341d950 # readonly-depth memory optimization research APK, restore after run
       - name: Install Zstandard for dictionary-compressed NUP regression
         run: |
           if python3 -c 'from compression import zstd'; then
@@ -170,8 +168,6 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: f646a4a6eb7366dafacd67b35308d3d78341d950 # readonly-depth memory optimization research APK, restore after run
       - name: Generate matching shader headers for the actual APK build
         shell: bash
         run: |
