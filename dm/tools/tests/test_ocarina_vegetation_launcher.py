@@ -42,8 +42,17 @@ class ShaderAbiCert {static boolean approved(String a,String b,String c,String d
 class ShaderLibs {
     static class Header { String abi=BuildConfig.NX_DMSH_VK_ABI,inputs="aa5e7196d926",game="0400486024DEC000",vkChain="b6b21fb5753a";long entries=42339;boolean fits(long n){return true;} }
     static File originalOcarina(File p,String t,String a,String i){return new File(p,"base.lib");}
-    static Header header(File f){return f.getName().equals("base.lib")?new Header():null;}
-    static boolean hasKey(File f,Header h,String key)throws IOException{return false;}
+    static Header header(File f){
+        if(f.getName().equals("base.lib"))return new Header();
+        if(f.getName().equals("dmsh_vk.lib") &&
+           f.getPath().contains("vegetation")) {
+            Header h=new Header();h.entries=508;return h;
+        }
+        return null;
+    }
+    static boolean hasKey(File f,Header h,String key)throws IOException{
+        return f.getPath().contains("vegetation");
+    }
 }
 class Job {
     File root; String state="pending";List<String> keys=List.of();
@@ -71,9 +80,20 @@ public class Probe {
             Files.write(new File(captures,key+".code").toPath(),new byte[4]);
             Files.write(new File(captures,key+".ctl").toPath(),new byte[0xd8]);
         }
+        // This captured mesh key is genuinely absent from the 42k base
+        // but is one of the precompiled 508 vegetation supplements.
+        String vegKey="04452448ac915259";
+        Files.write(new File(captures,vegKey+".code").toPath(),new byte[4]);
+        Files.write(new File(captures,vegKey+".ctl").toPath(),new byte[0xd8]);
         Job j=new Job(root);
+        check(OcarinaShaderDelta.keys(j).size()==57,
+              "No installed vegetation supplement should expose 57 missing captures");
+        File oldVeg=new File(root,"pack/shaders/vegetation/v-older-chain");
+        check(oldVeg.mkdirs(),"Cannot create older verified vegetation fixture");
+        Files.write(new File(oldVeg,"dmsh_vk.lib").toPath(),new byte[1]);
         List<String> missing=OcarinaShaderDelta.keys(j);
-        check(missing.size()==56,"Expected only 56 captured missing keys; got "+missing.size());
+        check(missing.size()==56,"A previously compiled vegetation key was incorrectly reoffered");
+        check(!missing.contains(vegKey),"Installed older verified vegetation shader was called missing");
         // The compiler already deferred this unpaired mesh on the SAME
         // translator version. A repeated button tap must not offer it again.
         File blocked=new File(captures,"0000000000000001.deferred");
