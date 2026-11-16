@@ -284,6 +284,14 @@ public final class ShadowPack {
                     if(++hits>1500) throw new IOException("Configuração de sombras excedeu limite de campos.");
                 }
                 if(hits==0) log.append("Sem chaves de sombra com nomes legíveis.\n");
+                int suspects=0;
+                for(Field v:config.entries) {
+                    if((v.value==1024L||v.value==4096L) && suspects++<70)
+                        log.append(" · SOMENTE CANDIDATO (não alterado): ")
+                           .append(v.line()).append('\n');
+                }
+                if(suspects>70)log.append(" · Outros valores 1024/4096 omitidos: ")
+                    .append(suspects-70).append('\n');
             }
         }
         if(candidateFiles==0) {
@@ -321,6 +329,10 @@ public final class ShadowPack {
             shadow.add(field);
             log.append(" · ").append(field.line()).append('\n');
         }
+        int suspects=0;
+        for(Field field:byml.entries)
+            if((field.value==1024L||field.value==4096L) && suspects++<70)
+                log.append(" · CANDIDATO (somente leitura): ").append(field.line()).append('\n');
         boolean canPatch=false;
         try {
             if(!byml.little)throw new IOException("BYML big-endian não pode ser alterado.");
