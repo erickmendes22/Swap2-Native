@@ -5,6 +5,8 @@ on:
       - 'dm/tools/gsys_shadowmaps.py'
       - 'dm/tools/gsys_shadow.py'
       - 'dm/gfx/vk_android/vka_draw.c'
+      - 'dm/gfx/vk_android/vka_exec.c'
+      - 'dm/gfx/tools/tests/test_oot_uniform_buffer_barrier.py'
       - 'dm/gfx/vk_android/vka_readonly_depth_store.h'
       - 'dm/gfx/tools/tests/test_ocarina_depth_store_none.py'
       - 'dm/gfx/tools/tests/test_depth_pass_optimizations.py'
@@ -44,6 +46,7 @@ jobs:
         run: |
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_depth_store_none.py' -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_depth_pass_optimizations.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_oot_uniform_buffer_barrier.py' -v
       - name: Compile independent Android shadow overlay descriptor
         run: |
           mkdir -p /tmp/shadow-overlay-jvm
