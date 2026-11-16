@@ -803,22 +803,71 @@ public final class PackService extends Service {
                                 + "the complete shader library and previous overlay are unchanged.";
                     List<String> selectedKeys = Files.readAllLines(selected.toPath(), StandardCharsets.US_ASCII);
                     java.util.HashSet<String> unique = new java.util.HashSet<>(selectedKeys);
-                    if (selectedKeys.isEmpty() || selectedKeys.size() > hotKeys.size()
+                    File newLib = new File(selected.getParentFile(), "dmsh_vk.lib");
+                    ShaderLibs.Header newHeader = ShaderLibs.header(newLib);
+                    if (selectedKeys.isEmpty() || selectedKeys.size() > 1024
                             || unique.size() != selectedKeys.size()
-                            || !hotKeys.containsAll(selectedKeys)
-                            || !selectedKeys.stream().allMatch(k -> k.matches("[0-9a-f]{16}")))
-                        return "Ocarina selective translation selected-key manifest is stale or unsafe; "
-                                + "refusing to replace the original shader library.";
+                            || !selectedKeys.stream().allMatch(k -> k.matches("[0-9a-f]{16}"))
+                            || newHeader == null || !newHeader.fits(newLib.length())
+                            || newHeader.entries != selectedKeys.size()
+                            || !j.titleId().equals(newHeader.game)
+                            || !BuildConfig.NX_DMSH_VK_CHAIN.equals(newHeader.vkChain)
+                            || !BuildConfig.NX_DMSH_VK_ABI.equals(newHeader.abi)
+                            || !Profile.of(j.titleId()).shaderInputs.equals(newHeader.inputs))
+                        return "Ocarina selected shader manifest does not match the verified "
+                                + "partial library; the complete 42k library remains unchanged.";
+
+                    // A new repair must NEVER discard keys installed by a
+                    // previous repair. The compiler copies old module bytes
+                    // into the cumulative overlay. Accept an extra key only
+                    // if it really exists in an earlier compatible overlay;
+                    // never trust an arbitrary key from selected_keys.tsv.
+                    File hotRoot = selected.getParentFile().getParentFile();
+                    java.util.ArrayList<File> priorLibs = new java.util.ArrayList<>();
+                    priorLibs.add(new File(selected.getParentFile(), "dmsh_vk.lib.before-selective"));
+                    File[] older = hotRoot.listFiles(File::isDirectory);
+                    if (older != null) for (File dir : older) {
+                        if (!dir.equals(selected.getParentFile()))
+                            priorLibs.add(new File(dir, "dmsh_vk.lib"));
+                    }
+                    int fresh = 0, carried = 0;
+                    for (String key : selectedKeys) {
+                        if (!ShaderLibs.hasKey(newLib, newHeader, key))
+                            return "Ocarina partial library does not contain its published shader " + key;
+                        if (hotKeys.contains(key)) { fresh++; continue; }
+                        boolean proven = false;
+                        for (File prior : priorLibs) {
+                            ShaderLibs.Header previous = ShaderLibs.header(prior);
+                            if (previous == null || !previous.fits(prior.length())
+                                    || previous.entries < 1 || previous.entries > 1024
+                                    || !j.titleId().equals(previous.game)
+                                    || !BuildConfig.NX_DMSH_CHAIN.equals(previous.chain)
+                                    || !BuildConfig.NX_DMSH_VK_ABI.equals(previous.abi)
+                                    || !newHeader.inputs.equals(previous.inputs)) continue;
+                            if (ShaderLibs.hasKey(prior, previous, key)) {
+                                proven = true;
+                                break;
+                            }
+                        }
+                        if (!proven)
+                            return "Ocarina partial library contains an unexpected carried shader "
+                                    + key + "; refusing unsafe overlay publication.";
+                        carried++;
+                    }
+                    if (fresh == 0)
+                        return "No newly missing Ocarina shader compiled successfully; "
+                                + "the previous shader overlay remains intact.";
                     publishedHotKeys = selectedKeys;
                     try {
-                        j.expectedShaders(selectedKeys.size());
+                        j.expectedShaders(fresh);
                     } catch (org.json.JSONException e) {
                         return "Cannot store selected Ocarina shader count: " + e.getMessage();
                     }
-                    Log.i(TAG, "Ocarina selective preparation: "
-                            + selectedKeys.size() + " verified keys, "
-                            + (hotKeys.size() - selectedKeys.size())
-                            + " unsupported captured keys deferred; original 42339 left intact");
+                    Log.i(TAG, "Ocarina missing-shader repair: "
+                            + fresh + " newly verified keys, " + carried
+                            + " previously repaired shaders retained, "
+                            + (hotKeys.size() - fresh)
+                            + " unsupported source captures deferred; original 42339 left intact");
                 }
                 // Only the job-owned completed library may be moved. An
                 // imported/user-supplied shader cache must remain untouched.
