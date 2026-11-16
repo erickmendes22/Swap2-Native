@@ -74,7 +74,8 @@ public final class ShadowDiscovery {
                  p.toLowerCase(Locale.ROOT).contains("bootup") ||
                  p.toLowerCase(Locale.ROOT).contains("game"))?1:2)
             .thenComparing(String::compareTo));
-        int attempted=0,failed=0,configPacks=0;
+        int attempted=0,failed=0,configPacks=0,skippedLarge=0;
+        long readBudget=768L*1024*1024,readTotal=0;
         String dictionaryError=null;
         byte[] dict=null;
         try {
@@ -91,8 +92,20 @@ public final class ShadowDiscovery {
                    .append(" não foram inspecionados.\n");
                 break;
             }
-            attempted++;
             try {
+                long size=nup.resourceLength(chosen,path);
+                if(size>192L*1024*1024) {
+                    skippedLarge++;
+                    log.append("Pack grande demais para leitura segura: ")
+                       .append(path).append(" (").append(size).append(" bytes)\n");
+                    continue;
+                }
+                if(readTotal+size>readBudget) {
+                    log.append("Limite acumulado de 768 MiB atingido; varredura parcial.\n");
+                    break;
+                }
+                readTotal+=size;
+                attempted++;
                 NupReader.Resource item=nup.resource(chosen,path);
                 ShadowPack.Result found=ShadowPack.inspect(item.bytes,dict,
                     "Pacote "+chosen.label()+"\\nFonte pack: "+item.from,path);
@@ -114,7 +127,8 @@ public final class ShadowDiscovery {
         log.append("\\nResumo: ").append(inspectedDirect).append(" BYML diretos, ")
            .append(attempted).append("/").append(packs.size()).append(" packs tentados; ")
            .append(configPacks).append(" packs com ModelSceneConfigParam, ")
-           .append(failed).append(" falhas.\n");
+           .append(failed).append(" falhas, ").append(skippedLarge)
+           .append(" packs grandes ignorados.\n");
         log.append("Nenhum patch será gerado sem dimensões 1024/4096 identificadas. ")
            .append("O NUP continua intacto.\n");
         return new Scan(candidate,log.toString());
