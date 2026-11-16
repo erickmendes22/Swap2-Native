@@ -208,6 +208,14 @@ final class Prefs {
     static void feedbackInvocationCache(Context c, String titleId, boolean on) {
         of(c).edit().putBoolean(gameKey("fb_invocation_cache", titleId), on).commit();
     }
+    // Optional depth-store elision for original 1280x720 Ocarina colour passes.
+    // Explicitly OFF until hardware A/B validates visual correctness and FPS.
+    static boolean ootDepthStoreNone(Context c, String titleId) {
+        return OCARINA_TITLE.equals(titleId) && of(c).getBoolean(gameKey("oot_depth_store_none", titleId), false);
+    }
+    static void ootDepthStoreNone(Context c, String titleId, boolean on) {
+        of(c).edit().putBoolean(gameKey("oot_depth_store_none", titleId), on).commit();
+    }
     static boolean fragmentOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("fragment_optimized", titleId), true); }
     static void fragmentOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("fragment_optimized", titleId), on).commit(); }
     static boolean computeOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("compute_optimized", titleId), true); }
