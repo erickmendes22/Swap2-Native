@@ -30,6 +30,10 @@ class AttachmentDependencyTest(unittest.TestCase):
         self.assertIn("VK_PIPELINE_STAGE_ALL_COMMANDS_BIT", body)
         self.assertIn("VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT", body)
         self.assertIn("vka_n_attachment_bar++", body)
+        self.assertIn("VkPipelineStageFlags src_stages =", body)
+        self.assertIn("(color ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT : 0)", body)
+        self.assertIn("(depth ? (VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |", body)
+        self.assertIn("vk.vkCmdPipelineBarrier(cb, src_stages,", body)
         self.assertIn("if (vka_gp_active) vka_gp_mark(cb, file, line);", body)
 
     def test_guest_barriers_always_order_all_prior_commands(self):
