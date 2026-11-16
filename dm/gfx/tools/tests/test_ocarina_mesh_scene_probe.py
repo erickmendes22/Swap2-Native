@@ -102,6 +102,64 @@ int main(void) {
                 "-I", str(VKA), str(path), "-o", str(exe)], check=True)
             subprocess.run([str(exe)], check=True)
 
+    def test_undefer_removes_exact_staging_copy_and_preserves_other_workgroup(self):
+        cc = shutil.which("cc")
+        if not cc: self.skipTest("C compiler missing")
+        # Synthetic SPIR-V shape: store/defer/clear/flush, two staging
+        # Workgroup variables, one unrelated Workgroup variable and 20 calls.
+        # The source remains unmodified. Test every resulting instruction.
+        c = r"""
+#include "vka_memu_undefer.h"
+#include <assert.h>
+#include <stdio.h>
+static uint32_t w[512]; static size_t n;
+static void ins(unsigned op,unsigned cnt,const uint32_t *v) {
+  w[n++]=((cnt+1)<<16)|op;
+  for(unsigned i=0;i<cnt;i++) w[n++]=v[i];
+}
+#define I(op,...) do {uint32_t v[]={__VA_ARGS__};ins(op,sizeof(v)/4,v);}while(0)
+static void name(unsigned id,const char*s) {
+  uint32_t v[32]={0};v[0]=id;memcpy(v+1,s,strlen(s));
+  ins(5,1+strlen(s)/4+1,v);
+}
+static void fn(unsigned id){I(54,9u,id,0u,8u);I(248,id+80);}
+static void end(void){I(253,0u);I(56,0u);}
+int main(void) {
+  n=5;w[0]=0x07230203;w[1]=0x00010600;w[3]=256;
+  name(1,"mesh_plane_store");name(2,"mesh_plane_defer");
+  name(3,"mesh_plane_flush");name(4,"mesh_plane_clear");
+  I(15,5365u,20u,0x6e69616du,0u,30u,31u,32u);
+  I(59,10u,30u,4u);I(59,10u,31u,4u);I(59,10u,32u,4u);
+  fn(1);end();
+  fn(2);I(65,11u,40u,30u,60u);I(65,11u,41u,31u,60u);end();
+  fn(3);end();fn(4);end();
+  fn(20);I(57,9u,72u,4u);
+  for(int i=0;i<20;i++)I(57,9u,(unsigned)(120+i),2u);
+  I(57,9u,151u,3u);end();
+  size_t old=n, now=0;uint32_t calls=0;
+  uint32_t *out=vka_memu_undefer(w,n,&now,&calls);
+  assert(out && calls==20 && now<old);
+  unsigned store=0, entry=0, other=0;
+  for(size_t p=5;p<now;p+=out[p]>>16) {
+    unsigned op=out[p]&65535u,len=out[p]>>16;
+    if(op==57){assert(out[p+3]!=2&&out[p+3]!=3&&out[p+3]!=4);
+      if(out[p+3]==1)store++;}
+    if(op==59){assert(out[p+2]!=30&&out[p+2]!=31);other++;}
+    if(op==15){entry++;for(unsigned k=5;k<len;k++)
+      assert(out[p+k]!=30&&out[p+k]!=31);}
+  }
+  assert(store==20&&entry==1&&other==1);
+  free(out);return 0;
+}
+"""
+        with tempfile.TemporaryDirectory() as td:
+            src = Path(td) / "exact_shape.c"
+            exe = Path(td) / "exact_shape"
+            src.write_text(c)
+            subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", str(VKA), str(src), "-o", str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+
     def test_actual_scene_profile_selects_both_1280x720_passes(self):
         compiler = shutil.which("cc")
         if not compiler:
