@@ -126,6 +126,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_gpu_write_index.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_upstream_013_015_memory.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_fps_boost_vrs.py'
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_depth_store_none.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_retile.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_compute_virtual_retile.py'
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_graphics_barrier_scopes.py'
