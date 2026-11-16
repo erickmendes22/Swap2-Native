@@ -14,6 +14,7 @@ static inline int vka_oot_heavy_4x2_eligible(
     return ocarina && enabled && driver_supports_4x2 && vrs_profile == 2 &&
            chosen_width == 2u && chosen_height == 2u &&
            (fragment_key == UINT64_C(0x1e4d2630d24846d0) ||
+            fragment_key == UINT64_C(0x19f99e925937b038) ||
             fragment_key == UINT64_C(0x8ea627c8ef169ee1)) &&
            !mesh && color_count == 1u &&
            color_format == VK_FORMAT_B10G11R11_UFLOAT_PACK32 &&
