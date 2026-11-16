@@ -54,6 +54,19 @@ int vka_memu_layout_of(const uint32_t *w, size_t nw, vka_memu_layout *L, char *e
 // _INTERLEAVED flags
 void vka_memu_rec_mesh(const vka_memu_layout *L, uint32_t rec[32]);
 
+// Only requested for DM_VK_MEMU_PLANE_DIAG. This reports which ACTUAL source
+// helper could be replaced; a regular output OpStore to SSBO is not evidence
+// that the expensive mesh_plane_store helper was reduced to one scatter.
+typedef struct {
+    uint32_t named_helper, eligible, matched, fallback, per_primitive;
+    uint32_t source_instructions, compute_instructions;
+    uint32_t source_workgroup_vars, compute_workgroup_vars;
+    uint32_t source_barriers, compute_barriers;
+    uint32_t source_stores, compute_stores;
+} vka_memu_diag;
+uint32_t *vka_memu_cs_diagnostic(const uint32_t *w, size_t nw,
+                                 size_t *out_nw, char *err, size_t errn,
+                                 vka_memu_diag *diag);
 // The task or mesh module w as a GLCompute module (malloc'd, *out_nw words; NULL with the reason in err): its entry point dispatched over the draw's workgroups
 // (WorkgroupId.x + WorkgroupId.y x NumWorkgroups.x, past VKA_MEMU_R_NTASK / _TOTAL returning), its record at the push constant. A task module writes its payload and its
 // mesh workgroup count into the arena where OpEmitMeshTasksEXT was; a mesh module finds its task by a binary search of the offsets and copies that task's payload into
