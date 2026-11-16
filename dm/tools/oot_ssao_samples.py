@@ -31,6 +31,11 @@ def patch_byml(source):
     if by.e != '<' or not 0 < by.root < len(raw) - 4:
         raise Error('unsupported SSAO parameter BYML endian/root')
     locations, visited = [], set()
+    # Actual v131072 scene settings (user's executable diagnostic):
+    # SamplePairNum=3/2, BlurNum=2/1. Preserve SSAO allocation, but reduce
+    # both sampling routes and one blur iteration where the original has two.
+    trials = {KEY: ({3, 5}, 2), 'SamplePairNum': ({3}, 2),
+              'BlurNum': ({2}, 1)}
 
     def visit(node, depth, in_ssao=False):
         if depth > 24 or node in visited:
@@ -41,26 +46,29 @@ def patch_byml(source):
         for name, kind, word in by.items(node):
             if word < 0 or word + 4 > len(raw):
                 raise Error('SSAO BYML scalar out of bounds')
-            if name == KEY and in_ssao:
+            if name in trials and in_ssao:
                 if kind != D_INT:
-                    raise Error('unexpected SSAO sample-pair field type')
+                    raise Error('unexpected SSAO control type for ' + name)
+                originals, target = trials[name]
                 actual = struct.unpack_from('<i', raw, word)[0]
-                if actual in SOURCE_PAIRS:
-                    locations.append((word, actual))
-                elif actual == TRIAL_PAIRS:
-                    pass   # scene is already at the safe 2-pair target; leave unchanged
-                else:
+                if actual in originals:
+                    locations.append((word, target, name))
+                elif actual == target or (name in ('BlurNum', 'SamplePairNum') and actual == 0):
+                    pass  # already cheap/disabled in this specific scene
+                elif name == KEY:
                     raise Error('unexpected original SSAO sample-pair count: %d' % actual)
+                # Some scene presets have different blur/sample variants:
+                # leave unknown non-allocating controls unchanged.
             elif kind in CONTAINERS:
                 visit(by.u32(word), depth + 1, in_ssao or name == 'SSAO')
 
     visit(by.root, 0)
-    if len({word for word, _old in locations}) != len(locations):
+    if len({word for word, _value, _name in locations}) != len(locations):
         raise Error('duplicate SSAO scalar offset')
-    for word, _old in locations:
-        struct.pack_into('<i', raw, word, TRIAL_PAIRS)
+    for word, target, _name in locations:
+        struct.pack_into('<i', raw, word, target)
     differing = {i for i, (a, b) in enumerate(zip(source, raw)) if a != b}
-    allowed = {i for o, _old in locations for i in range(o, o + 4)}
+    allowed = {i for o, _target, _name in locations for i in range(o, o + 4)}
     if (locations and (not differing or not differing <= allowed)) or (not locations and differing):
         raise Error('SSAO patch modified unknown bytes')
     return bytes(raw), len(locations)
@@ -99,6 +107,6 @@ def generate(root, out, log=print):
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, 'wb') as f:
             f.write(patched)
-        log('SSAO sample pairs: %s reduced %d field%s (allowed originals 3 or 5, target %d)' %
-            (name, num, '' if num == 1 else 's', TRIAL_PAIRS))
+        log('SSAO cost reduced: %s %d verified scene control%s (Alchemy pairs 3/5->2, sample pairs 3->2, blur passes 2->1)' %
+            (name, num, '' if num == 1 else 's'))
     return sum(n for _, _, n in matched)
