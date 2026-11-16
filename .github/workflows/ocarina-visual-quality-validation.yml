@@ -1,0 +1,60 @@
+name: Ocarina scene quality patches validation
+
+on:
+  push:
+    branches:
+      - research/ocarina-visual-quality-patches
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocarina-visual-quality
+  cancel-in-progress: true
+
+jobs:
+  foliage-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify real C whitelist and draw/compute parity
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_visual_quality_patches -v
+          python3 dm/gfx/tools/mesh_vegetation_profile.py --check
+      - name: Android SDK/NDK prerequisites
+        shell: bash
+        run: |
+          set -euxo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0" "cmake;3.22.1" "ndk;28.2.13676358"
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "$NDK/shader-tools/linux-x86_64" >> "$GITHUB_PATH"
+      - name: Verify Android Java menu and preference compilation
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd android/app
+          chmod +x gradlew
+          ./gradlew --no-daemon \
+            -PnxGames=0400486024DEC000 -PnxApp=ootv11ios \
+            -PnxPackEngine=fake -PnxBranchLabel=foliage-quality-test \
+            compileDebugJavaWithJavac
+      - name: Verify Vulkan backend with actual NDK compiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 dm/gfx/vk_android/fsr/ndsr_spv.py
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py
+          cmake -S android/host -B "$RUNNER_TEMP/quality" -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=33 \
+            -DNX_RUNTIME_PROFILE=ON -DNX_LSFG=OFF
+          cmake --build "$RUNNER_TEMP/quality" --target nxhost -j 4
+          find "$RUNNER_TEMP/quality" -name libnxhost.so -size +0c | grep -q .
