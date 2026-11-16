@@ -398,6 +398,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                 else sceneNote = "[RED] [nxlaunch] Scene resolution 720p: the overlay " + SceneOverlay.dir(files, id) + " was not made for this pack (version " + pack.version
                         + ", scale " + Prefs.renderSceneScale(this, id, prof.sceneScale()) + "): using the game's own render scale this run; select the internal scene resolution again";
             }
+            boolean selectedHeavy42 = false; // only after the exact current graphics overlay was verified
             // Graphics FPS patch and optional legacy shadow-map reduction
             // share exactly one BYML. The host's multi-root overlay keeps
             // scene_720p (Bootup pack) independent and unchanged.
@@ -417,6 +418,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                             }
                         }
                         if (!combined) env.add("DM_ROMFS_OVERLAY=" + graphicsRoot);
+                        selectedHeavy42 = (mask & 32) != 0;
                         Native.note("[nxlaunch] Ocarina graphics BYML: shadow " + shadow + ", FPS mask " + mask
                                 + "; combined overlay loaded, scene_720p preserved");
                     } else {
@@ -434,6 +436,18 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             env.add("DM_LANG=" + AppLanguage.gameCode(this));
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
+            // Explicit opt-in only: Adreno advertised 4x2, pipeline accepts
+            // it, and only three exact GPU-profiled single-colour HDR/D32
+            // fragment shaders qualify.  All other shaders remain 2x2.
+            // Disabling the bit restores the existing 2x2 pipeline policy.
+            if (selectedHeavy42) {
+                if (GraphicsOptions.hotpassVrs(this, id) == 2) {
+                    env.add("DM_VK_OOT_HEAVY_4X2=1");
+                    Native.note("[nxlaunch] FPS patch: targeted 4x2 only for verified heavy HDR shaders; VRS 2x2 elsewhere");
+                } else {
+                    Native.note("[nxlaunch] FPS patch 4x2 selected but inactive: choose VRS 2x2 in graphics settings");
+                }
+            }
             QglConfig.env(this, id, env); // opt-in Qualcomm file override; the default changes nothing
             // Opt-in 0.1.8.5 memory-sharing adaptation; Direct mapping
             // remains the default on every game and chipset.
