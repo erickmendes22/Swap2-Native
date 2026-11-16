@@ -43,6 +43,77 @@ class MissingShaderRepair(unittest.TestCase):
         self.assertIn("if os.path.isfile(installed):", BUILDER)
         self.assertNotIn("if os.path.isfile(installed) and not os.path.isfile(previous):", BUILDER)
 
+    def test_real_builder_merge_preserves_an_existing_shader_without_recompiling(self):
+        # Execute the actual AST block from vk_android_build.py with small
+        # synthetic verified modules. No proprietary shader capture is needed.
+        import ast
+        import os
+        import struct
+        import sys
+        import tempfile
+        import types
+        from unittest.mock import patch
+
+        tree = ast.parse(BUILDER)
+        blocks = [n for n in tree.body if isinstance(n, ast.If)
+                  and "Ocarina incremental overlay" in ast.unparse(n)]
+        self.assertEqual(len(blocks), 1)
+        old_key = "0000000000000002"
+        selected_key = "0000000000000001"
+        old_entry = bytearray(64)
+        old_entry[16] = 5
+
+        class PreviousLibrary:
+            def __init__(self, path):
+                self.path = path
+                self.ne = 2
+                self.game = "0400486024DEC000"
+                self.chain = "same-translator"
+                self.inputs = "same-inputs"
+                self.abi = "674db0a4ff79"
+                self.sg = 64
+                self.sa = 256
+                self.version = "old-overlay"
+                self.index = {old_key: 0, selected_key: 1}
+                self.closed = False
+
+            def hash_of(self, i, codec):
+                key = old_key if i == 0 else selected_key
+                return key, "verified", (key, bytes(old_entry), b"bindings", b"c1",
+                                          [(0, 4, b"data", 0)])
+
+            def close(self):
+                self.closed = True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "v-old-overlay"
+            folder.mkdir()
+            (folder / "dmsh_vk.lib").write_bytes(b"fixture")
+            selected = {selected_key}
+            results = [(selected_key, "ok", "", ({"new": True}, []))]
+            keys = [selected_key]
+            ns = {
+                "want": selected, "VEGETATION": False,
+                "GAME": types.SimpleNamespace(id="0400486024DEC000"),
+                "cache_root": tmp, "os": os, "struct": struct, "sys": sys,
+                "VK": {"DIR_PREFIX": "v-", "LIB_FILE": "dmsh_vk.lib"},
+                "delta": types.SimpleNamespace(Library=PreviousLibrary, zeroed=lambda b: b),
+                "CHAIN": "same-translator", "INPUTS": "same-inputs",
+                "ABI": "674db0a4ff79",
+                "ANSWERS": {"subgroup_size": 64, "ssbo_align": 256},
+                "STAGE": {"cs": 5}, "zstd": None,
+                "results": results, "keys": keys,
+            }
+            with patch.dict(os.environ, {"DMSH_VK_OOT_PARTIAL": "1"}):
+                exec(compile(ast.Module(body=blocks, type_ignores=[]),
+                             "<real cumulative overlay block>", "exec"), ns)
+            self.assertEqual(selected, {selected_key, old_key})
+            self.assertEqual(set(keys), {selected_key, old_key})
+            self.assertEqual(len(results), 2)
+            self.assertEqual(results[0][0], selected_key)
+            self.assertEqual(results[1][0], old_key)
+            self.assertEqual(results[1][3][0]["lib"]["binds"], b"bindings".hex())
+
     def test_packer_verifies_every_published_key_and_prior_source(self):
         self.assertIn("newHeader.entries != selectedKeys.size()", SERVICE)
         self.assertIn("ShaderLibs.hasKey(newLib, newHeader, key)", SERVICE)
