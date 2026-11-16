@@ -48,7 +48,7 @@ final class ShadowOverlay {
     }
     /** A combined experimental profile never reuses an older single-effect overlay. */
     static boolean validMask(int mask) {
-        return mask >= 0 && mask <= 63 && (mask & 3) != 3;
+        return mask >= 0 && mask <= 31 && (mask & 3) != 3;
     }
     static File dirMask(File files, String titleId, int shadow, int mask) {
         if (mask == 0) return dir(files, titleId, shadow, 0);
