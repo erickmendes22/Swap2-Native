@@ -208,3 +208,8 @@ Ocarina missing-shader repair, signed APK build candidate 2026-11-15:
 - Cumulative hot libraries preserve earlier verified entries without recompiling them. Each carried key is checked against a real previous library, and every published key is checked in the newly generated library before packing.
 - The host library and old complete game shader pack are never deleted or altered by repair.
 - Incremental regression Actions #43779058359 succeeded. Test adds synthetic execution of the real Python overlay merge. Build and Android-device repair outcomes still need confirmation.
+
+Ocarina final missing-repair packaging retry, 2026-11-15:
+- Missing-only repair remains separate from explicit 508-stage vegetation preparation. The earlier APK workflow #43779233990 validated source selection but failed its old vegetation-JVM expectation; the production behavior is intentional and the JVM fixture now verifies BOTH flows independently.
+- Complete incremental CI #43779400347 succeeded, including the Java probe, corrected shader delta tests, real cumulative-overlay synthetic execution and NDK syntax.
+- Preserve prior signing key and original full library; compile APK from this branch and publish only after all validation passes.
