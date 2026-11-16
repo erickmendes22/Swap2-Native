@@ -700,14 +700,15 @@ static uint32_t *lib_words(const vka_shlib *L, const dmsh_vk_entry *e, const dms
 // complete original pipeline so no unknown rewritten effects are elided.
 int vka_shader_oot_fs_pure(vka_shader *s) {
     if (!s || !s->e || s->e->stage != DMSH_VK_STAGE_FS ||
-        (s->e->flags & (DMSH_VK_F_ALPHA_TEST | DMSH_VK_F_INTERLOCK)) ||
+        (s->e->flags & DMSH_VK_F_INTERLOCK) ||
         getenv("DM_VK_SPV_OVERRIDE") || strcmp(DM_GAME_ID, "0400486024DEC000"))
         return 0;
     if (s->oot_fs_pure) return s->oot_fs_pure == 1;
     const dmsh_vk_module *m = vka_shlib_module(s->lib, s->e, DMSH_VK_MOD_BASE);
     size_t nb = 0; char err[160] = "";
     uint32_t *w = m ? lib_words(s->lib, s->e, m, &nb, err, sizeof err) : NULL;
-    int pure = w && vka_spv_pure_fragment_output(w, nb / 4);
+    int pure = w && vka_spv_pure_fragment_output_alpha(w, nb / 4,
+        (s->e->flags & DMSH_VK_F_ALPHA_TEST) != 0);
     free(w);
     s->oot_fs_pure = pure ? 1 : 2;
     return pure;

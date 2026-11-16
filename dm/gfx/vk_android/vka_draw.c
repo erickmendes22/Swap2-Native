@@ -2243,12 +2243,15 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
     unsigned colmask = 0;
     for (uint32_t i = 0; i < k.ncolor; i++) colmask |= k.att[i].mask;
     vka_shader *without_fs[VKA_NSTAGE];
+    // A bound writable descriptor (or a VERTEX shader storage write) is not
+    // evidence that this FRAGMENT shader writes. The SPIR-V side-effect
+    // proof below rejects every actual FS storage/image/atomic write.
     int elide = sh[1] && vka_oot_fs_elide_state(
         fs_elide_enabled, 1, fs_elide_driver_ok,
         d->rast_discard, R.df != VK_FORMAT_UNDEFINED ||
         R.sf != VK_FORMAT_UNDEFINED, k.samples,
-        k.a2c, k.alpha_func || (sh[1]->e->flags & DMSH_VK_F_ALPHA_TEST),
-        draw_writes(sh, d), d->tf_on, colmask) &&
+        k.a2c, k.alpha_func,
+        0, d->tf_on, colmask) &&
         vka_shader_oot_fs_pure(sh[1]);
     if (elide) {
         g_depth_fs_eligible++;

@@ -111,7 +111,10 @@ int main(void){
         self.assertIn('vka_oq_draw();', draw)
         self.assertIn('ptr[a[2]] = ptr[a[3]];', h)
         self.assertIn('if (built[i] && ptr[i] == 1)', h)
-        self.assertIn('vka_spv_pure_fragment_output(w, nb / 4)', shader)
+        self.assertIn('vka_spv_pure_fragment_output_alpha(w, nb / 4,', shader)
+        self.assertIn('vka_spv_alpha_disabled_kills_dead(w,nw)', h)
+        self.assertIn('k.a2c, k.alpha_func,', draw)
+        self.assertIn('0, d->tf_on, colmask)', draw)
         cc = shutil.which("cc")
         if not cc: self.skipTest("C compiler missing")
         c = r"""
@@ -148,6 +151,20 @@ int main(void) {
  assert(!vka_spv_pure_fragment_output(w,n));
  basic(); I(253,0);I(56,0);I(16,2,12);
  assert(!vka_spv_pure_fragment_output(w,n));
+ // Translator's inserted alpha test. SpecId=1 defaults to zero,
+ // each IEQUAL(0,N) is false and all SELECTs retain true.
+ n=5;w[0]=0x07230203;w[1]=0x00010600;w[2]=0;w[3]=80;w[4]=0;
+ I(71,20,1,1);I(50,1,20,0);I(41,2,21);I(42,2,22);I(43,1,23,1);
+ I(15,4,30,0x6e69616d,0);I(16,30,7);
+ I(59,1,4,3);I(54,1,30,0,3);I(248,31);
+ I(170,2,40,20,23);I(169,2,41,40,22,21);
+ I(247,45,0);I(250,41,45,44);I(248,44);I(252);
+ I(248,45);I(62,4,23);I(253,0);I(56,0);
+ assert(!vka_spv_pure_fragment_output(w,n));
+ assert(vka_spv_pure_fragment_output_alpha(w,n,1));
+ // More than one predecessor to the kill block is unsafe.
+ I(249,44);
+ assert(!vka_spv_pure_fragment_output_alpha(w,n,1));
  return 0;
 }
 """
