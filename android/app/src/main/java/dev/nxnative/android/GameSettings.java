@@ -1006,7 +1006,8 @@ final class GameSettings {
         new Thread(() -> {
             String[] in = sceneInputs(g);
             boolean valid = files != null && in != null &&
-                    ShadowOverlay.currentMask(files, g.titleId, shadow, mask, in[0]);
+                    ShadowOverlay.currentMask(files, g.titleId, shadow, mask,
+                            SceneService.graphicsVersion(a, g.titleId, in[0], mask, files));
             if (!valid) UI.post(() -> row.value(label + " · Precisa preparar novamente"));
         }, "nx-graphics-check").start();
     }
@@ -1025,7 +1026,8 @@ final class GameSettings {
         new Thread(() -> {
             String[] in = sceneInputs(g);
             boolean valid = files != null && in != null &&
-                    ShadowOverlay.currentMask(files, id, shadow, mask, in[0]);
+                    ShadowOverlay.currentMask(files, id, shadow, mask,
+                            SceneService.graphicsVersion(a, id, in[0], mask, files));
             UI.post(() -> {
                 boolean gone = a.isFinishing() || a.isDestroyed();
                 if (in == null || files == null || valid) {
