@@ -864,6 +864,7 @@ final class GameSettings {
             case 3: return "SSAO: menos amostras, buffers preservados (teste)";
             case 4: return "Pré-passe: profundidade direta (teste GPU)";
             case 5: return "DOF/Bloom: comandos reduzidos (teste GPU)";
+            case 6: return "GPU: VRS 4×2 em 3 shaders pesados (exige VRS 2×2)";
             default: return "Original do jogo · sem patch de FPS";
         }
     }
@@ -872,7 +873,7 @@ final class GameSettings {
     private static String fpsMaskLabel(int mask) {
         if (mask == 0) return "Original do jogo";
         StringBuilder result = new StringBuilder();
-        for (int effect = 1; effect <= 5; effect++) {
+        for (int effect = 1; effect <= 6; effect++) {
             if ((mask & (1 << (effect - 1))) == 0) continue;
             if (result.length() > 0) result.append(" + ");
             switch (effect) {
@@ -881,6 +882,7 @@ final class GameSettings {
                 case 3: result.append("SSAO"); break;
                 case 4: result.append("Pré-passe"); break;
                 case 5: result.append("DOF/Bloom"); break;
+                case 6: result.append("VRS pesado 4×2"); break;
                 default: break;
             }
         }
@@ -890,9 +892,9 @@ final class GameSettings {
     private static void fpsPatches(MainActivity a, Game g, Runnable done) {
         String id = g.titleId;
         int previous = Prefs.fpsPatchMask(a, id);
-        String[] labels = new String[5];
-        boolean[] checked = new boolean[5];
-        for (int i = 0; i < 5; i++) {
+        String[] labels = new String[6];
+        boolean[] checked = new boolean[6];
+        for (int i = 0; i < 6; i++) {
             labels[i] = fpsLabel(i + 1);
             checked[i] = (previous & (1 << i)) != 0;
         }
