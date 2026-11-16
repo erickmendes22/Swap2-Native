@@ -148,12 +148,12 @@ final class Prefs {
     static void fullVegetation(Context c, String titleId, boolean on) {
         of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on)
                 .remove(gameKey("oot_vegetation_detail", titleId))
-                .remove(gameKey("oot_vegetation_detail_v2", titleId))
-                .remove(gameKey("oot_vegetation_detail_v3", titleId)).commit();
+                .remove(gameKey("oot_vegetation_detail_v2", titleId)).commit();
     }
-    // v3: retire A/B and destructive V1 pairs. Preserve the old explicit
-    // vegetation-OFF preference. New 75/50% are true per-task counts, not
-    // whole-program omission. Old v2 A/B settings never silently carry over.
+    // v2: never migrate the old aggressive "leve/reduzida" 2/5-pair presets.
+    // Default FULL even when an old user preference exists. Previous full-
+    // vegetation OFF still maps to OFF; this does not turn foliage back on.
+    // 0 full, 1 pair A alone, 2 pair B alone, 3 pair A+B, 4 all supplement OFF.
     static boolean shadowHard(Context c, String id) {
         return OCARINA_TITLE.equals(id) && of(c).getBoolean(gameKey("oot_shadow_hard", id), false);
     }
@@ -170,26 +170,17 @@ final class Prefs {
     }
     static int vegetationDetail(Context c, String id) {
         if (!OCARINA_TITLE.equals(id)) return 0;
-        int fallback = of(c).getBoolean(gameKey("full_vegetation", id), true) ? 0 : 3;
-        int level = of(c).getInt(gameKey("oot_vegetation_detail_v3", id), fallback);
-        return level < 0 || level > 3 ? fallback : level;
+        int fallback = of(c).getBoolean(gameKey("full_vegetation", id), true) ? 0 : 4;
+        int level = of(c).getInt(gameKey("oot_vegetation_detail_v2", id), fallback);
+        return level < 0 || level > 4 ? fallback : level;
     }
     static void vegetationDetail(Context c, String id, int level) {
         if (!OCARINA_TITLE.equals(id)) return;
-        int checked = Math.max(0, Math.min(3, level));
+        int checked = Math.max(0, Math.min(4, level));
         of(c).edit()
-                .putInt(gameKey("oot_vegetation_detail_v3", id), checked)
-                .putBoolean(gameKey("full_vegetation", id), checked != 3)
+                .putInt(gameKey("oot_vegetation_detail_v2", id), checked)
+                .putBoolean(gameKey("full_vegetation", id), checked != 4)
                 .commit();
-    }
-    static int shadowFoliage(Context c, String id) {
-        if (!OCARINA_TITLE.equals(id)) return 0;
-        int v = of(c).getInt(gameKey("oot_shadow_foliage", id), 0);
-        return v < 0 || v > 2 ? 0 : v;
-    }
-    static void shadowFoliage(Context c, String id, int level) {
-        if (OCARINA_TITLE.equals(id))
-            of(c).edit().putInt(gameKey("oot_shadow_foliage", id), Math.max(0, Math.min(2, level))).commit();
     }
     static boolean vegetationOptimized(Context c, String titleId) { return fullVegetation(c, titleId); }
     static void vegetationOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_optimized", titleId), on).commit(); }

@@ -43,11 +43,7 @@ vka_memu_sh *vka_memu_of(vka_shader *s) {
         d->nsb += 2;
         if (d->nsb > V.props.limits.maxPerStageDescriptorStorageBuffers) { snprintf(err, sizeof err, "%u storage buffers with the arena and the records, the device's compute stage takes %u", d->nsb, V.props.limits.maxPerStageDescriptorStorageBuffers); d->state = -1; }
         if (d->L.threads > V.props.limits.maxComputeWorkGroupInvocations) { snprintf(err, sizeof err, "a workgroup of %u invocations", d->L.threads); d->state = -1; }
-        d->ce = *s->e; d->ce.stage = DMSH_VK_STAGE_CS; d->ce.key = s->key ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^
-                    vka_memu_cs_tag(s->e->stage) ^
-                    ((s->e->stage == DMSH_VK_STAGE_TS &&
-                      s->key == UINT64_C(0x99280b7b8aae78df) &&
-                      !strcmp(DM_GAME_ID, "0400486024DEC000")) ? VKA_MEMU_KEY_TASK_DENSITY : 0);
+        d->ce = *s->e; d->ce.stage = DMSH_VK_STAGE_CS; d->ce.key = s->key ^ VKA_MEMU_KEY_CS ^ vka_memu_layout_tag() ^ vka_memu_cs_tag(s->e->stage);
         memset(&d->ve, 0, sizeof d->ve); d->ve.key = s->key ^ VKA_MEMU_KEY_VS ^ vka_memu_layout_tag(); d->ve.stage = DMSH_VK_STAGE_VS;
     } else d->state = -1;
     free(w);
@@ -80,13 +76,7 @@ vka_shader *vka_memu_cs_of(vka_shader *s, int gl) {
     // This does not rewrite or rebuild the imported 42k/508 libraries.
     int plane_diag = VKA_ENV("DM_VK_MEMU_PLANE_DIAG", 0);
     vka_memu_diag md = {0};
-    const int special_task = s->e->stage == DMSH_VK_STAGE_TS &&
-        s->key == UINT64_C(0x99280b7b8aae78df) &&
-        !strcmp(DM_GAME_ID, "0400486024DEC000");
-    uint32_t *o = w ? (special_task
-        ? vka_memu_cs_task_density(fz ? fz : w, fz ? fn : nb / 4,
-                                   &on, err, sizeof err)
-        : plane_diag
+    uint32_t *o = w ? (plane_diag
         ? vka_memu_cs_diagnostic(fz ? fz : w, fz ? fn : nb / 4,
                                  &on, err, sizeof err, &md)
         : vka_memu_cs(fz ? fz : w, fz ? fn : nb / 4, &on, err, sizeof err)) : NULL;

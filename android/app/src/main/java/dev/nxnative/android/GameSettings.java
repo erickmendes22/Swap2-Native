@@ -173,7 +173,6 @@ final class GameSettings {
             Prefs.keepCaveWalls(a,id,false);
             Prefs.fullVegetation(a,id,true); // also removes any saved visual-quality level
             Prefs.shadowHard(a,id,false);
-            Prefs.shadowFoliage(a,id,0);
             Prefs.groundMistOff(a,id,false);
             Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
             // Experimental GPU skips must not survive Restore defaults.
@@ -234,10 +233,11 @@ final class GameSettings {
             // Replace the old ON/OFF switch with one explicit, reversible
             // visual-quality preset. The old ON/OFF preference still works
             // unchanged for users installing over V11.
-            String[] vegetationDetail = {"Completa (original)",
-                    "Equilibrada · 75% dos grupos de vegetação selecionados",
-                    "Econômica · 50% dos grupos de vegetação selecionados",
-                    "Vegetação adicional desligada"};
+            String[] vegetationDetail = {"Completa (original, sem cortes)",
+                    "Teste A · apenas um par Foliage",
+                    "Teste B · somente o outro par Foliage",
+                    "Redução discreta · pares A e B",
+                    "Vegetação adicional desligada (modo antigo)"};
             int vegLevel = Prefs.vegetationDetail(a, id);
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Detalhe da vegetação",
                     v -> new AlertDialog.Builder(a)
@@ -250,21 +250,14 @@ final class GameSettings {
                                     })
                             .setNegativeButton(android.R.string.cancel, null).show())
                     .value(vegetationDetail[vegLevel] +
-                            " · densidade real no mesh compute; preserva os outros shaders; reinicie")
+                            " · reinicie; os cinco pares do corte anterior NÃO serão removidos")
                     .chevron(a).view);
-            String[] shadowValues = {"Sombras completas",
-                    "Vegetação nas sombras 75%", "Vegetação nas sombras 50%"};
-            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Custo das sombras",
-                    v -> new AlertDialog.Builder(a).setTitle("Sombras · qualidade da vegetação")
-                            .setSingleChoiceItems(shadowValues, Prefs.shadowFoliage(a, id),
-                                    (dlg, choice) -> {
-                                        Prefs.shadowFoliage(a, id, choice);
-                                        dlg.dismiss(); again.run();
-                                    })
-                            .setNegativeButton(android.R.string.cancel, null).show())
-                    .value(shadowValues[Prefs.shadowFoliage(a, id)] +
-                            " · reduz draws de vegetação em mapas 1024/4096 de profundidade, não altera a cena principal; reinicie")
-                    .chevron(a).view);
+            Ui.Setting shadowQuality = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                    "Sombras econômicas (contornos mais definidos)", null)
+                    .toggle(a, Prefs.shadowHard(a, id), (b, on) -> Prefs.shadowHard(a, id, on));
+            shadowQuality.value("Força filtro mais simples SOMENTE nos samplers de comparação de profundidade (PCF). "
+                    + "Mantém os mapas e a geometria das sombras. Padrão desligado; reinicie.");
+            box.addView(shadowQuality.view);
             Ui.Setting mistQuality = new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Neblina baixa reduzida (teste)", null)
                     .toggle(a, Prefs.groundMistOff(a, id), (b, on) -> Prefs.groundMistOff(a, id, on));
