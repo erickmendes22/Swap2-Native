@@ -216,6 +216,23 @@ int main(void) {
     convert(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4, 0, "mesh_tri", &L);
     convert(MEMU_MESH_PTS, sizeof MEMU_MESH_PTS / 4, 0, "mesh_pts", &L);
     convert(MEMU_TASK, sizeof MEMU_TASK / 4, 0, "task", &L);
+    {   // REAL task SPIR-V test: the default converter must be unchanged;
+        // only the reviewed Foliage key gets the per-draw count mask.
+        size_t n0 = 0, n1 = 0;
+        uint32_t *a = vka_memu_cs(MEMU_TASK, sizeof MEMU_TASK / 4, &n0, err, sizeof err);
+        uint32_t *b = vka_memu_cs_task_density(MEMU_TASK, sizeof MEMU_TASK / 4, &n1, err, sizeof err);
+        CHECK(a && b, "original+specialized task SPIR-V both generated (%s)", err);
+        if (a && b) {
+            CHECK(n1 > n0, "specialized task adds mask logic (%zu vs %zu words)", n1, n0);
+            CHECK(count_op(b, n1, 166) >= count_op(a, n0, 166) + 1,
+                  "specialized task adds OpLogicalOr for optional per-draw mask");
+            CHECK(validate(a, n0, "task_density_original"), "original task passes spirv-val");
+            CHECK(validate(b, n1, "task_density_specialized"), "specialized task passes spirv-val");
+            CHECK(model_of(b, n1) == 5, "specialized task remains GLCompute");
+        }
+        free(a); free(b);
+    }
+
     {   // the converted triangle mesh stores every word of its outputs into the arena: 4 (position) + 1 (z again) + 4 (location 0) + 1 (location 2's component) + 3 (indices)
         size_t n; uint32_t *o = vka_memu_cs(MEMU_MESH_TRI, sizeof MEMU_MESH_TRI / 4, &n, err, sizeof err);
         CHECK(o && count_op(o, n, 62) >= 13, "13 word stores into the arena at least (%d stores)", o ? count_op(o, n, 62) : -1);

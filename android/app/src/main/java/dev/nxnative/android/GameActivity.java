@@ -412,8 +412,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // Preserve the old ON/OFF environment entry and its tested semantics.
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_VEGETATION=" + (Prefs.fullVegetation(this, id) ? "1" : "0"));
             // Quality 0 is exactly V11's old full-vegetation path.
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_VEG_QUALITY=" + Prefs.vegetationDetail(this, id));
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_SHADOW_HARD=" + (Prefs.shadowHard(this, id) ? "1" : "0"));
+            // The old A/B shader-pair cuts are retired. Explicit OFF still
+            // disables supplementary foliage via DM_VK_VEGETATION above.
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_VEG_QUALITY=0");
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FOLIAGE_DENSITY=" + (Prefs.vegetationDetail(this, id) == 3 ? 0 : Prefs.vegetationDetail(this, id)));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_SHADOW_FOLIAGE=" + Prefs.shadowFoliage(this, id));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_SHADOW_HARD=0"); // no measurable GPU gain; retire legacy PCF override
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_GROUND_MIST_OFF=" + (Prefs.groundMistOff(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_MESH_ROUTE=" + Prefs.ocarinaMeshRoute(this, id));
             // Independent, OFF-by-default draw omissions. Evaluate only

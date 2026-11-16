@@ -60,6 +60,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_mesh_scene_probe.py' -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_task_single_gpu -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_visual_quality_patches -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_foliage_density -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_effect_quality -v
           # Guard Android AlertDialog list visibility and actual Qualcomm mode selection.
           python3 -m unittest dm.tools.tests.test_ocarina_qgl_config -v
