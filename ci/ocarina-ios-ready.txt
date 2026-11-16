@@ -201,3 +201,10 @@ Build retry after failed Actions 43774239120, 2026-11-15:
 - Fixed missing vkCmdResetQueryPool/vkCmdBeginQuery/vkCmdEndQuery/vkCmdWriteTimestamp members in VKA_DEVICE_FNS, which loads their pointers via vkGetDeviceProcAddr before vka_gbar_install.
 - Added a source regression to detect GB_FNS commands missing in the central Vulkan device dispatch table during the validation phase, ahead of full APK compilation.
 - Keep previous APK package, signing, page-index opt-in and original shader fallback. Build result and physical GPU performance must be verified, not assumed.
+
+Ocarina missing-shader repair, signed APK build candidate 2026-11-15:
+- The repair UI now selects only verified runtime control+code captures whose keys are absent from BOTH the intact playable full 42,339 library and the current hot overlay; sorted stable and capped to 128 new keys.
+- Vegetation supplement and shader-optimization captures no longer masquerade as missing shaders, and complete repairs are not repeatedly offered.
+- Cumulative hot libraries preserve earlier verified entries without recompiling them. Each carried key is checked against a real previous library, and every published key is checked in the newly generated library before packing.
+- The host library and old complete game shader pack are never deleted or altered by repair.
+- Incremental regression Actions #43779058359 succeeded. Test adds synthetic execution of the real Python overlay merge. Build and Android-device repair outcomes still need confirmation.
