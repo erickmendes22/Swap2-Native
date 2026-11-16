@@ -127,7 +127,8 @@ class SelectedUpdateTests(unittest.TestCase):
         selection = code.split("static List<String> keys(Job job) {", 1)[1].split(
             "/** The installed overlay already", 1)[0]
         self.assertNotIn("vk_hot_delta.tsv", selection)
-        self.assertNotIn("vegetationKeys()", selection)
+        self.assertIn("vegetationSet.contains(key)", selection)
+        self.assertIn("completeVegetationInstalled", selection)
         self.assertNotIn("HEAVY.contains(key)", selection)
         self.assertIn("if (ShaderLibs.hasKey(old, header, key)) continue;", selection)
         self.assertIn("if (hotVerified && ShaderLibs.hasKey(hot, hotHeader, key)) continue;", selection)
