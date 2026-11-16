@@ -1320,17 +1320,23 @@ static int pf_pass(const uint32_t *w, size_t nw, uint32_t set, uint32_t tex_bind
     // Early tests give the result late ones do: kind 1 always, kind 2 when the alpha test is off (its one discard, under the alpha_spec constant, the only one), 0 never
     int kind = model != PF_Fragment || has_early || exports || mem_writes ? 0 : !kill ? 1 : kill == 1 && aspec ? 2 : 0;
     int add_early = (flags & VKA_PFB_EARLY) && kind;
+    // The bitmap is never cleared while a shader invocation is executing.
+    // Remember only the last ID marked by THIS invocation: a repeat cannot
+    // require another global bitmap read/atomic. Different IDs take the
+    // exact original path. Fragment-only, opt-in, with original fallback.
+    int cache = model == PF_Fragment && (flags & VKA_PFB_INVOCATION_CACHE);
     if (first_annot > first_fn) first_annot = first_fn;
     // New ids, in the same order in both passes: missing types, the buffer's types and variable, the constants; then each site's
     uint32_t mk_u32 = t_u32 ? 0 : nb++, mk_bool = t_bool ? 0 : nb++; if (!t_u32) t_u32 = mk_u32; if (!t_bool) t_bool = mk_bool;
     uint32_t mk_pu = p_uni_u32 && !mk_u32 ? 0 : nb++; if (mk_pu) p_uni_u32 = mk_pu;
     uint32_t rta = nb++, st = nb++, pst = nb++, fbv = nb++, c0 = nb++, c1 = nb++, c5 = nb++, c31 = nb++, cmask = nb++;
+    uint32_t cache_ptr = cache ? nb++ : 0, cache_var = cache ? nb++ : 0, cache_sentinel = cache ? nb++ : 0;
     if (!put_n(o, w, 5)) FAIL("out of memory");
     uint32_t cur = 0, cur_orig = 0, done[16]; int ndone = 0, in_fn = 0;
     for (size_t i = 5; i < nw;) {
         uint32_t op = w[i] & 0xffff, len = w[i] >> 16; const uint32_t *in = w + i;
         if (op == OpEntryPoint && w[1] >= 0x10400) {   // SPIR-V 1.4 on: every global variable the entry point uses is in its interface
-            if (!put(o, (len + 1) << 16 | OpEntryPoint) || !put_n(o, in + 1, len - 1) || !put(o, fbv)) FAIL("out of memory");
+            if (!put(o, (len + (cache ? 2u : 1u)) << 16 | OpEntryPoint) || !put_n(o, in + 1, len - 1) || !put(o, fbv) || (cache && !put(o, cache_var))) FAIL("out of memory");
             if (i == last_ep && add_early) { uint32_t x[] = {3u << 16 | OpExecutionMode, in[2], PF_EarlyFragmentTests}; if (!put_n(o, x, 3)) FAIL("out of memory"); }
             i += len; continue;
         }
@@ -1347,6 +1353,12 @@ static int pf_pass(const uint32_t *w, size_t nw, uint32_t set, uint32_t tex_bind
                             4u << 16 | OpVariable, pst, fbv, scb, 4u << 16 | OpConstant, t_u32, c0, 0, 4u << 16 | OpConstant, t_u32, c1, 1,
                             4u << 16 | OpConstant, t_u32, c5, 5, 4u << 16 | OpConstant, t_u32, c31, 31, 4u << 16 | OpConstant, t_u32, cmask, 0xFFFFFu};
             if (!put_n(o, x, sizeof x / 4)) FAIL("out of memory");
+            if (cache) {
+                uint32_t extra[] = {4u << 16 | OpTypePointer, cache_ptr, SCPrivate, t_u32,
+                                    4u << 16 | OpConstant, t_u32, cache_sentinel, UINT32_MAX,
+                                    5u << 16 | OpVariable, cache_ptr, cache_var, SCPrivate, cache_sentinel};
+                if (!put_n(o, extra, sizeof extra / 4)) FAIL("out of memory");
+            }
         }
         if (op == OpFunction) in_fn = 1;
         else if (op == OpFunctionEnd) in_fn = 0;
@@ -1377,11 +1389,29 @@ static int pf_pass(const uint32_t *w, size_t nw, uint32_t set, uint32_t tex_bind
                 if (!put_n(o, y, sizeof y / 4)) FAIL("out of memory");
                 if (header) { uint32_t r = nb++, z[] = {7u << 16 | PF_AtomicOr, t_u32, r, p, c1, c0, bit}; if (!put_n(o, z, 7)) FAIL("out of memory"); }   // (scope Device, semantics None)
                 else {
+                    uint32_t outer_done = 0;
+                    if (cache) {
+                        uint32_t last = nb++, equal = nb++, body = nb++;
+                        outer_done = nb++;
+                        uint32_t gate[] = {4u << 16 | OpLoad, t_u32, last, cache_var,
+                                           5u << 16 | OpIEqual, t_bool, equal, last, m,
+                                           3u << 16 | OpSelectionMerge, outer_done, 0,
+                                           4u << 16 | OpBranchConditional, equal, outer_done, body,
+                                           2u << 16 | OpLabel, body};
+                        if (!put_n(o, gate, sizeof gate / 4)) FAIL("out of memory");
+                    }
                     uint32_t old = nb++, has = nb++, clr = nb++, a = nb++, l = nb++, r = nb++;
                     uint32_t z[] = {4u << 16 | OpLoad, t_u32, old, p, 5u << 16 | PF_BitwiseAnd, t_u32, has, old, bit, 5u << 16 | OpIEqual, t_bool, clr, has, c0,
                                     3u << 16 | OpSelectionMerge, l, 0, 4u << 16 | OpBranchConditional, clr, a, l, 2u << 16 | OpLabel, a,
                                     7u << 16 | PF_AtomicOr, t_u32, r, p, c1, c0, bit, 2u << 16 | OpBranch, l, 2u << 16 | OpLabel, l};
                     if (!put_n(o, z, sizeof z / 4)) FAIL("out of memory");
+                    if (cache) {
+                        uint32_t done[] = {3u << 16 | OpStore, cache_var, m,
+                                           2u << 16 | OpBranch, outer_done,
+                                           2u << 16 | OpLabel, outer_done};
+                        if (!put_n(o, done, sizeof done / 4)) FAIL("out of memory");
+                        l = outer_done;
+                    }
                     cur = l; if (rec && cur_orig < bound) rec[cur_orig] = l;
                 }
             }
