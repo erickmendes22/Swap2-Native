@@ -473,6 +473,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_POOL_FB_DIRECT=" + (Prefs.poolFeedbackDirect(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FB_INVOCATION_CACHE="
                     + (Prefs.feedbackInvocationCache(this, id) ? "1" : "0"));
+            // A/B research only: the existing profiler samples one frame in 300.
+            // Diagnose full 1280x720 Vulkan passes on BOTH OFF and ON runs.
+            // No extra instrumentation in the 299 ordinary frames.
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_SCENE_PASS_DIAG=1");
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FRAGMENT_AST=" + (Prefs.fragmentOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_CS_RETILE=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_DIRECT_PAYLOAD=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
