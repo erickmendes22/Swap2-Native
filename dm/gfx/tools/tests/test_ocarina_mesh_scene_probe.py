@@ -29,7 +29,7 @@ class MeshSceneProbe(unittest.TestCase):
         self.assertIn('DM_VK_OOT_MEMU_DIRECT_DISPATCH", 1', inc)
         self.assertIn('if (st == 7 && MB.e[idx].direct_groups)', inc)
         self.assertIn('vk.vkCmdDispatch(g_cb, MB.e[idx].direct_groups, 1, 1);', inc)
-        self.assertIn('else\\n        vk.vkCmdDispatchIndirect', inc)
+        self.assertIn('else' + chr(10) + '        vk.vkCmdDispatchIndirect', inc)
         self.assertIn('R[VKA_MEMU_R_TOTAL]', setup.replace("r[R + VKA_MEMU_R_TOTAL]", "R[VKA_MEMU_R_TOTAL]"))
         self.assertIn('OpULessThan, B.t_bool, flat, lim', conv)
         cc = shutil.which("cc")
