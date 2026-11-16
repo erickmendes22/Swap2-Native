@@ -32,7 +32,7 @@ package dev.nxnative.android;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
-class BuildConfig { static final String NX_DMSH_VK_ABI="674db0a4ff79",NX_DMSH_VK_CHAIN="123456789abc"; }
+class BuildConfig { static final String NX_DMSH_CHAIN="test-translator",NX_DMSH_VK_ABI="674db0a4ff79",NX_DMSH_VK_CHAIN="123456789abc"; }
 class PackNative {
     static int calls;
     static File repo() throws IOException {calls++; throw new IllegalStateException("PackNative.context not set");}
@@ -74,6 +74,20 @@ public class Probe {
         Job j=new Job(root);
         List<String> missing=OcarinaShaderDelta.keys(j);
         check(missing.size()==56,"Expected only 56 captured missing keys; got "+missing.size());
+        // The compiler already deferred this unpaired mesh on the SAME
+        // translator version. A repeated button tap must not offer it again.
+        File blocked=new File(captures,"0000000000000001.deferred");
+        Files.writeString(blocked.toPath(),"test-translator\\t123456789abc\\n");
+        check(OcarinaShaderDelta.keys(j).size()==55,
+              "Deferred shader reoffered despite identical source/pair evidence");
+        // A real draw-time association invalidates the marker and permits
+        // a fresh verified attempt. No timer or guessed shader list involved.
+        File pairs=new File(captures,"mesh_pairs.tsv");
+        Files.writeString(pairs.toPath(),"M\\t0000000000000001\\t0000000000000002\\n");
+        check(pairs.setLastModified(blocked.lastModified()+2000),
+              "Cannot simulate new draw-time capture evidence");
+        check(OcarinaShaderDelta.keys(j).size()==56,
+              "New pairing evidence did not reenable a genuinely missing key");
         List<String> keys=OcarinaShaderDelta.vegetationKeys();
         check(keys.size()==508,"Expected explicit vegetation mode to retain 508 static stages; got "+keys.size());
         check(PackNative.calls==0,"Launcher touched native pack process");
