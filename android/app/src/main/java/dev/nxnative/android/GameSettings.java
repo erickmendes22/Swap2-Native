@@ -862,8 +862,8 @@ final class GameSettings {
             case 1: return "Cascatas de sombra: 3 → 2 (teste)";
             case 2: return "Cascatas de sombra: 3 → 1 (teste)";
             case 3: return "SSAO: menos amostras, buffers preservados (teste)";
-            case 4: return "Pré-passe de sombras: OFF (teste)";
-            case 5: return "Profundidade de campo + Bloom: OFF (teste)";
+            case 4: return "Pré-passe: profundidade direta (teste GPU)";
+            case 5: return "DOF/Bloom: comandos reduzidos (teste GPU)";
             default: return "Original do jogo · sem patch de FPS";
         }
     }
