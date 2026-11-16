@@ -165,15 +165,20 @@ __attribute__((visibility("default"))) void *hook_android_load_sphal_library(con
 }
 
 __attribute__((visibility("default"))) FILE *hook_fopen(const char *filename, const char *mode) {
-    if (!strncmp("/proc", filename, 5) || !strncmp("/sys", filename, 4)) {
-        LOGI("hook_fopen: passthrough: %s", filename);
-        return fopen(filename, mode);
+    // The original libadrenotools hook redirects every fopen, which can
+    // break the vendor driver. Override ONLY Qualcomm's two QGL config paths.
+    if (hook_params && filename && mode && hook_params->fileRedirectDir.size() &&
+        (!strcmp(filename, "/data/vendor/gpu/qgl_config.txt") ||
+         !strcmp(filename, "/data/misc/gpu/qgl_config.txt"))) {
+        auto replacement{hook_params->fileRedirectDir + filename};
+        FILE *f = fopen(replacement.c_str(), mode);
+        if (f) {
+            LOGI("qgl_config override: %s", replacement.c_str());
+            return f;
+        }
+        LOGW("qgl_config override missing: %s; falling back", replacement.c_str());
     }
-
-    auto replacement{hook_params->fileRedirectDir + filename};
-    LOGI("hook_fopen: %s -> %s", filename, replacement.c_str());
-
-    return fopen(replacement.c_str(), mode);
+    return fopen(filename, mode);
 }
 
 static constexpr uintptr_t GslMemDescImportedPrivMagic{0xdeadb33f};

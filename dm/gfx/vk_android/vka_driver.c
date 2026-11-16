@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define ADRENOTOOLS_DRIVER_CUSTOM 1   // dm/third_party/libadrenotools/include/adrenotools/priv.h
 typedef void *(*open_libvulkan_fn)(int dlopen_mode, int feature_flags, const char *tmp_lib_dir, const char *hook_lib_dir, const char *custom_driver_dir,
@@ -55,36 +56,80 @@ void *vka_driver_open(void) {
 }
 static void *driver_open(void) {
     const char *drv = getenv("DM_VK_DRIVER");
-    if (!drv || !*drv || !strcmp(drv, "system")) return NULL;
-    char dir[1024], name[256];
-    size_t l = strlen(drv);
-    if (l > 3 && !strcmp(drv + l - 3, ".so")) {
-        const char *sl = strrchr(drv, '/');
-        if (!sl || (size_t)(sl - drv) + 2 > sizeof dir || strlen(sl + 1) >= sizeof name) { VRED("DM_VK_DRIVER=%s: not a full path: the system driver is used", drv); return NULL; }
-        snprintf(dir, sizeof dir, "%.*s/", (int)(sl - drv), drv); snprintf(name, sizeof name, "%s", sl + 1);
-    } else {
-        snprintf(dir, sizeof dir, "%s%s", drv, drv[l - 1] == '/' ? "" : "/");
-        if (!meta_library(drv, name, sizeof name)) { VRED("DM_VK_DRIVER=%s: no meta.json with a libraryName there: the system driver is used", drv); return NULL; }
+    int custom = drv && *drv && strcmp(drv, "system") != 0;
+    const char *qgl = getenv("DM_QGL_REDIRECT");
+    if (qgl && *qgl) {
+        // Only allow the game-private folder prepared by QglConfig. Hooking
+        // is opt-in, per process, and never writes to /data/vendor/gpu.
+        char filename[1200];
+        if (qgl[0] != '/' || strlen(qgl) > 1000) qgl = NULL;
+        else {
+            snprintf(filename, sizeof filename, "%s/data/vendor/gpu/qgl_config.txt", qgl);
+            if (access(filename, R_OK) != 0) {
+                VRED("DM_QGL_REDIRECT: no readable qgl_config.txt: ignoring override");
+                qgl = NULL;
+            }
+        }
+    } else qgl = NULL;
+    if (!custom && !qgl) return NULL; // default: untouched system loader
+
+    char dir[1024] = {0}, name[256] = {0};
+    if (custom) {
+        size_t l = strlen(drv);
+        if (l > 3 && !strcmp(drv + l - 3, ".so")) {
+            const char *sl = strrchr(drv, '/');
+            if (!sl || (size_t)(sl - drv) + 2 > sizeof dir || strlen(sl + 1) >= sizeof name) {
+                VRED("DM_VK_DRIVER=%s: not a full path: the system driver is used", drv);
+                custom = 0;
+            } else {
+                snprintf(dir, sizeof dir, "%.*s/", (int)(sl - drv), drv);
+                snprintf(name, sizeof name, "%s", sl + 1);
+            }
+        } else {
+            snprintf(dir, sizeof dir, "%s%s", drv, drv[l - 1] == '/' ? "" : "/");
+            if (!meta_library(drv, name, sizeof name)) {
+                VRED("DM_VK_DRIVER=%s: no meta.json with a libraryName: the system driver is used", drv);
+                custom = 0;
+            }
+        }
+        if (custom && (!strncmp(dir, "/sdcard/", 8) || !strncmp(dir, "/storage/", 9)))
+            VRED("DM_VK_DRIVER=%s is on shared storage; install to app private files", drv);
     }
-    if (!strncmp(dir, "/sdcard/", 8) || !strncmp(dir, "/storage/", 9))   // shared storage is mounted without exec: dlopen fails there (adrenotools' own note)
-        VRED("DM_VK_DRIVER=%s is on shared storage, where libraries cannot be loaded: install the driver from the launcher (it goes into the app's private files)", drv);
+    if (!custom && !qgl) return NULL;
     char hook[1024];
     const char *hd = getenv("DM_VK_HOOKDIR");
     if (hd && *hd) snprintf(hook, sizeof hook, "%s%s", hd, hd[strlen(hd) - 1] == '/' ? "" : "/");
-    else {   // the folder libnxhost.so came from: inside the APK ("…/base.apk!/lib/arm64-v8a"), where the hook libraries are beside it; the linker searches zip paths too
+    else {
         Dl_info di; const char *sl;
-        if (!dladdr((void *)vka_driver_open, &di) || !di.dli_fname || !(sl = strrchr(di.dli_fname, '/'))) { VRED("DM_VK_DRIVER: cannot tell where libnxhost.so is: the system driver is used"); return NULL; }
+        if (!dladdr((void *)vka_driver_open, &di) || !di.dli_fname ||
+            !(sl = strrchr(di.dli_fname, '/'))) {
+            VRED("QGL/custom Vulkan: cannot locate hook libraries; system loader unchanged");
+            return NULL;
+        }
         snprintf(hook, sizeof hook, "%.*s/", (int)(sl - di.dli_fname), di.dli_fname);
     }
     void *at = dlopen("libnxadreno.so", RTLD_NOW | RTLD_LOCAL);
     open_libvulkan_fn open_vk = at ? (open_libvulkan_fn)dlsym(at, "adrenotools_open_libvulkan") : NULL;
-    if (!open_vk) { VRED("DM_VK_DRIVER: libnxadreno.so not loaded (%s): the system driver is used", dlerror()); return NULL; }
-    void *lib = open_vk(RTLD_NOW, ADRENOTOOLS_DRIVER_CUSTOM, NULL, hook, dir, name, NULL, NULL);
-    if (!lib) { VRED("DM_VK_DRIVER: adrenotools could not load %s%s (hooks in %s; logcat tags adrenotools / hook_impl say why): the system driver is used", dir, name, hook); return NULL; }
-    const char *base = dir + strlen(dir) - 1; while (base > dir && base[-1] != '/') base--;   // the folder's name, else the library's
-    char b[128]; snprintf(b, sizeof b, "%.*s", (int)(dir + strlen(dir) - 1 - base), base);
+    if (!open_vk) {
+        VRED("QGL/custom Vulkan: libnxadreno.so missing (%s), using system driver", dlerror());
+        return NULL;
+    }
+    int flags = (custom ? ADRENOTOOLS_DRIVER_CUSTOM : 0) | (qgl ? 2 : 0); // FILE_REDIRECT = 1 << 1
+    void *lib = open_vk(RTLD_NOW, flags, NULL, hook,
+                        custom ? dir : NULL, custom ? name : NULL, qgl, NULL);
+    if (!lib) {
+        VRED("QGL/custom Vulkan: adrenotools could not initialize (hooks %s); unmodified system Vulkan loader used", hook);
+        return NULL;
+    }
+    if (qgl) VLOG("QGL override: private qgl_config.txt redirect armed (driver acceptance not verified)");
+    if (!custom) return lib;
+    const char *base = dir + strlen(dir) - 1;
+    while (base > dir && base[-1] != '/') base--;
+    char b[128];
+    snprintf(b, sizeof b, "%.*s", (int)(dir + strlen(dir) - 1 - base), base);
     set_tag(b[0] ? b : name);
-    VLOG("custom GPU driver: %s%s (hooks in %s), its own pipeline cache file (vk_pipelines-%s" VKA_PCACHE_GEN ".bin unless DM_VK_PCACHE names one)", dir, name, hook, g_tag);
+    VLOG("custom GPU driver: %s%s (hooks in %s), separate pipeline cache (vk_pipelines-%s" VKA_PCACHE_GEN ".bin unless DM_VK_PCACHE overrides)", dir, name, hook, g_tag);
     return lib;
 }
-#endif
+
+#endif // __ANDROID__

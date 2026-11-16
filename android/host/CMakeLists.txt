@@ -130,6 +130,11 @@ target_include_directories(main_hook PRIVATE ${ADT}/include)
 target_compile_options(main_hook PRIVATE -O2 -w)
 target_link_options(main_hook PRIVATE -Wl,-z,global)
 target_link_libraries(main_hook PRIVATE hook_impl)
+# Included only for opt-in Qualcomm qgl_config.txt redirection. No global libc hooking.
+add_library(file_redirect_hook SHARED ${ADT}/src/hook/file_redirect_hook.c)
+target_include_directories(file_redirect_hook PRIVATE ${ADT}/include)
+target_link_options(file_redirect_hook PRIVATE -Wl,-z,global)
+target_link_libraries(file_redirect_hook PRIVATE hook_impl)
 
 # nxreplay: the frame replayer, an executable for adb shell (pushed beside libnxhost.so, run with LD_LIBRARY_PATH; android/TESTING.md "Frame capture and replay"). Gradle does not
 # build it (the APK does not carry it): cmake --build <build> --target nxreplay
