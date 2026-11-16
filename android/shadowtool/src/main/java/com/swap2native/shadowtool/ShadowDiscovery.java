@@ -48,6 +48,8 @@ public final class ShadowDiscovery {
         for(int i=0;i<Math.min(70,matches.size());i++)
             log.append(" · ").append(matches.get(i)).append('\n');
         if(matches.size()>70)log.append(" · ... mais ").append(matches.size()-70).append(" caminhos\n");
+        direct.sort(Comparator.comparingInt((String p)->
+            p.equals(ShadowPack.MAIN_CONFIG) ? 0 : 1));
         ShadowPack.Result candidate=null;
         int inspectedDirect=0;
         for(String path:direct) {
@@ -59,7 +61,12 @@ public final class ShadowDiscovery {
                 NupReader.Resource item=nup.resource(chosen,path);
                 ShadowPack.Result found=ShadowPack.inspectStandalone(item.bytes,path);
                 log.append("\n").append(found.report);
-                if(found.applicable)return new Scan(found,log.toString());
+                // Main is the verified gameplay profile: once located,
+                // stop instead of reading 8,000+ unrelated resource packs.
+                if(found.applicable || path.equals(ShadowPack.MAIN_CONFIG)) {
+                    log.append("Configuração Main localizada; varredura encerrada sem ler packs não relacionados.\n");
+                    return new Scan(found,log.toString());
+                }
                 if(candidate==null)candidate=found;
             }catch(Exception ex) {
                 log.append("Falha ao ler ").append(path).append(": ")
