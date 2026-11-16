@@ -10,7 +10,7 @@ import oot_ssao_samples as ssao
 
 def scene(samples=5, typ=0xd1, key='AlchemySamplePairNum', within_ssao=True):
     """Synthetic nested BYML matching /SSAO/AlchemySamplePairNum [0xd1] v5."""
-    keys = ['SSAO', key, 'CreateSsocclusion', 'CreateShadowPrePass', 'UnrelatedTextureSize']
+    keys = ['SSAO' if within_ssao else 'Other', key, 'CreateSsocclusion', 'CreateShadowPrePass', 'UnrelatedTextureSize']
     b = bytearray(1024)
     struct.pack_into('<2sHIII', b, 0, b'YB', 7, 0x20, 0, 0x100)
     b[0x20:0x24] = bytes((0xc2, len(keys), 0, 0))
@@ -35,10 +35,6 @@ def scene(samples=5, typ=0xd1, key='AlchemySamplePairNum', within_ssao=True):
         b[at] = index
         b[at + 3] = kind
         struct.pack_into('<I', b, at + 4, value)
-    if not within_ssao:
-        # Field exists but is outside the SSAO sub-dictionary
-        b[0x184] = 4
-        b[0x18c] = 1
     return bytes(b)
 
 
