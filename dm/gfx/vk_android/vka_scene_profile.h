@@ -1,6 +1,13 @@
 // Exact known scene shapes, not a substring match against arbitrary targets.
 #pragma once
 #include <string.h>
+// The sampled GPU profiler receives full pass descriptors such as
+// "1280x720x1 c0:122 d:126". Match the *token* and its separator,
+// not the implicit NUL byte of the shorter string literal.
+static inline int vka_scene_profile_1280(const char *desc) {
+    return desc && !strncmp(desc, "1280x720x1", 10) &&
+           (!desc[10] || desc[10] == ' ');
+}
 static inline int vka_scene_profile_size(const char *desc) {
     if(!desc || strlen(desc)<9)return 0;
     // The heavy 1280x720 scene appears in the user's GPU samples. The
