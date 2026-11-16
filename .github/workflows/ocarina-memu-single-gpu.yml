@@ -1,0 +1,59 @@
+name: Ocarina mesh single-task GPU validation
+
+on:
+  push:
+    branches: [research/ocarina-memu-single-task-gpu]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gpu-mesh-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Validate task-index equivalence and shader-key isolation
+        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_task_single_gpu -v
+      - name: Install Vulkan SPIR-V validation tools from Android NDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358"
+          NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          test -x "$NDK/shader-tools/linux-x86_64/spirv-val"
+          echo "$NDK/shader-tools/linux-x86_64" >> "$GITHUB_PATH"
+      - name: Compile native converter with sanitizers and validate both GPU shader variants
+        shell: bash
+        run: |
+          set -euxo pipefail
+          clang -O1 -g -fsanitize=address,undefined \
+            dm/host/tests/t_android_memu.c \
+            dm/gfx/vk_android/vka_memu_spv.c \
+            dm/gfx/vk_android/vka_spvpatch.c \
+            dm/gfx/vk_android/vka_shlib.c \
+            dm/third_party/zstd/zstddeclib.c -lm -o /tmp/t_android_memu
+          DM_VK_MEMU_FAST_TASKLESS=1 DM_VK_MEMU_SHORT_TASK_SEARCH=1 \
+            ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_memu
+          DM_VK_MEMU_FAST_TASKLESS=1 DM_VK_MEMU_SHORT_TASK_SEARCH=0 \
+            ASAN_OPTIONS=detect_leaks=1 /tmp/t_android_memu
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_task_single_gpu -v
+      - name: Compile Android Vulkan backend with NDK (runtime regression)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
+          python3 dm/gfx/vk_android/fsr/ndsr_spv.py
+          python3 dm/gfx/vk_android/fsr/sgsr_spv.py
+          python3 dm/gfx/vk_android/gsr2/gsr2_spv.py
+          cmake -S android/host -B "$RUNNER_TEMP/memu-single-native" -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=33 \
+            -DNX_RUNTIME_PROFILE=ON -DNX_LSFG=OFF
+          cmake --build "$RUNNER_TEMP/memu-single-native" --target nxhost -j 4
+          find "$RUNNER_TEMP/memu-single-native" -name libnxhost.so -size +0c | grep -q .
