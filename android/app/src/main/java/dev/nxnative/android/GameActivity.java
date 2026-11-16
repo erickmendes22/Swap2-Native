@@ -403,10 +403,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // scene_720p (Bootup pack) independent and unchanged.
             if (Prefs.OCARINA_TITLE.equals(id)) {
                 int shadow = Prefs.shadowProfile(this, id);
-                int effect = Prefs.fpsPatch(this, id);
-                if (shadow != 0 || effect != 0) {
-                    if (ShadowOverlay.current(files, id, shadow, effect, pack.version)) {
-                        String graphicsRoot = ShadowOverlay.dir(files, id, shadow, effect).getPath();
+                int mask = Prefs.fpsPatchMask(this, id);
+                if (shadow != 0 || mask != 0) {
+                    if (ShadowOverlay.currentMask(files, id, shadow, mask, pack.version)) {
+                        String graphicsRoot = ShadowOverlay.dirMask(files, id, shadow, mask).getPath();
                         boolean combined = false;
                         for (int i = 0; i < env.size(); i++) {
                             String value = env.get(i);
@@ -417,11 +417,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                             }
                         }
                         if (!combined) env.add("DM_ROMFS_OVERLAY=" + graphicsRoot);
-                        Native.note("[nxlaunch] Ocarina graphics BYML: shadow " + shadow + ", FPS trial " + effect
+                        Native.note("[nxlaunch] Ocarina graphics BYML: shadow " + shadow + ", FPS mask " + mask
                                 + "; combined overlay loaded, scene_720p preserved");
                     } else {
                         String msg = "[RED] [nxlaunch] Ocarina graphics BYML: overlay missing/stale for pack "
-                                + pack.version + " (shadow " + shadow + ", FPS " + effect
+                                + pack.version + " (shadow " + shadow + ", FPS mask " + mask
                                 + "); using original game graphics; reselect either graphics patch";
                         sceneNote = sceneNote == null ? msg : sceneNote + "\n" + msg;
                     }
