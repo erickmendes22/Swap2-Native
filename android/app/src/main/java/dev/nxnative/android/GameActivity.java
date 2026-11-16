@@ -409,7 +409,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // Opt-in 0.1.8.5 memory-sharing adaptation; Direct mapping
             // remains the default on every game and chipset.
             env.add("DM_VK_ALIAS=" + (Prefs.gpuSharedBuffer(this, id) ? "prefer" : "placed"));
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_VEGETATION=" + (Prefs.fullVegetation(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) {
+                env.add("DM_VK_VEGETATION=" + (Prefs.fullVegetation(this, id) ? "1" : "0"));
+                // Quality 0 is exactly V11's old full-vegetation path.
+                env.add("DM_VK_OOT_VEG_QUALITY=" + Prefs.vegetationDetail(this, id));
+            }
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_MESH_ROUTE=" + Prefs.ocarinaMeshRoute(this, id));
             // Independent, OFF-by-default draw omissions. Evaluate only
             // for Ocarina; restore defaults by disabling each switch.

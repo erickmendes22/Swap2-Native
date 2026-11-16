@@ -142,8 +142,31 @@ final class Prefs {
         return OCARINA_TITLE.equals(titleId) ? 1 : -1;
     }
     static void ocarinaMeshRoute(Context c, String titleId, int mode) { /* retired */ }
-    static boolean fullVegetation(Context c, String titleId) { return of(c).getBoolean(gameKey("full_vegetation", titleId), true); }
-    static void fullVegetation(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on).commit(); }
+    static boolean fullVegetation(Context c, String titleId) {
+        return of(c).getBoolean(gameKey("full_vegetation", titleId), true);
+    }
+    static void fullVegetation(Context c, String titleId, boolean on) {
+        of(c).edit().putBoolean(gameKey("full_vegetation", titleId), on)
+                .remove(gameKey("oot_vegetation_detail", titleId)).commit();
+    }
+    // A scene-content option, not a Vulkan driver or shader-emulator optimization:
+    // 0 full, 1 remove 2 reviewed cosmetic mesh depth/colour pairs, 2 remove 5,
+    // 3 legacy vegetation OFF (all 508 supplemental stages). Installed V11
+    // preferences remain unchanged until the player selects a different level.
+    static int vegetationDetail(Context c, String id) {
+        if (!OCARINA_TITLE.equals(id)) return 0;
+        int old = of(c).getBoolean(gameKey("full_vegetation", id), true) ? 0 : 3;
+        int level = of(c).getInt(gameKey("oot_vegetation_detail", id), old);
+        return level < 0 || level > 3 ? old : level;
+    }
+    static void vegetationDetail(Context c, String id, int level) {
+        if (!OCARINA_TITLE.equals(id)) return;
+        int checked = Math.max(0, Math.min(3, level));
+        of(c).edit()
+                .putInt(gameKey("oot_vegetation_detail", id), checked)
+                .putBoolean(gameKey("full_vegetation", id), checked != 3)
+                .commit();
+    }
     static boolean vegetationOptimized(Context c, String titleId) { return fullVegetation(c, titleId); }
     static void vegetationOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("vegetation_optimized", titleId), on).commit(); }
     // Vegetation optimizations are automatic; ignore legacy per-feature toggles.

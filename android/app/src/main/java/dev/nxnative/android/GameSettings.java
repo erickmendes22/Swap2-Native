@@ -171,6 +171,7 @@ final class GameSettings {
             Prefs.renderProfile(a,id,0);
             Prefs.classicPasses(a,id,false);
             Prefs.keepCaveWalls(a,id,false);
+            Prefs.fullVegetation(a,id,true); // also removes any saved visual-quality level
             Prefs.setSceneScale(a, id, null); // restore only this game's resolution choice
             // Experimental GPU skips must not survive Restore defaults.
             Prefs.of(a).edit()
@@ -227,10 +228,25 @@ final class GameSettings {
                     .toggle(a, Prefs.keepCaveWalls(a, id), (b, on) -> Prefs.keepCaveWalls(a, id, on));
             caveWalls.value(a.getString(R.string.s2_keep_cave_walls_note));
             box.addView(caveWalls.view);
-            Ui.Setting vegetation = new Ui.Setting(a, R.drawable.s2_ic_gauge, a.getString(R.string.s2_full_vegetation), null)
-                    .toggle(a, Prefs.fullVegetation(a, id), (b, on) -> Prefs.fullVegetation(a, id, on));
-            vegetation.value(a.getString(R.string.s2_full_vegetation_note));
-            box.addView(vegetation.view);
+            // Replace the old ON/OFF switch with one explicit, reversible
+            // visual-quality preset. The old ON/OFF preference still works
+            // unchanged for users installing over V11.
+            String[] vegetationDetail = {"Completa (original)", "Leve (2 tipos cosméticos a menos)",
+                    "Reduzida (5 tipos cosméticos a menos)", "Vegetação adicional desligada"};
+            int vegLevel = Prefs.vegetationDetail(a, id);
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Detalhe da vegetação",
+                    v -> new AlertDialog.Builder(a)
+                            .setTitle("Vegetação · Ocarina")
+                            .setSingleChoiceItems(vegetationDetail, Prefs.vegetationDetail(a, id),
+                                    (dlg, index) -> {
+                                        Prefs.vegetationDetail(a, id, index);
+                                        dlg.dismiss();
+                                        again.run();
+                                    })
+                            .setNegativeButton(android.R.string.cancel, null).show())
+                    .value(vegetationDetail[vegLevel] +
+                            " · reinicie o jogo; modifica a cena, sem preparar shaders")
+                    .chevron(a).view);
             // Shader A omission is retired: the real pass must render.
             Ui.Setting shaderB = new Ui.Setting(a, R.drawable.s2_ic_gauge,
                     "Omitir shader B (teste)", null)
