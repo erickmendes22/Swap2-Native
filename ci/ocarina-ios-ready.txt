@@ -234,3 +234,8 @@ Ocarina GPU performance instrumentation build, 2026-11-16 (no shader rebuild):
 - DM_VK_SCENE_PASS_DIAG=2 optionally brackets sampled 1280x720 rendering with Vulkan pipelineStatisticsQuery for REAL vertex/fragment invocations and primitives; gracefully skip when unavailable.
 - Prior actual GPU logs show two 1280x720 color+depth passes of ~1.9-2.9ms each, depth-only passes ~0.52-0.69ms; see docs/ocarina-mesh-1280-gpu-study.md. 508 supplementary vegetation and complete 42,339 shader libraries untouched.
 - Incremental CI #43788241649 passed; native mesh correctness #43788203600 passed. The APK must retain the existing signer. Performance improvements are NOT claimed without on-phone A/B.
+
+Ocarina GPU diagnostics signed-build retry, 2026-11-16:
+- Full APK validation #43788471428 failed solely because test_ocarina_scene_chunk_profile.py still asserted that 1280x720 was NOT a valid profiler scene and required the old single-line EndRendering hook. Both expectations were intentionally obsolete; the regression now validates 1280x720 exact shape, GPU-chunk flush and Vulkan query end before render-pass end.
+- Newly expanded incremental CI #43788743664 PASSED including the formerly obsolete scene-chunk assertions, native NDK Vulkan compilation and source shader tests.
+- Actual mesh converter old/new fixture and readback CI #43787612899 passed; signed APK must retain original package signer. Diagnostics default off, no actual gameplay performance gain claimed.
