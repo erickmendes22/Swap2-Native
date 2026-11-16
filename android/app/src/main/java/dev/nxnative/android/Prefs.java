@@ -154,6 +154,20 @@ final class Prefs {
     // Default FULL even when an old user preference exists. Previous full-
     // vegetation OFF still maps to OFF; this does not turn foliage back on.
     // 0 full, 1 pair A alone, 2 pair B alone, 3 pair A+B, 4 all supplement OFF.
+    static boolean shadowHard(Context c, String id) {
+        return OCARINA_TITLE.equals(id) && of(c).getBoolean(gameKey("oot_shadow_hard", id), false);
+    }
+    static void shadowHard(Context c, String id, boolean enable) {
+        if (OCARINA_TITLE.equals(id))
+            of(c).edit().putBoolean(gameKey("oot_shadow_hard", id), enable).commit();
+    }
+    static boolean groundMistOff(Context c, String id) {
+        return OCARINA_TITLE.equals(id) && of(c).getBoolean(gameKey("oot_ground_mist_off", id), false);
+    }
+    static void groundMistOff(Context c, String id, boolean enable) {
+        if (OCARINA_TITLE.equals(id))
+            of(c).edit().putBoolean(gameKey("oot_ground_mist_off", id), enable).commit();
+    }
     static int vegetationDetail(Context c, String id) {
         if (!OCARINA_TITLE.equals(id)) return 0;
         int fallback = of(c).getBoolean(gameKey("full_vegetation", id), true) ? 0 : 4;

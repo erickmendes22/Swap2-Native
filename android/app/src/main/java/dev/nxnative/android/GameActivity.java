@@ -413,6 +413,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_VEGETATION=" + (Prefs.fullVegetation(this, id) ? "1" : "0"));
             // Quality 0 is exactly V11's old full-vegetation path.
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_VEG_QUALITY=" + Prefs.vegetationDetail(this, id));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_SHADOW_HARD=" + (Prefs.shadowHard(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_GROUND_MIST_OFF=" + (Prefs.groundMistOff(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_MESH_ROUTE=" + Prefs.ocarinaMeshRoute(this, id));
             // Independent, OFF-by-default draw omissions. Evaluate only
             // for Ocarina; restore defaults by disabling each switch.
