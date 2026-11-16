@@ -26,7 +26,8 @@ import java.util.Locale;
  * "message" the overlay's folder, else the exit code (PackNative.BUSY, or the tool's) and "message" why (SceneOverlay.why from its log).
  */
 public final class SceneService extends Service {
-    static final String EXTRA_SHADOW_PROFILE = "shadow_profile", EXTRA_FPS_PATCH = "fps_patch", EXTRA_EFFECT_PROBE = "effect_probe";
+    static final String EXTRA_SHADOW_PROFILE = "shadow_profile", EXTRA_FPS_PATCH = "fps_patch",
+            EXTRA_FPS_MASK = "fps_patch_mask", EXTRA_EFFECT_PROBE = "effect_probe";
     static final String EXTRA_ID = "title_id", EXTRA_ROMFS = "romfs", EXTRA_SCALE = "scale", EXTRA_EXPECT = "expect", EXTRA_VERSION = "version",
             EXTRA_RECEIVER = "receiver", MESSAGE = "message";
     static final int BUSY = PackNative.BUSY;
@@ -51,6 +52,16 @@ public final class SceneService extends Service {
                 .putExtra(EXTRA_VERSION, version).putExtra(EXTRA_RECEIVER, r));
     }
 
+    /** Single atomic RomFS patch containing all independently selected GPU work experiments. */
+    static void startGraphics(Context c, String titleId, String romfs, int shadow, int mask,
+                              String version, ResultReceiver r) {
+        if (!ShadowOverlay.validMask(mask)) throw new IllegalArgumentException("conflicting FPS patches");
+        c.startService(new Intent(c, SceneService.class).putExtra(EXTRA_ID, titleId)
+                .putExtra(EXTRA_ROMFS, romfs).putExtra(EXTRA_SHADOW_PROFILE, shadow)
+                .putExtra(EXTRA_FPS_MASK, mask).putExtra(EXTRA_VERSION, version)
+                .putExtra(EXTRA_RECEIVER, r));
+    }
+
     /** Disassemble the two crash sites and inspect effect BYML fields from the selected NUP. */
     static void startEffectProbe(Context c, String titleId, String romfs, ResultReceiver r) {
         c.startService(new Intent(c, SceneService.class).putExtra(EXTRA_ID, titleId)
@@ -70,7 +81,11 @@ public final class SceneService extends Service {
                         ? runEffectProbe(intent.getStringExtra(EXTRA_ID), intent.getStringExtra(EXTRA_ROMFS))
                         : intent.hasExtra(EXTRA_SHADOW_PROFILE)
                         ? runShadow(intent.getStringExtra(EXTRA_ID), intent.getStringExtra(EXTRA_ROMFS),
-                                intent.getIntExtra(EXTRA_SHADOW_PROFILE, 0), intent.getIntExtra(EXTRA_FPS_PATCH, 0),
+                                intent.getIntExtra(EXTRA_SHADOW_PROFILE, 0),
+                                intent.hasExtra(EXTRA_FPS_MASK)
+                                        ? intent.getIntExtra(EXTRA_FPS_MASK, 0)
+                                        : (intent.getIntExtra(EXTRA_FPS_PATCH, 0) > 0
+                                                ? 1 << (intent.getIntExtra(EXTRA_FPS_PATCH, 0) - 1) : 0),
                                 intent.getStringExtra(EXTRA_VERSION))
                         : run(intent.getStringExtra(EXTRA_ID), intent.getStringExtra(EXTRA_ROMFS), intent.getStringExtra(EXTRA_SCALE),
                                 intent.getStringExtra(EXTRA_EXPECT), intent.getStringExtra(EXTRA_VERSION));
@@ -126,26 +141,27 @@ public final class SceneService extends Service {
     }
 
     /** Opt-in merged graphics BYML overlay, never applied to another game or unknown update. */
-    private String[] runShadow(String id, String romfs, int profile, int effect, String version) throws IOException {
+    private String[] runShadow(String id, String romfs, int profile, int mask, String version) throws IOException {
         if (!Prefs.OCARINA_TITLE.equals(id) || romfs == null || version == null ||
-                profile < 0 || profile > 2 || effect < 0 || effect > 5 || (profile == 0 && effect == 0))
+                profile < 0 || profile > 2 || !ShadowOverlay.validMask(mask) ||
+                (profile == 0 && mask == 0))
             return new String[] {"2", "invalid Ocarina graphics patch request"};
         if (!ACTIVE.compareAndSet(false, true))
             return new String[] {String.valueOf(RUNNING), "another RomFS overlay is already being made"};
-        try { return runOneShadow(id, romfs, profile, effect, version); }
+        try { return runOneShadow(id, romfs, profile, mask, version); }
         finally { ACTIVE.set(false); }
     }
 
-    private String[] runOneShadow(String id, String romfs, int profile, int effect, String version) throws IOException {
+    private String[] runOneShadow(String id, String romfs, int profile, int mask, String version) throws IOException {
         File files = getExternalFilesDir(null);
         if (files == null) return new String[] {"1", "the app's files folder is not available"};
-        File out = ShadowOverlay.dir(files, id, profile, effect), tmp = new File(out.getPath() + ".tmp");
-        File stamp = ShadowOverlay.stamp(files, id, profile, effect);
-        File log = new File(out.getParentFile(), "shadow_" + profile + "_fps_" + effect + ".log");
+        File out = ShadowOverlay.dirMask(files, id, profile, mask), tmp = new File(out.getPath() + ".tmp");
+        File stamp = ShadowOverlay.stampMask(files, id, profile, mask);
+        File log = new File(out.getParentFile(), "shadow_" + profile + "_fps_mask_" + mask + ".log");
         Job.deleteTree(tmp);
         if (!tmp.mkdirs()) return new String[] {"1", "cannot create " + tmp};
         String tool = "dm/tools/gsys_shadow.py";
-        String[] argv = ShadowOverlay.argv(romfs, profile, effect, tmp);
+        String[] argv = ShadowOverlay.argvMask(romfs, profile, mask, tmp);
         String head = "== " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).format(new Date())
                 + " " + Prefs.buildTag(this) + ": " + tool + " " + String.join(" ", argv) + "\n";
         Files.write(log.toPath(), head.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -169,7 +185,7 @@ public final class SceneService extends Service {
         stamp.delete();
         Job.deleteTree(out);
         if (!tmp.renameTo(out)) return new String[] {"1", "cannot rename " + tmp + " to " + out};
-        Files.write(stamp.toPath(), ShadowOverlay.stampText(profile, effect, version).getBytes(StandardCharsets.UTF_8));
+        Files.write(stamp.toPath(), ShadowOverlay.stampTextMask(profile, mask, version).getBytes(StandardCharsets.UTF_8));
         return new String[] {"0", out.getPath()};
     }
 
