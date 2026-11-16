@@ -54,6 +54,7 @@ jobs:
           ./gradlew --no-daemon \
             -PnxGames=0400486024DEC000 \
             -PnxApp=ootv11ios \
+            -PnxPackEngine=fake \
             -PnxBranchLabel=ocarina-qgl-test \
             compileDebugJavaWithJavac
       - name: Compile native Vulkan loader and QGL fopen hook with Android NDK
