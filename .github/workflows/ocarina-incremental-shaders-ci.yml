@@ -17,6 +17,9 @@ on:
       - 'dm/gfx/tools/tests/test_ocarina_early_occlusion.py'
       - 'dm/gfx/tools/tests/test_ocarina_captured_shaders.py'
       - 'dm/gfx/tools/tests/test_ocarina_missing_shader_repair.py'
+      - 'dm/gfx/tools/tests/test_ocarina_mesh_scene_probe.py'
+      - 'dm/gfx/vk_android/vka_gprof.c'
+      - 'dm/gfx/vk_android/vka_scene_profile.h'
       - 'dm/gfx/tools/tests/test_ocarina_vegetation_supplement.py'
       - 'dm/tools/tests/test_ocarina_vegetation_launcher.py'
       - 'dm/gfx/tools/tests/test_ocarina_cold_build_memory.py'
@@ -146,6 +149,7 @@ jobs:
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_early_occlusion.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_captured_shaders.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_missing_shader_repair.py -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_mesh_scene_probe.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_vegetation_supplement.py -v
           python3 -m unittest discover -s dm/tools/tests -p test_ocarina_vegetation_launcher.py -v
           python3 -m unittest discover -s dm/gfx/tools/tests -p test_ocarina_cold_build_memory.py -v
