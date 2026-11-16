@@ -232,6 +232,17 @@ final class Prefs {
     /** RAM saver per game: large guest texture pools use files in the private cache. */
     static boolean ramSaver(Context c, String titleId) { return of(c).getBoolean(gameKey("ram_saver", titleId), false); }
     static void ramSaver(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("ram_saver", titleId), on).commit(); }
+    /** 0: original game maps; 1: dynamic 512 / static 2048; 2: dynamic 256 / static 1024. */
+    static int shadowProfile(Context c, String id) {
+        if (!OCARINA_TITLE.equals(id)) return 0;
+        int p = of(c).getInt(gameKey("oot_shadow_maps", id), 0);
+        return p >= 1 && p <= 2 ? p : 0;
+    }
+    static void shadowProfile(Context c, String id, int profile) {
+        if (!OCARINA_TITLE.equals(id)) return;
+        if (profile < 1 || profile > 2) of(c).edit().remove(gameKey("oot_shadow_maps", id)).commit();
+        else of(c).edit().putInt(gameKey("oot_shadow_maps", id), profile).commit();
+    }
     static boolean scene720(Context c, String titleId) { return of(c).getBoolean(gameKey("scene_720p", titleId), false); }
     static void scene720(Context c, String titleId, boolean on) {
         if (on) of(c).edit().putBoolean(gameKey("scene_720p", titleId), true).commit();
