@@ -1264,7 +1264,7 @@ static int capture_ocarina_stage_pair(const prog_t *a_prog, unsigned a_slot, uin
                                       const prog_t *b_prog, unsigned b_slot, uint64_t b_key,
                                       unsigned char kind) {
     if (strcmp(DM_GAME_ID, "0400486024DEC000") || !a_prog || !b_prog ||
-        !a_key || !b_key || !g_hot_loaded) return 0;
+        !a_key || !b_key) return 0;
     const char *folder = getenv("DM_NVN_SHDUMP");
     if (!folder || !*folder) return 0;
     pthread_mutex_lock(&g_oot_pairs_mu);
@@ -1323,7 +1323,33 @@ static int stage_in_program(const prog_t *p, int stage, uint64_t *key, unsigned 
         uint64_t k = vka_shlib_key(md);
         const dmsh_vk_entry *e = g_hot_loaded ? vka_shlib_find(&g_hot, k) : NULL;
         if (!e) e = vka_shlib_find(library_for_key(k), k);
-        if (e && vka_nvn_stage(e->stage) == stage) {
+        int nvn_stage = e ? vka_nvn_stage(e->stage) : -1;
+        // A real missing shader has NO entry in either Vulkan library.
+        // Derive only mesh/task/fragment from its captured NVN2 control
+        // and code headers, so the actual draw can record the necessary
+        // mesh->pixel and task->mesh pairing before the draw is skipped.
+        // Do not invent a guest shader key or a pipeline interface.
+        if (!e && p->sd[i].control && p->sd[i].data) {
+            uint32_t nctl = 0, ncode = 0;
+            nvn_ctl_lens(p->sd[i].control, &nctl, &ncode);
+            if (nctl == 0x48) nctl = 0xd8;
+            if (nctl >= 0xd8 && nctl <= 65536 && ncode >= 4 &&
+                ncode <= (1u << 24)) {
+                const unsigned char *ctl = p->sd[i].control;
+                if (ctl[0x56] == 7)
+                    nvn_stage = vka_nvn_stage(DMSH_VK_STAGE_MS);
+                else if (ctl[0x56] == 6)
+                    nvn_stage = vka_nvn_stage(DMSH_VK_STAGE_TS);
+                else {
+                    uint32_t sph;
+                    memcpy(&sph, (const void *)(uintptr_t)p->sd[i].data,
+                           sizeof sph);
+                    if (((sph >> 10) & 15) == 5)
+                        nvn_stage = vka_nvn_stage(DMSH_VK_STAGE_FS);
+                }
+            }
+        }
+        if (nvn_stage == stage) {
             *key = k; *slot = i;
             return 1;
         }
@@ -1336,19 +1362,26 @@ static int stage_in_program(const prog_t *p, int stage, uint64_t *key, unsigned 
 // these programs are not necessarily the same object. Called BEFORE
 // SKIPQ so a quarantined or missing mesh can still provide a verified pair.
 int vka_ocarina_capture_mesh_draw_pair(const prog_t *mesh_program, const prog_t *pixel_program) {
-    if (strcmp(DM_GAME_ID, "0400486024DEC000") || !g_hot_loaded ||
+    if (strcmp(DM_GAME_ID, "0400486024DEC000") || g_lib_state <= 0 ||
         !mesh_program || !pixel_program) return 1;
     uint64_t mesh_key = 0, frag_key = 0, task_key = 0;
     unsigned mesh_slot = 0, frag_slot = 0, task_slot = 0;
     if (!stage_in_program(mesh_program, vka_nvn_stage(DMSH_VK_STAGE_MS),
                           &mesh_key, &mesh_slot)) return 0;
-    int hot_mesh = vka_shlib_find(&g_hot, mesh_key) != NULL;
+    int hot_mesh = g_hot_loaded && vka_shlib_find(&g_hot, mesh_key) != NULL;
+    int missing_mesh = !vka_shlib_find(&g_lib, mesh_key) && !hot_mesh &&
+                       !(g_vegetation_loaded && vka_shlib_find(&g_vegetation, mesh_key));
     int have_task = stage_in_program(mesh_program, vka_nvn_stage(DMSH_VK_STAGE_TS),
                                      &task_key, &task_slot);
-    int hot_task = have_task && vka_shlib_find(&g_hot, task_key);
-    if (!hot_mesh && !hot_task) return 1; // unchanged full-library shader
+    int hot_task = have_task && g_hot_loaded &&
+                   vka_shlib_find(&g_hot, task_key) != NULL;
+    int missing_task = have_task && !vka_shlib_find(&g_lib, task_key) &&
+                       !hot_task && !(g_vegetation_loaded &&
+                                      vka_shlib_find(&g_vegetation, task_key));
+    if (!hot_mesh && !hot_task && !missing_mesh && !missing_task)
+        return 1; // stable complete library: no extra per-draw file work
     int complete = 1;
-    if (hot_mesh) {
+    if (hot_mesh || missing_mesh) {
         if (!stage_in_program(pixel_program, vka_nvn_stage(DMSH_VK_STAGE_FS),
                               &frag_key, &frag_slot))
             complete = 0;
@@ -1356,7 +1389,7 @@ int vka_ocarina_capture_mesh_draw_pair(const prog_t *mesh_program, const prog_t 
                                              pixel_program, frag_slot, frag_key, 'M'))
             complete = 0;
     }
-    if (hot_task && !capture_ocarina_stage_pair(mesh_program, task_slot, task_key,
+    if ((hot_task || missing_task) && !capture_ocarina_stage_pair(mesh_program, task_slot, task_key,
                                                 mesh_program, mesh_slot, mesh_key, 'T'))
         complete = 0;
     return complete; // let the draw cache only successfully captured pairs
