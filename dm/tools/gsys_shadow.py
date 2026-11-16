@@ -29,8 +29,13 @@ EFFECTS = {
     1: (('DepthShadowCascadeNum0', D_INT, 3, 2),),
     2: (('DepthShadowCascadeNum0', D_INT, 3, 1),),
     3: (),  # preserve SSAO allocation; patch its verified sample count in scene BYMLs
-    4: (('CreateShadowPrePass', D_BOOL, 1, 0),),
-    5: (('CreateDof', D_BOOL, 1, 0), ('CreateBloom', D_BOOL, 1, 0)),
+    # Keep CreateShadowPrePass=1: false leaves x20+0xd08 null and causes SIGSEGV.
+    # Raw depth is a supported renderer input route; whether it saves GPU work
+    # on this game's scenes needs actual Adreno measurement.
+    4: (('ShadowPrePassUseRawDepth', D_BOOL, 0, 1),),
+    # Keep CreateDof/Bloom=1: false leaves x20+0x1a58 null and crashes.
+    # Tune the scene's own post-effect commands, never their constructors.
+    5: (),
 }
 
 
@@ -74,7 +79,7 @@ def patch(source, profile, effect=0):
         struct.pack_into('<i', raw, words[name], target)
     allowed = {word + k for word in words.values() for k in range(4)}
     differences = [i for i, (a, b) in enumerate(zip(source, raw)) if a != b]
-    if (not differences and effect != 3) or any(i not in allowed for i in differences):
+    if (not differences and effect not in (3, 5)) or any(i not in allowed for i in differences):
         raise Error('unexpected bytes changed')
     return bytes(raw)
 
@@ -93,6 +98,13 @@ def main(argv=None):
         # Never turn off CreateSsocclusion: the light/shadow composer still
         # consumes its image. Lower only verified alchemy samples in per-scene
         # configurations while retaining the original resource graph.
+        if args.effect == 5:
+            from oot_post_effects import generate as generate_post, Error as PostError
+            try:
+                count = generate_post(args.romfs, args.out)
+            except PostError as exc:
+                raise Error(str(exc)) from exc
+            print('Post effects still allocated; %d validated source settings modified' % count)
         if args.effect == 3:
             from oot_ssao_samples import generate, Error as SsaoError
             try:
