@@ -142,7 +142,7 @@ android {
             cmake {
                 arguments '-DNX_RUNTIME_PROFILE=ON', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON', "-DNX_LSFG=${nxLsfg ? 'ON' : 'OFF'}"
                 // one host and its shim for every game (the profile comes with the pack), then the custom GPU drivers' loader and hooks (DM_VK_DRIVER)
-                targets 'nxhost', 'nxlaunch', 'nxadreno', 'hook_impl', 'main_hook'
+                targets 'nxhost', 'nxlaunch', 'nxadreno', 'hook_impl', 'main_hook', 'file_redirect_hook'
             }
         }
     }

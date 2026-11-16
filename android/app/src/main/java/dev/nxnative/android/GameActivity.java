@@ -405,6 +405,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             env.add("DM_LANG=" + AppLanguage.gameCode(this));
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
+            QglConfig.env(this, id, env); // opt-in Qualcomm file override; the default changes nothing
             // Opt-in 0.1.8.5 memory-sharing adaptation; Direct mapping
             // remains the default on every game and chipset.
             env.add("DM_VK_ALIAS=" + (Prefs.gpuSharedBuffer(this, id) ? "prefer" : "placed"));
