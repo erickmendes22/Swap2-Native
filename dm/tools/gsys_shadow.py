@@ -28,7 +28,7 @@ EFFECTS = {
     0: (),
     1: (('DepthShadowCascadeNum0', D_INT, 3, 2),),
     2: (('DepthShadowCascadeNum0', D_INT, 3, 1),),
-    3: (('CreateSsocclusion', D_BOOL, 1, 0),),
+    3: (),  # preserve SSAO allocation; patch its verified sample count in scene BYMLs
     4: (('CreateShadowPrePass', D_BOOL, 1, 0),),
     5: (('CreateDof', D_BOOL, 1, 0), ('CreateBloom', D_BOOL, 1, 0)),
 }
@@ -74,7 +74,7 @@ def patch(source, profile, effect=0):
         struct.pack_into('<i', raw, words[name], target)
     allowed = {word + k for word in words.values() for k in range(4)}
     differences = [i for i, (a, b) in enumerate(zip(source, raw)) if a != b]
-    if not differences or any(i not in allowed for i in differences):
+    if (not differences and effect != 3) or any(i not in allowed for i in differences):
         raise Error('unexpected bytes changed')
     return bytes(raw)
 
@@ -83,13 +83,23 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--romfs', required=True, help='RomFS of active update, including .nup:update/<version>/romfs')
     ap.add_argument('--profile', type=int, choices=sorted(MAPS), required=True, help='shadow map profile 0/1/2')
-    ap.add_argument('--effect', type=int, choices=sorted(EFFECTS), default=0, help='independent FPS graphics patch 0..5')
+    ap.add_argument('--effect', type=int, choices=sorted(EFFECTS), default=0, help='independent FPS graphics patch 0..5; #3 preserves SSAO resources')
     ap.add_argument('--out', required=True, help='new RomFS overlay directory')
     args = ap.parse_args(argv)
     try:
         src = args.romfs.rstrip('/\\') + '/' + MAIN
         with romfs.open(src, 'rb') as f:
             original = f.read(MAX_BYML + 1)
+        # Never turn off CreateSsocclusion: the light/shadow composer still
+        # consumes its image. Lower only verified alchemy samples in per-scene
+        # configurations while retaining the original resource graph.
+        if args.effect == 3:
+            from oot_ssao_samples import generate, Error as SsaoError
+            try:
+                sample_count = generate(args.romfs, args.out)
+            except SsaoError as exc:
+                raise Error(str(exc)) from exc
+            print('SSAO resources preserved; reduced %d validated sample-pair field(s)' % sample_count)
         updated = patch(original, args.profile, args.effect)
         target = os.path.join(args.out, *MAIN.split('/'))
         os.makedirs(os.path.dirname(target), exist_ok=True)
