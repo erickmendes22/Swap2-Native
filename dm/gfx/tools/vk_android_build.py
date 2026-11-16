@@ -1379,7 +1379,16 @@ if want and not VEGETATION and GAME.id == '0400486024DEC000' and os.environ.get(
             for _key, _entry_no in sorted(_old.index.items()):
                 if _key in want: continue  # newly translated key takes priority
                 _k, _, (_, _entry, _binds, _c1, _mods) = _old.hash_of(_entry_no, zstd)
-                _refl = {'stage': next((name for name, code in STAGE.items() if code == _entry[16]), 'cs'),
+                _stage = next((name for name, code in STAGE.items()
+                               if code == _entry[16]), None)
+                if _stage is None:
+                    raise ValueError(f'{_file}: preserved shader {_k} has unknown stage {_entry[16]}')
+                # Keys loaded from an older overlay were added AFTER the
+                # initial source-package map. Final statistics and packaging
+                # must have the real stage for EVERY published entry.
+                STAGE_OF[_k] = _stage
+                REUSED.add(_k)
+                _refl = {'stage': _stage,
                          'reused': _old.version,
                          'lib': {'entry': delta.zeroed(_entry).hex(),
                                  'binds': _binds.hex(), 'c1': _c1.hex()}}
@@ -1402,6 +1411,13 @@ if want and not VEGETATION and GAME.id == '0400486024DEC000' and os.environ.get(
         finally:
             _old.close()
 
+# A retained key that does not have a real stage would make the final report
+# crash after atomic publication, leaving the on-device preparation marked
+# failed despite a valid library. Validate before touching the installed file.
+_unknown_stages = [key for key, _, _, _ in results if key not in STAGE_OF]
+if _unknown_stages:
+    sys.exit('[RED] cannot finalize Ocarina overlay: missing stage for '
+             + ', '.join(_unknown_stages[:8]) + '; previous overlay preserved')
 # The previous installed overlay is NOT replaced until the newly selected
 # subset has passed the final binary readback and key-index validation.
 # The first confirmed full Ocarina translation (0.1.2, Nov 10) is the
