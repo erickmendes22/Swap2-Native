@@ -71,7 +71,7 @@ final class OcarinaShaderDelta {
      * Mirror the runtime's strict exact stage-set membership check before
      * declaring that a complete vegetation supplement is installed.
      */
-    static boolean completeVegetationInstalled(File pack, String inputs) {
+    static boolean completeVegetationInstalled(File pack, String inputs, int subgroup, int alignment) {
         File root = new File(pack, "shaders/vegetation");
         File[] versions = root.listFiles(File::isDirectory);
         if (versions == null) return false;
@@ -83,6 +83,7 @@ final class OcarinaShaderDelta {
             if (h == null || !h.fits(lib.length()) ||
                     h.entries != required.size() || !TITLE.equals(h.game) ||
                     !inputs.equals(h.inputs) ||
+                    h.subgroupSize != subgroup || h.ssboAlign != alignment ||
                     !BuildConfig.NX_DMSH_VK_ABI.equals(h.abi)) continue;
             try {
                 boolean complete = true;
@@ -123,7 +124,8 @@ final class OcarinaShaderDelta {
             return List.of();
 
         boolean vegetationPresent = completeVegetationInstalled(
-                job.pack(), profile.shaderInputs);
+                job.pack(), profile.shaderInputs,
+                header.subgroupSize, header.ssboAlign);
         java.util.Set<String> vegetationSet = vegetationPresent
                 ? new HashSet<>(vegetationKeys()) : java.util.Set.of();
         File hot = overlay(job, false);
