@@ -5,6 +5,7 @@ on:
       - 'dm/tools/gsys_shadowmaps.py'
       - 'dm/tools/gsys_shadow.py'
       - 'dm/tools/tests/test_gsys_shadow.py'
+      - 'dm/tools/tests/test_gsys_graphics_fps.py'
       - 'android/app/src/main/java/dev/nxnative/android/ShadowOverlay.java'
       - 'android/app/src/main/java/dev/nxnative/android/Prefs.java'
       - 'android/app/src/main/java/dev/nxnative/android/GameActivity.java'
@@ -25,7 +26,7 @@ jobs:
         run: python3 -m unittest dm.tools.tests.test_oot_shadowmap_overlay -v
       - name: Verify exact Ocarina shadow-map field changes
         run: |
-          python3 -m unittest dm.tools.tests.test_gsys_shadow -v
+          python3 -m unittest dm.tools.tests.test_gsys_shadow dm.tools.tests.test_gsys_graphics_fps -v
           python3 -m py_compile dm/tools/gsys_shadow.py
           python3 dm/tools/gsys_shadow.py --help
       - name: Compile independent Android shadow overlay descriptor
