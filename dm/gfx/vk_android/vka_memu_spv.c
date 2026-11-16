@@ -28,7 +28,7 @@ enum {
     OpTypeRuntimeArray = 29, OpTypeStruct = 30, OpTypePointer = 32, OpTypeFunction = 33, OpConstantTrue = 41, OpConstantFalse = 42, OpConstant = 43, OpConstantComposite = 44,
     OpFunction = 54, OpFunctionParameter = 55, OpFunctionEnd = 56, OpFunctionCall = 57, OpVariable = 59, OpLoad = 61, OpStore = 62, OpCopyMemory = 63, OpCopyMemorySized = 64,
     OpAccessChain = 65, OpInBoundsAccessChain = 66, OpPtrAccessChain = 67, OpDecorate = 71, OpMemberDecorate = 72, OpVectorExtractDynamic = 77, OpCompositeConstruct = 80, OpCompositeExtract = 81,
-    OpImageWrite = 99, OpBitcast = 124, OpIAdd = 128, OpISub = 130, OpIMul = 132, OpUDiv = 134, OpUMod = 137, OpLogicalAnd = 167, OpSelect = 169, OpIEqual = 170,
+    OpImageWrite = 99, OpBitcast = 124, OpIAdd = 128, OpISub = 130, OpIMul = 132, OpUDiv = 134, OpUMod = 137, OpLogicalOr = 166, OpLogicalAnd = 167, OpSelect = 169, OpIEqual = 170,
     OpINotEqual = 171, OpULessThan = 176, OpULessThanEqual = 178, OpShiftRightLogical = 194, OpShiftLeftLogical = 196, OpBitwiseAnd = 199, OpControlBarrier = 224, OpMemoryBarrier = 225,
     OpAtomicStore = 228, OpPhi = 245, OpLoopMerge = 246, OpSelectionMerge = 247, OpLabel = 248, OpBranch = 249, OpBranchConditional = 250, OpSwitch = 251, OpKill = 252, OpReturn = 253,
     OpReturnValue = 254, OpUnreachable = 255, OpNoLine = 317, OpModuleProcessed = 330, OpExecutionModeId = 331, OpDecorateId = 332, OpTerminateInvocation = 4416,
