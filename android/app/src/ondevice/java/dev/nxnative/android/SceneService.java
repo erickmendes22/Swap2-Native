@@ -26,7 +26,7 @@ import java.util.Locale;
  * "message" the overlay's folder, else the exit code (PackNative.BUSY, or the tool's) and "message" why (SceneOverlay.why from its log).
  */
 public final class SceneService extends Service {
-    static final String EXTRA_SHADOW_PROFILE = "shadow_profile";
+    static final String EXTRA_SHADOW_PROFILE = "shadow_profile", EXTRA_FPS_PATCH = "fps_patch";
     static final String EXTRA_ID = "title_id", EXTRA_ROMFS = "romfs", EXTRA_SCALE = "scale", EXTRA_EXPECT = "expect", EXTRA_VERSION = "version",
             EXTRA_RECEIVER = "receiver", MESSAGE = "message";
     static final int BUSY = PackNative.BUSY;
@@ -41,10 +41,14 @@ public final class SceneService extends Service {
                 .putExtra(EXTRA_EXPECT, expect).putExtra(EXTRA_VERSION, version).putExtra(EXTRA_RECEIVER, r));
     }
 
-    /** Create an independent shadow overlay; no scene palette is touched. */
+    /** Make one merged BYML overlay from the active NUP; original scene palette stays untouched. */
     static void startShadow(Context c, String titleId, String romfs, int profile, String version, ResultReceiver r) {
+        startShadow(c, titleId, romfs, profile, 0, version, r);
+    }
+    static void startShadow(Context c, String titleId, String romfs, int profile, int effect, String version, ResultReceiver r) {
         c.startService(new Intent(c, SceneService.class).putExtra(EXTRA_ID, titleId).putExtra(EXTRA_ROMFS, romfs)
-                .putExtra(EXTRA_SHADOW_PROFILE, profile).putExtra(EXTRA_VERSION, version).putExtra(EXTRA_RECEIVER, r));
+                .putExtra(EXTRA_SHADOW_PROFILE, profile).putExtra(EXTRA_FPS_PATCH, effect)
+                .putExtra(EXTRA_VERSION, version).putExtra(EXTRA_RECEIVER, r));
     }
 
     @Override public IBinder onBind(Intent i) { return null; }
@@ -58,7 +62,8 @@ public final class SceneService extends Service {
             try {
                 String[] got = intent.hasExtra(EXTRA_SHADOW_PROFILE)
                         ? runShadow(intent.getStringExtra(EXTRA_ID), intent.getStringExtra(EXTRA_ROMFS),
-                                intent.getIntExtra(EXTRA_SHADOW_PROFILE, 0), intent.getStringExtra(EXTRA_VERSION))
+                                intent.getIntExtra(EXTRA_SHADOW_PROFILE, 0), intent.getIntExtra(EXTRA_FPS_PATCH, 0),
+                                intent.getStringExtra(EXTRA_VERSION))
                         : run(intent.getStringExtra(EXTRA_ID), intent.getStringExtra(EXTRA_ROMFS), intent.getStringExtra(EXTRA_SCALE),
                                 intent.getStringExtra(EXTRA_EXPECT), intent.getStringExtra(EXTRA_VERSION));
                 code = Integer.parseInt(got[0]);
@@ -83,26 +88,27 @@ public final class SceneService extends Service {
         try { return runOne(id, romfs, scale, expect, version); } finally { ACTIVE.set(false); }
     }
 
-    /** Make a verified shadow-only RomFS overlay for the currently selected NUP update. */
-    private String[] runShadow(String id, String romfs, int profile, String version) throws IOException {
-        if (!Prefs.OCARINA_TITLE.equals(id) || romfs == null || version == null || profile < 1 || profile > 2)
-            return new String[] {"2", "invalid Ocarina shadow overlay request"};
+    /** Opt-in merged graphics BYML overlay, never applied to another game or unknown update. */
+    private String[] runShadow(String id, String romfs, int profile, int effect, String version) throws IOException {
+        if (!Prefs.OCARINA_TITLE.equals(id) || romfs == null || version == null ||
+                profile < 0 || profile > 2 || effect < 0 || effect > 5 || (profile == 0 && effect == 0))
+            return new String[] {"2", "invalid Ocarina graphics patch request"};
         if (!ACTIVE.compareAndSet(false, true))
             return new String[] {String.valueOf(RUNNING), "another RomFS overlay is already being made"};
-        try { return runOneShadow(id, romfs, profile, version); }
+        try { return runOneShadow(id, romfs, profile, effect, version); }
         finally { ACTIVE.set(false); }
     }
 
-    private String[] runOneShadow(String id, String romfs, int profile, String version) throws IOException {
+    private String[] runOneShadow(String id, String romfs, int profile, int effect, String version) throws IOException {
         File files = getExternalFilesDir(null);
         if (files == null) return new String[] {"1", "the app's files folder is not available"};
-        File out = ShadowOverlay.dir(files, id, profile), tmp = new File(out.getPath() + ".tmp");
-        File stamp = ShadowOverlay.stamp(files, id, profile);
-        File log = new File(out.getParentFile(), "shadow_" + profile + ".log");
+        File out = ShadowOverlay.dir(files, id, profile, effect), tmp = new File(out.getPath() + ".tmp");
+        File stamp = ShadowOverlay.stamp(files, id, profile, effect);
+        File log = new File(out.getParentFile(), "shadow_" + profile + "_fps_" + effect + ".log");
         Job.deleteTree(tmp);
         if (!tmp.mkdirs()) return new String[] {"1", "cannot create " + tmp};
         String tool = "dm/tools/gsys_shadow.py";
-        String[] argv = ShadowOverlay.argv(romfs, profile, tmp);
+        String[] argv = ShadowOverlay.argv(romfs, profile, effect, tmp);
         String head = "== " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).format(new Date())
                 + " " + Prefs.buildTag(this) + ": " + tool + " " + String.join(" ", argv) + "\n";
         Files.write(log.toPath(), head.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -126,7 +132,7 @@ public final class SceneService extends Service {
         stamp.delete();
         Job.deleteTree(out);
         if (!tmp.renameTo(out)) return new String[] {"1", "cannot rename " + tmp + " to " + out};
-        Files.write(stamp.toPath(), ShadowOverlay.stampText(profile, version).getBytes(StandardCharsets.UTF_8));
+        Files.write(stamp.toPath(), ShadowOverlay.stampText(profile, effect, version).getBytes(StandardCharsets.UTF_8));
         return new String[] {"0", out.getPath()};
     }
 
