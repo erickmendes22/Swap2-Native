@@ -1343,6 +1343,65 @@ if _bad and os.environ.get('DMSH_VK_REQUIRE_ALL') == '1':
 if not want:
     for n in os.listdir(out):
         if n == 'spv': shutil.rmtree(os.path.join(out, n))
+# Repair overlays are cumulative: the latest verified prior hot library may
+# contain source-verified keys that are NOT in the newly captured request.
+# Replacing it with only the new keys used to make previously repaired shaders
+# disappear on the next attempt. Preserve those exact tested SPIR-V modules
+# without recompiling their sources or touching the complete 42k base.
+if want and not VEGETATION and GAME.id == '0400486024DEC000' and os.environ.get('DMSH_VK_OOT_PARTIAL') == '1':
+    _prior_candidates = []
+    try:
+        for _dir in os.scandir(cache_root):
+            if not _dir.is_dir() or not _dir.name.startswith(VK['DIR_PREFIX']): continue
+            _file = os.path.join(_dir.path, VK['LIB_FILE'])
+            if os.path.isfile(_file): _prior_candidates.append(_file)
+    except FileNotFoundError:
+        pass
+    _prior_candidates.sort(key=os.path.getmtime, reverse=True)
+    _kept = 0
+    for _file in _prior_candidates:
+        try:
+            _old = delta.Library(_file)
+        except (OSError, ValueError, struct.error) as _e:
+            print(f'[YELLOW] previous Ocarina hot overlay {_file} is unreadable: {_e}', flush=True)
+            continue
+        try:
+            # Never reuse a full library or an overlay from another shader
+            # translator/ABI/inputs/subgroup convention. The Vulkan tool
+            # version may change when only this Python packaging code changes.
+            if not (0 < _old.ne <= 1024 and _old.game == GAME.id and
+                    _old.chain == CHAIN and _old.inputs == INPUTS and _old.abi == ABI and
+                    _old.sg == ANSWERS['subgroup_size'] and _old.sa == ANSWERS['ssbo_align']):
+                continue
+            if len(want | set(_old.index)) > 1024:
+                sys.exit('[RED] Ocarina cumulative hot overlay would exceed 1024 keys; prior overlay preserved')
+            _preserved = []
+            for _key, _entry_no in sorted(_old.index.items()):
+                if _key in want: continue  # newly translated key takes priority
+                _k, _, (_, _entry, _binds, _c1, _mods) = _old.hash_of(_entry_no, zstd)
+                _refl = {'stage': next((name for name, code in STAGE.items() if code == _entry[16]), 'cs'),
+                         'reused': _old.version,
+                         'lib': {'entry': delta.zeroed(_entry).hex(),
+                                 'binds': _binds.hex(), 'c1': _c1.hex()}}
+                _module_records = [(variant, size, bytes(stored), codec, None)
+                                   for variant, size, stored, codec in _mods]
+                _preserved.append((_k, 'ok', '', (_refl, _module_records)))
+            # Only publish after every old entry was read and decompressed
+            # successfully; a corrupt prior file must not be half-carried.
+            results.extend(_preserved)
+            want.update(k for k, _, _, _ in _preserved)
+            keys.extend(k for k, _, _, _ in _preserved)
+            _kept = len(_preserved)
+            print(f'Ocarina incremental overlay: retained {_kept} verified '
+                  f'previously compiled keys from {_file}; '
+                  f'{len(want) - _kept} selected for this run', flush=True)
+            break
+        except (OSError, ValueError, struct.error, RuntimeError) as _e:
+            sys.exit(f'[RED] previous Ocarina hot overlay cannot be preserved: {_e}; '
+                     'old overlay unchanged')
+        finally:
+            _old.close()
+
 # The previous installed overlay is NOT replaced until the newly selected
 # subset has passed the final binary readback and key-index validation.
 # The first confirmed full Ocarina translation (0.1.2, Nov 10) is the
@@ -1410,7 +1469,7 @@ if want:
         for key in sorted(want): f.write(key + '\n')
     installed = os.path.join(out, VK['LIB_FILE'])
     previous = installed + '.before-selective'
-    if os.path.isfile(installed) and not os.path.isfile(previous):
+    if os.path.isfile(installed):
         shutil.copyfile(installed, previous + '.tmp')
         os.replace(previous + '.tmp', previous)
     os.replace(lib, installed)
