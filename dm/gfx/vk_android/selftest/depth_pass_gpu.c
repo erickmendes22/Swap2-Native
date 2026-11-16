@@ -49,7 +49,11 @@ static double depth_run(int w,int h,int flags,uint64_t *counts,uint8_t *output){
   vkCmdSetScissor(cb,0,1,&sc);vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_GRAPHICS,p[mode]);vkCmdPushConstants(cb,lay,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,32,pc);
   vkCmdBeginQuery(cb,query,i,VK_QUERY_CONTROL_PRECISE_BIT);vkCmdDraw(cb,3,1,0,0);vkCmdEndQuery(cb,query,i);
   vkCmdEndRendering(cb);
-  if(flags&2)vka_attachment_parts_barrier_at(cb,mode!=1,mode!=2,__FILE__,__LINE__);else vka_attachment_write_barrier_at(cb,__FILE__,__LINE__);
+  // The active path gets the physical attachment views, not just write
+  // masks. Read-only depth still executes early/late depth tests (WAR).
+  if(flags&2)vka_attachment_parts_access_barrier_at(cb,
+    mode!=1,mode!=2,!(flags&1&&mode==1),1,__FILE__,__LINE__);
+  else vka_attachment_write_barrier_at(cb,__FILE__,__LINE__);
  }
  vkCmdWriteTimestamp(cb,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,timer,1);barrier_all(cb);
  void*mapped;size_t bytes=(size_t)w*h*4;VkBuffer dst=buffer(bytes*2,VK_BUFFER_USAGE_TRANSFER_DST_BIT,&mapped);

@@ -32,7 +32,8 @@ class BarrierScopeTests(unittest.TestCase):
         self.assertIn('g_rp_graphics++; vka_graphics_write_barrier(g_cb);', body)
         self.assertIn('g_rp_scoped++;', body)
         self.assertIn('else vka_attachment_write_barrier(g_cb);', body)
-        self.assertIn('vka_attachment_parts_barrier_at(g_cb, R.cave_cwrite, R.cave_dwrite', body)
+        self.assertIn('vka_attachment_parts_access_barrier_at(g_cb,', body)
+        self.assertIn('R.cave_cwrite, R.cave_dwrite, color_bound, depth_bound,', body)
         self.assertIn('const int postub = vka_ub_active();', body)
         self.assertIn('DM_VK_OOT_POSTUB_BAR_DEDUP', body)
 
@@ -70,7 +71,8 @@ class BarrierScopeTests(unittest.TestCase):
         self.assertNotIn('VK_ACCESS_MEMORY_WRITE_BIT', read_bar)
         self.assertIn('g_rp_scoped++;', body)
         self.assertIn('else vka_attachment_write_barrier(g_cb);', body)
-        self.assertIn('vka_attachment_parts_barrier_at(g_cb, R.cave_cwrite, R.cave_dwrite', body)
+        self.assertIn('vka_attachment_parts_access_barrier_at(g_cb,', body)
+        self.assertIn('R.cave_cwrite, R.cave_dwrite, color_bound, depth_bound,', body)
         self.assertIn('read-only passes using execution-only dependency', DRAW)
 
     def test_delta_push_descriptor_updates_preserve_unchanged_bindings(self):

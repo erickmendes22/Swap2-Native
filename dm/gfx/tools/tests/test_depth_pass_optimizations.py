@@ -220,8 +220,11 @@ int main(void) {
             d = Path(tmp)
             tex = (VK / "vka_tex.c").read_text()
             (d / "attachment_parts.inc").write_text(
-                function(tex, "void vka_attachment_write_barrier_at(") + "\n" +
-                function(tex, "void vka_attachment_parts_barrier_at("))
+                '#include "vka_attachment_stage_policy.h"\n'
+                'static uint64_t vka_n_attachment_color_src_only, vka_n_attachment_depth_src_only;\n'
+                + function(tex, "void vka_attachment_write_barrier_at(") + "\n"
+                + function(tex, "void vka_attachment_parts_access_barrier_at(") + "\n"
+                + function(tex, "void vka_attachment_parts_barrier_at("))
             env = dict(os.environ)
             for stage, source in (("vert", VERT), ("frag", FRAG)):
                 p = d / ("test." + stage)
