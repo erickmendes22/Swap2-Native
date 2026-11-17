@@ -1,0 +1,31 @@
+name: Ocarina constant true render enable mesh lookahead (research, no APK)
+on:
+  push:
+    branches: [research/oot-memu-constant-renderenable-20261117]
+    paths:
+      - .github/workflows/oot-memu-true-enable-research.yml
+      - dm/gfx/vk_android/vka_exec.c
+      - dm/gfx/vk_android/vka_memu_true_cond.h
+      - dm/gfx/tools/tests/test_oot_memu_true_enable.py
+permissions:
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove unconditional-only traversal with C harness and source order
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_oot_memu_true_enable -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_mesh_caller_lookahead -v
+      - name: Compile Android arm64 mesh replay (no APK)
+        run: |
+          set -euxo pipefail
+          SWAP_NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          if [ ! -x "$SWAP_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;28.2.13676358'
+          fi
+          SWAP_CC="$SWAP_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
+          "$SWAP_CC" -std=gnu11 -D_GNU_SOURCE -fsyntax-only -Werror=implicit-function-declaration -Werror=return-type \
+            -Idm/host/rt -Idm/host -Idm/gfx/nvn/include -Idm/third_party/vulkan-headers/include \
+            dm/gfx/vk_android/vka_exec.c
