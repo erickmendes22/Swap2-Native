@@ -58,7 +58,8 @@ class EarlyOcclusionTests(unittest.TestCase):
         self.assertTrue(early_equality(counts,3,5,lost,[True]*5))
         self.assertIsNone(early_equality(counts,1,4,lost,[True,False,True,True,True]))
 
-\ndef fresh_zero(values, available, lost):
+
+def fresh_zero(values, available, lost):
     # Match the C helper: lost or any AVAILABLE positive query proves nonzero.
     if lost or any(v > 0 and a for v, a in zip(values, available)): return False
     if not all(available): return None
