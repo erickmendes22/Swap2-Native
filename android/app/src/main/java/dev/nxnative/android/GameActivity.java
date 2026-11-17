@@ -402,11 +402,12 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // share exactly one BYML. The host's multi-root overlay keeps
             // scene_720p (Bootup pack) independent and unchanged.
             if (Prefs.OCARINA_TITLE.equals(id)) {
-                int shadow = 0; // 0.1.9: legacy shadow-map scaling disabled/removed from UI
-                int effect = Prefs.fpsPatch(this, id);
-                if (shadow != 0 || effect != 0) {
-                    if (ShadowOverlay.current(files, id, shadow, effect, pack.version)) {
-                        String graphicsRoot = ShadowOverlay.dir(files, id, shadow, effect).getPath();
+                int shadow = 0; // 0.1.9 retires shadow-map scaling
+                int mask = Prefs.fpsPatchMask(this, id);
+                if (shadow != 0 || mask != 0) {
+                    String gfxVersion = SceneService.graphicsVersion(this, id, pack.version, mask, files);
+                    if (ShadowOverlay.currentMask(files, id, shadow, mask, gfxVersion)) {
+                        String graphicsRoot = ShadowOverlay.dirMask(files, id, shadow, mask).getPath();
                         boolean combined = false;
                         for (int i = 0; i < env.size(); i++) {
                             String value = env.get(i);
@@ -417,11 +418,11 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                             }
                         }
                         if (!combined) env.add("DM_ROMFS_OVERLAY=" + graphicsRoot);
-                        Native.note("[nxlaunch] Ocarina graphics BYML: shadow " + shadow + ", FPS trial " + effect
+                        Native.note("[nxlaunch] Ocarina graphics BYML: shadow " + shadow + ", FPS mask " + mask
                                 + "; combined overlay loaded, scene_720p preserved");
                     } else {
                         String msg = "[RED] [nxlaunch] Ocarina graphics BYML: overlay missing/stale for pack "
-                                + pack.version + " (shadow " + shadow + ", FPS " + effect
+                                + pack.version + " (shadow " + shadow + ", FPS mask " + mask
                                 + "); using original game graphics; reselect either graphics patch";
                         sceneNote = sceneNote == null ? msg : sceneNote + "\n" + msg;
                     }
@@ -435,6 +436,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
             QglConfig.env(this, id, env); // opt-in Qualcomm file override; the default changes nothing
+            // 0.1.9: four established scene/GPU paths are ON for Ocarina,
+            // hidden in Graphics; RAM Saver / shared buffer remain user choices.
             // Opt-in 0.1.8.5 memory-sharing adaptation; Direct mapping
             // remains the default on every game and chipset.
             env.add("DM_VK_ALIAS=" + (Prefs.gpuSharedBuffer(this, id) ? "prefer" : "placed"));
@@ -482,14 +485,14 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
                     + (Prefs.ootDepthStoreNone(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_SCENE_PASS_DIAG=1");
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FRAGMENT_AST=" + (Prefs.fragmentOptimized(this, id) ? "1" : "0"));
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_CS_RETILE=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_DIRECT_PAYLOAD=" + (Prefs.computeOptimized(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_CS_RETILE=1");
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_MEMU_DIRECT_PAYLOAD=1");
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_PARTIAL_UPLOAD=" + (Prefs.partialTextureUploads(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_GPU_VISIBILITY=" + (Prefs.gpuVisibility(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_BAR_NARROW="+(Prefs.gpuNarrowBarriers(this,id)?"1":"0"));
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_GMEM_PIDX=" + (Prefs.gpuPageIndex(this, id) ? "1" : "0"));
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_UNUSED_COLOR=" + (Prefs.unusedColorTargets(this, id) ? "1" : "0"));
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_ATTACHMENT_PARTS=" + (Prefs.attachmentWriteScopes(this, id) ? "1" : "0"));
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_GMEM_PIDX=1");
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_UNUSED_COLOR=1");
+            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_ATTACHMENT_PARTS=1");
             // Unlike the original 174 APK, shader-code file backing is ON
             // with RAM Saver OFF too. Shader pages remain CPU-readable and
             // become reclaimable by Android as clean file-backed pages.
