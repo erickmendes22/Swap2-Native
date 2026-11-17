@@ -250,12 +250,21 @@ enum { NSLOT = 8, MAXPOOLS = 64 };
 static VkDescriptorPool g_dp[NSLOT][MAXPOOLS]; static int g_ndp[NSLOT], g_cur_dp[NSLOT];
 void vka_dyn_invalidate(void);
 static void drv_memo_reset(void);
+// A/B-only program-serial lookup cache. The original 64 slots remain the
+// default; 512 slots reduce collisions when >64 graphics programs alternate.
+// The serial remains the correctness key. Option read once per submission,
+// not through getenv() in the hot draw path.
+static unsigned g_pm_mask = 63;
+static int g_pm_diag;
+static uint64_t g_pm_hits, g_pm_misses;
 void vka_draw_sub_begin(VkCommandBuffer cb, unsigned slot) {
     vka_dispatch_overlap_flush(); // never carry an outstanding compute dependency to a new command buffer
     g_cb = cb; g_slot = slot % NSLOT; vka_dyn_invalidate();
     { void vka_mem_rec_thread(void); vka_mem_rec_thread(); }   // the address lookups' cache outside TLS for the recording thread (vka_mem.c)
     drv_memo_reset();   // the last submission's scratch spans go with its fence
     g_pidx_submission_bytes = 0; // old index snapshots stay in the retiring submission scratch blocks
+    g_pm_mask = VKA_ENV("DM_VK_PROG_CACHE_512", 0) ? 511u : 63u;
+    g_pm_diag = VKA_ENV("DM_VK_PROG_CACHE_DIAG", 0) != 0;
     g_prof = VKA_ENV("DM_VK_PROF", 0) != 0; g_dyn_filter = VKA_ENV("DM_VK_DYN_FILTER", 1); g_pass_keep = VKA_ENV("DM_VK_PASS_KEEP", 1); g_vb_filter = VKA_ENV("DM_VK_VB_FILTER", 1);   // live: from this submission
     g_vin_skip = VKA_ENV("DM_VK_VIN_SKIP", 1);
     for (int i = 0; i < g_ndp[g_slot]; i++) vk.vkResetDescriptorPool(V.dev, g_dp[g_slot][i], 0);   // the slot's last submission is done (mtl_sub_begin waited for it)
@@ -1457,6 +1466,16 @@ void vka_drv_memo_stats(char *b, size_t n) {
              g_pd_delta_all ? 100.0 * g_pd_delta_w / (double)g_pd_delta_all : 0.0, h + m ? 100.0 * ds / (double)(h + m) : 0.0,
              vk + vb ? 100.0 * vk / (double)(vk + vb) : 0.0, bk + bb ? 100.0 * bk / (double)(bk + bb) : 0.0);
     g_pd_delta_w = g_pd_delta_all = 0;
+    // Counts are optional: keep the stable production hot path unchanged
+    // unless this CPU-only A/B is explicitly being measured.
+    if (g_pm_diag) {
+        static uint64_t h0, m0;
+        uint64_t hh = g_pm_hits - h0, mm = g_pm_misses - m0;
+        VLOG("Ocarina program-serial cache: slots=%u hits=%llu misses=%llu hit-rate=%.2f%% (since last 300-frame report, not a GPU/FPS measurement)",
+            g_pm_mask + 1u, (unsigned long long)hh, (unsigned long long)mm,
+            hh + mm ? (double)hh * 100.0 / (double)(hh + mm) : 0.0);
+        h0 = g_pm_hits; m0 = g_pm_misses;
+    }
 }
 static VkWriteDescriptorSet g_dw[512]; static uint32_t g_dwn;   // the writes that changed (push_same returns 2)
 static int push_same(VkPipelineBindPoint bp, VkPipelineLayout layout) {
@@ -1611,13 +1630,20 @@ static int bar_hazard(vka_shader *const sh[VKA_NSTAGE], const vka_dstate *d) {
 // ---------- Draws ----------
 // A program's shaders by its serial (a program that gets new shaders gets a new serial, hle_nvn.c), remembered for the draws after: the shader table's lock and lookup
 // were taken once per stage of every draw
-static struct { uint64_t serial; vka_progsh ps; } g_pm[64];
+static struct { uint64_t serial; vka_progsh ps; } g_pm[512];
 static int resolve(const prog_t *p, int st, vka_shader **out, unsigned *bad) {
     *out = NULL; if (!p) return 1;
     vka_progsh ps;
-    uint64_t sr = p->serial; typeof(g_pm[0]) *m = &g_pm[(sr ^ sr >> 6) & 63];
-    if (sr && m->serial == sr) ps = m->ps;
-    else { if (!vka_prog_shaders(p, &ps)) return 0; if (sr) { m->serial = sr; m->ps = ps; } }
+    uint64_t sr = p->serial;
+    typeof(g_pm[0]) *m = &g_pm[(sr ^ (sr >> 6)) & g_pm_mask];
+    if (sr && m->serial == sr) {
+        if (g_pm_diag) g_pm_hits++;
+        ps = m->ps;
+    } else {
+        if (g_pm_diag) g_pm_misses++;
+        if (!vka_prog_shaders(p, &ps)) return 0;
+        if (sr) { m->serial = sr; m->ps = ps; }
+    }
     if (ps.bad & (1u << st | VKA_BAD_MISSING)) { *bad |= 1u << st; return 1; }
     *out = ps.sh[st]; return 1;
 }
