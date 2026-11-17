@@ -204,6 +204,20 @@ static int vka_memu_pixel_mask(const vka_shader *fragment, uint64_t *used) {
     return ok;
 }
 static uint64_t g_memu_varying_draws, g_memu_varying_words_saved;
+// Only the real measured hot meshes are counted; no extra SPIR-V scans or GPU
+// commands. These figures make a zero-candidate experiment falsifiable.
+static uint64_t g_hot_one_unknown, g_hot_one_none, g_hot_one_exact,
+    g_hot_one_multi, g_hot_one_invalid;
+void vka_memu_hot_one_plane_stats(void) {
+    static uint64_t previous[5];
+    uint64_t now[5] = {g_hot_one_unknown, g_hot_one_none,
+        g_hot_one_exact, g_hot_one_multi, g_hot_one_invalid}, diff[5], sum=0;
+    for (int i=0;i<5;i++) { diff[i]=now[i]-previous[i]; previous[i]=now[i]; sum+=diff[i]; }
+    if (sum) VLOG("Ocarina hot mesh actual FS varying masks: unknown=%llu, none-removed=%llu, ONE-vec4-candidates=%llu, >=2-vec4-candidates=%llu, incompatible=%llu; pair-safe candidate not guaranteed FPS",
+        (unsigned long long)diff[0], (unsigned long long)diff[1],
+        (unsigned long long)diff[2], (unsigned long long)diff[3],
+        (unsigned long long)diff[4]);
+}
 void vka_memu_varying_stats(uint64_t *draws, uint64_t *words) {
     if (draws) *draws = g_memu_varying_draws;
     if (words) *words = g_memu_varying_words_saved;
@@ -299,9 +313,20 @@ vka_shader *vka_memu_vs_for_fs(vka_shader *mesh, vka_shader *fragment) {
     vka_memu_sh *d = vka_memu_of(mesh);
     if (!d || d->L.task) return fallback;
     uint64_t all = vka_memu_vs_locs(&d->L), used = 0;
-    if (!all) return fallback;
-    if (!vka_memu_pixel_mask(fragment, &used)) return fallback;
-    if ((used & ~all) || used == all) return fallback;
+    int hot = vka_oot_hot_one_plane_eligible(
+        !strcmp(DM_GAME_ID, "0400486024DEC000"), 1, mesh->key, 1u);
+    if (!all) { if (hot) g_hot_one_unknown++; return fallback; }
+    if (!vka_memu_pixel_mask(fragment, &used)) {
+        if (hot) g_hot_one_unknown++;
+        return fallback;
+    }
+    if (used & ~all) { if (hot) g_hot_one_invalid++; return fallback; }
+    if (used == all) { if (hot) g_hot_one_none++; return fallback; }
+    if (hot) {
+        unsigned n = (unsigned)__builtin_popcountll(all & ~used);
+        if (n == 1u) g_hot_one_exact++;
+        else g_hot_one_multi++;
+    }
     // Preserve the established >=2-plane policy for EVERY other shader.
     // One unused vec4 is admitted only for the 3 on-device measured hot
     // mesh keys and only when the EXACT bound fragment input mask proves
@@ -522,6 +547,7 @@ void vka_memu_stats(char *b, size_t n) {
     uint64_t varydraw = 0, varyword = 0;
     vka_memu_varying_stats(&varydraw, &varyword);
     uint64_t masked_draws = varydraw - varydraw0, dropped_channels = varyword - varyword0;
+    vka_memu_hot_one_plane_stats();
     varydraw0 = varydraw; varyword0 = varyword;
     uint64_t nb = vka_memu_n_batches - b0, nd = vka_memu_n_draws - d0, ns = vka_memu_n_splits - s0, nk = vka_memu_n_skip - k0,
              crossings = cr - c0, nested = nx - x0;
