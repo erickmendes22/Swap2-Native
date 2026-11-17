@@ -6,6 +6,8 @@ on:
       - .github/workflows/oot-hot-one-plane-research.yml
       - dm/gfx/vk_android/vka_oot_one_plane.h
       - dm/gfx/vk_android/vka_memu.c
+      - dm/gfx/vk_android/vka_memu.h
+      - dm/gfx/vk_android/vka_memu_draw.inc
       - dm/gfx/tools/tests/test_oot_hot_one_plane.py
       - dm/gfx/tools/tests/test_oot_one_plane_gpu.py
 permissions:
