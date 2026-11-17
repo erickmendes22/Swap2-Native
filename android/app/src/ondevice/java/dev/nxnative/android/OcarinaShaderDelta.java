@@ -102,6 +102,33 @@ final class OcarinaShaderDelta {
         return false;
     }
 
+    /** Has this exact shader already been compiled in ANY ABI-compatible
+     * vegetation supplement? A partial supplement is not itself a complete
+     * library, but its already-present keys must not be rebuilt by
+     * "Preparar ausentes" merely because other keys are missing. */
+    static boolean vegetationKeyInstalled(File pack, String inputs,
+                                          int subgroup, int alignment, String key) {
+        File[] versions = new File(pack, "shaders/vegetation").listFiles(File::isDirectory);
+        if (versions == null || !vegetationKeys().contains(key)) return false;
+        for (File dir : versions) {
+            if (!dir.getName().startsWith("v-")) continue;
+            File lib = new File(dir, "dmsh_vk.lib");
+            ShaderLibs.Header h = ShaderLibs.header(lib);
+            if (h == null || !h.fits(lib.length())
+                    || !TITLE.equals(h.game) || !inputs.equals(h.inputs)
+                    || !BuildConfig.NX_DMSH_VK_ABI.equals(h.abi)
+                    || h.subgroupSize != subgroup || h.ssboAlign != alignment
+                    || h.entries < 1 || h.entries > vegetationKeys().size()) continue;
+            try {
+                if (ShaderLibs.hasKey(lib, h, key)) return true;
+            } catch (IOException ignored) {
+                // Ignore an inaccessible or damaged library; never assume it
+                // already contains the requested shader key.
+            }
+        }
+        return false;
+    }
+
     /**
      * Repair ONLY genuine missing playable shader keys. A captured heavy
      * shader, a planned vegetation supplement, or a translator revision does
@@ -170,7 +197,9 @@ final class OcarinaShaderDelta {
                 if (!ctl.isFile() || ctl.length() < 0xd8 || ctl.length() > 65536
                         || f.length() < 4 || f.length() > (1 << 24)) continue;
                 if (ShaderLibs.hasKey(old, header, key)) continue;
-                if (vegetationSet.contains(key)) continue;
+                if (vegetationSet.contains(key)
+                        || vegetationKeyInstalled(job.pack(), profile.shaderInputs,
+                                header.subgroupSize, header.ssboAlign, key)) continue;
                 if (hotVerified && ShaderLibs.hasKey(hot, hotHeader, key)) continue;
                 File blocked = new File(captures, key + ".deferred");
                 if (blocked.isFile() && blocked.length() <= 128
