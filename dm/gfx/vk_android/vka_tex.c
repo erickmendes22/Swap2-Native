@@ -2431,10 +2431,7 @@ static int pfb_avail(void) {
 }
 unsigned vka_tex_pfb_flags(void) {
     if (!pfb_avail()) return 0;
-    return (V.vstores ? VKA_PFB_VTX_STORES : 0u) |
-           (VKA_ENV("DM_VK_POOL_FB_EARLY", 1) ? VKA_PFB_EARLY : 0u) |
-           (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
-            VKA_ENV("DM_VK_OOT_FB_INVOCATION_CACHE", 0) ? VKA_PFB_INVOCATION_CACHE : 0u);
+    return (V.vstores ? VKA_PFB_VTX_STORES : 0u) | (VKA_ENV("DM_VK_POOL_FB_EARLY", 1) ? VKA_PFB_EARLY : 0u);
 }
 void vka_tex_pfb_draw(void) {
     if (atomic_load_explicit(&g_pfb, memory_order_relaxed) <= 0) return;
