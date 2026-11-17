@@ -18,6 +18,7 @@ jobs:
       - name: Exact policy, copy plan, collector and cumulative-zero semantic proofs
         run: |
           python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.gfx.tools.tests.test_oot_rc_cumulative_delta dm.gfx.tools.tests.test_ocarina_early_occlusion -v
+          python3 -m unittest dm.tools.tests.test_ocarina_gpu_visibility_option dm.gfx.tools.tests.test_oot_render_enable_boundaries -v
       - name: Compile actual Android arm64 occlusion replay with NDK
         run: |
           set -euxo pipefail
