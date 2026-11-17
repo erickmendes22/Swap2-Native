@@ -76,6 +76,8 @@ class CrossResetEarlyOcclusionTests(unittest.TestCase):
         self.assertIn('DM_VK_OOT_CROSS_EPOCH_EARLY", 1', SRC)
         self.assertIn('if (a.oq_epoch != b.oq_epoch)', SRC)
         self.assertIn('!a.oq_fresh || !b.oq_fresh', SRC)
+        self.assertIn('!a.fence && a.oq_end > a.oq_begin && !a.oq_lost', SRC)
+        self.assertIn('!b.fence && b.oq_end > b.oq_begin && !b.oq_lost', SRC)
         self.assertIn('if (g_oq_cross_budget >= 96)', SRC)
         self.assertIn('oq_early_fresh_zero_locked', SRC)
         self.assertIn('if (r->oq_begin < returned) return 0;', SRC)

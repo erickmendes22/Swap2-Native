@@ -529,6 +529,11 @@ static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal) {
         // with the title's fast (non-precise) occlusion query mode.
         if (!VKA_ENV("DM_VK_OOT_CROSS_EPOCH_EARLY", 1) ||
             !a.oq_fresh || !b.oq_fresh) return 0;
+        // A query in the command buffer still being RECORDED cannot be
+        // available on the GPU. Do not spend driver polls or the budget
+        // on it. Empty segments and lost-only positive proofs are allowed.
+        if ((!a.fence && a.oq_end > a.oq_begin && !a.oq_lost) ||
+            (!b.fence && b.oq_end > b.oq_begin && !b.oq_lost)) return 0;
         if (g_oq_cross_frame != vka_frame()) {
             g_oq_cross_frame = vka_frame();
             g_oq_cross_budget = 0;
