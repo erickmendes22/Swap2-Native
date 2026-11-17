@@ -51,6 +51,7 @@ static vka_dstate g_memu_st;
 static _Thread_local const uint8_t *g_memu_caller[16];
 static _Thread_local int g_memu_depth;
 static uint64_t g_memu_parent_resumes, g_memu_nested_batches;
+static uint64_t g_memu_constant_enable_crossed;
 static uint64_t g_memu_boundary_op[OP_COUNT_ + 1];
 static int batched, states[32];
 static int memu_allowed(uint32_t op) { return op != OP_SET_RT; }
@@ -69,7 +70,7 @@ static void vka_memu_batch(int phase, const vka_dstate *s, const p_draw *d, cons
     assert(batched < 32);
     states[batched++] = s->state;
 }
-""" + "static int " + body(SRC, 'memu_walk') + r"""
+""" + '#include "vka_memu_true_cond.h"\nstatic int ' + body(SRC, 'memu_allowed_record') + '\nstatic int ' + body(SRC, 'memu_walk') + r"""
 int main(void) {
     // Called list: draw@10, end; parent: draw@20, end.
     record inner[] = {{OP_DRAW,16,5}, {OP_END,16,0}};
@@ -107,7 +108,7 @@ int main(void) {
             f = Path(tmp)/'replay.c'; exe = Path(tmp)/'replay'
             f.write_text(src)
             subprocess.run([cc,'-std=c11','-O1','-g','-Wall','-Wextra',
-                            '-Werror','-fsanitize=address,undefined',str(f),'-o',str(exe)],
+                            '-Werror','-fsanitize=address,undefined','-I',str(ROOT/'dm/gfx/vk_android'),str(f),'-o',str(exe)],
                            check=True)
             subprocess.run([str(exe)], check=True)
 
@@ -120,7 +121,7 @@ int main(void) {
         self.assertIn('g_memu_depth = depth; // child returned:', exec_src)
         walk = body(SRC, 'memu_walk')
         self.assertIn('for (int i = 0; i < nret; i++) ret[i] = g_memu_caller[i];',walk)
-        self.assertIn('if (!memu_allowed(h.op) || h.size < 8) {',walk)
+        self.assertIn('if (h.size < 8 || !memu_allowed_record(h.op, a, h.size)) {',walk)
         self.assertIn('g_memu_boundary_op[h.op]++',walk)
 
 
