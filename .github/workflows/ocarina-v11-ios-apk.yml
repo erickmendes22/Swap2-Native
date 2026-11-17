@@ -45,7 +45,7 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 /tmp/oot_zero_direct
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_gpu_indirect_proof -v
-          python3 -m unittest dm.gfx.tools.tests.test_ocarina_fine_gpu_draws -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_fine_gpu_draws dm.gfx.tools.tests.test_ocarina_program_cache_research -v
       - name: Validate shader ABI and internal scene resolution profiles
         shell: bash
         run: |

@@ -268,13 +268,17 @@ void vka_gp_pass(const char *desc) {
         // timestamp group into the next render target.
         g_gfx_n = 0;
         g_gfx_fine = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
-            VKA_ENV("DM_VK_OOT_GFX_FINE", VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2) != 0 && g_pass_1280;
+            VKA_ENV("DM_VK_OOT_GFX_FINE", 0) != 0 && g_pass_1280;
         // The two timestamp granularities must be mutually exclusive.
         // Every non-profiled frame still records ZERO of either kind.
         g_gfx_enabled = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
             VKA_ENV("DM_VK_OOT_GFX_CHUNKS", 1) &&
             vka_scene_profile_size(desc);
-        if (g_gfx_fine) g_gfx_enabled = 0;
+        if (g_gfx_fine) {
+            g_gfx_enabled = 0;
+            static int note;
+            if (!note++) VLOG("Ocarina per-draw timestamps WARNING: Adreno tiled render passes defer GPU execution; zero-length intervals and pass BEGIN timestamps are NOT per-draw GPU costs. This diagnostic is OFF by default.");
+        }
         snprintf(g_pass, DESC, "%s", desc);
         g_pass_new = 1; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
     }
