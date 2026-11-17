@@ -545,7 +545,7 @@ static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal) {
             atomic_load_explicit(&g_oq_freed, memory_order_acquire);
         int az = 0, bz = 0;
         int ak = oq_early_fresh_zero_locked(&a, returned, &az);
-        int bk = oq_early_fresh_zero_locked(&b, returned, &bz);
+        int bk = ak ? oq_early_fresh_zero_locked(&b, returned, &bz) : 0;
         pthread_mutex_unlock(&g_oq_mu);
         if (!ak || !bk) {
             g_oq_early_unavailable++;

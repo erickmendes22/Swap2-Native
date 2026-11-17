@@ -1,0 +1,30 @@
+name: Ocarina occlusion safety tests (no APK)
+
+on:
+  push:
+    branches: [ocarina-v11-ios-perf-from-v101]
+    paths:
+      - .github/workflows/ocarina-occlusion-validation.yml
+      - dm/gfx/vk_android/vka_exec.c
+      - dm/gfx/tools/tests/test_ocarina_early_occlusion.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ocarina-occlusion-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate cross-reset conservatism and old same-reset path
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_early_occlusion dm.gfx.tools.tests.test_ocarina_occlusion_fast -v
+      - name: Validate existing GPU predicate and cumulative counter invariants
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.gfx.tools.tests.test_oot_rc_cumulative_delta -v
