@@ -37,20 +37,21 @@ class MeshNativeHybrid(unittest.TestCase):
 #include <string.h>
 #include "dmsh_abi_vk.h"
 #include "vka_vegetation_supplement.h"
+#include "vka_oot_mesh_pair.h"
 #define DM_GAME_ID "0400486024DEC000"
 static struct { int memu, mesh, task; } V = {1,1,1};
-static int g_vegetation_enabled = 1, native_base = 1, route_mode = 0;
-#define VKA_ENV(k, def) (!strcmp((k),"DM_VK_VEGETATION") ? g_vegetation_enabled : !strcmp((k),"DM_VK_OOT_MESH_ROUTE") ? route_mode : native_base)
+static int g_vegetation_enabled = 1, native_base = 1, route_mode = 0, hot_native = 0;
+#define VKA_ENV(k, def) (!strcmp((k),"DM_VK_VEGETATION") ? g_vegetation_enabled : !strcmp((k),"DM_VK_OOT_MESH_ROUTE") ? route_mode : !strcmp((k),"DM_VK_OOT_HOT_MESH_NATIVE") ? hot_native : native_base)
 typedef struct { uint64_t key; } vka_shader;
-typedef struct prog_t { vka_shader *ts, *ms; } prog_t;
+typedef struct prog_t { vka_shader *ts, *ms, *fs; } prog_t;
 typedef struct { const prog_t *bst[8]; } vka_dstate;
 static unsigned shader_resolves;
 static int resolve(const prog_t *p,int stage,vka_shader **out,unsigned *bad) {
     ++shader_resolves;
-    (void)bad; *out = p ? (stage == 6 ? p->ts : stage == 7 ? p->ms : NULL) : NULL;
+    (void)bad; *out = p ? (stage == 6 ? p->ts : stage == 7 ? p->ms : stage == 1 ? p->fs : NULL) : NULL;
     return 1;
 }
-""" + "static int " + function(draw, 'veg_supplement_stage') + "\nint " + function(draw, 'vka_mesh_route') + r"""
+""" + "static int " + function(draw, 'veg_supplement_stage') + "\nstatic int " + function(draw, 'oot_hot_native_pair_state') + "\nint " + function(draw, 'vka_mesh_route') + r"""
 int main(void) {
     const uint64_t original_mesh_key = UINT64_C(0xdeadbeefef5a5120);
     const uint64_t original_task_key = UINT64_C(0xdeadbeefef5a5121);
@@ -117,6 +118,26 @@ int main(void) {
     shader_resolves = 0;
     assert(vka_mesh_route(&d) == -1 && shader_resolves > 0);
     route_mode=0;
+    // Research opt-in: exactly the two profiled mesh+fragment pairings,
+    // never the other 508 supplemental stages or unsupported devices.
+    route_mode=1; g_vegetation_enabled=1; V.memu=1; V.mesh=1; V.task=1;
+    vka_shader hf={UINT64_C(0x087ef21b3a72ad3a)};
+    prog_t fp={.fs=&hf};
+    d.bst[1]=&fp;
+    p.ms->key=UINT64_C(0xeb021183bf9b0092);
+    p.ts->key=original_task_key;
+    hot_native=1;
+    assert(vka_mesh_route(&d)==0);
+    hot_native=0; assert(vka_mesh_route(&d)==1); // default compute
+    hot_native=1; hf.key=UINT64_C(0x0fb4823639295a2d);
+    assert(vka_mesh_route(&d)==1); // crossed pair: never native
+    p.ms->key=UINT64_C(0xfed302d791a4ba43);
+    assert(vka_mesh_route(&d)==0);
+    V.task=0; assert(vka_mesh_route(&d)==1); // hardware feature missing
+    V.task=1; V.mesh=0; assert(vka_mesh_route(&d)==1);
+    V.mesh=1; g_vegetation_enabled=0;
+    p.ms->key=vka_veg_entries[0].key;
+    assert(vka_mesh_route(&d)==-1); // foliage OFF invariant
     return 0;
 }
 """

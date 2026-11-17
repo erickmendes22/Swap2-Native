@@ -1885,7 +1885,7 @@ static int veg_supplement_stage(uint64_t key) {
 #include "vka_oot_mesh_pair.h"
 // Optional hardware-native A/B ONLY for the two hot source meshes confirmed
 // by real 1280x720 GPU pipeline queries. Both lookahead and replay call
-// vka_mesh_route(), so the native draw is an ordering boundary and no
+// the same routing decision; the native draw is an ordering boundary and no
 // supplemental compute is prepared for the same guest record.
 static int oot_hot_native_pair_state(const vka_dstate *d) {
     const prog_t *mp = d->bst[7];
