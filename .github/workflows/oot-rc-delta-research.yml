@@ -1,0 +1,52 @@
+name: Ocarina exact cumulative occlusion delta (research only, no APK)
+on:
+  push:
+    branches: [research/oot-rc-delta-current-submission-20261117]
+    paths:
+      - .github/workflows/oot-rc-delta-research.yml
+      - dm/gfx/vk_android/vka_rc_gpu_policy.h
+      - dm/gfx/vk_android/vka_rc_gpu.inc
+      - dm/gfx/tools/tests/test_rc_gpu_policy.py
+      - dm/gfx/tools/tests/test_oot_rc_cumulative_delta.py
+permissions:
+  contents: read
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact policy, copy plan, collector and cumulative-zero semantic proofs
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.gfx.tools.tests.test_oot_rc_cumulative_delta dm.gfx.tools.tests.test_ocarina_early_occlusion -v
+      - name: Compile actual Android arm64 occlusion replay with NDK
+        run: |
+          set -euxo pipefail
+          SWAP_NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          if [ ! -x "$SWAP_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;28.2.13676358'
+          fi
+          SWAP_CC="$SWAP_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
+          "$SWAP_CC" -std=gnu11 -D_GNU_SOURCE -fsyntax-only -Werror=implicit-function-declaration -Werror=return-type \
+            -Idm/host/rt -Idm/host -Idm/gfx/nvn/include -Idm/third_party/vulkan-headers/include \
+            dm/gfx/vk_android/vka_exec.c
+      - name: Install Mesa Lavapipe GPU execution and SPIR-V tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mesa-vulkan-drivers libvulkan-dev spirv-tools glslang-tools
+          python3 - <<'PY'
+          import glob,os
+          paths=glob.glob('/usr/share/vulkan/icd.d/lvp*.json')
+          assert len(paths)==1,paths
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write('VK_ICD_FILENAMES='+paths[0]+'\n')
+          PY
+      - name: Execute checked-in GPU predicate with 641 cumulative-delta variants
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_oot_rc_cumulative_delta.SameSubmissionDeltaGPU -v
+          python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy.RCGpuArithmetic -v
+      - name: Actual GPU conditional draw and depth/color parity
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: python3 -m unittest dm.gfx.tools.tests.test_conditional_visibility_gpu -v
