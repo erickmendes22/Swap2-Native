@@ -38,8 +38,11 @@ class MeshSinglePassSafety(unittest.TestCase):
                   "g_memu_boundary_op[h.op]++"]:
             self.assertIn(s, walk)
         scan = EXEC.split("static void memu_scan(",1)[1].split("static void memu_before_draw(",1)[0]
-        for phase in ("MEMU_SETUP","MEMU_TASK","MEMU_DIST","MEMU_MESH","MEMU_END"):
+        for phase in ("MEMU_SETUP", "MEMU_DIST", "MEMU_END"):
             self.assertIn("vka_memu_batch("+phase,scan)
+        for phase in ("MEMU_TASK", "MEMU_MESH"):
+            self.assertIn("vka_memu_batch_snapshot("+phase,scan)
+            self.assertIn("memu_walk(p, "+phase+")",scan)
 
     def test_native_pair_only_with_driver_features_and_opt_in(self):
         route = DRAW.split("int vka_mesh_route(const vka_dstate *d) {",1)[1].split(
