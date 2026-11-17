@@ -1,0 +1,20 @@
+name: Ocarina program cache research (no APK)
+on:
+  push:
+    branches: [research/ocarina-lookup-cache-20261117]
+    paths:
+      - .github/workflows/ocarina-program-cache-research.yml
+      - dm/gfx/vk_android/vka_draw.c
+      - dm/gfx/tools/tests/test_ocarina_program_cache_research.py
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache guards and unchanged GPU source
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_program_cache_research -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_gpu_indirect_proof -v
