@@ -752,7 +752,25 @@ final class Ondevice {
             if (!"0400486024DEC000".equals(r.titleId)) return false;
             try {
                 Job probe = Job.adopt(r, packDir, code, true);
-                List<String> selected = OcarinaShaderDelta.keys(probe);
+                Profile sourceProfile = Profile.of(r.titleId);
+                File sourceLib = Pack.libraryOf(packDir);
+                if (sourceLib == null && sourceProfile != null)
+                    sourceLib = ShaderLibs.originalOcarina(packDir, r.titleId,
+                            BuildConfig.NX_DMSH_VK_ABI, sourceProfile.shaderInputs);
+                ShaderLibs.Header baseHeader = sourceLib == null ? null : ShaderLibs.header(sourceLib);
+                boolean vegetationMissing = sourceProfile != null && baseHeader != null
+                        && baseHeader.fits(sourceLib.length())
+                        && sourceProfile.shaderInputs.equals(baseHeader.inputs)
+                        && baseHeader.entries == ShaderLibs.OCARINA_BASE_ENTRIES
+                        && !OcarinaShaderDelta.completeVegetationInstalled(
+                                packDir, sourceProfile.shaderInputs,
+                                baseHeader.subgroupSize, baseHeader.ssboAlign);
+                // A base-only 42,339-key import really lacks the 508 vegetation
+                // supplement. Compile this proven set before considering
+                // captured-only repair; never re-translate a playable base.
+                List<String> selected = vegetationMissing
+                        ? OcarinaShaderDelta.vegetationKeys()
+                        : OcarinaShaderDelta.keys(probe);
                 // Already compiled does not mean visually correct: the
                 // earlier 57-key overlay contains quarantined mesh/task
                 // stages. An explicit retry must be able to rebuild those
