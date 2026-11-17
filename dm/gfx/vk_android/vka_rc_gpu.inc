@@ -128,11 +128,10 @@ static int rc_gpu_collect(const uint8_t *p, rc_gpu_job *jobs) {
                 rc_gpu_report(cond.addr, &jobs[n].a) && rc_gpu_report(cond.addr + 16, &jobs[n].b) &&
                 rc_gpu_pair_valid(&jobs[n].a, &jobs[n].b, &(vka_rc_gpu_delta){0})) {
                 if (RG.delta_mode
-                    ? (jobs[n].a.oq_end == jobs[n].b.oq_end &&
-                       jobs[n].a.oq_lost == jobs[n].b.oq_lost)
+                    ? (jobs[n].a.oq_end == jobs[n].b.oq_end)
                     : (jobs[n].a.oq_begin == jobs[n].a.oq_end &&
                        jobs[n].b.oq_begin == jobs[n].b.oq_end)) {
-                    p += h.size; continue; // rc_gpu_bind resolves these exact empty counters on the CPU.
+                    p += h.size; continue; // rc_gpu_bind compares exact zero-query delta on CPU.
                 }
                 jobs[n].p = p; jobs[n].mode = (uint32_t)cond.mode;
                 rc_gpu_context_of(&jobs[n].context, &g_rc_scan, nr, ret); pending = n;
@@ -238,11 +237,15 @@ static void rc_gpu_bind(const uint8_t *p) {
     if (!rc_gpu_report(cond.addr, &a) || cond.addr > UINT64_MAX - 16 ||
         !rc_gpu_report(cond.addr + 16, &b) ||
         !rc_gpu_pair_valid(&a, &b, &(vka_rc_gpu_delta){0})) return;
-    if (RG.delta_mode ? (a.oq_end == b.oq_end && a.oq_lost == b.oq_lost)
+    if (RG.delta_mode ? (a.oq_end == b.oq_end)
                       : (a.oq_begin == a.oq_end && b.oq_begin == b.oq_end)) {
-        // Fresh + zero lost + no queries proves both counters are exactly zero,
-        // independently of GPU completion. Do not dispatch a predicate helper.
-        S.rc_skip = cond.mode == 1; RG.cpu_zero++; return;
+        // Query-free cumulative delta: equality is determined exclusively
+        // by LOST counts. For non-delta original path both individual
+        // reports were fresh/empty by its own admission policy.
+        const int equal = !RG.delta_mode || a.oq_lost == b.oq_lost;
+        S.rc_skip = cond.mode == 1 ? equal : !equal;
+        RG.cpu_zero++;
+        return;
     }
     rc_gpu_context context;
     rc_gpu_context_of(&context, &S.d, g_memu_depth, g_memu_caller);
