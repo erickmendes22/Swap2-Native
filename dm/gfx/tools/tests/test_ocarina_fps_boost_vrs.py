@@ -154,7 +154,10 @@ class FpsBoostTests(unittest.TestCase):
     def test_compact_vrs_options_without_broad_scene_shader_expansion(self):
         # Only five visible choices; legacy stored profile 3 remains supported,
         # but it does not consume a duplicate entry in the dialog.
-        self.assertIn('VRS_VISIBLE_MODES = {0, 1, 2, 4, 5}', OPTIONS)
+        self.assertIn('VRS_VISIBLE_MODES = {0, 1, 2}', OPTIONS)
+        # 4x2 / 4x4 device support remains in Vulkan for ABI compatibility,
+        # but these user-tested zero-gain rates cannot be selected in 0.1.9.
+        self.assertIn('return saved > 3 ? 2 : saved;', OPTIONS)
         self.assertIn('vrsVisibleIndex(hotpassVrs(c, id))', OPTIONS)
         self.assertIn('vrsChoice(c, id, done);', OPTIONS)
         self.assertIn('integer(c, id, "oot_hotpass_vrs", VRS_VISIBLE_MODES[index]);', OPTIONS)
@@ -162,7 +165,7 @@ class FpsBoostTests(unittest.TestCase):
         import re
         choices = re.search(r'<string-array name="s2_oot_hotpass_vrs">(.*?)</string-array>', pt, re.S)
         self.assertIsNotNone(choices)
-        self.assertEqual(choices.group(1).count("<item>"), 5)
+        self.assertEqual(choices.group(1).count("<item>"), 5)  # resource labels kept for old installs, selector hides >2x2
         self.assertNotIn('HDR ampliado', choices.group(1))
         self.assertNotIn('experimental', choices.group(1).lower())
         # Regression: the Nov 11 4x4 experiment enabled >=128 shaders
