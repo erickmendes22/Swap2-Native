@@ -15,7 +15,8 @@ class FineGpuHotDraw(unittest.TestCase):
         f=P.split("void vka_gp_pass(",1)[1].split("void vka_gp_part(",1)[0]
         self.assertIn('VKA_ENV("DM_VK_OOT_GFX_FINE", 0)',f)
         self.assertIn('g_pass_1280;',f)
-        self.assertIn('if (g_gfx_fine) g_gfx_enabled = 0;',f)
+        self.assertIn('if (g_gfx_fine) {',f)
+        self.assertIn('g_gfx_enabled = 0;',f)
         x=P.split("void vka_gp_draw(",1)[1].split("void vka_gp_compute(",1)[0]
         self.assertIn('g_gfx_fine && vka_gp_active && g_cb && g_n < NQ - 16',x)
         self.assertIn('mark(g_cb, 0, "GFX_DRAW", 0);',x)
