@@ -155,7 +155,9 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
             !strcmp(DM_GAME_ID, "0400486024DEC000") &&
             VKA_ENV("DM_VK_OOT_VARYING_PRUNE", 1)) {
             vka_shader *fs = NULL; unsigned fbad = 0;
-            if (resolve(d->bst[1], 1, &fs, &fbad) && !fbad) {
+            int fs_ok = resolve(d->bst[1], 1, &fs, &fbad) && !fbad;
+            vka_memu_hot_one_pair_note(ms->key, fs_ok && fs != NULL);
+            if (fs_ok) {
                 vka_shader *sel_vs = vka_memu_vs_for_fs(ms, fs);
                 if (sel_vs && sel_vs != E->vs) {
                     vka_shader *sel_cs = vka_memu_cs_for_fs(ms, !vka_depth_zero(), fs);
