@@ -1,0 +1,41 @@
+name: Ocarina exact zero-draw GPU research
+on:
+  push:
+    branches:
+      - research/ocarina-zero-count-passes-20261117
+  workflow_dispatch:
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test recorded-pair guards with C sanitizers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -O1 -g -Wall -Wextra -Werror -pedantic \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            dm/host/tests/t_oot_zero_draw_passes.c -o /tmp/t_oot_zero_draw
+          ASAN_OPTIONS=detect_leaks=1 /tmp/t_oot_zero_draw
+      - name: Check default OFF and required render-pass/clear/indirect guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('dm/gfx/vk_android/vka_draw.c').read_text()
+          h=Path('dm/gfx/vk_android/vka_zero_draw_elide.h').read_text()
+          assert 'VKA_ENV("DM_VK_OOT_ZERO_DRAW_ELIDE", 0)' in s
+          assert 'vka_oot_zero_draw_elide(&zero)' in s
+          assert '.pending_clears = PC.n != 0' in s
+          assert '.pass_open = R.on' in s
+          assert '.indirect = dw ? dw->ind : di->ind' in s
+          assert '.multidraw_count = mdi' in s
+          assert '.count = dw ? dw->count : di->count' in s
+          assert '.transform_feedback = d->tf_on' in s
+          assert 'return; // No GPU vertices, samples or image writes.' in s
+          assert 'c->count != 0 || c->indirect || c->multidraw_count' in h
+          assert 'c->pending_clears || c->transform_feedback' in h
+          assert 'c->width != 1280 || c->height != 720' in h
+          print('PASS: opt-in only, exact cached shader pairs, no other draw state changed')
+          PY
