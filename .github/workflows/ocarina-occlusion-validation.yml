@@ -27,4 +27,4 @@ jobs:
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_early_occlusion dm.gfx.tools.tests.test_ocarina_occlusion_fast -v
       - name: Validate existing GPU predicate and cumulative counter invariants
         run: |
-          python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.gfx.tools.tests.test_oot_rc_cumulative_delta -v
+          python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.gfx.tools.tests.test_oot_rc_cumulative_delta dm.gfx.tools.tests.test_oot_gpu_query_archive -v

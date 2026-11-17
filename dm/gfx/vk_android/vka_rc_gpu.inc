@@ -16,7 +16,7 @@ static void rc_gpu_context_of(rc_gpu_context *out, const vka_dstate *d, int dept
     for (int i = 0; i < depth && i < 16; i++) out->caller[i] = caller[i];
 }
 static struct {
-    int enabled, n, delta_mode;
+    int enabled, n, delta_mode, archive_mode;
     uint64_t revision, submission_first;
     const uint8_t *record[VKA_RC_GPU_MAX_JOBS];
     rc_gpu_context context[VKA_RC_GPU_MAX_JOBS];
@@ -35,6 +35,8 @@ static void rc_gpu_sub_begin(void) {
     // same-epoch DELTA of two cumulative reports, not two fresh counters.
     // DM_VK_OOT_RC_DELTA=0 restores the original fresh-only experiment.
     RG.delta_mode = RG.enabled && VKA_ENV("DM_VK_OOT_RC_DELTA", 1);
+    RG.archive_mode = RG.enabled && g_oq_archive_enabled &&
+        VKA_ENV("DM_VK_OOT_OQ_ARCHIVE", 0);
     RG.n = 0; RG.current.buf = VK_NULL_HANDLE; RG.submission_first = g_oq_head;
 }
 void vka_rc_gpu_invalidate(void) {
@@ -57,6 +59,16 @@ static int rc_gpu_report(uint64_t addr, rc_rep *out) {
     if (i < 0) return 0;
     *out = g_rcp[i];
     if (out->gpu_write_epoch != g_rc_gpu_write_epoch) return 0;
+    if (RG.archive_mode) {
+        uint64_t oldest = g_oq_archive_first;
+        if (g_oq_head > OQ_N && g_oq_head - OQ_N > oldest)
+            oldest = g_oq_head - OQ_N;
+        return out->kind == 3 && out->fence && out->oq_epoch &&
+            out->oq_begin >= oldest && out->oq_end >= out->oq_begin &&
+            out->oq_end <= g_oq_archive_head &&
+            out->oq_end <= RG.submission_first &&
+            out->oq_end - out->oq_begin <= VKA_RC_GPU_MAX_RANGE;
+    }
     if (!RG.delta_mode) return
         vka_rc_gpu_range(out->kind, out->oq_fresh, out->fence, out->oq_lost, out->oq_begin, out->oq_end,
                          RG.submission_first, g_oq_head);
@@ -69,6 +81,15 @@ static int rc_gpu_report(uint64_t addr, rc_rep *out) {
         out->oq_end <= g_oq_head;
 }
 static int rc_gpu_pair_valid(const rc_rep *a, const rc_rep *b, vka_rc_gpu_delta *delta) {
+    if (RG.archive_mode) {
+        uint64_t oldest = g_oq_archive_first;
+        if (g_oq_head > OQ_N && g_oq_head - OQ_N > oldest)
+            oldest = g_oq_head - OQ_N;
+        const vka_rc_archive_report aa = {a->oq_begin, a->oq_end, a->oq_epoch, a->oq_lost, a->fence, a->oq_fresh};
+        const vka_rc_archive_report bb = {b->oq_begin, b->oq_end, b->oq_epoch, b->oq_lost, b->fence, b->oq_fresh};
+        vka_rc_archive_pair p;
+        return vka_rc_archive_pair_valid(aa, bb, oldest, g_oq_archive_head, RG.submission_first, &p);
+    }
     if (!RG.delta_mode) return 1; // both sides passed original fresh-only gate
     return vka_rc_gpu_delta_pair(
         a->kind, b->kind, a->oq_epoch, b->oq_epoch,
@@ -128,10 +149,10 @@ static int rc_gpu_collect(const uint8_t *p, rc_gpu_job *jobs) {
             if ((cond.mode == 0 || cond.mode == 1) && cond.addr <= UINT64_MAX - 16 &&
                 rc_gpu_report(cond.addr, &jobs[n].a) && rc_gpu_report(cond.addr + 16, &jobs[n].b) &&
                 rc_gpu_pair_valid(&jobs[n].a, &jobs[n].b, &(vka_rc_gpu_delta){0})) {
-                if (RG.delta_mode
+                if (!RG.archive_mode && (RG.delta_mode
                     ? (jobs[n].a.oq_end == jobs[n].b.oq_end)
                     : (jobs[n].a.oq_begin == jobs[n].a.oq_end &&
-                       jobs[n].b.oq_begin == jobs[n].b.oq_end)) {
+                       jobs[n].b.oq_begin == jobs[n].b.oq_end))) {
                     p += h.size; continue; // rc_gpu_bind compares exact zero-query delta on CPU.
                 }
                 jobs[n].p = p; jobs[n].mode = (uint32_t)cond.mode;
@@ -165,7 +186,25 @@ static void rc_gpu_prepare(const uint8_t *p) {
     for (int i = 0; i < n; i++) {
         uint32_t *j = g_rc_job_words + i * 12; memset(j, 0, 48);
         const rc_rep *r[2] = {&jobs[i].a, &jobs[i].b};
-        if (RG.delta_mode) {
+        if (RG.archive_mode) {
+            const rc_rep *a = r[0], *b = r[1];
+            if (!rc_gpu_pair_valid(a, b, &(vka_rc_gpu_delta){0})) return;
+            if (a->oq_epoch == b->oq_epoch) {
+                uint32_t off = 0;
+                if (!vka_rc_gpu_plan_add(&g_rc_plan, a->oq_end, b->oq_end, OQ_N, &off)) return;
+                j[4] = off; j[5] = (uint32_t)(b->oq_end - a->oq_end);
+                uint64_t lost = b->oq_lost - a->oq_lost;
+                j[6] = (uint32_t)lost; j[7] = (uint32_t)(lost >> 32);
+            } else {
+                uint32_t oa = 0, ob = 0;
+                if (!vka_rc_gpu_plan_add(&g_rc_plan, a->oq_begin, a->oq_end, OQ_N, &oa) ||
+                    !vka_rc_gpu_plan_add(&g_rc_plan, b->oq_begin, b->oq_end, OQ_N, &ob)) return;
+                j[0] = oa; j[1] = (uint32_t)(a->oq_end - a->oq_begin);
+                j[2] = (uint32_t)a->oq_lost; j[3] = (uint32_t)(a->oq_lost >> 32);
+                j[4] = ob; j[5] = (uint32_t)(b->oq_end - b->oq_begin);
+                j[6] = (uint32_t)b->oq_lost; j[7] = (uint32_t)(b->oq_lost >> 32);
+            }
+        } else if (RG.delta_mode) {
             vka_rc_gpu_delta d;
             uint32_t off = 0;
             if (!rc_gpu_pair_valid(r[0], r[1], &d) ||
@@ -198,10 +237,25 @@ static void rc_gpu_prepare(const uint8_t *p) {
     // All queries come from closed reports in this submission. Their reset
     // callback cannot run until this fence completes, after these copies.
     vka_rp_end(); vka_dispatch_overlap_flush();
+    if (RG.archive_mode) {
+        VkMemoryBarrier pre = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT};
+        vk.vkCmdPipelineBarrier(g_cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &pre, 0, NULL, 0, NULL);
+    }
     for (unsigned i = 0; i < g_rc_plan.copies; i++) {
         const vka_rc_gpu_copy *c = &g_rc_plan.copy[i];
-        vk.vkCmdCopyQueryPoolResults(g_cb, OQ.pool, c->first, c->count, query.buf,
-            query.off + (VkDeviceSize)c->offset * 8, 8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+        if (RG.archive_mode) {
+            VkBufferCopy cp = {
+                .srcOffset = g_oq_archive.off + (VkDeviceSize)c->first * 8,
+                .dstOffset = query.off + (VkDeviceSize)c->offset * 8,
+                .size = (VkDeviceSize)c->count * 8
+            };
+            vk.vkCmdCopyBuffer(g_cb, g_oq_archive.buf, query.buf, 1, &cp);
+        } else
+            vk.vkCmdCopyQueryPoolResults(g_cb, OQ.pool, c->first, c->count, query.buf,
+                query.off + (VkDeviceSize)c->offset * 8, 8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
     }
     for (int i = 0; i < n; i++) { RG.record[i] = jobs[i].p; RG.context[i] = jobs[i].context; }
     RG.query_copies += g_rc_plan.copies;
@@ -247,8 +301,8 @@ static void rc_gpu_bind(const uint8_t *p) {
         return;
     }
     RG.pair_admitted++;
-    if (RG.delta_mode ? (a.oq_end == b.oq_end)
-                      : (a.oq_begin == a.oq_end && b.oq_begin == b.oq_end)) {
+    if (!RG.archive_mode && (RG.delta_mode ? (a.oq_end == b.oq_end)
+                      : (a.oq_begin == a.oq_end && b.oq_begin == b.oq_end))) {
         // Query-free cumulative delta: equality is determined exclusively
         // by LOST counts. For non-delta original path both individual
         // reports were fresh/empty by its own admission policy.
@@ -276,8 +330,8 @@ int vka_rc_gpu_predicate(VkBuffer *buffer, VkDeviceSize *offset) {
 }
 static void rc_gpu_stats(double frames) {
     if (!RG.enabled || frames <= 0) return;
-    VLOG("GPU visibility research: delta=%d; %.1f conditions/frame tried, %.1f no same-submission report, %.1f epoch/range rejected, %.1f exact query-pairs admitted, %.1f batches, %.1f query copies, %.1f predicate draw requests, %.1f query-free CPU decisions/frame; NO FPS claim",
-        RG.delta_mode, RG.cond_seen / frames, RG.no_report / frames,
+    VLOG("GPU visibility research: archive=%d delta=%d; %.1f conditions/frame tried, %.1f no same-submission report, %.1f epoch/range rejected, %.1f exact query-pairs admitted, %.1f batches, %.1f query copies, %.1f predicate draw requests, %.1f query-free CPU decisions/frame; NO FPS claim",
+        RG.archive_mode, RG.delta_mode, RG.cond_seen / frames, RG.no_report / frames,
         RG.pair_reject / frames, RG.pair_admitted / frames,
         RG.batches / frames, RG.query_copies / frames, RG.requests / frames,
         RG.cpu_zero / frames);

@@ -69,3 +69,36 @@ static inline int vka_rc_gpu_plan_add(vka_rc_gpu_plan *p, uint64_t begin, uint64
     }
     return 1;
 }
+
+// Immutable archived Vulkan-query eligibility for GPU-side occlusion decisions.
+// The archive is a sequence-numbered ring copied BEFORE host query-pool reset.
+// A range must be entirely present, from an earlier submitted command buffer,
+// and not overwritten. Never compare positive BOOLEAN counts across resets.
+typedef struct {
+    uint64_t begin, end, epoch, lost, fence;
+    int fresh;
+} vka_rc_archive_report;
+typedef struct { int delta; uint64_t begin, end, lost; } vka_rc_archive_pair;
+static inline int vka_rc_archive_pair_valid(
+    vka_rc_archive_report a, vka_rc_archive_report b,
+    uint64_t oldest, uint64_t archived_end, uint64_t submission_first,
+    vka_rc_archive_pair *out) {
+    if (!out || !a.fence || !b.fence || !a.epoch || !b.epoch ||
+        a.begin > a.end || b.begin > b.end ||
+        a.begin < oldest || b.begin < oldest ||
+        a.end > archived_end || b.end > archived_end ||
+        a.end > submission_first || b.end > submission_first ||
+        a.end - a.begin > VKA_RC_GPU_MAX_RANGE ||
+        b.end - b.begin > VKA_RC_GPU_MAX_RANGE) return 0;
+    if (a.epoch == b.epoch) {
+        if (b.end < a.end || b.lost < a.lost ||
+            b.end - a.end > VKA_RC_GPU_MAX_RANGE) return 0;
+        *out = (vka_rc_archive_pair){1, a.end, b.end, b.lost - a.lost};
+        return 1;
+    }
+    // Independent fresh report values: the checked-in shader leaves two
+    // positive non-precise counters visible, rather than guessing equality.
+    if (!a.fresh || !b.fresh) return 0;
+    *out = (vka_rc_archive_pair){0, 0, 0, 0};
+    return 1;
+}

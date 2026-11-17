@@ -374,6 +374,14 @@ static int g_oq_split_pass; // startup-only Ocarina/Qualcomm cave-wall workaroun
 static int g_oq_count, g_oq_fresh, g_oq_open;   // a samples-passed reset came (draws count); a reset since the last report (the next starts from 0); a query is active in the open pass
 static uint32_t g_oq_lost;                 // draws of the segment that count 1 sample (no query, or skipped by the replay)
 static uint64_t g_oq_head, g_oq_seg0;      // the next query's sequence number; the segment's first
+// Optional permanent GPU archive: copy completed query results at each command
+// buffer's end, BEFORE the submission fence permits hostQueryReset. Every
+// slot is keyed by monotonic query sequence, never by a stale Vulkan pool slot.
+static vka_span g_oq_archive;
+static int g_oq_archive_enabled;
+static uint64_t g_oq_archive_first, g_oq_archive_head;
+static uint64_t g_oq_archive_queries, g_oq_archive_cmds;
+
 static _Atomic uint64_t g_oq_ready, g_oq_freed;   // queries below ready are reset and may begin; (command reset) the completion thread has read every query below freed
 static uint64_t g_oq_acc; static pthread_mutex_t g_oq_mu = PTHREAD_MUTEX_INITIALIZER;   // the running count (the completion thread; vka_fence_cpu may run a submission's effects on another)
 static uint64_t g_oqs_reset, g_oqs_rep, g_oqs_nores, g_oqs_q, g_oqs_full, g_oqs_skip, g_oqs_fly; static _Atomic uint64_t g_oqs_unav, g_oqs_zero;   // statistics (oq_stats)
@@ -405,6 +413,15 @@ static int oq_on(void) {
     VkResult r = create && OQ.begin && OQ.end && OQ.creset && OQ.get ? create(V.dev, &ci, NULL, &OQ.pool) : VK_ERROR_FEATURE_NOT_PRESENT;
     if (r) { OQ.pool = VK_NULL_HANDLE; VRED("occlusion queries: no query pool (%d): every samples-passed report writes 1", r); return 0; }
     if (OQ.host) { OQ.hreset(V.dev, OQ.pool, 0, OQ_N); atomic_store(&g_oq_ready, OQ_N); }   // (else oq_refill resets them at the next submission's start)
+    if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_GPU_VISIBILITY", 0) &&
+        VKA_ENV("DM_VK_OOT_OQ_ARCHIVE", 0) &&
+        vk.vkCmdCopyQueryPoolResults &&
+        vka_static((VkDeviceSize)OQ_N * 8u, V.sb_align > 8 ? V.sb_align : 8, &g_oq_archive)) {
+        g_oq_archive_first = g_oq_archive_head = g_oq_head;
+        g_oq_archive_enabled = 1;
+        VLOG("Ocarina query archive: GPU query results retained across submissions before host reset; opt-in DM_VK_OOT_OQ_ARCHIVE=1; no CPU waits, +256 KiB");
+    }
     VLOG("occlusion queries: counted on the GPU (%s; queries given back by %s; DM_VK_OCCLUSION=0: the constant 1)", OQ.precise ? "precise counts" : "not precise: a nonzero count for any sample",
          OQ.host ? "host reset" : "a reset at a submission's start");
     if (oot_fast)
@@ -611,6 +628,44 @@ static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal) {
     if (*equal) g_oq_early_equal++;
     return 1;
 }
+// A prior submission's completed queries may be recycled by its host
+// completion thread before the next submission runs. Record immutable
+// results in a permanent GPU buffer WHILE the owning command buffer is alive.
+// WAIT is a GPU-side dependency after vkCmdEndQuery, not a host/CPU wait.
+// The helper also works for command-buffer chunks; never copy an open query.
+typedef struct { VkCommandBuffer cb; uint64_t first, end; } oq_archive_copy;
+static void oq_archive_record(const void *arg) {
+    oq_archive_copy x; memcpy(&x, arg, sizeof x);
+    if (!g_oq_archive_enabled || !x.cb || !OQ.pool) return;
+    for (uint64_t q = x.first; q < x.end;) {
+        uint32_t slot = (uint32_t)(q % OQ_N);
+        uint32_t n = (uint32_t)(x.end - q < OQ_N - slot ? x.end - q : OQ_N - slot);
+        vk.vkCmdCopyQueryPoolResults(x.cb, OQ.pool, slot, n,
+            g_oq_archive.buf, g_oq_archive.off + (VkDeviceSize)slot * 8,
+            8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+        g_oq_archive_cmds++;
+        q += n;
+    }
+    VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_SHADER_READ_BIT};
+    vk.vkCmdPipelineBarrier(x.cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &mb, 0, NULL, 0, NULL);
+}
+static void oq_archive_flush(VkCommandBuffer cb) {
+    if (!g_oq_archive_enabled || !cb || g_oq_open ||
+        g_oq_archive_head >= g_oq_head) return;
+    uint64_t first = g_oq_archive_head, end = g_oq_head;
+    if (end - first > OQ_N) {
+        VRED_ONCE("Ocarina query archive: exceeded query ring; disabling GPU cross-submission archive");
+        g_oq_archive_enabled = 0;
+        return;
+    }
+    oq_archive_copy x = {cb, first, end};
+    if (!vka_enc_call(oq_archive_record, &x, sizeof x)) oq_archive_record(&x);
+    g_oq_archive_head = end; g_oq_archive_queries += end - first;
+}
 static void oq_refill(VkCommandBuffer cb) {   // (no hostQueryReset) at a submission's start, before its first query: the queries the completion thread has read, reset
     if (g_oq != 1 || OQ.host) return;
     uint64_t f = atomic_load_explicit(&g_oq_freed, memory_order_acquire) + OQ_N, r = atomic_load_explicit(&g_oq_ready, memory_order_relaxed);
@@ -722,6 +777,12 @@ static void oq_stats(char *b, size_t n, double frames) {   // every 300 frames w
         VLOG("occlusion report batching per frame: %.1f queries prefetched, %.1f vkGetQueryPoolResults calls, %.1f host query reset calls (results and order unchanged)",
              (prefetched - old_prefetched) / frames, (get - old_get) / frames, (resets - old_reset) / frames);
     old_get = get; old_reset = resets; old_prefetched = prefetched;
+    static uint64_t archive_queries_0, archive_cmds_0;
+    if (frames > 0 && g_oq_archive_queries != archive_queries_0)
+        VLOG("Ocarina GPU query archive: %.1f results copied/frame in %.2f GPU copy commands/frame; stable cross-submission ring, no CPU readback",
+             (g_oq_archive_queries - archive_queries_0) / frames,
+             (g_oq_archive_cmds - archive_cmds_0) / frames);
+    archive_queries_0 = g_oq_archive_queries; archive_cmds_0 = g_oq_archive_cmds;
     b[0] = 0;
     if (frames > 0 && (g_oqs_reset != r0 || g_oqs_rep != p0)) {
         if (g_oq != 1) snprintf(b, n, "occlusion queries per frame (not counted: %s): %.1f samples-passed resets, %.1f reports, each written 1", g_oq < 0 ? "no reset or report reached the GPU path" : "DM_VK_OCCLUSION=0 or no query pool",
@@ -953,6 +1014,7 @@ static void chunk(void) {
     part_arg pe = {g_cb, ts ? k * QPS + 2 * (part - 1) + 1 : UINT32_MAX}, pb = {next, ts ? k * QPS + 2 * part : UINT32_MAX};
     if (ts) g_slot_parts[k] = part + 1;
     vka_gbar_settle(g_cb);
+    oq_archive_flush(g_cb); // each chunk closes its occlusion query before submit
     vka_up_flush(); vka_up_throttle();   // the upload batch goes first: the part may use what it made (vka_dev.c "Upload batches")
     // With the encoder the part's end, its submit and the next part's reset and begin are made on its thread, in order with the calls before: the replay thread goes on
     if (vka_enc_call(part_submit, &pe, sizeof pe)) { vka_enc_call(part_begin, &pb, sizeof pb); vka_enc_switch(next); }
@@ -989,6 +1051,7 @@ uint64_t vka_rp_sub_commit(uint64_t reserved) {
     vk.vkCmdPipelineBarrier(g_cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &mb, 0, NULL, 0, NULL);
     vka_gbar_settle(g_cb);
     vka_enc_stop();   // every call made: the command buffer is complete
+    oq_archive_flush(g_cb); // final part: copy results before its fence and host reset
     vka_pso_retire(fence);
     unsigned k = (g_slot_i - 1) % NSLOT;
     if (g_slot_ts[k]) qf.write(g_cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, g_qp, k * QPS + 2 * (g_slot_parts[k] - 1) + 1);
