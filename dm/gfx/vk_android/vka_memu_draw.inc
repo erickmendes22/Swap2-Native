@@ -184,11 +184,21 @@ void vka_memu_batch(int phase, const vka_dstate *d, const p_draw *dw, const uint
         // Unknown GPU-generated counts and all task draws remain indirect.
         E->direct_groups = vka_memu_direct_groups(
             !strcmp(DM_GAME_ID, "0400486024DEC000"),
-            VKA_ENV("DM_VK_OOT_MEMU_DIRECT_DISPATCH", 1),
+            (VKA_ENV("DM_VK_OOT_MEMU_DIRECT_DISPATCH", 1) == 0 ? 0 :
+                (VKA_ENV("DM_VK_OOT_MEMU_DIRECT_256", 0) ? 2 : 1)),
             ts != NULL, dw->ind != 0, r[VKA_MEMU_R_COUNT],
             r[VKA_MEMU_R_MAXG], MB.cap,
             r[VKA_MEMU_R_VSTRIDE], r[VKA_MEMU_R_PSTRIDE],
             (r[VKA_MEMU_R_FLAGS] & VKA_MEMU_F_INTERLEAVED) != 0);
+        // Report actual extension hits, rather than assuming that raising
+        // an eligibility limit reduces GPU time. One log per game process.
+        // The extra modes do not change any shader module or shader cache ABI.
+        if (E->direct_groups > 64u) {
+            static int reported;
+            if (!reported++) VLOG("Ocarina taskless direct mesh 256 trial ACTIVE: %u groups; "
+                                  "setup/arena and flat<R_TOTAL retained, compare GPU p50 with env OFF",
+                                  E->direct_groups);
+        }
         if (vka_memu_snapshot_on()) {
             memu_snapshot_capture(&g_memu_draw_snapshot[ei], d);
             static int noted;
