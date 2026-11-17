@@ -45,9 +45,6 @@ jobs:
           ASAN_OPTIONS=detect_leaks=1 /tmp/oot_zero_direct
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_gpu_indirect_proof -v
-          clang -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=undefined -fno-omit-frame-pointer -Idm/gfx/vk_android dm/host/tests/t_oot_hot_mesh_pair.c -o /tmp/t_oot_hot_mesh_pair
-          /tmp/t_oot_hot_mesh_pair
-          python3 -m unittest dm.gfx.tools.tests.test_ocarina_hot_native_mesh -v
       - name: Validate shader ABI and internal scene resolution profiles
         shell: bash
         run: |

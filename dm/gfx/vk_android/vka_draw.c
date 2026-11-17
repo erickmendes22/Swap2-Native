@@ -1882,21 +1882,6 @@ static int veg_supplement_stage(uint64_t key) {
     return lo < sizeof vka_veg_entries / sizeof *vka_veg_entries &&
            vka_veg_entries[lo].key == key;
 }
-#include "vka_oot_mesh_pair.h"
-// Optional hardware-native A/B ONLY for the two hot source meshes confirmed
-// by real 1280x720 GPU pipeline queries. Both lookahead and replay call
-// the same routing decision; the native draw is an ordering boundary and no
-// supplemental compute is prepared for the same guest record.
-static int oot_hot_native_pair_state(const vka_dstate *d) {
-    const prog_t *mp = d->bst[7];
-    vka_shader *probe = NULL, *ms = NULL, *fs = NULL; unsigned bad = 0, probe_bad = 0;
-    if (d->bst[1] && d->bst[1] != mp &&
-        resolve(d->bst[1], 7, &probe, &probe_bad) &&
-        (probe || (probe_bad & (1u << 7)))) mp = d->bst[1];
-    if (!resolve(mp, 7, &ms, &bad) ||
-        !resolve(d->bst[1], 1, &fs, &bad) || bad || !ms || !fs) return 0;
-    return vka_oot_hot_native_mesh_pair(ms->key, fs->key);
-}
 // -1: supplement draw absent from the ORIGINAL library, vegetation OFF:
 //     do not compile, dispatch, rasterize or split a pass for it.
 //  0: pre-existing native mesh draw; no compute staging needed.
@@ -1916,16 +1901,8 @@ int vka_mesh_route(const vka_dstate *d) {
     // resolving task/mesh programs and searching their keys on each
     // lookahead/replay. Vegetation OFF MUST continue the guarded lookup:
     // additional foliage programs still need to be omitted before dispatch.
-    if (vegetation_on && V.memu && (test_route == -1 || test_route == 1)) {
-        // Experimental, OFF by default: route only the two measured
-        // expensive mesh/fragment pairs to native VK_EXT_mesh_shader.
-        // Never attempt on a driver without BOTH mesh and task support.
-        // Native rendering retains guest geometry, unlike draw omission.
-        // No change at all for other keys or when the experiment is off.
-        if (V.mesh && V.task && VKA_ENV("DM_VK_OOT_HOT_MESH_NATIVE", 0) &&
-            oot_hot_native_pair_state(d)) return 0;
+    if (vegetation_on && V.memu && (test_route == -1 || test_route == 1))
         return 1;
-    }
     // The no-foliage option must omit newly added mesh stages even on
     // devices lacking native mesh support and on the all-compute rollback.
     if (!hybrid && vegetation_on) return V.memu ? 1 : 0;
