@@ -131,7 +131,7 @@ final class GameSettings {
         LinearLayout box = Ui.add(p, Ui.panel(a), 16);
         GpuDriver.Info eff = GpuDriver.selected(a, id);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_chip, a.getString(R.string.s2_driver), v -> driver(a, g, again)).value(a.getString(R.string.s2_driver_note))
-                .override(a, GpuDriver.choice(a, id) != null, eff == null ? a.getString(R.string.s2_driver_system) : eff.label()).chevron(a).view);
+                .override(a, GpuDriver.choice(a, id) != null, eff == null ? a.getString(R.string.s2_gpudriver_system_choice) : eff.label()).chevron(a).view);
         Ui.Setting ret = new Ui.Setting(a, R.drawable.s2_ic_stop, a.getString(R.string.s2_pause_return), null).toggle(a, Prefs.pauseOnReturn(a, id), (b, on) -> Prefs.pauseOnReturn(a, id, on));
         ret.value(a.getString(R.string.s2_pause_return_note));
         box.addView(ret.view);
@@ -228,7 +228,7 @@ final class GameSettings {
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_display, "Proporção da tela", v -> GraphicsOptions.choice(a, id, "picture_stretch", again))
                 .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
-                .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
+                .value(a.getString(GraphicsOptions.background(a, id) == 0 ? R.string.s2_oot019_bg_off : R.string.s2_oot019_bg_on)).chevron(a).view);
         if (Prefs.OCARINA_TITLE.equals(id)) {
             // Only ONE reversible operation: omit both reviewed foliage
             // shader pairs A+B together. No separate A/B test choices and
