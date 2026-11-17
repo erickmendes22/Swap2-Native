@@ -1,0 +1,21 @@
+name: Ocarina GPU indirect pass diagnostic (no APK)
+on:
+  push:
+    branches: [research/ocarina-gpu-indirect-proof-20261117]
+    paths:
+      - .github/workflows/ocarina-gpu-indirect-diagnostic.yml
+      - dm/gfx/vk_android/vka_draw.c
+      - dm/gfx/vk_android/vka_gprof.c
+      - dm/gfx/tools/tests/test_ocarina_gpu_indirect_proof.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate truthful raster profiling and unchanged indirect mesh path
+        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_gpu_indirect_proof -v
+      - name: Existing GPU scene profiling regression
+        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_scene_profile dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
