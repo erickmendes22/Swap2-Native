@@ -13,7 +13,7 @@ D=(ROOT/"dm/gfx/vk_android/vka_draw.c").read_text()
 class FineGpuHotDraw(unittest.TestCase):
     def test_opt_in_1280x720_and_sampled_frame_only(self):
         f=P.split("void vka_gp_pass(",1)[1].split("void vka_gp_part(",1)[0]
-        self.assertIn('VKA_ENV("DM_VK_OOT_GFX_FINE", 0)',f)
+        self.assertIn('VKA_ENV("DM_VK_OOT_GFX_FINE", VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2)',f)
         self.assertIn('g_pass_1280;',f)
         self.assertIn('g_gfx_enabled = !g_gfx_fine',f)
         x=P.split("void vka_gp_draw(",1)[1].split("void vka_gp_compute(",1)[0]
