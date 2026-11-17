@@ -202,35 +202,6 @@ final class GameSettings {
             return;
         }
         LinearLayout box = Ui.add(p, Ui.panel(a), 16);
-        // A/B switch must be the FIRST visible row of Graphics, not buried
-        // after the GPU experimental controls at the bottom of a long page.
-        if (Prefs.OCARINA_TITLE.equals(id)) {
-            boolean cacheOn = Prefs.feedbackInvocationCache(a, id);
-            Ui.Setting feedbackInvocation = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Feedback de texturas por fragmento · ON/OFF", null)
-                    .toggle(a, cacheOn, (b, on) -> {
-                        Prefs.feedbackInvocationCache(a, id, on);
-                        again.run();
-                    });
-            feedbackInvocation.value(cacheOn
-                    ? "ATIVADO (teste). Reinicie o jogo. Compare com DESLIGADO na mesma cena."
-                    : "DESLIGADO (original). Ative para testar e reinicie o jogo.");
-            box.addView(feedbackInvocation.view);
-            // Already implemented in vka_draw.c, with Vulkan 1.3, no-stencil,
-            // depth-read-only, no-clear and later-writer split guards.
-            // Separate A/B from fragment feedback; no hidden auto-enable.
-            boolean depthNone = Prefs.ootDepthStoreNone(a, id);
-            Ui.Setting depthStore = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Profundidade 720p sem store · ON/OFF (teste)", null)
-                    .toggle(a, depthNone, (b, on) -> {
-                        Prefs.ootDepthStoreNone(a, id, on);
-                        again.run();
-                    });
-            depthStore.value(depthNone
-                    ? "ATIVADO (teste). Reinicie o jogo; compare FPS e possíveis artefatos."
-                    : "DESLIGADO (original). Poupa gravações de profundidade somente quando seguro.");
-            box.addView(depthStore.view);
-        }
         Profile prof = Profile.of(id);
         if (prof != null && prof.hasResolution())   // only where it does something: a profile with window_fn or graphics_scale rows
             box.addView(new Ui.Setting(a, R.drawable.s2_ic_display, a.getString(R.string.s2_game_resolution), v -> resolution(a, g, again)).value(a.getString(R.string.s2_resolution_note))
@@ -966,134 +937,36 @@ final class GameSettings {
         }
     }
 
-    /** One-at-a-time GPU work experiments; each restores exactly the original game flags. */
-    private static String fpsLabel(int effect) {
-        switch (effect) {
-            case 1: return "Cascatas de sombra: 3 → 2 (teste)";
-            case 2: return "Cascatas de sombra: 3 → 1 (teste)";
-            case 3: return "SSAO: menos amostras, buffers preservados (teste)";
-            case 4: return "Pré-passe: profundidade direta (teste GPU)";
-            case 5: return "DOF/Bloom: comandos reduzidos (teste GPU)";
-            default: return "Original do jogo · sem patch de FPS";
-        }
-    }
-
-    /** Checkboxes select independent patches; two cascade profiles are exclusive. */
+    /** Only tested cascade profile choices remain. SSAO, depth and
+     * Bloom/DOF proved unhelpful or nonfunctional on the phone and are removed. */
     private static String fpsMaskLabel(int mask) {
-        if (mask == 0) return "Original do jogo";
-        StringBuilder result = new StringBuilder();
-        for (int effect = 1; effect <= 5; effect++) {
-            if ((mask & (1 << (effect - 1))) == 0) continue;
-            if (result.length() > 0) result.append(" + ");
-            switch (effect) {
-                case 1: result.append("Cascatas 3→2"); break;
-                case 2: result.append("Cascatas 3→1"); break;
-                case 3: result.append("SSAO"); break;
-                case 4: result.append("Pré-passe"); break;
-                case 5: result.append("DOF/Bloom"); break;
-                default: break;
-            }
+        switch (mask) {
+            case 1: return "Cascatas de sombra: 3 → 2";
+            case 2: return "Cascatas de sombra: 3 → 1";
+            default: return "Original do jogo";
         }
-        return result.toString();
     }
 
     private static void fpsPatches(MainActivity a, Game g, Runnable done) {
         String id = g.titleId;
+        String[] labels = {"Original do jogo", "Cascatas de sombra: 3 → 2",
+                "Cascatas de sombra: 3 → 1"};
         int previous = Prefs.fpsPatchMask(a, id);
-        String[] labels = new String[5];
-        boolean[] checked = new boolean[5];
-        for (int i = 0; i < 5; i++) {
-            labels[i] = fpsLabel(i + 1);
-            checked[i] = (previous & (1 << i)) != 0;
-        }
-        new AlertDialog.Builder(a).setTitle("Combinar patches de FPS · " + g.name)
-                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> {
-                    checked[which] = isChecked;
-                    // Both choices modify DepthShadowCascadeNum0. Never
-                    // submit a conflicting BYML, even while selecting.
-                    if (isChecked && (which == 0 || which == 1)) {
-                        int other = 1 - which;
-                        checked[other] = false;
-                        ((AlertDialog) dialog).getListView().setItemChecked(other, false);
-                    }
-                })
-                .setPositiveButton("Preparar seleção", (dialog, which) -> {
-                    int mask = 0;
-                    for (int i = 0; i < checked.length; i++)
-                        if (checked[i]) mask |= 1 << i;
-                    int shadow = 0; // 0.1.9 removed unverified shadow-map scaling from this screen
-                    if (mask == 0 && shadow == 0) {
+        new AlertDialog.Builder(a)
+                .setTitle("Patch de cascatas de sombra · " + g.name)
+                .setSingleChoiceItems(labels, previous, (dialog, choice) -> {
+                    dialog.dismiss();
+                    // These are mutually exclusive changes to one BYML field.
+                    // Old multi-effect settings have been sanitized by Prefs.
+                    if (choice == 0) {
                         graphicsWant(id, null);
                         Prefs.fpsPatchMask(a, id, 0);
                         done.run();
-                    } else makeGraphicsPatch(a, g, shadow, mask);
-                })
-                .setNeutralButton("Analisar SSAO / sombras / DOF",
-                        (dialog, which) -> effectProbe(a, g))
-                .setNegativeButton(android.R.string.cancel, null).show();
-    }
-
-    private static void effectProbe(MainActivity a, Game g) {
-        AlertDialog wait = new AlertDialog.Builder(a)
-                .setMessage("Inspecionando somente as instruções dos dois crashes e os parâmetros gráficos do NUP...")
-                .setCancelable(false).create();
-        wait.show();
-        new Thread(() -> {
-            String[] active = sceneInputs(g);
-            UI.post(() -> {
-                if (active == null || a.isFinishing() || a.isDestroyed()) {
-                    wait.dismiss();
-                    if (!a.isFinishing() && !a.isDestroyed())
-                        a.error("Prepare o NUP antes de analisar os patches.");
-                    return;
-                }
-                SceneService.startEffectProbe(a, g.titleId, active[1], new android.os.ResultReceiver(UI) {
-                    @Override protected void onReceiveResult(int code, android.os.Bundle data) {
-                        wait.dismiss();
-                        if (a.isFinishing() || a.isDestroyed()) return;
-                        String result = data == null ? null : data.getString(SceneService.MESSAGE);
-                        if (code != 0) {
-                            a.error("Inspeção de efeitos falhou: " + (result == null ? code : result));
-                            return;
-                        }
-                        new Thread(() -> {
-                            try {
-                                String report = new String(java.nio.file.Files.readAllBytes(
-                                        new File(result).toPath()), java.nio.charset.StandardCharsets.UTF_8);
-                                if (report.length() > 40000) report = report.substring(0, 40000);
-                                String share = report;
-                                UI.post(() -> {
-                                    if (a.isFinishing() || a.isDestroyed()) return;
-                                    Intent send = new Intent(Intent.ACTION_SEND);
-                                    send.setType("text/plain");
-                                    send.putExtra(Intent.EXTRA_SUBJECT, "Ocarina 237 - SSAO / ShadowPrePass / DOF crashes");
-                                    send.putExtra(Intent.EXTRA_TEXT, share);
-                                    a.startActivity(Intent.createChooser(send, "Compartilhar análise dos patches"));
-                                });
-                            } catch (IOException e) {
-                                UI.post(() -> { if (!a.isFinishing() && !a.isDestroyed())
-                                    a.error("Não foi possível abrir a análise: " + e); });
-                            }
-                        }, "nx-effect-report").start();
+                    } else {
+                        makeGraphicsPatch(a, g, 0, choice);
                     }
-                });
-            });
-        }, "nx-effect-probe").start();
-    }
-
-    private static void shadowMaps(MainActivity a, Game g, Runnable done) {
-        String id = g.titleId;
-        String[] labels = {shadowLabel(0), shadowLabel(1), shadowLabel(2)};
-        new AlertDialog.Builder(a).setTitle("Mapas de sombra · " + g.name)
-                .setSingleChoiceItems(labels, Prefs.shadowProfile(a, id), (dialog, choice) -> {
-                    dialog.dismiss();
-                    int mask = Prefs.fpsPatchMask(a, id);
-                    if (choice == 0 && mask == 0) {
-                        graphicsWant(id, null);
-                        Prefs.shadowProfile(a, id, 0);
-                        done.run();
-                    } else makeGraphicsPatch(a, g, choice, mask);
-                }).setNegativeButton(android.R.string.cancel, null).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null).show();
     }
 
     /** Last user selection wins over an older asynchronous preparation result. */
