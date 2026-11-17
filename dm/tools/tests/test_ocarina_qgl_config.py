@@ -29,9 +29,11 @@ class QualcommQglConfigTest(unittest.TestCase):
         settings = (ROOT / "android/app/src/main/java/dev/nxnative/android/GameSettings.java").read_text()
         cmake = (ROOT / "android/host/CMakeLists.txt").read_text()
         gradle = (ROOT / "android/app/build.gradle").read_text()
-        self.assertIn('QglConfig.env(this, id, env);', game)
+        # QGL remains a dormant standalone compatibility helper, but no
+        # game startup can inject driver-wide GMEM/Sysmem overrides.
+        self.assertNotIn('QglConfig.env(this, id, env);', game)
         self.assertIn('QglConfig.reset(a, id);', settings)
-        self.assertIn('QglConfig.dialog(a, id, again)', settings)
+        self.assertNotIn('QglConfig.dialog(a, id, again)', settings)
         self.assertIn('add_library(file_redirect_hook SHARED', cmake)
         self.assertIn("'file_redirect_hook'", gradle)
 
