@@ -343,6 +343,7 @@ void vka_gp_mark(VkCommandBuffer cb, const char *file, int line);
 void vka_gp_mesh_shader(VkCommandBuffer cb, int task, uint64_t key);  // sampled exact compute mesh/task dispatch key
 void vka_gp_pass(const char *desc);
 void vka_gp_pass_begin_query(VkCommandBuffer cb); // inside Vulkan render pass, only on sampled 1280x720 passes
+void vka_gp_fine_pass_begin(VkCommandBuffer cb);  // sampled pass-start timestamp, separate from first raster draw
 void vka_gp_pass_end_query(VkCommandBuffer cb);   // paired end before vkCmdEndRendering
 void vka_gp_pass_io(unsigned load_color, unsigned store_color,
                     unsigned load_depth, unsigned store_depth,

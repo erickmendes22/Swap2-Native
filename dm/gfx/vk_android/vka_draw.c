@@ -720,7 +720,10 @@ static int rp_begin(const p_set_rt *rt, int has_rt, const vka_dstate *d, int omi
         }
     }
     if(!g_classic_pass)vk.vkCmdBeginRendering(g_cb, &ri);
-    if (vka_gp_active) vka_gp_pass_begin_query(g_cb);
+    if (vka_gp_active) {
+        vka_gp_pass_begin_query(g_cb);
+        vka_gp_fine_pass_begin(g_cb);
+    }
     R.on = 1; vka_n_rp++; if (g_dyn_filter == 2) vka_dyn_invalidate();   // DM_VK_DYN_FILTER=2: the dynamic state set again at each pass (bisect)
     for (int k = 0; k < nlate; k++) { VkClearAttachment c = {late[k]->asp, late[k]->ci >= 0 ? (uint32_t)late[k]->ci : 0, late[k]->in}; VkClearRect cr = {late[k]->rc, 0, layers}; vk.vkCmdClearAttachments(g_cb, 1, &c, 1, &cr); }
     PC.n = 0;

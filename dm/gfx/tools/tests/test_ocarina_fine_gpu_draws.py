@@ -20,6 +20,11 @@ class FineGpuHotDraw(unittest.TestCase):
         self.assertIn('g_gfx_fine && vka_gp_active && g_cb && g_n < NQ - 16',x)
         self.assertIn('mark(g_cb, 0, "GFX_DRAW", 0);',x)
         self.assertIn('m->gfx_pass_id = (uint16_t)g_seen_1280;',x)
+        self.assertIn('void vka_gp_fine_pass_begin(VkCommandBuffer cb)',P)
+        self.assertIn('m->gfx_block = 3;',P)
+        self.assertIn('gpu prof 1280x720 FINE BEGIN:',P)
+        self.assertIn('vka_gp_fine_pass_begin(g_cb);',D)
+        self.assertLess(D.index('vk.vkCmdBeginRendering(g_cb, &ri)'),D.index('vka_gp_fine_pass_begin(g_cb);'))
         self.assertIn('m->gfx_draw_id = g_pass_draws;',x)
     def test_pass_report_not_lost_and_chunks_still_work(self):
         self.assertIn('if (file && !strcmp(file, "GFX_CHUNK"))',P)

@@ -177,6 +177,9 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
     if (file && !strcmp(file, "GFX_CHUNK")) {
         // A chunk is a timestamp sub-interval, not the whole render pass.
         m->desc[0] = 0;
+    } else if (file && !strcmp(file, "GFX_BEGIN")) {
+        // Timing the pass start must not consume its final-pass histogram.
+        m->desc[0] = 0;
     } else if (file && !strcmp(file, "GFX_DRAW")) {
         // Leave g_pass_new and the complete fragment histogram untouched:
         // the final pass-end timestamp still describes the ENTIRE pass.
@@ -275,6 +278,20 @@ void vka_gp_pass(const char *desc) {
         snprintf(g_pass, DESC, "%s", desc);
         g_pass_new = 1; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
     }
+}
+void vka_gp_fine_pass_begin(VkCommandBuffer cb) {
+    if (!vka_gp_active || !g_gfx_fine || !cb || g_n >= NQ - 16) return;
+    // Timestamp AFTER vkCmdBeginRendering and pipeline-query begin, BEFORE
+    // any draw. Separates initial pass/load/previous dependency interval from
+    // per-draw intervals. Do not confuse this interval with pure attachment
+    // DRAM traffic: it can include GPU work before the render pass.
+    mark(cb, 0, "GFX_BEGIN", 0);
+    gp_mark *m = &g_m[g_n - 1];
+    m->gfx_block = 3; // pass-start interval, not a draw or mixed 16-draw block
+    m->gfx_pass_id = (uint16_t)g_seen_1280;
+    snprintf(m->desc, sizeof m->desc,
+        "fine 1280 pass=%u BEGIN (pass/load/dependencies before first draw)",
+        (unsigned)m->gfx_pass_id);
 }
 void vka_gp_part(VkCommandBuffer cb) { if (!vka_gp_active) return; g_cb = cb; mark(cb, 2, "part", 0); }
 
@@ -542,8 +559,15 @@ static void report(void) {
     // Only sampled 1280x720 frames with DM_VK_OOT_GFX_FINE=1 emit this.
     // Timestamp boundaries can introduce their own GPU overhead; rankings
     // are diagnostic, NEVER an asserted FPS gain.
-    unsigned fine_count = 0, fine_reported = 0;
-    double fine_ms = 0;
+    unsigned fine_count = 0, fine_reported = 0, fine_begin = 0;
+    double fine_ms = 0, fine_begin_ms = 0;
+    for (int k = 0; k < ns; k++) if (g_m[s[k].i].gfx_block == 3) {
+        const gp_mark *m = &g_m[s[k].i];
+        fine_begin++; fine_begin_ms += s[k].ms;
+        if (s[k].ms > 0.15)
+            VLOG("gpu prof 1280x720 FINE BEGIN: frame %llu %.3fms %s",
+                 (unsigned long long)g_frame, s[k].ms, m->desc);
+    }
     for (int k = 0; k < ns; k++) if (g_m[s[k].i].gfx_block == 2) {
         fine_count++; fine_ms += s[k].ms;
         if (fine_reported++ < 32) {
@@ -553,8 +577,8 @@ static void report(void) {
         }
     }
     if (fine_count)
-        VLOG("gpu prof 1280x720 FINE summary: frame %llu %u individually timestamped draws total %.3fms; each timestamp runs in the sampled frame only, no ordinary-frame cost or performance claim",
-             (unsigned long long)g_frame, fine_count, fine_ms);
+        VLOG("gpu prof 1280x720 FINE summary: frame %llu %u individually timestamped draws total %.3fms; %u separate BEGIN intervals %.3fms; one sampled frame only (begin includes previous dependencies, not solely DRAM load); no ordinary-frame cost or FPS claim",
+             (unsigned long long)g_frame, fine_count, fine_ms, fine_begin, fine_begin_ms);
     for (int k = 0; k < ns && k < 16; k++) {
         const gp_mark *a = &g_m[s[k].i - 1], *b = &g_m[s[k].i];
         VLOG("gpu prof:  #%d %.3f ms: %s:%d, %llu draws, %llu passes, %llu ops%s%s", s[k].i, s[k].ms, b->file, b->line, (unsigned long long)(b->draws - a->draws),
