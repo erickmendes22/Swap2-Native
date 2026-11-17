@@ -292,7 +292,7 @@ final class GraphicsOptions {
                     if (done != null) done.run();
                 }).setNegativeButton(android.R.string.cancel, null).show();
     }
-    static String aspectLabel(Context c, String id) { return label(ASPECTS, stretch(c, id)); }
+    static String aspectLabel(Context c, String id) { return c.getString(stretch(c, id) == 0 ? R.string.s2_oot019_aspect_keep : R.string.s2_oot019_aspect_fill); }
     static String sharpLabel(float v) {
         for (int i = 0; i < SHARPS.length; i++) if (Math.abs(v - SHARPS[i]) < 0.001f) return SHARP_NAMES[i];
         return String.valueOf(v);
@@ -311,9 +311,9 @@ final class GraphicsOptions {
         case "present_filter":
             values = MODES; current = mode(c, id); title = "Upscale de saída (processamento GPU até 720p)"; break;
         case "picture_stretch":
-            values = ASPECTS; current = stretch(c, id); title = "Proporção da tela"; break;
+            values = new String[]{c.getString(R.string.s2_oot019_aspect_keep), c.getString(R.string.s2_oot019_aspect_fill)}; current = stretch(c, id); title = c.getString(R.string.s2_oot019_aspect); break;
         case "bg_pipelines":
-            values = BACKGROUND; current = background(c, id); title = "Pipelines em segundo plano"; break;
+            values = new String[]{c.getString(R.string.s2_oot019_bg_off), c.getString(R.string.s2_oot019_bg_on)}; current = background(c, id); title = c.getString(R.string.s2_oot019_pipelines); break;
         case "gpu_timestamps":
             values = TIMINGS; current = timing(c, id); title = "Medição de GPU"; break;
         case "reg_dedup":
