@@ -785,4 +785,23 @@
     <string name="s2_oot019_patch_cascade1">Shadow cascades: 3 to 1</string>
     <string name="s2_oot019_patch_dialog">Shadow cascade patch: %1$s</string>
     <string name="s2_oot019_patch_needs_rebuild">Rebuild required</string>
+    <string name="s2_oot019_bg_off">Disabled</string>
+    <string name="s2_oot019_bg_on">Enabled</string>
+    <string name="s2_oot019_aspect_keep">Preserve aspect ratio</string>
+    <string name="s2_oot019_aspect_fill">Stretch to fill</string>
+    <string name="s2_gpudriver_system_choice">Automatic (phone driver)</string>
+    <string name="s2_gpudriver_dialog_title">GPU driver (applies at next game launch)</string>
+    <string name="s2_gpudriver_recommended"> (recommended)</string>
+    <string name="s2_gpudriver_install">Install…</string>
+    <string name="s2_gpudriver_remove">Remove selected…</string>
+    <string name="s2_gpudriver_close">Close</string>
+    <string name="s2_gpudriver_cancel">Cancel</string>
+    <string name="s2_gpudriver_remove_confirm">Remove %1$s?</string>
+    <string name="s2_gpudriver_remove_message">Remove the driver copy stored in the app (%1$s). Your games, saves, and original ZIP will be kept. The phone driver becomes the default.</string>
+    <string name="s2_gpudriver_remove_action">Remove driver</string>
+    <string name="s2_gpudriver_removed">Removed %1$s. The phone driver is now selected.</string>
+    <string name="s2_gpudriver_pick_zip">Select a ZIP…</string>
+    <string name="s2_gpudriver_download">Download…</string>
+    <string name="s2_gpudriver_install_title">Install a GPU driver ZIP (with meta.json)</string>
+    <string name="s2_gpudriver_local_zip"> (app driver folder)</string>
 </resources>
