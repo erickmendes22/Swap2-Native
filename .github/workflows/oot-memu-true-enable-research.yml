@@ -7,6 +7,7 @@ on:
       - dm/gfx/vk_android/vka_exec.c
       - dm/gfx/vk_android/vka_memu_true_cond.h
       - dm/gfx/tools/tests/test_oot_memu_true_enable.py
+      - dm/gfx/tools/tests/test_ocarina_mesh_caller_lookahead.py
 permissions:
   contents: read
 jobs:
