@@ -36,6 +36,14 @@ jobs:
           javac -d /tmp/oot-fps-patch-jvm android/app/src/main/java/dev/nxnative/android/ShadowOverlay.java
       - name: Validate optional GPU visibility defaults and safe counter blocks
         run: python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.tools.tests.test_ocarina_gpu_visibility_option -v
+      - name: Validate zero-invocation raster elision before APK build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          clang -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+            dm/host/tests/t_oot_zero_draw_passes.c -o /tmp/oot_zero_direct
+          ASAN_OPTIONS=detect_leaks=1 /tmp/oot_zero_direct
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
       - name: Validate shader ABI and internal scene resolution profiles
         shell: bash
         run: |

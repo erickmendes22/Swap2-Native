@@ -22,6 +22,7 @@
 #include "vka_gmem_pidx.h"
 #include "vka_readonly_depth_store.h"
 #include "vka_fs_elide.h"
+#include "vka_zero_draw_elide.h"
 #include "game_profile.h"
 #include <math.h>
 #include <stdio.h>
@@ -2060,6 +2061,36 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         static _Atomic int reported; if (!atomic_exchange(&reported, 1)) VLOG("indirect-count: native GPU count, max %u stride %u", mdi_max, mdi_stride);
     }
     d->b.base_instance = (uint32_t)(dw ? dw->base_instance : di->base_instance);
+    // Ocarina A/B: a direct classic draw with zero indices/vertices executes
+    // no shader invocations. Skip BEFORE rp_begin(), avoiding an otherwise
+    // empty colour+depth render pass when no real clear/draw needs one.
+    // Crucially, never discard PC: pending clears still execute at the next
+    // actual draw or vka_rp_end(). An already open pass also stays open.
+    // Unlike the original 261 filter, no static flag cache, shader-pair,
+    // raw texture dimensions, R.on or PC.n blockers are necessary here.
+    if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        VKA_ENV("DM_VK_OOT_ZERO_DRAW_ELIDE", 0)) {
+        vka_zero_direct_case z = {
+            .enabled = 1, .mesh = dw && dw->prim == NVN_PRIM_MESH,
+            .count = dw ? dw->count : di->count,
+            .indirect = dw ? dw->ind : di->ind,
+            .multidraw_count = mdi
+        };
+        if (vka_oot_zero_direct_draw(&z)) {
+            static uint64_t omitted, pass_open, clears_waiting;
+            omitted++;
+            pass_open += R.on != 0;
+            clears_waiting += PC.n != 0;
+            if (!(omitted & (omitted - 1)))
+                VLOG("Ocarina zero direct draw elision ACTIVE: %llu zero-invocation draws omitted, "
+                     "%llu inside already open pass, %llu with pending clears PRESERVED; "
+                     "no GPU/FPS gain claimed until on-device A/B",
+                     (unsigned long long)omitted,
+                     (unsigned long long)pass_open,
+                     (unsigned long long)clears_waiting);
+            return; // Do NOT increase g_skipped: oq_sk1 would fake a lost sample.
+        }
+    }
     vka_shader *sh[VKA_NSTAGE] = {0}; unsigned bad = 0;
     PT(0);
     // An NVN2 mesh draw (nvnCommandBufferDrawMeshTasks, hle_nvn.c): the task (optional) and mesh shaders of one program, the fragment stage's shader, in a mesh pipeline
