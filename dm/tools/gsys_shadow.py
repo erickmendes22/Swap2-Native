@@ -28,9 +28,14 @@ EFFECTS = {
     0: (),
     1: (('DepthShadowCascadeNum0', D_INT, 3, 2),),
     2: (('DepthShadowCascadeNum0', D_INT, 3, 1),),
-    3: (('CreateSsocclusion', D_BOOL, 1, 0),),
-    4: (('CreateShadowPrePass', D_BOOL, 1, 0),),
-    5: (('CreateDof', D_BOOL, 1, 0), ('CreateBloom', D_BOOL, 1, 0)),
+    3: (),  # preserve SSAO allocation; patch its verified sample count in scene BYMLs
+    # Keep CreateShadowPrePass=1: false leaves x20+0xd08 null and causes SIGSEGV.
+    # Raw depth is a supported renderer input route; whether it saves GPU work
+    # on this game's scenes needs actual Adreno measurement.
+    4: (('ShadowPrePassUseRawDepth', D_BOOL, 0, 1),),
+    # Keep CreateDof/Bloom=1: false leaves x20+0x1a58 null and crashes.
+    # Tune the scene's own post-effect commands, never their constructors.
+    5: (),
 }
 
 
@@ -38,17 +43,18 @@ class Error(Exception):
     pass
 
 
-def selected_effects(mask):
-    """0..31: two shadow-cascade choices are exclusive; all other effects stack."""
+def effect_ids(mask):
+    """Decode independent effect bits and reject conflicting cascade choices."""
     if mask < 0 or mask > 31 or (mask & 3) == 3:
-        raise Error('invalid FPS mask: cascading 3->2 and 3->1 cannot be combined')
+        raise Error('invalid effect mask or incompatible 3->2 / 3->1 cascades')
     return [i for i in range(1, 6) if mask & (1 << (i - 1))]
 
 
-def patch(source, profile, effect=0, effect_mask=None):
-    if profile not in MAPS or effect not in EFFECTS or (profile == 0 and not effect and not effect_mask):
+def patch(source, profile, effect=0, effects_mask=None):
+    mask = (1 << (effect - 1)) if effects_mask is None and effect else (effects_mask or 0)
+    selected = effect_ids(mask)
+    if profile not in MAPS or (profile == 0 and not selected):
         raise Error('invalid or empty graphics patch profile')
-    effects = [effect] if effect_mask is None else selected_effects(effect_mask)
     if not 20 <= len(source) <= MAX_BYML:
         raise Error('Main BYML size not accepted')
     raw = bytearray(source)
@@ -62,10 +68,10 @@ def patch(source, profile, effect=0, effect_mask=None):
                              ('DepthShadowTexHeight', dyn),
                              ('StaticSdwWidth', static)):
             changes[name] = (D_INT, ORIGINAL_MAPS[name], target)
-    for chosen_effect in effects:
-        for name, kind, original, target in EFFECTS[chosen_effect]:
+    for e in selected:
+        for name, kind, original, target in EFFECTS[e]:
             if name in changes:
-                raise Error('conflicting FPS effects on ' + name)
+                raise Error('two patches modify the same graphics field: ' + name)
             changes[name] = (kind, original, target)
     words = {}
     for name, kind, word in by.items(by.root):
@@ -85,7 +91,7 @@ def patch(source, profile, effect=0, effect_mask=None):
         struct.pack_into('<i', raw, words[name], target)
     allowed = {word + k for word in words.values() for k in range(4)}
     differences = [i for i, (a, b) in enumerate(zip(source, raw)) if a != b]
-    if not differences or any(i not in allowed for i in differences):
+    if (not differences and not any(e in (3, 5) for e in selected)) or any(i not in allowed for i in differences):
         raise Error('unexpected bytes changed')
     return bytes(raw)
 
@@ -94,16 +100,41 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--romfs', required=True, help='RomFS of active update, including .nup:update/<version>/romfs')
     ap.add_argument('--profile', type=int, choices=sorted(MAPS), required=True, help='shadow map profile 0/1/2')
-    ap.add_argument('--effect', type=int, choices=sorted(EFFECTS), default=0, help='legacy single effect 0..5')
-    ap.add_argument('--effect-mask', type=int, default=None,
-                    help='0..31 bitmask: 1 cascade2, 2 cascade1, 4 SSAO, 8 shadow prepass, 16 DOF+bloom')
+    ap.add_argument('--effect', type=int, choices=sorted(EFFECTS), default=0,
+                    help='legacy single FPS patch 0..5; do not mix with --effects-mask')
+    ap.add_argument('--effects-mask', type=int, default=None,
+                    help='combined bits: 1=cascade 3->2, 2=cascade 3->1, 4=SSAO, 8=prepass, 16=post')
+    ap.add_argument('--scene-pack', default=None,
+                    help='original already-prepared active scene_720p Bootup pack, for safe AGL edits')
     ap.add_argument('--out', required=True, help='new RomFS overlay directory')
     args = ap.parse_args(argv)
     try:
+        if args.effects_mask is not None and args.effect != 0:
+            raise Error('use --effects-mask OR --effect, not both')
+        mask = (1 << (args.effect - 1)) if args.effects_mask is None and args.effect else (args.effects_mask or 0)
+        selected = effect_ids(mask)
+        if args.profile not in MAPS or (args.profile == 0 and not selected):
+            raise Error('empty graphics patch')
         src = args.romfs.rstrip('/\\') + '/' + MAIN
         with romfs.open(src, 'rb') as f:
             original = f.read(MAX_BYML + 1)
-        updated = patch(original, args.profile, args.effect, args.effect_mask)
+        # Merge into the same staged overlay. When SSAO and post-effect
+        # experiments share a scene BYML, the later pass must read from stage.
+        if 5 in selected:
+            from oot_post_effects import generate as generate_post, Error as PostError
+            try:
+                count = generate_post(args.romfs, args.out, scene_pack=args.scene_pack)
+            except PostError as exc:
+                raise Error(str(exc)) from exc
+            print('Post effects still allocated; %d validated source settings modified' % count)
+        if 3 in selected:
+            from oot_ssao_samples import generate, Error as SsaoError
+            try:
+                sample_count = generate(args.romfs, args.out)
+            except SsaoError as exc:
+                raise Error(str(exc)) from exc
+            print('SSAO resources preserved; reduced %d validated sample-pair field(s)' % sample_count)
+        updated = patch(original, args.profile, effects_mask=mask)
         target = os.path.join(args.out, *MAIN.split('/'))
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, 'wb') as f:
@@ -112,10 +143,8 @@ def main(argv=None):
             if f.read() != updated:
                 raise Error('written overlay did not verify')
         differing = sum(x != y for x, y in zip(original, updated))
-        print('gsys_graphics: shadow %d, FPS patch %d: %s -> %s (%d scalar fields; %d changed bytes)' %
-              (args.profile, args.effect, src, target,
-               (3 if args.profile else 0) + sum(len(EFFECTS[e]) for e in
-                 ([args.effect] if args.effect_mask is None else selected_effects(args.effect_mask))), differing))
+        print('gsys_graphics: shadow %d, FPS mask %d (effects %s): %s -> %s (%d changed bytes)' %
+              (args.profile, mask, selected, src, target, differing))
         return 0
     except (Error, OSError, ValueError, IndexError, struct.error) as e:
         print('gsys_graphics: %s' % e, file=sys.stderr)
