@@ -21,6 +21,7 @@
 #include "vka_vegetation_supplement.h"  // generated 508 original task/mesh shader keys (kept ABI-stable)
 #include "vka_gmem_pidx.h"
 #include "vka_readonly_depth_store.h"
+#include "vka_zero_draw_elide.h"
 #include "vka_fs_elide.h"
 #include "game_profile.h"
 #include <math.h>
@@ -2144,6 +2145,41 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         if (oot_skip_one_fs(sh[1])) SKIPQ();
         if (!sh[0]) SKIP("draw with no vertex shader bound: skipped");
         if (sh[1] && (sh[1]->e->flags & DMSH_VK_F_MESH_PRIM)) SKIP("pixel shader %016llx reads per-primitive mesh outputs and is drawn with a vertex shader: skipped", (unsigned long long)sh[1]->key);
+        // Opt-in, exact-pair A/B from 720p frame profiler: two otherwise
+        // empty color+depth passes cost ~0.25 ms apiece on Adreno 840.
+        // In the verified direct case, VkCmdDraw(0) runs no invocations.
+        // Do NOT bypass pending clears, an already open pass, any GPU-driven
+        // draw count, active TF, or a different render-target geometry.
+        // No driver commands, shader ABI, or normal state are changed when
+        // the env switch is absent.
+        static int oot_zero_mode = -1;
+        if (oot_zero_mode < 0)
+            oot_zero_mode = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+                            VKA_ENV("DM_VK_OOT_ZERO_DRAW_ELIDE", 0);
+        if (oot_zero_mode && sh[1] && has_rt && rt && rt->n > 0 &&
+            rt->color[0] && rt->depth) {
+            vka_zero_draw_case zero = {
+                .game = DM_GAME_ID,
+                .vertex_key = sh[0]->key, .fragment_key = sh[1]->key,
+                .count = dw ? dw->count : di->count,
+                .indirect = dw ? dw->ind : di->ind,
+                .multidraw_count = mdi,
+                .width = rt->color[0]->d.width, .height = rt->color[0]->d.height,
+                .color = 1, .depth = 1, .pass_open = R.on,
+                .pending_clears = PC.n != 0,
+                .transform_feedback = d->tf_on,
+                .enabled = 1
+            };
+            if (vka_oot_zero_draw_elide(&zero)) {
+                static uint64_t omitted;
+                ++omitted;
+                if (omitted == 1 || (omitted & 4095u) == 0)
+                    VLOG("Ocarina 720p zero-count pass elision ACTIVE: %llu empty direct draws omitted; "
+                         "exact shader pair/targets and no clear, query or in-pass work",
+                         (unsigned long long)omitted);
+                return; // No GPU vertices, samples or image writes.
+            }
+        }
         if (d->rast_discard && d->tf_on) SKIP("transform feedback is not on Vulkan yet (F_TF): the draw is skipped");
         if (d->tf_on) VRED_ONCE("transform feedback is not on Vulkan yet: the draw is drawn without capture");
     }
