@@ -139,7 +139,7 @@ final class ShaderZip {
             ShaderLibs.Header h = ShaderLibs.header(lib);
             if (h != null && titleId.equals(h.game) && h.fits(lib.length())
                     && (!Prefs.OCARINA_TITLE.equals(titleId)
-                        || h.entries == ShaderLibs.OCARINA_BASE_ENTRIES))
+                        || ShaderLibs.isFullOcarinaCount(h.entries)))
                 return true;
         }
         // Full same-ABI Ocarina library: both the original 0.1.2
@@ -233,7 +233,7 @@ final class ShaderZip {
         File cur = Pack.libraryOf(packDir);
         if (cur != null && Prefs.OCARINA_TITLE.equals(titleId)) {
             ShaderLibs.Header h = ShaderLibs.header(cur);
-            if (h == null || h.entries != ShaderLibs.OCARINA_BASE_ENTRIES) cur = null;
+            if (h == null || !ShaderLibs.isFullOcarinaCount(h.entries)) cur = null;
         }
         if (cur != null) {
             ShaderLibs.Header h = ShaderLibs.header(cur);
