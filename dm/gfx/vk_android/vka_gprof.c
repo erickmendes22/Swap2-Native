@@ -19,7 +19,7 @@ typedef struct {
     uint16_t load_color, store_color, load_depth, store_depth, samples;
     int pipeline_query; // exact pipeline query index, -1 when unavailable
 } scene_observation;
-typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint64_t gfx_key; uint8_t mesh_stage, gfx_block, gfx_draws, gfx_top; scene_observation scene; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
+typedef struct { const char *file; int line; int kind; uint64_t draws, passes, ops; uint64_t mesh_key; uint64_t gfx_key; uint8_t mesh_stage, gfx_block, gfx_draws, gfx_top; uint16_t gfx_pass_id; uint32_t gfx_draw_id; scene_observation scene; char desc[DESC]; } gp_mark;   // kind: 0 barrier, 1 submission start, 2 part start, 3 commit
 static gp_mark g_m[NQ]; static int g_n;
 static VkQueryPool g_qp; static int g_ok = -1; static double g_tick_ns;
 // Not an overdraw approximation: a real Vulkan pipeline statistics query.
@@ -54,6 +54,11 @@ enum { GFX_CHUNK = 16 };
 static uint64_t g_gfx_keys[GFX_CHUNK];
 static unsigned g_gfx_n;
 static int g_gfx_enabled;
+// Opt-in 1280x720 draw-level timing ONLY on the frame already selected by
+// the sparse GPU profiler. No changes to normal-frame command buffers.
+// Unlike 16-draw chunks, fine marks distinguish a long-latency draw from
+// adjacent shaders and expose its exact vertex/fragment pairing.
+static int g_gfx_fine;
 static void mark(VkCommandBuffer cb, int kind, const char *file, int line);
 static void gfx_chunk_flush(void) {
     if (!g_gfx_enabled || !g_gfx_n || !vka_gp_active || !g_cb || g_n >= NQ - 16) {
@@ -100,7 +105,25 @@ void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh, uint64_t tas
         g_gfx_keys[g_gfx_n++] = fragment;
         if (g_gfx_n == GFX_CHUNK) gfx_chunk_flush();
     }
-    for (int i = 0; i < g_nfs; i++) if (g_fs[i].key == fragment) { g_fs[i].count++; return; }
+    if (g_gfx_fine && vka_gp_active && g_cb && g_n < NQ - 16) {
+        // Called directly AFTER the original vkCmdDraw* command, inside
+        // its render pass, just like the existing 16-draw timestamp marks.
+        // This is observational only: no shader, target, state, draw,
+        // memory barrier, or submission is added or removed.
+        mark(g_cb, 0, "GFX_DRAW", 0);
+        gp_mark *m = &g_m[g_n - 1];
+        m->gfx_block = 2;  // timed individual draw; not a 16-draw chunk
+        m->gfx_pass_id = (uint16_t)g_seen_1280;
+        m->gfx_draw_id = g_pass_draws;
+        m->gfx_key = fragment;
+        snprintf(m->desc, sizeof m->desc,
+            "fine 1280 pass=%u draw=%u vs=%016llx fs=%016llx mesh=%016llx task=%016llx units=%u inst=%u indirect=%d",
+            (unsigned)m->gfx_pass_id, m->gfx_draw_id,
+            (unsigned long long)vertex, (unsigned long long)fragment,
+            (unsigned long long)mesh, (unsigned long long)task,
+            units, instances, indirect);
+    }
+    for (int i = 0; i < g_nfs; i++ ) if (g_fs[i].key == fragment) { g_fs[i].count++; return; }
     if (g_nfs < SHADERS) { g_fs[g_nfs].key = fragment; g_fs[g_nfs++].count = 1; }
     else g_fs_over++;
 }
@@ -146,11 +169,12 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
     gp_mark *m = &g_m[g_n]; m->file = file; m->line = line; m->kind = kind;
     m->mesh_key = 0; m->mesh_stage = 0;
     m->gfx_key = 0; m->gfx_block = m->gfx_draws = m->gfx_top = 0;
+    m->gfx_pass_id = 0; m->gfx_draw_id = 0;
     memset(&m->scene, 0, sizeof m->scene);
     // profiler query slots are reused on later sampled frames
     uint64_t sk, di, pi; vka_draw_stats(&m->draws, &sk, &di, &pi); (void)sk; (void)di; (void)pi;
     extern uint64_t vka_n_rp; m->passes = vka_n_rp; uint64_t subs, rec; vka_exec_counts(&m->ops, &subs, &rec);
-    if (file && !strcmp(file, "GFX_CHUNK")) {
+    if (file && (!strcmp(file, "GFX_CHUNK") || !strcmp(file, "GFX_DRAW"))) {
         // Leave g_pass_new and the complete fragment histogram untouched:
         // the final pass-end timestamp still describes the ENTIRE pass.
         m->desc[0] = 0;
@@ -237,7 +261,12 @@ void vka_gp_pass(const char *desc) {
         // A draw may be outside the chosen scene pass: never carry its
         // timestamp group into the next render target.
         g_gfx_n = 0;
-        g_gfx_enabled = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        g_gfx_fine = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+            VKA_ENV("DM_VK_OOT_GFX_FINE", VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2) != 0 && g_pass_1280;
+        // The two timestamp granularities must be mutually exclusive.
+        // Every non-profiled frame still records ZERO of either kind.
+        g_gfx_enabled = !g_gfx_fine &&
+            !strcmp(DM_GAME_ID, "0400486024DEC000") &&
             VKA_ENV("DM_VK_OOT_GFX_CHUNKS", 1) &&
             vka_scene_profile_size(desc);
         snprintf(g_pass, DESC, "%s", desc);
@@ -394,7 +423,7 @@ static void report(void) {
     unsigned groups = 0, mixed_groups = 0;
     for (int i = 0; i < ns; i++) {
         const gp_mark *m = &g_m[s[i].i];
-        if (!m->gfx_block) continue;
+        if (m->gfx_block != 1) continue;
         groups++; sampled_ms += s[i].ms;
         if (m->gfx_top * 4 < m->gfx_draws * 3) {
             mixed_ms += s[i].ms; mixed_groups++;
@@ -506,6 +535,23 @@ static void report(void) {
             VLOG("gpu prof: step #%d %.3f ms: %s:%d, %llu draws, %llu ops%s%s", s[k].i, s[k].ms, b->file, b->line, (unsigned long long)(b->draws - a->draws),
                  (unsigned long long)(b->ops - a->ops), b->desc[0] ? "; pass " : "", b->desc); }
     qsort(s, (size_t)ns, sizeof *s, by_ms);
+    // List the expensive *individual* draws, not their 16-draw neighbors.
+    // Only sampled 1280x720 frames with DM_VK_OOT_GFX_FINE=1 emit this.
+    // Timestamp boundaries can introduce their own GPU overhead; rankings
+    // are diagnostic, NEVER an asserted FPS gain.
+    unsigned fine_count = 0, fine_reported = 0;
+    double fine_ms = 0;
+    for (int k = 0; k < ns; k++) if (g_m[s[k].i].gfx_block == 2) {
+        fine_count++; fine_ms += s[k].ms;
+        if (fine_reported++ < 32) {
+            const gp_mark *m = &g_m[s[k].i];
+            VLOG("gpu prof 1280x720 FINE draw: frame %llu rank=%u %.3fms %s",
+                 (unsigned long long)g_frame, fine_reported, s[k].ms, m->desc);
+        }
+    }
+    if (fine_count)
+        VLOG("gpu prof 1280x720 FINE summary: frame %llu %u individually timestamped draws total %.3fms; each timestamp runs in the sampled frame only, no ordinary-frame cost or performance claim",
+             (unsigned long long)g_frame, fine_count, fine_ms);
     for (int k = 0; k < ns && k < 16; k++) {
         const gp_mark *a = &g_m[s[k].i - 1], *b = &g_m[s[k].i];
         VLOG("gpu prof:  #%d %.3f ms: %s:%d, %llu draws, %llu passes, %llu ops%s%s", s[k].i, s[k].ms, b->file, b->line, (unsigned long long)(b->draws - a->draws),
@@ -541,7 +587,7 @@ void vka_gp_sub_begin(VkCommandBuffer cb, uint64_t frame) {
             !strcmp(DM_GAME_ID, "0400486024DEC000") ? 300 : 0);
         if (every <= 0 || frame == g_frame || (g_last_frame && frame < g_last_frame + (uint64_t)every) || !init()) return;
         g_state = 1; g_frame = g_last_frame = frame; g_n = 0; vka_gp_active = 1; g_pass_new = 0; g_compute_new = 0; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
-        g_gfx_n = 0; g_gfx_enabled = 0;
+        g_gfx_n = 0; g_gfx_enabled = 0; g_gfx_fine = 0;
         g_pass_1280 = 0; g_seen_1280 = 0;
         g_pipe_count = 0; g_pipe_active = -1;
         g_reset(cb, g_qp, 0, NQ);
