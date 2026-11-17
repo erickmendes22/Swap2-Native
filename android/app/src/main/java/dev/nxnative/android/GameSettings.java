@@ -376,42 +376,47 @@ final class GameSettings {
         // the launcher/presentation cap; do not grey out this selector.
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
                 a.getString(R.string.s2_frame_cap), v -> cap(a, g, again))
-                .value("Selecionável · " + MainActivity.capLabel(Prefs.fpsCap(a, id)))
+                .value(a.getString(R.string.s2_oot019_choice) + " · " + MainActivity.capLabel(Prefs.fpsCap(a, id)))
                 .chevron(a).view);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_display,
-                "Proporção da tela",
+                a.getString(R.string.s2_oot019_aspect),
                 v -> GraphicsOptions.choice(a, id, "picture_stretch", again))
                 .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
+        // Third original setting is preserved in the compact Ocarina page.
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                a.getString(R.string.s2_oot019_pipelines),
+                v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
+                .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)])
+                .chevron(a).view);
 
         Ui.Setting vegetation = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                "Reduzir custos de vegetação", null)
+                a.getString(R.string.s2_oot019_vegetation), null)
                 .toggle(a, Prefs.vegetationDetail(a, id) == 3, (b, on) -> {
                     Prefs.vegetationDetail(a, id, on ? 3 : 0);
                     again.run();
                 });
-        vegetation.value("Desativa somente os pares identificados de shaders A+B. "
-                + "A vegetação completa permanece disponível quando desligado. Reinicie.");
+        vegetation.value(a.getString(R.string.s2_oot019_vegetation_note));
         box.addView(vegetation.view);
 
         Ui.Setting mist = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                "Reduzir neblina do chão", null)
+                a.getString(R.string.s2_oot019_mist), null)
                 .toggle(a, Prefs.groundMistOff(a, id), (b, on) -> {
                     Prefs.groundMistOff(a, id, on);
                     again.run();
                 });
-        mist.value("Reduz a névoa baixa; mantém a neblina volumétrica distante. Reinicie.");
+        mist.value(a.getString(R.string.s2_oot019_mist_note));
         box.addView(mist.view);
 
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip,
-                "Economia de RAM (usa armazenamento)", null)
+                a.getString(R.string.s2_oot019_ram), null)
                 .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
-        ram.value("Opcional. Move pools de texturas para armazenamento; pode gravar ~2 GB por área.");
+        ram.value(a.getString(R.string.s2_oot019_ram_note));
         box.addView(ram.view);
 
         Ui.Setting shared = new Ui.Setting(a, R.drawable.s2_ic_chip,
-                "Shared buffer (memória GPU)", null)
+                a.getString(R.string.s2_oot019_shared), null)
                 .toggle(a, Prefs.gpuSharedBuffer(a, id), (b, on) -> Prefs.gpuSharedBuffer(a, id, on));
-        shared.value("Opcional. Se o driver não permitir, usa o mapeamento original. Reinicie.");
+        shared.value(a.getString(R.string.s2_oot019_shared_note));
         box.addView(shared.view);
 
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
@@ -428,10 +433,10 @@ final class GameSettings {
 
         int mask = Prefs.fpsPatchMask(a, id);
         Ui.Setting fpsRow = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                "Patches de FPS (RomFS) · combinar",
-                v -> fpsPatches(a, g, again)).value(fpsMaskLabel(mask));
+                a.getString(R.string.s2_oot019_patch),
+                v -> fpsPatches(a, g, again)).value(fpsMaskLabel(a, mask));
         box.addView(fpsRow.chevron(a).view);
-        if (mask != 0) graphicsCheck(a, g, fpsRow, fpsMaskLabel(mask));
+        if (mask != 0) graphicsCheck(a, g, fpsRow, fpsMaskLabel(a, mask));
 
         // The game's verified plain-movie mod remains visible and defaults
         // ON, as declared by its original mod.tsv (not a new hidden setting).
@@ -930,21 +935,22 @@ final class GameSettings {
 
     /** Only tested cascade profile choices remain. SSAO, depth and
      * Bloom/DOF proved unhelpful or nonfunctional on the phone and are removed. */
-    private static String fpsMaskLabel(int mask) {
+    private static String fpsMaskLabel(Context c, int mask) {
         switch (mask) {
-            case 1: return "Cascatas de sombra: 3 → 2";
-            case 2: return "Cascatas de sombra: 3 → 1";
-            default: return "Original do jogo";
+            case 1: return c.getString(R.string.s2_oot019_patch_cascade2);
+            case 2: return c.getString(R.string.s2_oot019_patch_cascade1);
+            default: return c.getString(R.string.s2_oot019_patch_none);
         }
     }
 
     private static void fpsPatches(MainActivity a, Game g, Runnable done) {
         String id = g.titleId;
-        String[] labels = {"Original do jogo", "Cascatas de sombra: 3 → 2",
-                "Cascatas de sombra: 3 → 1"};
+        String[] labels = {a.getString(R.string.s2_oot019_patch_none),
+                a.getString(R.string.s2_oot019_patch_cascade2),
+                a.getString(R.string.s2_oot019_patch_cascade1)};
         int previous = Prefs.fpsPatchMask(a, id);
         new AlertDialog.Builder(a)
-                .setTitle("Patch de cascatas de sombra · " + g.name)
+                .setTitle(a.getString(R.string.s2_oot019_patch_dialog, g.name))
                 .setSingleChoiceItems(labels, previous, (dialog, choice) -> {
                     dialog.dismiss();
                     // These are mutually exclusive changes to one BYML field.
@@ -980,7 +986,7 @@ final class GameSettings {
             boolean valid = files != null && in != null &&
                     ShadowOverlay.currentMask(files, g.titleId, shadow, mask,
                             SceneService.graphicsVersion(a, g.titleId, in[0], mask, files));
-            if (!valid) UI.post(() -> row.value(label + " · Precisa preparar novamente"));
+            if (!valid) UI.post(() -> row.value(label + " · " + a.getString(R.string.s2_oot019_patch_needs_rebuild)));
         }, "nx-graphics-check").start();
     }
 
