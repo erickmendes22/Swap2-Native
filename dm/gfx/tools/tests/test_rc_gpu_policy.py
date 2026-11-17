@@ -115,6 +115,12 @@ static struct {vka_dstate d;}S;
 static int g_memu_depth;
 static const uint8_t *g_memu_caller[16];
 static int rc_gpu_report(uint64_t a,rc_rep *r){r->oq_begin=1;r->oq_end=2;return a!=0xbad;}
+// This existing test exercises the original collector in delta_mode=0.
+// A separate test executes the *real* cumulative-delta eligibility helper.
+static struct {int delta_mode;} RG={0};
+static int rc_gpu_pair_valid(const rc_rep*a,const rc_rep*b,vka_rc_gpu_delta*out){
+    (void)a;(void)b;(void)out;return 1;
+}
 static int vka_rc_gpu_state_safe(const vka_dstate*d){return d->safe&&!d->tf_on&&!d->rast_discard;}
 static const p_draw*draw_rec(const void*a,uint32_t n,p_draw*t){(void)n;(void)t;return a;}
 static const p_draw_idx*draw_idx_rec(const void*a,uint32_t n,p_draw_idx*t){(void)n;(void)t;return a;}
