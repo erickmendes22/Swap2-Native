@@ -199,30 +199,31 @@ final class GpuDriver {
         List<Info> inst = installed(a);
         Info sel = selected(a);
         List<String> labels = new ArrayList<>();
-        labels.add("System (the phone's own driver)");
+        labels.add(a.getString(R.string.s2_gpudriver_system_choice));
         int checked = 0;
-        for (int k = 0; k < inst.size(); k++) { labels.add(inst.get(k).label() + (recommended(inst.get(k)) ? " (recommended)" : "")); if (sel != null && inst.get(k).dir.equals(sel.dir)) checked = k + 1; }
-        new AlertDialog.Builder(a).setTitle("GPU driver (takes effect at the next game start)")
+        for (int k = 0; k < inst.size(); k++) { labels.add(inst.get(k).label() + (recommended(inst.get(k)) ? a.getString(R.string.s2_gpudriver_recommended) : "")); if (sel != null && inst.get(k).dir.equals(sel.dir)) checked = k + 1; }
+        new AlertDialog.Builder(a).setTitle(R.string.s2_gpudriver_dialog_title)
                 .setSingleChoiceItems(labels.toArray(new String[0]), checked, (d, w) -> { select(a, w == 0 ? null : inst.get(w - 1)); d.dismiss(); })
-                .setPositiveButton("Install…", (d, w) -> installDialog(a, request))
-                .setNeutralButton(sel != null ? "Remove picked…" : "Close", (d, w) -> {
+                .setPositiveButton(R.string.s2_gpudriver_install, (d, w) -> installDialog(a, request))
+                .setNeutralButton(sel != null ? a.getString(R.string.s2_gpudriver_remove) : a.getString(R.string.s2_gpudriver_close), (d, w) -> {
                     if (sel == null) return;
-                    Ui.confirmDanger(a, "Remove " + sel.label() + "?", "Deleted: this driver's copy inside the app (" + sel.dir + ").\n\nKept: the zip you installed it from, "
-                            + "your games, packs and saves. The game uses the phone's own driver until you pick another.", "Remove driver", () -> {
+                    Ui.confirmDanger(a, a.getString(R.string.s2_gpudriver_remove_confirm, sel.label()),
+                            a.getString(R.string.s2_gpudriver_remove_message, sel.dir),
+                            a.getString(R.string.s2_gpudriver_remove_action), () -> {
                         DriverZip.deleteTree(sel.dir); select(a, null);
-                        Toast.makeText(a, "Removed " + sel.label() + "; the system driver is used", Toast.LENGTH_LONG).show();
+                        Toast.makeText(a, a.getString(R.string.s2_gpudriver_removed, sel.label()), Toast.LENGTH_LONG).show();
                     });
                 })
-                .setNegativeButton("Cancel", null).show();
+                .setNegativeButton(android.R.string.cancel, null).show();
     }
 
     private static void installDialog(Activity a, int request) {
         List<File> zips = found(a);   // names only, in the app's own folder
         List<String> labels = new ArrayList<>();
-        for (File f : zips) labels.add(f.getName() + "  (the app's gpu_drivers folder)");
-        labels.add("Pick a zip…");
-        labels.add("Download…");   // DriverFetch: GitHub releases, only on a tap
-        new AlertDialog.Builder(a).setTitle("Install a driver zip (with meta.json)")
+        for (File f : zips) labels.add(f.getName() + a.getString(R.string.s2_gpudriver_local_zip));
+        labels.add(a.getString(R.string.s2_gpudriver_pick_zip));
+        labels.add(a.getString(R.string.s2_gpudriver_download));   // DriverFetch: GitHub releases, only on a tap
+        new AlertDialog.Builder(a).setTitle(R.string.s2_gpudriver_install_title)
                 .setItems(labels.toArray(new String[0]), (d, w) -> {
                     if (w == zips.size() + 1) { DriverFetch.dialog(a, request); return; }
                     if (w == zips.size()) {
