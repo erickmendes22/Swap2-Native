@@ -267,7 +267,11 @@ final class GraphicsOptions {
                 vrsVisibleIndex(hotpassVrs(c, id)));
     }
     private static void vrsChoice(Context c, String id, Runnable done) {
-        String[] values = c.getResources().getStringArray(R.array.s2_oot_hotpass_vrs);
+        String[] labels = c.getResources().getStringArray(R.array.s2_oot_hotpass_vrs);
+        // 4x2 and 4x4 measured zero benefit. Never show unsupported entries:
+        // the runtime and chooser both cap the selection at 2x2.
+        String[] values = new String[VRS_VISIBLE_MODES.length];
+        for (int i = 0; i < values.length; i++) values[i] = labels[i];
         boolean own = id != null && Prefs.of(c).contains(Prefs.gameKey("oot_hotpass_vrs", id));
         int selected = vrsVisibleIndex(hotpassVrs(c, id));
         String[] options = id == null ? values : new String[values.length + 1];
