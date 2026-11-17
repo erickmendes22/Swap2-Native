@@ -23,7 +23,7 @@ final class AppLanguage {
         "hi-IN", "nl-NL"
     };
     static final String[] LABELS = {
-        "System / Automático", "English (US)", "Português (Brasil)",
+        "Automatic (phone language)", "English (US)", "Português (Brasil)",
         "Español (España)", "Español (Latinoamérica)", "Français",
         "Deutsch", "Italiano", "Русский", "Türkçe", "Polski",
         "日本語", "한국어", "简体中文", "繁體中文",
@@ -42,7 +42,7 @@ final class AppLanguage {
         for (int i=0; i<CODES.length; i++) if (CODES[i].equals(code)) return i;
         return 0;
     }
-    static String selectedLabel(Context c) { return LABELS[selectedIndex(c)]; }
+    static String selectedLabel(Context c) { int i = selectedIndex(c); return i == 0 ? c.getString(R.string.s2_language_auto) : LABELS[i]; }
 
     static Locale effective(Context c) {
         String s=selection(c);
@@ -78,9 +78,11 @@ final class AppLanguage {
         return tag.length()<=7 ? tag : "en-US"; // 8-byte nn::settings LanguageCode
     }
     static void pick(Activity a) {
+        String[] localized = LABELS.clone();
+        localized[0] = a.getString(R.string.s2_language_auto);
         new AlertDialog.Builder(a)
             .setTitle(a.getString(R.string.s2_language))
-            .setSingleChoiceItems(LABELS,selectedIndex(a),(dialog,which)->{
+            .setSingleChoiceItems(localized,selectedIndex(a),(dialog,which)->{
                 dialog.dismiss();
                 String previous=selection(a), selected=CODES[which];
                 if (previous.equals(selected)) return;
