@@ -55,6 +55,7 @@ int vka_memu_vs_feeds(struct vka_shader *vs, struct vka_shader *fs);
 int vka_memu_arena(VkCommandBuffer cb, VkBuffer *buf, VkBuffer *ctl, uint32_t *cap_words);   // 0 = none (logged)
 void vka_memu_retire(uint64_t fence);                            // the arena used since the last call belongs to the submission of fence
 int vka_memu_helpers(VkPipeline *setup, VkPipeline *dist, VkPipelineLayout *layout);   // the setup and distribution pipelines, their layout (push descriptors: records, control, arena)
-void vka_memu_stats(char *b, size_t n);                          // the replay's statistics line part
+void vka_memu_stats(char *b, size_t n);
+void vka_memu_hot_one_pair_note(uint64_t mesh_key, int source_fs_resolved);                          // the replay's statistics line part
 extern uint64_t vka_memu_n_batches, vka_memu_n_draws, vka_memu_n_splits, vka_memu_n_skip;
 extern uint64_t vka_memu_task_small, vka_memu_task_large, vka_memu_task_indirect, vka_memu_task_single;
