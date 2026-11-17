@@ -1,0 +1,29 @@
+name: Ocarina zero direct-draw research (no APK)
+on:
+  push:
+    branches:
+      - research/ocarina-zero-direct-draw-20261117
+    paths:
+      - .github/workflows/ocarina-zero-draw-research.yml
+      - dm/gfx/vk_android/vka_zero_draw_elide.h
+      - dm/gfx/vk_android/vka_draw.c
+      - dm/host/tests/t_oot_zero_draw_passes.c
+      - dm/gfx/tools/tests/test_ocarina_zero_draw_elide.py
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test zero-invocation eligibility under ASan and UBSan
+        run: |
+          set -euxo pipefail
+          clang -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+            dm/host/tests/t_oot_zero_draw_passes.c -o /tmp/t_oot_zero_draw
+          ASAN_OPTIONS=detect_leaks=1 /tmp/t_oot_zero_draw
+      - name: Assert early skip, preserved clears, and occlusion accounting
+        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
+      - name: Check existing renderer source invariants
+        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_mesh_native_hybrid -v
