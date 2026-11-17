@@ -197,6 +197,10 @@ final class GameSettings {
     /** Graphics: resolution (where the profile has a lever for it), frame rate cap (unless the game paces itself), Upscaler and Scene resolution (where they apply) */
     private static void graphics(MainActivity a, Game g, LinearLayout p, Runnable again) {
         String id = g.titleId;
+        if (Prefs.OCARINA_TITLE.equals(id)) {
+            graphicsOcarina019(a, g, p, again);
+            return;
+        }
         LinearLayout box = Ui.add(p, Ui.panel(a), 16);
         // A/B switch must be the FIRST visible row of Graphics, not buried
         // after the GPU experimental controls at the bottom of a long page.
@@ -395,6 +399,81 @@ final class GameSettings {
         }
         builtinMods(a, g, box);
         Ui.add(p, Ui.small(a, a.getString(R.string.s2_game_graphics_hint)), 8);
+    }
+
+
+    /** Ocarina 0.1.9: only the requested user-facing controls.
+     * GPU work reductions already selected by the user are applied directly
+     * by GameActivity; they are deliberately not exposed as switches here. */
+    private static void graphicsOcarina019(MainActivity a, Game g, LinearLayout p, Runnable again) {
+        String id = g.titleId;
+        Profile prof = Profile.of(id);
+        LinearLayout box = Ui.add(p, Ui.panel(a), 12);
+
+        // Ocarina reports its own rate, but still allow the user to choose
+        // the launcher/presentation cap; do not grey out this selector.
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                a.getString(R.string.s2_frame_cap), v -> cap(a, g, again))
+                .value("Selecionável · " + MainActivity.capLabel(Prefs.fpsCap(a, id)))
+                .chevron(a).view);
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_display,
+                "Proporção da tela",
+                v -> GraphicsOptions.choice(a, id, "picture_stretch", again))
+                .value(GraphicsOptions.aspectLabel(a, id)).chevron(a).view);
+
+        Ui.Setting vegetation = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                "Reduzir custos de vegetação", null)
+                .toggle(a, Prefs.vegetationDetail(a, id) == 3, (b, on) -> {
+                    Prefs.vegetationDetail(a, id, on ? 3 : 0);
+                    again.run();
+                });
+        vegetation.value("Desativa somente os pares identificados de shaders A+B. "
+                + "A vegetação completa permanece disponível quando desligado. Reinicie.");
+        box.addView(vegetation.view);
+
+        Ui.Setting mist = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                "Reduzir neblina do chão", null)
+                .toggle(a, Prefs.groundMistOff(a, id), (b, on) -> {
+                    Prefs.groundMistOff(a, id, on);
+                    again.run();
+                });
+        mist.value("Reduz a névoa baixa; mantém a neblina volumétrica distante. Reinicie.");
+        box.addView(mist.view);
+
+        Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip,
+                "Economia de RAM (usa armazenamento)", null)
+                .toggle(a, Prefs.ramSaver(a, id), (b, on) -> Prefs.ramSaver(a, id, on));
+        ram.value("Opcional. Move pools de texturas para armazenamento; pode gravar ~2 GB por área.");
+        box.addView(ram.view);
+
+        Ui.Setting shared = new Ui.Setting(a, R.drawable.s2_ic_chip,
+                "Shared buffer (memória GPU)", null)
+                .toggle(a, Prefs.gpuSharedBuffer(a, id), (b, on) -> Prefs.gpuSharedBuffer(a, id, on));
+        shared.value("Opcional. Se o driver não permitir, usa o mapeamento original. Reinicie.");
+        box.addView(shared.view);
+
+        box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                a.getString(R.string.s2_vrs_heavy_title),
+                v -> GraphicsOptions.choice(a, id, "oot_hotpass_vrs", again))
+                .value(GraphicsOptions.vrsLabel(a, id)).chevron(a).view);
+        if (prof != null && prof.hasScene()) {
+            String[] modes = renderProfileNames(a);
+            box.addView(new Ui.Setting(a, R.drawable.s2_ic_display,
+                    a.getString(R.string.s2_oot_render_profile),
+                    v -> renderProfile(a, g, again))
+                    .value(modes[Prefs.renderProfile(a, id)]).chevron(a).view);
+        }
+
+        int mask = Prefs.fpsPatchMask(a, id);
+        Ui.Setting fpsRow = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                "Patches de FPS (RomFS) · combinar",
+                v -> fpsPatches(a, g, again)).value(fpsMaskLabel(mask));
+        box.addView(fpsRow.chevron(a).view);
+        if (mask != 0) graphicsCheck(a, g, fpsRow, fpsMaskLabel(mask));
+
+        // The game's verified plain-movie mod remains visible and defaults
+        // ON, as declared by its original mod.tsv (not a new hidden setting).
+        builtinMods(a, g, box);
     }
 
     /** The APK's assets as BuiltinMods reads them (assets/mods/&lt;title ID&gt;/&lt;folder&gt;/…, build.gradle nxProfileMods) */
@@ -892,27 +971,114 @@ final class GameSettings {
         switch (effect) {
             case 1: return "Cascatas de sombra: 3 → 2 (teste)";
             case 2: return "Cascatas de sombra: 3 → 1 (teste)";
-            case 3: return "Oclusão de ambiente SSAO: OFF (teste)";
-            case 4: return "Pré-passe de sombras: OFF (teste)";
-            case 5: return "Profundidade de campo + Bloom: OFF (teste)";
+            case 3: return "SSAO: menos amostras, buffers preservados (teste)";
+            case 4: return "Pré-passe: profundidade direta (teste GPU)";
+            case 5: return "DOF/Bloom: comandos reduzidos (teste GPU)";
             default: return "Original do jogo · sem patch de FPS";
         }
     }
 
+    /** Checkboxes select independent patches; two cascade profiles are exclusive. */
+    private static String fpsMaskLabel(int mask) {
+        if (mask == 0) return "Original do jogo";
+        StringBuilder result = new StringBuilder();
+        for (int effect = 1; effect <= 5; effect++) {
+            if ((mask & (1 << (effect - 1))) == 0) continue;
+            if (result.length() > 0) result.append(" + ");
+            switch (effect) {
+                case 1: result.append("Cascatas 3→2"); break;
+                case 2: result.append("Cascatas 3→1"); break;
+                case 3: result.append("SSAO"); break;
+                case 4: result.append("Pré-passe"); break;
+                case 5: result.append("DOF/Bloom"); break;
+                default: break;
+            }
+        }
+        return result.toString();
+    }
+
     private static void fpsPatches(MainActivity a, Game g, Runnable done) {
         String id = g.titleId;
-        String[] labels = new String[6];
-        for (int i = 0; i < labels.length; i++) labels[i] = fpsLabel(i);
-        new AlertDialog.Builder(a).setTitle("Patch de FPS · " + g.name)
-                .setSingleChoiceItems(labels, Prefs.fpsPatch(a, id), (dialog, choice) -> {
-                    dialog.dismiss();
-                    int shadow = Prefs.shadowProfile(a, id);
-                    if (shadow == 0 && choice == 0) {
+        int previous = Prefs.fpsPatchMask(a, id);
+        String[] labels = new String[5];
+        boolean[] checked = new boolean[5];
+        for (int i = 0; i < 5; i++) {
+            labels[i] = fpsLabel(i + 1);
+            checked[i] = (previous & (1 << i)) != 0;
+        }
+        new AlertDialog.Builder(a).setTitle("Combinar patches de FPS · " + g.name)
+                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> {
+                    checked[which] = isChecked;
+                    // Both choices modify DepthShadowCascadeNum0. Never
+                    // submit a conflicting BYML, even while selecting.
+                    if (isChecked && (which == 0 || which == 1)) {
+                        int other = 1 - which;
+                        checked[other] = false;
+                        ((AlertDialog) dialog).getListView().setItemChecked(other, false);
+                    }
+                })
+                .setPositiveButton("Preparar seleção", (dialog, which) -> {
+                    int mask = 0;
+                    for (int i = 0; i < checked.length; i++)
+                        if (checked[i]) mask |= 1 << i;
+                    int shadow = 0; // 0.1.9 removed unverified shadow-map scaling from this screen
+                    if (mask == 0 && shadow == 0) {
                         graphicsWant(id, null);
-                        Prefs.fpsPatch(a, id, 0);
+                        Prefs.fpsPatchMask(a, id, 0);
                         done.run();
-                    } else makeGraphicsPatch(a, g, shadow, choice);
-                }).setNegativeButton(android.R.string.cancel, null).show();
+                    } else makeGraphicsPatch(a, g, shadow, mask);
+                })
+                .setNeutralButton("Analisar SSAO / sombras / DOF",
+                        (dialog, which) -> effectProbe(a, g))
+                .setNegativeButton(android.R.string.cancel, null).show();
+    }
+
+    private static void effectProbe(MainActivity a, Game g) {
+        AlertDialog wait = new AlertDialog.Builder(a)
+                .setMessage("Inspecionando somente as instruções dos dois crashes e os parâmetros gráficos do NUP...")
+                .setCancelable(false).create();
+        wait.show();
+        new Thread(() -> {
+            String[] active = sceneInputs(g);
+            UI.post(() -> {
+                if (active == null || a.isFinishing() || a.isDestroyed()) {
+                    wait.dismiss();
+                    if (!a.isFinishing() && !a.isDestroyed())
+                        a.error("Prepare o NUP antes de analisar os patches.");
+                    return;
+                }
+                SceneService.startEffectProbe(a, g.titleId, active[1], new android.os.ResultReceiver(UI) {
+                    @Override protected void onReceiveResult(int code, android.os.Bundle data) {
+                        wait.dismiss();
+                        if (a.isFinishing() || a.isDestroyed()) return;
+                        String result = data == null ? null : data.getString(SceneService.MESSAGE);
+                        if (code != 0) {
+                            a.error("Inspeção de efeitos falhou: " + (result == null ? code : result));
+                            return;
+                        }
+                        new Thread(() -> {
+                            try {
+                                String report = new String(java.nio.file.Files.readAllBytes(
+                                        new File(result).toPath()), java.nio.charset.StandardCharsets.UTF_8);
+                                if (report.length() > 40000) report = report.substring(0, 40000);
+                                String share = report;
+                                UI.post(() -> {
+                                    if (a.isFinishing() || a.isDestroyed()) return;
+                                    Intent send = new Intent(Intent.ACTION_SEND);
+                                    send.setType("text/plain");
+                                    send.putExtra(Intent.EXTRA_SUBJECT, "Ocarina 237 - SSAO / ShadowPrePass / DOF crashes");
+                                    send.putExtra(Intent.EXTRA_TEXT, share);
+                                    a.startActivity(Intent.createChooser(send, "Compartilhar análise dos patches"));
+                                });
+                            } catch (IOException e) {
+                                UI.post(() -> { if (!a.isFinishing() && !a.isDestroyed())
+                                    a.error("Não foi possível abrir a análise: " + e); });
+                            }
+                        }, "nx-effect-report").start();
+                    }
+                });
+            });
+        }, "nx-effect-probe").start();
     }
 
     private static void shadowMaps(MainActivity a, Game g, Runnable done) {
@@ -921,12 +1087,12 @@ final class GameSettings {
         new AlertDialog.Builder(a).setTitle("Mapas de sombra · " + g.name)
                 .setSingleChoiceItems(labels, Prefs.shadowProfile(a, id), (dialog, choice) -> {
                     dialog.dismiss();
-                    int effect = Prefs.fpsPatch(a, id);
-                    if (choice == 0 && effect == 0) {
+                    int mask = Prefs.fpsPatchMask(a, id);
+                    if (choice == 0 && mask == 0) {
                         graphicsWant(id, null);
                         Prefs.shadowProfile(a, id, 0);
                         done.run();
-                    } else makeGraphicsPatch(a, g, choice, effect);
+                    } else makeGraphicsPatch(a, g, choice, mask);
                 }).setNegativeButton(android.R.string.cancel, null).show();
     }
 
@@ -944,16 +1110,22 @@ final class GameSettings {
 
     private static void graphicsCheck(MainActivity a, Game g, Ui.Setting row, String label) {
         File files = a.getExternalFilesDir(null);
-        int shadow = Prefs.shadowProfile(a, g.titleId), effect = Prefs.fpsPatch(a, g.titleId);
+        int shadow = 0, mask = Prefs.fpsPatchMask(a, g.titleId);
         new Thread(() -> {
             String[] in = sceneInputs(g);
-            boolean valid = in != null && ShadowOverlay.current(files, g.titleId, shadow, effect, in[0]);
+            boolean valid = files != null && in != null &&
+                    ShadowOverlay.currentMask(files, g.titleId, shadow, mask,
+                            SceneService.graphicsVersion(a, g.titleId, in[0], mask, files));
             if (!valid) UI.post(() -> row.value(label + " · Precisa preparar novamente"));
         }, "nx-graphics-check").start();
     }
 
-    private static void makeGraphicsPatch(MainActivity a, Game g, int shadow, int effect) {
-        String id = g.titleId, choice = shadow + ":" + effect;
+    private static void makeGraphicsPatch(MainActivity a, Game g, int shadow, int mask) {
+        if (!ShadowOverlay.validMask(mask)) {
+            a.error("As duas opções de cascatas são incompatíveis entre si.");
+            return;
+        }
+        String id = g.titleId, choice = shadow + ":" + mask;
         File files = a.getExternalFilesDir(null);
         graphicsWant(id, choice);
         AlertDialog wait = new AlertDialog.Builder(a)
@@ -961,15 +1133,17 @@ final class GameSettings {
         wait.show();
         new Thread(() -> {
             String[] in = sceneInputs(g);
-            boolean valid = in != null && ShadowOverlay.current(files, id, shadow, effect, in[0]);
+            boolean valid = files != null && in != null &&
+                    ShadowOverlay.currentMask(files, id, shadow, mask,
+                            SceneService.graphicsVersion(a, id, in[0], mask, files));
             UI.post(() -> {
                 boolean gone = a.isFinishing() || a.isDestroyed();
                 if (in == null || files == null || valid) {
                     if (!gone) { try { wait.dismiss(); } catch (RuntimeException ignored) {} }
                     if (valid) {
                         if (graphicsWanted(id, choice)) {
-                            Prefs.shadowProfile(a, id, shadow);
-                            Prefs.fpsPatch(a, id, effect);
+                            // 0.1.9: shadow-map setting is retired; FPS mask alone is installed.
+                            Prefs.fpsPatchMask(a, id, mask);
                             modToast(a, "Patch gráfico preparado; ativo no próximo início do jogo.");
                         }
                     } else {
@@ -979,16 +1153,16 @@ final class GameSettings {
                     if (!gone) a.gameSettingsChanged(g);
                     return;
                 }
-                SceneService.startShadow(a, id, in[1], shadow, effect, in[0], new android.os.ResultReceiver(UI) {
+                SceneService.startGraphics(a, id, in[1], shadow, mask, in[0], new android.os.ResultReceiver(UI) {
                     @Override protected void onReceiveResult(int code, android.os.Bundle data) {
                         boolean end = a.isFinishing() || a.isDestroyed();
                         if (!end) { try { wait.dismiss(); } catch (RuntimeException ignored) {} }
                         if (code == 0) {
                             if (graphicsWanted(id, choice)) {
                                 Prefs.shadowProfile(a, id, shadow);
-                                Prefs.fpsPatch(a, id, effect);
-                                modToast(a, "Patch gráfico pronto (sombras " + shadow + ", FPS " + effect
-                                        + "); ativo no próximo início.");
+                                Prefs.fpsPatchMask(a, id, mask);
+                                modToast(a, "Patch gráfico pronto (sombras " + shadow + ", FPS mask "
+                                        + mask + "); ativo no próximo início.");
                             }
                         } else if (code == SceneService.RUNNING) {
                             modToast(a, "Outro overlay RomFS já está em preparação.");
