@@ -23,7 +23,13 @@ int main(void) {
     a.game="OTHER";assert(!vka_oot_zero_draw_elide(&a));a.game="0400486024DEC000";
     a.vertex_key=b.vertex_key;assert(!vka_oot_zero_draw_elide(&a));a.vertex_key=UINT64_C(0xe5081d9aa59e1088);
     a.fragment_key=b.fragment_key;assert(!vka_oot_zero_draw_elide(&a));a.fragment_key=UINT64_C(0x087ef21b3a72ad3a);
-    for (int n=-2;n<=2;n++)if(n!=0){a.count=n;assert(!vka_oot_zero_draw_elide(&a));}a.count=0;
+    for (int n=-2; n<=2; n++) {
+        if (n != 0) {
+            a.count = n;
+            assert(!vka_oot_zero_draw_elide(&a));
+        }
+    }
+    a.count = 0;
     a.indirect=1;assert(!vka_oot_zero_draw_elide(&a));a.indirect=0;
     a.multidraw_count=1;assert(!vka_oot_zero_draw_elide(&a));a.multidraw_count=0;
     a.pass_open=1;assert(!vka_oot_zero_draw_elide(&a));a.pass_open=0;
