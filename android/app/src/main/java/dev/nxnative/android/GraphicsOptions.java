@@ -34,8 +34,8 @@ final class GraphicsOptions {
     static final String[] FPS_BOOST = {"Desligado (padrão)", "Leve: sincronização GPU + VRS 2×1 se suportado", "Agressivo: sincronização GPU + VRS 2×2 se suportado"};
     // Keep persisted native values from 0.1.6 intact: 3 is the old 2x2
     // extended mode and is hidden as a duplicate, not renumbered.
-    // The UI exposes only Off / 2x1 / 2x2 / 4x2 / 4x4.
-    static final int[] VRS_VISIBLE_MODES = {0, 1, 2, 4, 5};
+    // 0.1.9 UI exposes Off / 2x1 / 2x2 only; >2x2 yielded no gain.
+    static final int[] VRS_VISIBLE_MODES = {0, 1, 2};
     static final String[] HOTPASS_VRS = {"Desligado", "VRS 2×1", "VRS 2×2",
             "VRS 2×2", "VRS 4×2", "VRS 4×4"};
     static final String[] SGSR_CHAIN = {"Desativado (seguro)", "Ativar otimização das redes internas com SGSR (experimental)"};
@@ -84,7 +84,10 @@ final class GraphicsOptions {
         // Build172's user test isolates surface stripes to VRS. Default off
         // for new settings; preserve every explicit per-game rate, including
         // the user's accepted off choice. Individual-pass isolation is open.
-        return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 0), 0, 5);
+        int saved = clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_hotpass_vrs", id), 0), 0, 5);
+        // Hardware A/B repeatedly found no FPS benefit above 2x2.
+        // Retire legacy 4x2/4x4 settings without rewriting user preferences.
+        return saved > 3 ? 2 : saved;
     }
     static int sgsrChain(Context c, String id) {
         return clamp(Prefs.of(c).getInt(Prefs.gameKey("oot_sgsr_chain", id), 0), 0, 1);
