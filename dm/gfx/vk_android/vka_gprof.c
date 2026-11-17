@@ -82,7 +82,10 @@ void vka_gp_draw(uint64_t vertex, uint64_t fragment, uint64_t mesh, uint64_t tas
     if (!vka_gp_active) return;
     if (!g_pass_draws) {
         g_first_vs = vertex; g_first_mesh = mesh; g_first_task = task;
-        g_first_units = units; g_first_instances = instances; g_first_indirect = indirect != 0;
+        g_first_units = units; g_first_instances = instances;
+        // 0 = direct, 1 = conventional indirect, 2 = MEMU's generated
+        // GPU indirect draw (guest mesh record count is NOT vertex count).
+        g_first_indirect = (uint32_t)indirect;
     }
     g_pass_draws++;
     g_scene.scissor_sum += scissor_pixels;
@@ -161,8 +164,11 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
             if (g_pass_draws == 1 && used < DESC)
                 used += (size_t)snprintf(m->desc + used, DESC - used,
                     " %s=%u inst=%u%s vs=%016llx mesh=%016llx task=%016llx",
+                    g_first_indirect == 2 ? "guest_mesh_record_count" :
                     g_first_mesh ? "mesh_groups" : "vertices_or_indices", g_first_units,
-                    g_first_instances, g_first_indirect ? " indirect" : "",
+                    g_first_instances,
+                    g_first_indirect == 2 ? " GPU-generated-indirect-count-UNKNOWN" :
+                    g_first_indirect ? " indirect" : "",
                     (unsigned long long)g_first_vs, (unsigned long long)g_first_mesh,
                     (unsigned long long)g_first_task);
             unsigned char picked[SHADERS] = {0};
