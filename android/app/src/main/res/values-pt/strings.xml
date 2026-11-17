@@ -779,4 +779,23 @@
     <string name="s2_oot019_patch_cascade1">Cascatas de sombra: 3 para 1</string>
     <string name="s2_oot019_patch_dialog">Patch das cascatas de sombra: %1$s</string>
     <string name="s2_oot019_patch_needs_rebuild">É necessário preparar novamente</string>
+    <string name="s2_oot019_bg_off">Desativados</string>
+    <string name="s2_oot019_bg_on">Ativados</string>
+    <string name="s2_oot019_aspect_keep">Preservar proporção</string>
+    <string name="s2_oot019_aspect_fill">Esticar para preencher</string>
+    <string name="s2_gpudriver_system_choice">Automático (driver do celular)</string>
+    <string name="s2_gpudriver_dialog_title">Driver gráfico (aplicado no próximo início do jogo)</string>
+    <string name="s2_gpudriver_recommended"> (recomendado)</string>
+    <string name="s2_gpudriver_install">Instalar…</string>
+    <string name="s2_gpudriver_remove">Remover selecionado…</string>
+    <string name="s2_gpudriver_close">Fechar</string>
+    <string name="s2_gpudriver_cancel">Cancelar</string>
+    <string name="s2_gpudriver_remove_confirm">Remover %1$s?</string>
+    <string name="s2_gpudriver_remove_message">Remove a cópia do driver armazenada no aplicativo (%1$s). Seus jogos, arquivos salvos e o ZIP original serão mantidos. O driver do celular volta a ser o padrão.</string>
+    <string name="s2_gpudriver_remove_action">Remover driver</string>
+    <string name="s2_gpudriver_removed">Driver %1$s removido. O driver do celular foi selecionado.</string>
+    <string name="s2_gpudriver_pick_zip">Selecionar ZIP…</string>
+    <string name="s2_gpudriver_download">Baixar…</string>
+    <string name="s2_gpudriver_install_title">Instalar driver gráfico por ZIP (com meta.json)</string>
+    <string name="s2_gpudriver_local_zip"> (pasta de drivers do aplicativo)</string>
 </resources>
