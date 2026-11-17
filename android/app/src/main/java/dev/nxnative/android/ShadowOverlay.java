@@ -13,7 +13,7 @@ final class ShadowOverlay {
         return dir(files, titleId, profile, 0);
     }
     static File dir(File files, String titleId, int profile, int effect) {
-        String name = effect == 0 ? "shadow_" + profile : "shadow_" + profile + "_fps_" + effect;
+        String name = "graphics019_" + profile + "_mask_" + effect;
         return new File(files, "overlay/" + titleId + "/" + name);
     }
     static File stamp(File files, String titleId, int profile) {
@@ -28,14 +28,14 @@ final class ShadowOverlay {
     static String stampText(int profile, int effect, String version) {
         // Existing map-only overlays retain the original stamp and remain valid.
         String head = "profile\t" + profile + "\n";
-        if (effect != 0) head += "fps\t" + effect + "\n";
+        if (effect != 0) head += "fpsmask\t" + effect + "\n";
         return head + "version\t" + version + "\n";
     }
     static boolean current(File files, String titleId, int profile, String version) {
         return current(files, titleId, profile, 0, version);
     }
     static boolean current(File files, String titleId, int profile, int effect, String version) {
-        if (files == null || profile < 0 || profile > 2 || effect < 0 || effect > 5 ||
+        if (files == null || profile < 0 || profile > 2 || effect < 0 || effect > 31 || (effect & 3) == 3 ||
                 (profile == 0 && effect == 0) || version == null) return false;
         if (!new File(dir(files, titleId, profile, effect), MAIN).isFile()) return false;
         try {
@@ -48,6 +48,6 @@ final class ShadowOverlay {
     }
     static String[] argv(String romfs, int profile, int effect, File out) {
         return new String[] {"--romfs", romfs, "--profile", Integer.toString(profile),
-                "--effect", Integer.toString(effect), "--out", out.getPath()};
+                "--effect-mask", Integer.toString(effect), "--out", out.getPath()};
     }
 }
