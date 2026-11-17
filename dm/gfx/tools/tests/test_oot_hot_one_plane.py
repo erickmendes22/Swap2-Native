@@ -27,8 +27,8 @@ class HotOnePlane(unittest.TestCase):
         self.assertIn('hot-mesh-draws=',SRC)
         self.assertIn('bound-FS-resolved=',SRC)
         self.assertIn('void vka_memu_hot_one_pair_note(',SRC)
-        self.assertIn('vka_memu_hot_one_pair_note(ms->key, fs_ok && fs != NULL);',draw)
         draw=(VK/"vka_memu_draw.inc").read_text()
+        self.assertIn('vka_memu_hot_one_pair_note(ms->key, fs_ok && fs != NULL);',draw)
         self.assertIn('if (sel_cs && sel_cs != E->mcs)',draw)
         self.assertIn('E->vs = sel_vs; E->mcs = sel_cs;',draw)
     def test_compiled_c_policy_exact_keys_and_rollback(self):
