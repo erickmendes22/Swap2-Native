@@ -12,18 +12,21 @@ class Ocarina019(unittest.TestCase):
         start = txt.index("private static void graphicsOcarina019(")
         end = txt.index("/** The APK's assets", start)
         page = txt[start:end]
-        for item in ("Reduzir custos de vegetação", "Reduzir neblina do chão",
-                     "Economia de RAM", "Shared buffer", "oot_hotpass_vrs",
+        for item in ("s2_oot019_vegetation", "s2_oot019_mist",
+                     "s2_oot019_ram", "s2_oot019_shared", "oot_hotpass_vrs",
                      "renderProfile(a, g, again)", "fpsPatches(a, g, again)",
-                     "builtinMods(a, g, box)", "s2_frame_cap"):
+                     "builtinMods(a, g, box)", "s2_frame_cap",
+                     'GraphicsOptions.choice(a, id, "bg_pipelines", again)'):
             self.assertIn(item, page)
         for hidden in ("feedbackInvocationCache", "ootDepthStoreNone",
                        "gpuPageIndex", "unusedColorTargets", "attachmentWriteScopes",
                        "computeOptimized", "keepCaveWalls", "shadowMaps(a, g"):
             self.assertNotIn(hidden, page)
         self.assertIn("graphicsOcarina019(a, g, p, again);", txt)
-        self.assertIn("setMultiChoiceItems(labels, checked", txt)
-        self.assertIn("startEffectProbe(a, g.titleId", txt)
+        self.assertIn("setSingleChoiceItems(labels, previous", txt)
+        self.assertNotIn("startEffectProbe(a, g.titleId", txt)
+        self.assertNotIn('QglConfig.dialog(a, id, again)', txt)
+        self.assertNotIn('s2_keep_cave_walls), null)', txt)
         self.assertNotIn('Mapas de sombra (RomFS)', page)
 
     def test_four_internal_paths_always_on_without_toggles(self):
@@ -45,8 +48,7 @@ class Ocarina019(unittest.TestCase):
         self.assertIn("ShadowOverlay.currentMask", (JAVA / "GameActivity.java").read_text())
         self.assertIn("--effects-mask", script)
         self.assertIn("--effects-mask", overlay)
-        self.assertIn("oot_post_effects", script)
-        self.assertIn("oot_ssao_samples", script)
+        self.assertIn("return mask == 0 || mask == 1 || mask == 2;", overlay)
         self.assertIn("SceneService.graphicsVersion", gui)
         self.assertIn("static void startGraphics(", svc)
         self.assertNotIn("CreateDof', D_BOOL, 1, 0", script)
@@ -70,7 +72,15 @@ class Ocarina019(unittest.TestCase):
         language = (JAVA / "AppLanguage.java").read_text()
         mod = (ROOT / "dm/games/0400486024DEC000/mods/plain-movie-player/mod.tsv").read_text()
         self.assertIn('"", "en-US", "pt-BR"', language)
-        self.assertIn('"System / Automático"', language)
+        self.assertIn('s2_language_auto', language)
+        self.assertIn('localized[0] = a.getString(R.string.s2_language_auto)', language)
+        driver = (JAVA / "GameActivity.java").read_text()
+        self.assertNotIn("QglConfig.env(this, id, env)", driver)
+        self.assertIn("DM_VK_OQ_SPLIT_PASS=0", driver)
+        self.assertNotIn("DM_VK_OOT_FB_INVOCATION_CACHE", driver)
+        pt = (ROOT / "android/app/src/main/res/values-pt/strings.xml").read_text()
+        self.assertIn('name="s2_oot019_vegetation"', pt)
+        self.assertIn('name="s2_oot019_shared"', pt)
         self.assertIn('if (code.isEmpty()) return base;', language)
         self.assertIn("android_default" + chr(9) + "on", mod)
 
