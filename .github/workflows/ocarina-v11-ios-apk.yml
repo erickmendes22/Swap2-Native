@@ -27,6 +27,10 @@ jobs:
           python3 -m unittest dm.tools.tests.test_gsys_shadow dm.tools.tests.test_gsys_graphics_fps -v
           python3 -m unittest dm.tools.tests.test_oot_ssao_samples dm.tools.tests.test_oot_post_effects dm.tools.tests.test_oot_agl_pmaa dm.tools.tests.test_oot_multi_fps_overlays dm.tools.tests.test_oot_effect_crash_probe -v
           python3 -m unittest dm.tools.tests.test_ocarina_019_release -v
+          # Real-device A/B rejected this feature: it must be absent from
+          # native SPIR-V transformation AND launcher, not merely hidden UI.
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_fb_invocation_cache.py' -v
+          python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_fb_invocation_launcher.py' -v
           python3 -m py_compile dm/tools/gsys_shadow.py
           mkdir -p /tmp/oot-fps-patch-jvm
           javac -d /tmp/oot-fps-patch-jvm android/app/src/main/java/dev/nxnative/android/ShadowOverlay.java
