@@ -15,14 +15,15 @@ class FineGpuHotDraw(unittest.TestCase):
         f=P.split("void vka_gp_pass(",1)[1].split("void vka_gp_part(",1)[0]
         self.assertIn('VKA_ENV("DM_VK_OOT_GFX_FINE", VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2)',f)
         self.assertIn('g_pass_1280;',f)
-        self.assertIn('g_gfx_enabled = !g_gfx_fine',f)
+        self.assertIn('if (g_gfx_fine) g_gfx_enabled = 0;',f)
         x=P.split("void vka_gp_draw(",1)[1].split("void vka_gp_compute(",1)[0]
         self.assertIn('g_gfx_fine && vka_gp_active && g_cb && g_n < NQ - 16',x)
         self.assertIn('mark(g_cb, 0, "GFX_DRAW", 0);',x)
         self.assertIn('m->gfx_pass_id = (uint16_t)g_seen_1280;',x)
         self.assertIn('m->gfx_draw_id = g_pass_draws;',x)
     def test_pass_report_not_lost_and_chunks_still_work(self):
-        self.assertIn('!strcmp(file, "GFX_CHUNK") || !strcmp(file, "GFX_DRAW")',P)
+        self.assertIn('if (file && !strcmp(file, "GFX_CHUNK"))',P)
+        self.assertIn('else if (file && !strcmp(file, "GFX_DRAW"))',P)
         self.assertIn('m->gfx_block = 2;',P)
         self.assertIn('if (m->gfx_block != 1) continue;',P)
         self.assertIn('g_m[j].gfx_block',P)
