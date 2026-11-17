@@ -70,6 +70,10 @@ static void rc_gpu_written(uint64_t addr, uint64_t bytes);
 static void rc_gpu_stats(double frames);
 static uint64_t g_oq_head_placeholder(void) { return g_oq_last_report_head; }
 static uint64_t g_oq_early_tries, g_oq_early_done, g_oq_early_equal, g_oq_early_unavailable;
+static uint64_t g_oq_cross_tries, g_oq_cross_decided, g_oq_cross_equal;
+static uint64_t g_oq_cross_unavailable, g_oq_cross_ambiguous, g_oq_cross_budget_exhausted;
+static uint64_t g_oq_cross_frame = UINT64_MAX;
+static unsigned g_oq_cross_budget;
 static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal);
 enum { RC_PEND_MAX = 32768 };   // (counted samples-passed reports take entries: Ocarina of Time makes hundreds a frame)
 static rc_rep *g_rcp; static int g_nrcp, g_rcpcap, g_rc_over_cur; static uint64_t g_rc_over;   // g_rc_over: the fence of a submission that overflowed the list
@@ -234,6 +238,13 @@ static void rc_stats(char *b, size_t n, double frames) {
         VLOG("Ocarina early occlusion: %.1f pending report pairs tried/frame, %.1f decided from available GPU queries, %.1f known equal (culled by condition where applicable), %.1f still awaiting queries",
             g_oq_early_tries / frames, g_oq_early_done / frames,
             g_oq_early_equal / frames, g_oq_early_unavailable / frames);
+    if (frames > 0 && g_oq_cross_tries)
+        VLOG("Ocarina cross-reset early occlusion: %.1f pairs attempted/frame (max 96/frame), %.1f decided, %.1f equal, %.1f unavailable, %.1f both-positive ambiguous, %.1f budget-limited; no WAIT, fallback draws",
+             g_oq_cross_tries / frames, g_oq_cross_decided / frames, g_oq_cross_equal / frames,
+             g_oq_cross_unavailable / frames, g_oq_cross_ambiguous / frames,
+             g_oq_cross_budget_exhausted / frames);
+    g_oq_cross_tries = g_oq_cross_decided = g_oq_cross_equal = 0;
+    g_oq_cross_unavailable = g_oq_cross_ambiguous = g_oq_cross_budget_exhausted = 0;
     g_oq_early_tries = g_oq_early_done = g_oq_early_equal = g_oq_early_unavailable = 0;
     g_rcp_max = g_nrcp;
     rc_gpu_stats(frames);
@@ -465,6 +476,40 @@ static int oq_report(uint64_t ad, uint32_t t) {   // OP_REPORT_COUNTER(SAMPLES_P
 // No GPU/CPU wait bit is ever used; an unavailable query falls back to the
 // original unknown=>draw policy. Under g_oq_mu, completion cannot reset
 // any queried slots. Queries recycled already are not probed.
+// A fresh report is the first cumulative samples-passed report after its
+// OWN reset. Its complete value is the nonnegative sum of this segment
+// plus lost draws. For non-precise Vulkan queries we may prove only ZERO
+// or POSITIVE, never equality between two positive numerical counters.
+// Hold g_oq_mu while touching any query slots: the completion thread can
+// host-reset them immediately after copying their final results.
+static int oq_early_fresh_zero_locked(const rc_rep *r, uint64_t returned, int *zero) {
+    if (!r->oq_fresh || !r->oq_epoch || r->oq_end < r->oq_begin ||
+        r->oq_end - r->oq_begin > OQ_RB) return 0;
+    // A lost draw counts as one, so the counter is definitely positive.
+    if (r->oq_lost) { *zero = 0; return 1; }
+    if (r->oq_begin == r->oq_end) { *zero = 1; return 1; }
+    if (r->oq_begin < returned) return 0; // slot already recycled
+    uint64_t pairs[2 * OQ_RB];
+    int unavailable = 0;
+    for (uint64_t q = r->oq_begin; q < r->oq_end;) {
+        uint32_t slot = (uint32_t)(q % OQ_N);
+        uint32_t n = (uint32_t)(r->oq_end - q);
+        if (n > OQ_RB) n = OQ_RB;
+        if (n > OQ_N - slot) n = OQ_N - slot;
+        memset(pairs, 0, 16u * n);
+        VkResult result = OQ.get(V.dev, OQ.pool, slot, n, 16u * (size_t)n,
+                                pairs, 16, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+        if (result < 0) return 0;
+        for (uint32_t i = 0; i < n; i++) {
+            if (!pairs[2 * i + 1]) unavailable = 1;
+            else if (pairs[2 * i]) { *zero = 0; return 1; } // one positive proves positive
+        }
+        q += n;
+    }
+    if (unavailable) return 0; // zero requires ALL queries known
+    *zero = 1;
+    return 1;
+}
 static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal) {
     if (!VKA_ENV("DM_VK_OOT_EARLY_OCCLUSION", 1) ||
         strcmp(DM_GAME_ID, "0400486024DEC000") || g_oq != 1 ||
@@ -473,10 +518,52 @@ static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal) {
     if (ia < 0 || ib < 0) return 0;
     const rc_rep a = g_rcp[ia], b = g_rcp[ib];
     uint64_t done = vka_done();
-    if (a.kind != 3 || b.kind != 3 || !a.oq_epoch ||
-        a.oq_epoch != b.oq_epoch ||
+    if (a.kind != 3 || b.kind != 3 || !a.oq_epoch || !b.oq_epoch ||
         (a.fence && a.fence <= done) ||
         (b.fence && b.fence <= done)) return 0;
+    if (a.oq_epoch != b.oq_epoch) {
+        // Most Ocarina conditions compare the first report after TWO
+        // DIFFERENT counter resets. A cumulative delta is invalid there.
+        // The separate fresh reports CAN be compared if at least one
+        // is proven zero. Positive-positive comparisons are not exact
+        // with the title's fast (non-precise) occlusion query mode.
+        if (!VKA_ENV("DM_VK_OOT_CROSS_EPOCH_EARLY", 1) ||
+            !a.oq_fresh || !b.oq_fresh) return 0;
+        if (g_oq_cross_frame != vka_frame()) {
+            g_oq_cross_frame = vka_frame();
+            g_oq_cross_budget = 0;
+        }
+        // Strict budget limits CPU-side driver polling on slow Adreno
+        // implementations; this does not affect rendering correctness.
+        if (g_oq_cross_budget >= 96) { g_oq_cross_budget_exhausted++; return 0; }
+        g_oq_cross_budget++;
+        g_oq_cross_tries++;
+        g_oq_early_tries++;
+        pthread_mutex_lock(&g_oq_mu);
+        uint64_t returned = OQ.host ?
+            atomic_load_explicit(&g_oq_ready, memory_order_acquire) - OQ_N :
+            atomic_load_explicit(&g_oq_freed, memory_order_acquire);
+        int az = 0, bz = 0;
+        int ak = oq_early_fresh_zero_locked(&a, returned, &az);
+        int bk = oq_early_fresh_zero_locked(&b, returned, &bz);
+        pthread_mutex_unlock(&g_oq_mu);
+        if (!ak || !bk) {
+            g_oq_early_unavailable++;
+            g_oq_cross_unavailable++;
+            return 0;
+        }
+        if (!az && !bz) {
+            // Two arbitrary positive non-precise query results do NOT
+            // prove that the original NVN integer counters are equal.
+            g_oq_cross_ambiguous++;
+            return 0;
+        }
+        *equal = az == bz;
+        g_oq_early_done++;
+        g_oq_cross_decided++;
+        if (*equal) { g_oq_early_equal++; g_oq_cross_equal++; }
+        return 1;
+    }
     // The logical cumulative total cannot decrease without a reset. If a
     // report was overwritten, the latest-by-address index already resolved it.
     uint64_t q0 = a.oq_end < b.oq_end ? a.oq_end : b.oq_end;
