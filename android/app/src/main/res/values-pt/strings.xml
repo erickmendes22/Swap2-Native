@@ -761,4 +761,22 @@
     <string name="s2_narrow_barriers_note">Experimental. Restringe a sincronização de compute quando válido. Reinicie o jogo.</string>
     <string name="s2_gpu_page_index">Índice de páginas da GPU (experimental)</string>
     <string name="s2_gpu_page_index_note">Busca opcional por páginas para shaders preparados com suporte ao índice. Mantém o cache e a busca original. Até 4 MiB extras por submissão. Reinicie para aplicar; desligado por padrão.</string>
+    <string name="s2_language_auto">Automático (idioma do celular)</string>
+    <string name="s2_oot019_choice">Selecionável</string>
+    <string name="s2_oot019_aspect">Proporção da tela</string>
+    <string name="s2_oot019_pipelines">Pipelines em segundo plano</string>
+    <string name="s2_oot019_vegetation">Reduzir o custo da vegetação</string>
+    <string name="s2_oot019_vegetation_note">Omite apenas os pares A+B de shaders de vegetação identificados. Desative para manter toda a vegetação. Reinicie o jogo.</string>
+    <string name="s2_oot019_mist">Reduzir a névoa próxima ao solo</string>
+    <string name="s2_oot019_mist_note">Reduz a névoa baixa sem remover a neblina distante. Reinicie o jogo.</string>
+    <string name="s2_oot019_ram">Economia de RAM (usa armazenamento)</string>
+    <string name="s2_oot019_ram_note">Opcional. Guarda conjuntos grandes de texturas no armazenamento e pode gravar cerca de 2 GB por área.</string>
+    <string name="s2_oot019_shared">Buffer compartilhado com a GPU</string>
+    <string name="s2_oot019_shared_note">Opcional. Tenta compartilhar um buffer com a GPU; caso não seja compatível, usa o mapeamento direto. Reinicie o jogo.</string>
+    <string name="s2_oot019_patch">Patch de FPS das cascatas de sombra</string>
+    <string name="s2_oot019_patch_none">Configuração original do jogo</string>
+    <string name="s2_oot019_patch_cascade2">Cascatas de sombra: 3 para 2</string>
+    <string name="s2_oot019_patch_cascade1">Cascatas de sombra: 3 para 1</string>
+    <string name="s2_oot019_patch_dialog">Patch das cascatas de sombra: %1$s</string>
+    <string name="s2_oot019_patch_needs_rebuild">É necessário preparar novamente</string>
 </resources>
