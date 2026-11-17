@@ -402,7 +402,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // share exactly one BYML. The host's multi-root overlay keeps
             // scene_720p (Bootup pack) independent and unchanged.
             if (Prefs.OCARINA_TITLE.equals(id)) {
-                int shadow = Prefs.shadowProfile(this, id);
+                int shadow = 0; // 0.1.9: legacy shadow-map scaling disabled/removed from UI
                 int effect = Prefs.fpsPatch(this, id);
                 if (shadow != 0 || effect != 0) {
                     if (ShadowOverlay.current(files, id, shadow, effect, pack.version)) {
