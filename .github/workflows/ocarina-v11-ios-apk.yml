@@ -149,6 +149,11 @@ jobs:
           cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
             dm/gfx/vk_android/selftest/gmem_pidx.c -o /tmp/ocarina_page_index
           ASAN_OPTIONS=detect_leaks=1 /tmp/ocarina_page_index
+          # Optional Ocarina 65-256 taskless mesh dispatch: baseline 64
+          # unchanged, zero runtime effect unless per-game env explicitly ON.
+          cc -std=c11 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+            dm/host/tests/t_oot_direct256.c -o /tmp/oot_direct256
+          ASAN_OPTIONS=detect_leaks=1 /tmp/oot_direct256
           python3 -m unittest discover -s dm/gfx/tools/tests -p 'test_ocarina_pack_finalize_atomic.py'
       - uses: actions/setup-dotnet@v4
         with:
