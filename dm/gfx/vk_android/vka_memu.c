@@ -11,6 +11,7 @@
 #include "vka.h"
 #include "vka_memu.h"
 #include "vka_memu_abi.h"
+#include "vka_oot_one_plane.h"
 #include "vka_memu_helpers_spv.h"
 #include "vka_memu_coalesced_helpers_spv.h"
 #include "vka_spvpatch.h"
@@ -216,7 +217,14 @@ vka_shader *vka_memu_cs_for_fs(vka_shader *mesh, int gl, vka_shader *fragment) {
     if (!d || d->L.task) return fallback;
     uint64_t all = vka_memu_vs_locs(&d->L), used = 0;
     if (!all || !vka_memu_pixel_mask(fragment, &used) ||
-        (used & ~all) || used == all || __builtin_popcountll(all & ~used) < 2)
+        (used & ~all) || used == all)
+        return fallback;
+    unsigned dropped = (unsigned)__builtin_popcountll(all & ~used);
+    if (dropped < 2 &&
+        !vka_oot_hot_one_plane_eligible(
+            !strcmp(DM_GAME_ID, "0400486024DEC000"),
+            VKA_ENV("DM_VK_OOT_ONE_PLANE_PRUNE", 1),
+            mesh->key, dropped))
         return fallback;
     gl = gl && (mesh->e->flags & DMSH_VK_F_GL_DEPTH) ? 1 : 0;
     pthread_mutex_lock(&g_mu);
@@ -274,6 +282,9 @@ vka_shader *vka_memu_cs_for_fs(vka_shader *mesh, int gl, vka_shader *fragment) {
     if (slot >= 0) {
         d->masked_cs[slot].mask = used;
         d->masked_cs[slot].cs[gl] = v;
+        if (dropped == 1)
+            VLOG("Ocarina hot mesh one-plane compute variant MADE: key=%016llx fragment-mask=%016llx (4 SSBO scalar stores/vertex removed; source/ABI unchanged)",
+                (unsigned long long)mesh->key, (unsigned long long)used);
     }
     pthread_mutex_unlock(&g_mu);
     if (slot < 0) {
@@ -291,11 +302,18 @@ vka_shader *vka_memu_vs_for_fs(vka_shader *mesh, vka_shader *fragment) {
     if (!all) return fallback;
     if (!vka_memu_pixel_mask(fragment, &used)) return fallback;
     if ((used & ~all) || used == all) return fallback;
-    // A single deleted vec4 may not overcome an extra pipeline variant.
-    // Only enable when >=2 vec4 planes = >=8 GPU SSBO loads per vertex
-    // are PROVEN not to feed this fragment program.
+    // Preserve the established >=2-plane policy for EVERY other shader.
+    // One unused vec4 is admitted only for the 3 on-device measured hot
+    // mesh keys and only when the EXACT bound fragment input mask proves
+    // those 4 arena words/vertex are never consumed. Producer AND consumer
+    // use the SAME predicate; failure of either retains the full pair.
     unsigned dropped = (unsigned)__builtin_popcountll(all & ~used);
-    if (dropped < 2) return fallback;
+    if (dropped < 2 &&
+        !vka_oot_hot_one_plane_eligible(
+            !strcmp(DM_GAME_ID, "0400486024DEC000"),
+            VKA_ENV("DM_VK_OOT_ONE_PLANE_PRUNE", 1),
+            mesh->key, dropped))
+        return fallback;
     pthread_mutex_lock(&g_mu);
     int slot = -1;
     for (unsigned i = 0; i < 16; i++) {
@@ -343,7 +361,12 @@ vka_shader *vka_memu_vs_for_fs(vka_shader *mesh, vka_shader *fragment) {
     slot = -1;
     for (unsigned i = 0; i < 16; i++)
         if (!d->masked_vs[i].vs) { slot = (int)i; break; }
-    if (slot >= 0) d->masked_vs[slot] = (typeof(d->masked_vs[slot])){used, v};
+    if (slot >= 0) {
+        d->masked_vs[slot] = (typeof(d->masked_vs[slot])){used, v};
+        if (dropped == 1)
+            VLOG("Ocarina hot mesh one-plane vertex variant MADE: key=%016llx fragment-mask=%016llx (4 SSBO scalar loads/vertex removed; source/ABI unchanged)",
+                (unsigned long long)mesh->key, (unsigned long long)used);
+    }
     pthread_mutex_unlock(&g_mu);
     if (slot < 0) {
         vk.vkDestroyShaderModule(V.dev, mod, NULL); free(e); free(v);
