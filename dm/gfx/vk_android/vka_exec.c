@@ -1581,7 +1581,12 @@ static int memu_walk(const uint8_t *p, int phase) {
                     vka_memu_batch(phase, &g_memu_st, d, p, n); n++;
                 }
             } }
-        else if (h.op != OP_DRAW_IDX && (phase >= 0 || vegetation_off || hybrid))
+        // Constant RenderEnable(TRUE) changes ONLY rc_skip in the real
+        // replay (it has no vka_dstate mutation). Do not feed this record
+        // into the generic shader/binding state walker: the live replay
+        // applies the exact mode at its original order.
+        else if (h.op != OP_DRAW_IDX && h.op != OP_RENDER_COND &&
+                 (phase >= 0 || vegetation_off || hybrid))
             vka_state_op(&g_memu_st, h.op, a);
         p += h.size;
     }
