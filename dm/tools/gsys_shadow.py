@@ -38,9 +38,17 @@ class Error(Exception):
     pass
 
 
-def patch(source, profile, effect=0):
-    if profile not in MAPS or effect not in EFFECTS or (profile == 0 and effect == 0):
+def selected_effects(mask):
+    """0..31: two shadow-cascade choices are exclusive; all other effects stack."""
+    if mask < 0 or mask > 31 or (mask & 3) == 3:
+        raise Error('invalid FPS mask: cascading 3->2 and 3->1 cannot be combined')
+    return [i for i in range(1, 6) if mask & (1 << (i - 1))]
+
+
+def patch(source, profile, effect=0, effect_mask=None):
+    if profile not in MAPS or effect not in EFFECTS or (profile == 0 and not effect and not effect_mask):
         raise Error('invalid or empty graphics patch profile')
+    effects = [effect] if effect_mask is None else selected_effects(effect_mask)
     if not 20 <= len(source) <= MAX_BYML:
         raise Error('Main BYML size not accepted')
     raw = bytearray(source)
@@ -54,8 +62,11 @@ def patch(source, profile, effect=0):
                              ('DepthShadowTexHeight', dyn),
                              ('StaticSdwWidth', static)):
             changes[name] = (D_INT, ORIGINAL_MAPS[name], target)
-    for name, kind, original, target in EFFECTS[effect]:
-        changes[name] = (kind, original, target)
+    for chosen_effect in effects:
+        for name, kind, original, target in EFFECTS[chosen_effect]:
+            if name in changes:
+                raise Error('conflicting FPS effects on ' + name)
+            changes[name] = (kind, original, target)
     words = {}
     for name, kind, word in by.items(by.root):
         if name not in changes:
@@ -83,14 +94,16 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--romfs', required=True, help='RomFS of active update, including .nup:update/<version>/romfs')
     ap.add_argument('--profile', type=int, choices=sorted(MAPS), required=True, help='shadow map profile 0/1/2')
-    ap.add_argument('--effect', type=int, choices=sorted(EFFECTS), default=0, help='independent FPS graphics patch 0..5')
+    ap.add_argument('--effect', type=int, choices=sorted(EFFECTS), default=0, help='legacy single effect 0..5')
+    ap.add_argument('--effect-mask', type=int, default=None,
+                    help='0..31 bitmask: 1 cascade2, 2 cascade1, 4 SSAO, 8 shadow prepass, 16 DOF+bloom')
     ap.add_argument('--out', required=True, help='new RomFS overlay directory')
     args = ap.parse_args(argv)
     try:
         src = args.romfs.rstrip('/\\') + '/' + MAIN
         with romfs.open(src, 'rb') as f:
             original = f.read(MAX_BYML + 1)
-        updated = patch(original, args.profile, args.effect)
+        updated = patch(original, args.profile, args.effect, args.effect_mask)
         target = os.path.join(args.out, *MAIN.split('/'))
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, 'wb') as f:
@@ -101,7 +114,8 @@ def main(argv=None):
         differing = sum(x != y for x, y in zip(original, updated))
         print('gsys_graphics: shadow %d, FPS patch %d: %s -> %s (%d scalar fields; %d changed bytes)' %
               (args.profile, args.effect, src, target,
-               (3 if args.profile else 0) + len(EFFECTS[args.effect]), differing))
+               (3 if args.profile else 0) + sum(len(EFFECTS[e]) for e in
+                 ([args.effect] if args.effect_mask is None else selected_effects(args.effect_mask))), differing))
         return 0
     except (Error, OSError, ValueError, IndexError, struct.error) as e:
         print('gsys_graphics: %s' % e, file=sys.stderr)
