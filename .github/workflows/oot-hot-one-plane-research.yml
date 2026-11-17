@@ -7,6 +7,7 @@ on:
       - dm/gfx/vk_android/vka_oot_one_plane.h
       - dm/gfx/vk_android/vka_memu.c
       - dm/gfx/tools/tests/test_oot_hot_one_plane.py
+      - dm/gfx/tools/tests/test_oot_one_plane_gpu.py
 permissions:
   contents: read
 jobs:
@@ -18,6 +19,26 @@ jobs:
         run: |
           python3 -m unittest dm.gfx.tools.tests.test_oot_hot_one_plane -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_mesh_native_hybrid -v
+      - name: Install Mesa Lavapipe and SPIR-V validation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mesa-vulkan-drivers libvulkan-dev spirv-tools glslang-tools
+          python3 - <<'PY'
+          import glob, os
+          paths = glob.glob('/usr/share/vulkan/icd.d/lvp*.json')
+          assert len(paths) == 1, paths
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write('VK_ICD_FILENAMES=' + paths[0] + '\\n')
+          PY
+      - name: Execute actual producer/consumer masked mesh shaders on Vulkan GPU
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_memu_coalesced_readback.CoalescedReadback.test_mesh_producer_and_vertex_masked_pair_gpu_readback -v
+      - name: Compare exactly one vec4 of removed GPU writes (8 vs 7)
+        env:
+          MEMU_TEST_VULKAN: '1'
+        run: python3 -m unittest dm.gfx.tools.tests.test_oot_one_plane_gpu -v
       - name: Android arm64 syntax for paired producer consumer
         run: |
           set -euxo pipefail
