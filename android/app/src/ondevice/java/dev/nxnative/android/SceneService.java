@@ -91,7 +91,7 @@ public final class SceneService extends Service {
     /** Opt-in merged graphics BYML overlay, never applied to another game or unknown update. */
     private String[] runShadow(String id, String romfs, int profile, int effect, String version) throws IOException {
         if (!Prefs.OCARINA_TITLE.equals(id) || romfs == null || version == null ||
-                profile < 0 || profile > 2 || effect < 0 || effect > 5 || (profile == 0 && effect == 0))
+                profile < 0 || profile > 2 || effect < 0 || effect > 31 || (effect & 3) == 3 || (profile == 0 && effect == 0))
             return new String[] {"2", "invalid Ocarina graphics patch request"};
         if (!ACTIVE.compareAndSet(false, true))
             return new String[] {String.valueOf(RUNNING), "another RomFS overlay is already being made"};
