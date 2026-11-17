@@ -18,10 +18,15 @@ jobs:
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_fine_gpu_draws -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_gpu_indirect_proof -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
-      - name: Build sampled Vulkan profiler translation unit with Android defines
+      - name: Build actual Android arm64 Vulkan profiler translation unit
         shell: bash
         run: |
           set -euxo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libvulkan-dev
-          cc -std=gnu11 -fsyntax-only -D__ANDROID__ -Idm/gfx/vk_android -Idm/gfx/nvn -Idm/gfx -Wno-unused-parameter dm/gfx/vk_android/vka_gprof.c
+          SWAP_NDK="$ANDROID_HOME/ndk/28.2.13676358"
+          if [ ! -x "$SWAP_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'ndk;28.2.13676358'
+          fi
+          SWAP_CC="$SWAP_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
+          "$SWAP_CC" -std=gnu11 -D_GNU_SOURCE -fsyntax-only -Werror=implicit-function-declaration -Werror=return-type \
+            -Idm/host/rt -Idm/host -Idm/gfx/nvn/include -Idm/third_party/vulkan-headers/include \
+            dm/gfx/vk_android/vka_gprof.c dm/gfx/vk_android/vka_draw.c
