@@ -767,4 +767,22 @@
     <string name="s2_narrow_barriers_note">Experimental. Restricts compute synchronization where valid. Restart the game.</string>
     <string name="s2_gpu_page_index">GPU memory page index (experimental)</string>
     <string name="s2_gpu_page_index_note">Optional bounded guest-page lookup for shaders compiled with index support. Original cache and full search remain. Uses up to 4 MiB of additional scratch per submission; restart to apply. Off by default.</string>
+    <string name="s2_language_auto">Automatic (phone language)</string>
+    <string name="s2_oot019_choice">Choose</string>
+    <string name="s2_oot019_aspect">Screen aspect ratio</string>
+    <string name="s2_oot019_pipelines">Background pipelines</string>
+    <string name="s2_oot019_vegetation">Reduce vegetation workload</string>
+    <string name="s2_oot019_vegetation_note">Skips only the verified A+B foliage shader pairs. Turn off to restore full vegetation. Restart the game.</string>
+    <string name="s2_oot019_mist">Reduce ground mist</string>
+    <string name="s2_oot019_mist_note">Reduces ground-level mist while preserving distant fog. Restart the game.</string>
+    <string name="s2_oot019_ram">RAM saver (uses storage)</string>
+    <string name="s2_oot019_ram_note">Optional. Caches large texture pools on storage and may write around 2 GB per area.</string>
+    <string name="s2_oot019_shared">Shared GPU memory buffer</string>
+    <string name="s2_oot019_shared_note">Optional. Tries to share a buffer with the GPU; uses direct mapping if unsupported. Restart the game.</string>
+    <string name="s2_oot019_patch">Shadow cascade FPS patch</string>
+    <string name="s2_oot019_patch_none">Original game settings</string>
+    <string name="s2_oot019_patch_cascade2">Shadow cascades: 3 to 2</string>
+    <string name="s2_oot019_patch_cascade1">Shadow cascades: 3 to 1</string>
+    <string name="s2_oot019_patch_dialog">Shadow cascade patch: %1$s</string>
+    <string name="s2_oot019_patch_needs_rebuild">Rebuild required</string>
 </resources>
