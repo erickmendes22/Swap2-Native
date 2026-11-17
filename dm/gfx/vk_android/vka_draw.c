@@ -2523,6 +2523,27 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
             } else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
         } else vk.vkCmdDrawIndexed(g_cb, (uint32_t)di->count, inst, 0, di->base_vertex, binst);
     }
+    if (vka_gp_active && sh[1] &&
+        (sh[1]->key == UINT64_C(0x087ef21b3a72ad3a) ||
+         sh[1]->key == UINT64_C(0x0fb4823639295a2d))) {
+        // Source-verified forensic probe for the two supposedly empty 720p
+        // passes. A guest mesh indirect record may say count=0 while MEMU
+        // generated nonzero VkDrawIndexedIndirect arguments on the GPU.
+        // Do not read back/stall on the GPU or change a single rendering op.
+        VLOG("Ocarina 720p zero-pass forensic: frame=%llu fs=%016llx "
+             "guest_count=%d guest_mesh=%d guest_indirect=%d "
+             "memu_generated_draw=%d vk_draw=%s source_ms=%016llx",
+             (unsigned long long)vka_frame(),
+             (unsigned long long)sh[1]->key, dw ? dw->count : di->count,
+             dw && dw->prim == NVN_PRIM_MESH, (dw ? dw->ind : di->ind) != 0,
+             memu_e != NULL,
+             memu_e ? (memu_e->indexed ? "DrawIndexedIndirect" : "DrawIndirect") :
+             mesh ? (dw && dw->ind ? "DrawMeshTasksIndirect" : "DrawMeshTasks") :
+             (dw ? (ind ? "DrawIndirect" : "Draw") :
+                   (ind ? "DrawIndexedIndirect" : "DrawIndexed")),
+             (unsigned long long)(memu_e && memu_e->ms ? memu_e->ms->key :
+                                  sh[7] ? sh[7]->key : 0));
+    }
     if (vka_gp_active) {
         // Only report what NVN/Vulkan actually submitted; the scissor's
         // possible coverage is NOT a hardware fragment invocation counter.
@@ -2541,9 +2562,10 @@ void vka_draw(vka_dstate *d, const p_set_rt *rt, int has_rt, const p_scissor *sc
         if (scpx > UINT32_MAX) scpx = UINT32_MAX;
         vka_gp_draw(sh[0] ? sh[0]->key : 0,
                     sh[1] ? sh[1]->key : 0,
-                    sh[7] ? sh[7]->key : 0,
-                    sh[6] ? sh[6]->key : 0,
-                    (uint32_t)(dw ? dw->count : di->count), inst, ind != 0,
+                    memu_e && memu_e->ms ? memu_e->ms->key : (sh[7] ? sh[7]->key : 0),
+                    memu_e && memu_e->ts ? memu_e->ts->key : (sh[6] ? sh[6]->key : 0),
+                    (uint32_t)(dw ? dw->count : di->count), inst,
+                    memu_e ? 2 : (ind != 0 ? 1 : 0),
                     (uint32_t)scpx, gf, triangles);
     }
     draw_log(d, sh, dw, di);
