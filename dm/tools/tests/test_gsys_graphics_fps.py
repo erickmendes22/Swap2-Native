@@ -74,6 +74,27 @@ class GraphicsPatches(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<i', combined, 0x440)[0], 1)
         self.assertEqual(combined[0x420:0x430], raw[0x420:0x430])
 
+    def test_multiple_effects_are_applied_in_one_overlay(self):
+        raw = make_main()
+        mask = 1 | 4 | 8 | 16  # cascade 3->2, SSAO, prepass, DOF + Bloom
+        patched = graphics.patch(raw, 0, effect_mask=mask)
+        expected = bytearray(raw)
+        values = {'DepthShadowCascadeNum0': 2, 'CreateSsocclusion': 0,
+                  'CreateShadowPrePass': 0, 'CreateDof': 0, 'CreateBloom': 0}
+        for i, (name, _kind, _value) in enumerate(KEYS):
+            if name in values:
+                struct.pack_into('<i', expected, 0x404 + i * 8 + 4, values[name])
+        self.assertEqual(patched, bytes(expected))
+        self.assertEqual(graphics.patch(raw, 0, effect_mask=16)[0x44c:0x454],
+                         bytes(expected)[0x44c:0x454])
+
+    def test_mask_cannot_combine_incompatible_cascades(self):
+        for mask in (-1, 3, 7, 31, 32):
+            with self.subTest(mask=mask), self.assertRaises(graphics.Error):
+                graphics.patch(make_main(), 0, effect_mask=mask)
+        with self.assertRaises(graphics.Error):
+            graphics.patch(make_main({'CreateDof': 0}), 0, effect_mask=16)
+
     def test_reject_malformed_and_unknown_update(self):
         raw = make_main()
         for effect, field, value in [
