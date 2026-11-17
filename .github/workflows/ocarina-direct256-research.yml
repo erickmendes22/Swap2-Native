@@ -1,0 +1,38 @@
+name: Ocarina 720p GPU direct-dispatch research
+on:
+  push:
+    branches:
+      - research/ocarina-gpu-direct-dispatch-20261117
+  workflow_dispatch:
+jobs:
+  direct-256-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute native overflow/task/indirect safety matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            dm/host/tests/t_oot_direct256.c -o /tmp/oot-direct256
+          ASAN_OPTIONS=detect_leaks=1 /tmp/oot-direct256
+      - name: Enforce game-only opt-in and unchanged shader bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          draw = Path('dm/gfx/vk_android/vka_memu_draw.inc').read_text()
+          spv = Path('dm/gfx/vk_android/vka_memu_spv.c').read_text()
+          common = Path('dm/gfx/vk_android/memu/memu_common.glsl').read_text()
+          head = Path('dm/gfx/vk_android/vka_memu_direct_dispatch.h').read_text()
+          assert 'DM_VK_OOT_MEMU_DIRECT_256", 0' in draw
+          assert 'DM_VK_OOT_MEMU_DIRECT_DISPATCH", 1' in draw
+          assert 'vka_memu_direct_groups(' in draw
+          assert 'const uint32_t limit = enabled >= 2 ? 256u : 64u' in head
+          assert 'op2(&f, OpULessThan, B.t_bool, flat, lim)' in spv
+          assert 'r[R + VKA_MEMU_R_TOTAL] = total' in common
+          assert 'if (!ocarina || !enabled || has_task || indirect' in head
+          print('PASS: source path guarded; original 64 baseline; R_TOTAL bounds preserved')
+          PY
