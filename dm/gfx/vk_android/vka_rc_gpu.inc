@@ -25,6 +25,7 @@ static struct {
     VkPipelineLayout layout;
     VkPipeline pipeline;
     uint64_t batches, pairs, query_copies, requests, cpu_zero;
+    uint64_t cond_seen, no_report, pair_reject, pair_admitted;
 } RG;
 static vka_dstate g_rc_scan;
 
@@ -233,10 +234,19 @@ static void rc_gpu_bind(const uint8_t *p) {
         !vk.vkCmdDrawIndirectCount || !vk.vkCmdDrawIndexedIndirectCount) return;
     p_render_cond cond; memcpy(&cond, p + 8, sizeof cond);
     if (cond.mode != 0 && cond.mode != 1) return;
+    RG.cond_seen++;
     rc_rep a, b;
-    if (!rc_gpu_report(cond.addr, &a) || cond.addr > UINT64_MAX - 16 ||
-        !rc_gpu_report(cond.addr + 16, &b) ||
-        !rc_gpu_pair_valid(&a, &b, &(vka_rc_gpu_delta){0})) return;
+    if (cond.addr > UINT64_MAX - 16 ||
+        !rc_gpu_report(cond.addr, &a) ||
+        !rc_gpu_report(cond.addr + 16, &b)) {
+        RG.no_report++;
+        return;
+    }
+    if (!rc_gpu_pair_valid(&a, &b, &(vka_rc_gpu_delta){0})) {
+        RG.pair_reject++;
+        return;
+    }
+    RG.pair_admitted++;
     if (RG.delta_mode ? (a.oq_end == b.oq_end)
                       : (a.oq_begin == a.oq_end && b.oq_begin == b.oq_end)) {
         // Query-free cumulative delta: equality is determined exclusively
@@ -266,7 +276,11 @@ int vka_rc_gpu_predicate(VkBuffer *buffer, VkDeviceSize *offset) {
 }
 static void rc_gpu_stats(double frames) {
     if (!RG.enabled || frames <= 0) return;
-    VLOG("GPU visibility research: delta=%d (1=same-reset cumulative difference, 0=original fresh-only), %.1f batches, %.1f exact current-submission pairs, %.1f query copies, %.1f draw-count predicate requests, %.1f exact empty-delta CPU decisions/frame; no hidden-draw/FPS claim",
-        RG.delta_mode, RG.batches / frames, RG.pairs / frames, RG.query_copies / frames, RG.requests / frames, RG.cpu_zero / frames);
+    VLOG("GPU visibility research: delta=%d; %.1f conditions/frame tried, %.1f no same-submission report, %.1f epoch/range rejected, %.1f exact query-pairs admitted, %.1f batches, %.1f query copies, %.1f predicate draw requests, %.1f query-free CPU decisions/frame; NO FPS claim",
+        RG.delta_mode, RG.cond_seen / frames, RG.no_report / frames,
+        RG.pair_reject / frames, RG.pair_admitted / frames,
+        RG.batches / frames, RG.query_copies / frames, RG.requests / frames,
+        RG.cpu_zero / frames);
     RG.batches = RG.pairs = RG.query_copies = RG.requests = RG.cpu_zero = 0;
+    RG.cond_seen = RG.no_report = RG.pair_reject = RG.pair_admitted = 0;
 }
