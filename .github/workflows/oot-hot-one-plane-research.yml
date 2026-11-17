@@ -28,7 +28,7 @@ jobs:
           paths = glob.glob('/usr/share/vulkan/icd.d/lvp*.json')
           assert len(paths) == 1, paths
           with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write('VK_ICD_FILENAMES=' + paths[0] + '\\n')
+              env.write('VK_ICD_FILENAMES=' + paths[0] + '\n')
           PY
       - name: Execute actual producer/consumer masked mesh shaders on Vulkan GPU
         env:
