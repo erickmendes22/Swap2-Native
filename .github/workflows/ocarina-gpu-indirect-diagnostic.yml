@@ -18,4 +18,4 @@ jobs:
       - name: Validate truthful raster profiling and unchanged indirect mesh path
         run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_gpu_indirect_proof -v
       - name: Existing GPU scene profiling regression
-        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_scene_profile dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
+        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_mesh_native_hybrid dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
