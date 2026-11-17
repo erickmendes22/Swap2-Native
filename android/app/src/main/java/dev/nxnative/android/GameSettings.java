@@ -132,10 +132,6 @@ final class GameSettings {
         GpuDriver.Info eff = GpuDriver.selected(a, id);
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_chip, a.getString(R.string.s2_driver), v -> driver(a, g, again)).value(a.getString(R.string.s2_driver_note))
                 .override(a, GpuDriver.choice(a, id) != null, eff == null ? a.getString(R.string.s2_driver_system) : eff.label()).chevron(a).view);
-        box.addView(new Ui.Setting(a, R.drawable.s2_ic_chip, "Qualcomm · Configurações GMEM / Sysmem",
-                v -> QglConfig.dialog(a, id, again))
-                .value(QglConfig.summary(a, id) + " · reinicie para aplicar; apenas driver Qualcomm proprietário")
-                .chevron(a).view);
         Ui.Setting ret = new Ui.Setting(a, R.drawable.s2_ic_stop, a.getString(R.string.s2_pause_return), null).toggle(a, Prefs.pauseOnReturn(a, id), (b, on) -> Prefs.pauseOnReturn(a, id, on));
         ret.value(a.getString(R.string.s2_pause_return_note));
         box.addView(ret.view);
@@ -234,11 +230,6 @@ final class GameSettings {
         box.addView(new Ui.Setting(a, R.drawable.s2_ic_gauge, "Pipelines em segundo plano", v -> GraphicsOptions.choice(a, id, "bg_pipelines", again))
                 .value(GraphicsOptions.BACKGROUND[GraphicsOptions.background(a, id)]).chevron(a).view);
         if (Prefs.OCARINA_TITLE.equals(id)) {
-            Ui.Setting caveWalls = new Ui.Setting(a, R.drawable.s2_ic_display,
-                    a.getString(R.string.s2_keep_cave_walls), null)
-                    .toggle(a, Prefs.keepCaveWalls(a, id), (b, on) -> Prefs.keepCaveWalls(a, id, on));
-            caveWalls.value(a.getString(R.string.s2_keep_cave_walls_note));
-            box.addView(caveWalls.view);
             // Only ONE reversible operation: omit both reviewed foliage
             // shader pairs A+B together. No separate A/B test choices and
             // no experimental 75/50 density or shadow-foliage controls.
