@@ -48,7 +48,10 @@ final class ShadowOverlay {
     }
     /** A combined experimental profile never reuses an older single-effect overlay. */
     static boolean validMask(int mask) {
-        return mask >= 0 && mask <= 31 && (mask & 3) != 3;
+        // Hardware A/B: SSAO and depth had no FPS gain; Bloom/DOF ineffective.
+        // Disallow old high bits in UI, service and cached-overlay mounting.
+        // The two remaining cascade changes are mutually exclusive.
+        return mask == 0 || mask == 1 || mask == 2;
     }
     static File dirMask(File files, String titleId, int shadow, int mask) {
         if (mask == 0) return dir(files, titleId, shadow, 0);
