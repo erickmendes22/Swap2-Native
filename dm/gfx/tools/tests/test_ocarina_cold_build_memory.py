@@ -25,7 +25,11 @@ class ColdShaderBuild(unittest.TestCase):
         # Never forge its header into the later 31f38178d067 version.
         self.assertIn('"b6b21fb5753a"', LIBS)
         self.assertIn('OCARINA_BASE_ENTRIES = 42339', LIBS)
-        self.assertIn('entries == OCARINA_BASE_ENTRIES', LIBS)
+        self.assertIn('count == OCARINA_BASE_ENTRIES', LIBS)
+        self.assertIn('count == OCARINA_BASE_ENTRIES + OCARINA_VEGETATION_ENTRIES', LIBS)
+        self.assertIn('&& isFullOcarinaCount(entries)', LIBS)
+        # Both strict complete-library sizes are now admitted, never a
+        # partial hot overlay or an arbitrary entry count.
         self.assertIn('h.fits(file.length()) && titleId.equals(h.game)', LIBS)
         self.assertIn('expectedAbi.equals(abi)', LIBS)
         self.assertIn('expectedInputs.equals(inputs)', LIBS)
