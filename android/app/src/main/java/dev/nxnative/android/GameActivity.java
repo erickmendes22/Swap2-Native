@@ -474,15 +474,10 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // Optional A/B: legacy texture-discovery feedback remains the
             // default. Restart is required (descriptor pool is created once).
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_POOL_FB_DIRECT=" + (Prefs.poolFeedbackDirect(this, id) ? "1" : "0"));
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FB_INVOCATION_CACHE="
-                    + (Prefs.feedbackInvocationCache(this, id) ? "1" : "0"));
-            // A/B research only: the existing profiler samples one frame in 300.
-            // Diagnose full 1280x720 Vulkan passes on BOTH OFF and ON runs.
-            // No extra instrumentation in the 299 ordinary frames.
-            // This changes only the existing conservative vka_draw.c depth
-            // STORE_OP_NONE eligibility. Does not alter the default path.
-            if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_DEPTH_STORE_NONE="
-                    + (Prefs.ootDepthStoreNone(this, id) ? "1" : "0"));
+            // Retired after phone A/B: fragment feedback cache saved no GPU time
+            // (ON 20.71 ms, OFF 20.67 ms median) and may regress performance.
+            // Retired depth-store experiment also never reaches the renderer.
+            // No env flag is emitted: Vulkan uses its original implementations.
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_SCENE_PASS_DIAG=1");
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_FRAGMENT_AST=" + (Prefs.fragmentOptimized(this, id) ? "1" : "0"));
             if (Prefs.OCARINA_TITLE.equals(id)) env.add("DM_VK_OOT_CS_RETILE=1");
