@@ -1553,6 +1553,17 @@ static int memu_walk(const uint8_t *p, int phase) {
                      !vka_vegetation_mesh_omit(&g_memu_st))) {
                     if (n == 128) break;
                     if (phase < 0) return 1;
+                    // The first real mesh draw is the only point that needs
+                    // MEMU_BEGIN.  In particular a look-ahead with NO mesh
+                    // must leave the previous batch intact, exactly as the
+                    // old discovery pass did.  For a positive look-ahead,
+                    // start the batch here so MEMU_ADD can be the sole walk;
+                    // guest state ops preceding this draw only change the
+                    // dry-run state and emit no GPU commands.
+                    if (phase == MEMU_ADD && n == 0) {
+                        if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_START", 0);
+                        vka_memu_batch(MEMU_BEGIN, NULL, NULL, NULL, 0);
+                    }
                     vka_memu_batch(phase, &g_memu_st, d, p, n); n++;
                 }
             } }
@@ -1566,9 +1577,13 @@ static int memu_walk(const uint8_t *p, int phase) {
 // Normal frames add ZERO commands. GPU timing markers do not modify shaders.
 static void memu_scan(const uint8_t *p) {
     g_memu_cover = 1;
-    if (S.rc_skip || !memu_walk(p, -1)) return;
-    if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_START", 0);
-    vka_memu_batch(MEMU_BEGIN, NULL, NULL, NULL, 0);
+    if (S.rc_skip) return;
+    // The former memu_walk(-1) made a redundant full pass over guest
+    // command lists, followed immediately by memu_walk(MEMU_ADD).  Under
+    // Ocarina's vegetation-quality filtering BOTH walks replayed all
+    // relevant state to identify the same mesh draws.  MEMU_ADD now starts
+    // the batch lazily on the first admitted draw; no candidate still emits
+    // no Vulkan commands, no stale-batch reset, and no profiler marker.
     if (!memu_walk(p, MEMU_ADD)) return;
     if (vka_gp_active) vka_gp_mark(g_cb, "MEMU_ADD", 0);
     vka_memu_batch(MEMU_SETUP, NULL, NULL, NULL, 0);
