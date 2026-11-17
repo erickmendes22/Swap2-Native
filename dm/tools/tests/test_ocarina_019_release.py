@@ -72,7 +72,7 @@ class Ocarina019(unittest.TestCase):
         self.assertIn('"", "en-US", "pt-BR"', language)
         self.assertIn('"System / Automático"', language)
         self.assertIn('if (code.isEmpty()) return base;', language)
-        self.assertIn("android_default\\ton", mod)
+        self.assertIn("android_default" + chr(9) + "on", mod)
 
 if __name__ == "__main__":
     unittest.main()
