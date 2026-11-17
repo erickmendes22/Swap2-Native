@@ -237,7 +237,7 @@ vka_shader *vka_memu_cs_for_fs(vka_shader *mesh, int gl, vka_shader *fragment) {
     if (dropped < 2 &&
         !vka_oot_hot_one_plane_eligible(
             !strcmp(DM_GAME_ID, "0400486024DEC000"),
-            VKA_ENV("DM_VK_OOT_ONE_PLANE_PRUNE", 1),
+            VKA_ENV("DM_VK_OOT_ONE_PLANE_PRUNE", 0),
             mesh->key, dropped))
         return fallback;
     gl = gl && (mesh->e->flags & DMSH_VK_F_GL_DEPTH) ? 1 : 0;
@@ -336,7 +336,7 @@ vka_shader *vka_memu_vs_for_fs(vka_shader *mesh, vka_shader *fragment) {
     if (dropped < 2 &&
         !vka_oot_hot_one_plane_eligible(
             !strcmp(DM_GAME_ID, "0400486024DEC000"),
-            VKA_ENV("DM_VK_OOT_ONE_PLANE_PRUNE", 1),
+            VKA_ENV("DM_VK_OOT_ONE_PLANE_PRUNE", 0),
             mesh->key, dropped))
         return fallback;
     pthread_mutex_lock(&g_mu);
