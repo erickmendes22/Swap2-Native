@@ -534,6 +534,40 @@ public final class PackService extends Service {
                 }
                 j.stepState(s, "done");
                 save(j, true);
+                // A first complete Ocarina preparation includes its 508
+                // verified vegetation shaders, after producing the original
+                // 42,339-entry playable library. The supplement is separate:
+                // no old full library is rewritten and an interrupted job
+                // resumes exactly the pending vegetation stage. Do not start
+                // again when an imported complete/vegetation library exists.
+                if ("pack".equals(s) && "0400486024DEC000".equals(j.titleId())
+                        && j.hotKeys().isEmpty() && !engine.simulated()) {
+                    File playable = Pack.libraryOf(j.pack());
+                    ShaderLibs.Header head = playable == null ? null : ShaderLibs.header(playable);
+                    Profile profile = Profile.of(j.titleId());
+                    if (head != null && playable != null
+                            && head.fits(playable.length()) && profile != null
+                            && profile.shaderInputs.equals(head.inputs)
+                            && head.entries == ShaderLibs.OCARINA_BASE_ENTRIES
+                            && !OcarinaShaderDelta.completeVegetationInstalled(
+                                    j.pack(), profile.shaderInputs,
+                                    head.subgroupSize, head.ssboAlign)) {
+                        List<String> vegetationKeys = OcarinaShaderDelta.vegetationKeys();
+                        // This is exactly the reviewed 508-source set. The
+                        // vegetation translator validates each resource and
+                        // publishes it atomically into shaders/vegetation/.
+                        if (vegetationKeys.size() != ShaderLibs.OCARINA_VEGETATION_ENTRIES)
+                            throw new IOException("Ocarina vegetation manifest count changed");
+                        j.hotKeys(vegetationKeys);
+                        j.expectedShaders(vegetationKeys.size());
+                        j.stepState("shaders", "pending");
+                        j.stepState("pack", "pending");
+                        Log.i(TAG, "Ocarina first preparation: full shader base complete; "
+                                + "now compile 508 vegetation shaders as a verified supplement");
+                        save(j, true);
+                        continue;
+                    }
+                }
                 if (s.equals("split")) Job.deleteTree(j.splitScan(this));   // recorded done: the scan results are no longer needed
             }
             if (j.next() < 0) {
