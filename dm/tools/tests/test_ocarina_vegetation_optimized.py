@@ -31,8 +31,11 @@ class VegetationOptimization(unittest.TestCase):
         settings = (JAVA / "GameSettings.java").read_text()
         for name in ("vegetationOptimized", "vegetationContiguous", "shortTaskSearch"):
             self.assertNotIn(".toggle(a, Prefs." + name, settings)
-        for name in ("partialTextureUploads", "unusedColorTargets", "attachmentWriteScopes"):
-            self.assertIn(".toggle(a, Prefs." + name, settings)
+        page = settings.split("private static void graphicsOcarina019(", 1)[1].split("/** The APK's assets", 1)[0]
+        for name in ("partialTextureUploads", "unusedColorTargets", "attachmentWriteScopes", "computeOptimized"):
+            self.assertNotIn(".toggle(a, Prefs." + name, page)
+        # 0.1.9 hardwires the tested GPU paths; legacy UI state no longer
+        # silently switches them off when an older preference said false.
         source = '''import java.util.*;
 class Context {}
 class Store {
@@ -68,7 +71,7 @@ public class Probe extends Context {
     Prefs.fragmentOptimized(p, id, true); p.environment(id);
     check(p.env.contains("DM_VK_OOT_FRAGMENT_AST=1"));
     Prefs.computeOptimized(p, id, false); p.environment(id);
-    check(p.env.contains("DM_VK_MEMU_DIRECT_PAYLOAD=0") && p.env.contains("DM_VK_OOT_CS_RETILE=0") && p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
+    check(p.env.contains("DM_VK_MEMU_DIRECT_PAYLOAD=1") && p.env.contains("DM_VK_OOT_CS_RETILE=1") && p.env.contains("DM_VK_VEGETATION=1") && p.env.contains("DM_VK_MEMU_PLANE_LUT=1"));
     Prefs.computeOptimized(p, id, true); p.environment(id);
     check(p.env.contains("DM_VK_OOT_CS_RETILE=1") && p.env.contains("DM_VK_MEMU_DIRECT_PAYLOAD=1"));
     Prefs.vegetationContiguous(p, id, true); p.environment(id);
@@ -84,9 +87,9 @@ public class Probe extends Context {
     Prefs.partialTextureUploads(p, id, false); p.environment(id);
     check(p.env.contains("DM_VK_PARTIAL_UPLOAD=0") && p.env.contains("DM_VK_UNUSED_COLOR=1") && p.env.contains("DM_VK_ATTACHMENT_PARTS=1"));
     Prefs.unusedColorTargets(p, id, false); p.environment(id);
-    check(p.env.contains("DM_VK_UNUSED_COLOR=0") && p.env.contains("DM_VK_ATTACHMENT_PARTS=1"));
+    check(p.env.contains("DM_VK_UNUSED_COLOR=1") && p.env.contains("DM_VK_ATTACHMENT_PARTS=1"));
     Prefs.attachmentWriteScopes(p, id, false); p.environment(id);
-    check(p.env.contains("DM_VK_ATTACHMENT_PARTS=0"));
+    check(p.env.contains("DM_VK_ATTACHMENT_PARTS=1"));
     check(Prefs.vegetationOptimized(p, "another-title"));
     p.environment("another-title"); check(p.env.isEmpty());
   }
