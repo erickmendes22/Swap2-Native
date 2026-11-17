@@ -174,7 +174,10 @@ static void mark(VkCommandBuffer cb, int kind, const char *file, int line) {
     // profiler query slots are reused on later sampled frames
     uint64_t sk, di, pi; vka_draw_stats(&m->draws, &sk, &di, &pi); (void)sk; (void)di; (void)pi;
     extern uint64_t vka_n_rp; m->passes = vka_n_rp; uint64_t subs, rec; vka_exec_counts(&m->ops, &subs, &rec);
-    if (file && (!strcmp(file, "GFX_CHUNK") || !strcmp(file, "GFX_DRAW"))) {
+    if (file && !strcmp(file, "GFX_CHUNK")) {
+        // A chunk is a timestamp sub-interval, not the whole render pass.
+        m->desc[0] = 0;
+    } else if (file && !strcmp(file, "GFX_DRAW")) {
         // Leave g_pass_new and the complete fragment histogram untouched:
         // the final pass-end timestamp still describes the ENTIRE pass.
         m->desc[0] = 0;
@@ -265,10 +268,10 @@ void vka_gp_pass(const char *desc) {
             VKA_ENV("DM_VK_OOT_GFX_FINE", VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2) != 0 && g_pass_1280;
         // The two timestamp granularities must be mutually exclusive.
         // Every non-profiled frame still records ZERO of either kind.
-        g_gfx_enabled = !g_gfx_fine &&
-            !strcmp(DM_GAME_ID, "0400486024DEC000") &&
+        g_gfx_enabled = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
             VKA_ENV("DM_VK_OOT_GFX_CHUNKS", 1) &&
             vka_scene_profile_size(desc);
+        if (g_gfx_fine) g_gfx_enabled = 0;
         snprintf(g_pass, DESC, "%s", desc);
         g_pass_new = 1; g_pass_draws = 0; g_nfs = 0; g_fs_over = 0;
     }
