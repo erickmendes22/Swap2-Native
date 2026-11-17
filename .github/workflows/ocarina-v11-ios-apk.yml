@@ -46,6 +46,7 @@ jobs:
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_gpu_indirect_proof -v
           python3 -m unittest dm.gfx.tools.tests.test_ocarina_fine_gpu_draws dm.gfx.tools.tests.test_ocarina_program_cache_research -v
+          python3 -m unittest dm.gfx.tools.tests.test_oot_memu_true_enable dm.gfx.tools.tests.test_ocarina_mesh_caller_lookahead -v
       - name: Validate shader ABI and internal scene resolution profiles
         shell: bash
         run: |
