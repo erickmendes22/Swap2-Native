@@ -200,22 +200,6 @@ final class Prefs {
     static void poolFeedbackDirect(Context c, String titleId, boolean on) {
         of(c).edit().putBoolean(gameKey("pool_feedback_direct", titleId), on).commit();
     }
-    // Per-fragment-invocation texture feedback deduplication (experimental A/B).
-    // OFF is the known original behavior; no shader-library ABI change.
-    static boolean feedbackInvocationCache(Context c, String titleId) {
-        return OCARINA_TITLE.equals(titleId) && of(c).getBoolean(gameKey("fb_invocation_cache", titleId), false);
-    }
-    static void feedbackInvocationCache(Context c, String titleId, boolean on) {
-        of(c).edit().putBoolean(gameKey("fb_invocation_cache", titleId), on).commit();
-    }
-    // Optional depth-store elision for original 1280x720 Ocarina colour passes.
-    // Explicitly OFF until hardware A/B validates visual correctness and FPS.
-    static boolean ootDepthStoreNone(Context c, String titleId) {
-        return OCARINA_TITLE.equals(titleId) && of(c).getBoolean(gameKey("oot_depth_store_none", titleId), false);
-    }
-    static void ootDepthStoreNone(Context c, String titleId, boolean on) {
-        of(c).edit().putBoolean(gameKey("oot_depth_store_none", titleId), on).commit();
-    }
     static boolean fragmentOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("fragment_optimized", titleId), true); }
     static void fragmentOptimized(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("fragment_optimized", titleId), on).commit(); }
     static boolean computeOptimized(Context c, String titleId) { return of(c).getBoolean(gameKey("compute_optimized", titleId), true); }
@@ -248,9 +232,9 @@ final class Prefs {
     /** RAM saver per game: large guest texture pools use files in the private cache. */
     static boolean ramSaver(Context c, String titleId) { return of(c).getBoolean(gameKey("ram_saver", titleId), false); }
     static void ramSaver(Context c, String titleId, boolean on) { of(c).edit().putBoolean(gameKey("ram_saver", titleId), on).commit(); }
-    /** Independent graphics effects as a five-bit mask (1/2 cascades exclusive).
-     * Old one-at-a-time preferences are read but converted to the matching bit.
-     * Never re-use old single-effect overlays: ShadowOverlay uses a new name/stamp. */
+    /** Only validated cascade FPS patches remain: 1 = 3→2, 2 = 3→1.
+     * Retired SSAO/raw-depth/Bloom/DOF bits are ignored even for stored
+     * pre-0.1.9 preferences, so the old overlay cannot be remounted. */
     static int fpsPatch(Context c, String id) {
         if (!OCARINA_TITLE.equals(id)) return 0;
         SharedPreferences p = of(c);
@@ -259,13 +243,16 @@ final class Prefs {
                 : p.contains(gameKey("oot_fps_patch_mask", id))
                 ? p.getInt(gameKey("oot_fps_patch_mask", id), 0)
                 : legacyFpsMask(p.getInt(gameKey("oot_fps_patch", id), 0));
-        return fpsMaskValid(mask) ? mask : 0;
+        // Strip the unproductive / broken high bits from legacy selections.
+        // The two surviving shadow cascade profiles cannot coexist.
+        int cascade = mask & 3;
+        return cascade == 3 ? 0 : cascade;
     }
     static int legacyFpsMask(int effect) {
-        return effect >= 1 && effect <= 5 ? (1 << (effect - 1)) : 0;
+        return effect == 1 ? 1 : effect == 2 ? 2 : 0;
     }
     static boolean fpsMaskValid(int mask) {
-        return mask >= 0 && mask <= 31 && (mask & 3) != 3;
+        return mask == 0 || mask == 1 || mask == 2;
     }
     static void fpsPatch(Context c, String id, int mask) {
         if (!OCARINA_TITLE.equals(id)) return;
