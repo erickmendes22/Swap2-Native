@@ -262,7 +262,7 @@ void vka_gp_pass(const char *desc) {
         // timestamp group into the next render target.
         g_gfx_n = 0;
         g_gfx_fine = !strcmp(DM_GAME_ID, "0400486024DEC000") &&
-            VKA_ENV("DM_VK_OOT_GFX_FINE", 0) != 0 && g_pass_1280;
+            VKA_ENV("DM_VK_OOT_GFX_FINE", VKA_ENV("DM_VK_SCENE_PASS_DIAG", 0) >= 2) != 0 && g_pass_1280;
         // The two timestamp granularities must be mutually exclusive.
         // Every non-profiled frame still records ZERO of either kind.
         g_gfx_enabled = !g_gfx_fine &&
