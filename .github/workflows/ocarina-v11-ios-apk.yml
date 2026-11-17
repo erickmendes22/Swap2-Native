@@ -35,7 +35,7 @@ jobs:
           mkdir -p /tmp/oot-fps-patch-jvm
           javac -d /tmp/oot-fps-patch-jvm android/app/src/main/java/dev/nxnative/android/ShadowOverlay.java
       - name: Validate optional GPU visibility defaults and safe counter blocks
-        run: python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.tools.tests.test_ocarina_gpu_visibility_option -v
+        run: python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.gfx.tools.tests.test_oot_rc_cumulative_delta dm.tools.tests.test_ocarina_gpu_visibility_option -v
       - name: Validate zero-invocation raster elision before APK build
         shell: bash
         run: |

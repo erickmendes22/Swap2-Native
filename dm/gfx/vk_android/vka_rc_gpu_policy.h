@@ -10,6 +10,33 @@ static inline int vka_rc_gpu_range(int kind, int fresh, uint64_t fence, uint64_t
            end >= begin && end <= head && end - begin <= VKA_RC_GPU_MAX_RANGE;
 }
 
+// NVN sample counters are cumulative within a reset epoch. If reports A
+// and B are in that SAME epoch, A==B iff no samples (including lost reports)
+// were generated BETWEEN A.end and B.end. B is normally NOT fresh; requiring
+// two 'fresh' reports excludes this most common exact pair.
+//
+// This admits ONLY query sequences that began in the CURRENT Vulkan
+// submission. Cross-submission queries must NEVER be copied here: the prior
+// completion callback may host-reset their query pool slots before our
+// next GPU submission reads them. No previous-frame visibility is assumed.
+typedef struct { uint64_t begin, end, lost_delta; } vka_rc_gpu_delta;
+static inline int vka_rc_gpu_delta_pair(
+    int kind_a, int kind_b, uint64_t epoch_a, uint64_t epoch_b,
+    uint64_t fence_a, uint64_t fence_b,
+    uint64_t lost_a, uint64_t lost_b,
+    uint64_t end_a, uint64_t end_b,
+    uint64_t submission_first, uint64_t head,
+    vka_rc_gpu_delta *out) {
+    if (!out || kind_a != 3 || kind_b != 3 ||
+        !epoch_a || epoch_a != epoch_b || fence_a || fence_b ||
+        lost_b < lost_a || end_a < submission_first ||
+        end_b < end_a || end_b > head ||
+        end_b - end_a > VKA_RC_GPU_MAX_RANGE)
+        return 0;
+    *out = (vka_rc_gpu_delta){end_a, end_b, lost_b - lost_a};
+    return 1;
+}
+
 typedef struct { uint64_t begin, end; uint32_t offset; } vka_rc_gpu_qrange;
 typedef struct { uint32_t first, count, offset; } vka_rc_gpu_copy;
 typedef struct {

@@ -16,7 +16,7 @@ static void rc_gpu_context_of(rc_gpu_context *out, const vka_dstate *d, int dept
     for (int i = 0; i < depth && i < 16; i++) out->caller[i] = caller[i];
 }
 static struct {
-    int enabled, n;
+    int enabled, n, delta_mode;
     uint64_t revision, submission_first;
     const uint8_t *record[VKA_RC_GPU_MAX_JOBS];
     rc_gpu_context context[VKA_RC_GPU_MAX_JOBS];
@@ -25,11 +25,16 @@ static struct {
     VkPipelineLayout layout;
     VkPipeline pipeline;
     uint64_t batches, pairs, query_copies, requests, cpu_zero;
+    uint64_t cond_seen, no_report, pair_reject, pair_admitted;
 } RG;
 static vka_dstate g_rc_scan;
 
 static void rc_gpu_sub_begin(void) {
     RG.enabled = !strcmp(DM_GAME_ID, "0400486024DEC000") && VKA_ENV("DM_VK_GPU_VISIBILITY", 0);
+    // The existing feature is OFF by default. With it enabled, use the
+    // same-epoch DELTA of two cumulative reports, not two fresh counters.
+    // DM_VK_OOT_RC_DELTA=0 restores the original fresh-only experiment.
+    RG.delta_mode = RG.enabled && VKA_ENV("DM_VK_OOT_RC_DELTA", 1);
     RG.n = 0; RG.current.buf = VK_NULL_HANDLE; RG.submission_first = g_oq_head;
 }
 void vka_rc_gpu_invalidate(void) {
@@ -51,9 +56,25 @@ static int rc_gpu_report(uint64_t addr, rc_rep *out) {
     int i = rc_ix_find(addr);
     if (i < 0) return 0;
     *out = g_rcp[i];
-    return out->gpu_write_epoch == g_rc_gpu_write_epoch &&
+    if (out->gpu_write_epoch != g_rc_gpu_write_epoch) return 0;
+    if (!RG.delta_mode) return
         vka_rc_gpu_range(out->kind, out->oq_fresh, out->fence, out->oq_lost, out->oq_begin, out->oq_end,
                          RG.submission_first, g_oq_head);
+    // Raw per-report validity for cumulative-delta pairing, still only
+    // records written in the CURRENT submission: earlier completed reports
+    // can have their query slots reset asynchronously by the host.
+    return out->kind == 3 && out->oq_epoch && !out->fence &&
+        out->oq_end >= out->oq_begin &&
+        out->oq_end >= RG.submission_first &&
+        out->oq_end <= g_oq_head;
+}
+static int rc_gpu_pair_valid(const rc_rep *a, const rc_rep *b, vka_rc_gpu_delta *delta) {
+    if (!RG.delta_mode) return 1; // both sides passed original fresh-only gate
+    return vka_rc_gpu_delta_pair(
+        a->kind, b->kind, a->oq_epoch, b->oq_epoch,
+        a->fence, b->fence, a->oq_lost, b->oq_lost,
+        a->oq_end, b->oq_end,
+        RG.submission_first, g_oq_head, delta);
 }
 static int rc_gpu_init(void) {
     if (RG.pipeline) return 1;
@@ -105,9 +126,13 @@ static int rc_gpu_collect(const uint8_t *p, rc_gpu_job *jobs) {
             if (n == VKA_RC_GPU_MAX_JOBS || h.size < 8 + sizeof(p_render_cond)) break;
             p_render_cond cond; memcpy(&cond, arg, sizeof cond);
             if ((cond.mode == 0 || cond.mode == 1) && cond.addr <= UINT64_MAX - 16 &&
-                rc_gpu_report(cond.addr, &jobs[n].a) && rc_gpu_report(cond.addr + 16, &jobs[n].b)) {
-                if (jobs[n].a.oq_begin == jobs[n].a.oq_end && jobs[n].b.oq_begin == jobs[n].b.oq_end) {
-                    p += h.size; continue; // rc_gpu_bind resolves these exact empty counters on the CPU.
+                rc_gpu_report(cond.addr, &jobs[n].a) && rc_gpu_report(cond.addr + 16, &jobs[n].b) &&
+                rc_gpu_pair_valid(&jobs[n].a, &jobs[n].b, &(vka_rc_gpu_delta){0})) {
+                if (RG.delta_mode
+                    ? (jobs[n].a.oq_end == jobs[n].b.oq_end)
+                    : (jobs[n].a.oq_begin == jobs[n].a.oq_end &&
+                       jobs[n].b.oq_begin == jobs[n].b.oq_end)) {
+                    p += h.size; continue; // rc_gpu_bind compares exact zero-query delta on CPU.
                 }
                 jobs[n].p = p; jobs[n].mode = (uint32_t)cond.mode;
                 rc_gpu_context_of(&jobs[n].context, &g_rc_scan, nr, ret); pending = n;
@@ -140,7 +165,21 @@ static void rc_gpu_prepare(const uint8_t *p) {
     for (int i = 0; i < n; i++) {
         uint32_t *j = g_rc_job_words + i * 12; memset(j, 0, 48);
         const rc_rep *r[2] = {&jobs[i].a, &jobs[i].b};
-        for (unsigned side = 0; side < 2; side++) {
+        if (RG.delta_mode) {
+            vka_rc_gpu_delta d;
+            uint32_t off = 0;
+            if (!rc_gpu_pair_valid(r[0], r[1], &d) ||
+                !vka_rc_gpu_plan_add(&g_rc_plan, d.begin, d.end, OQ_N, &off))
+                return;
+            // The original checked-in SPIR-V helper compares TWO counters.
+            // Encode zero as its A and the exact cumulative difference as B.
+            // Non-precise queries have sound zero/positive semantics; precise
+            // queries sum the full 64-bit count. No shader module or ABI edit.
+            j[4] = off;
+            j[5] = (uint32_t)(d.end - d.begin);
+            j[6] = (uint32_t)d.lost_delta;
+            j[7] = (uint32_t)(d.lost_delta >> 32);
+        } else for (unsigned side = 0; side < 2; side++) {
             if (!vka_rc_gpu_plan_add(&g_rc_plan, r[side]->oq_begin, r[side]->oq_end, OQ_N, &j[side * 4])) return;
             j[side * 4 + 1] = (uint32_t)(r[side]->oq_end - r[side]->oq_begin);
             j[side * 4 + 2] = (uint32_t)r[side]->oq_lost;
@@ -195,13 +234,28 @@ static void rc_gpu_bind(const uint8_t *p) {
         !vk.vkCmdDrawIndirectCount || !vk.vkCmdDrawIndexedIndirectCount) return;
     p_render_cond cond; memcpy(&cond, p + 8, sizeof cond);
     if (cond.mode != 0 && cond.mode != 1) return;
+    RG.cond_seen++;
     rc_rep a, b;
-    if (!rc_gpu_report(cond.addr, &a) || cond.addr > UINT64_MAX - 16 ||
-        !rc_gpu_report(cond.addr + 16, &b)) return;
-    if (a.oq_begin == a.oq_end && b.oq_begin == b.oq_end) {
-        // Fresh + zero lost + no queries proves both counters are exactly zero,
-        // independently of GPU completion. Do not dispatch a predicate helper.
-        S.rc_skip = cond.mode == 1; RG.cpu_zero++; return;
+    if (cond.addr > UINT64_MAX - 16 ||
+        !rc_gpu_report(cond.addr, &a) ||
+        !rc_gpu_report(cond.addr + 16, &b)) {
+        RG.no_report++;
+        return;
+    }
+    if (!rc_gpu_pair_valid(&a, &b, &(vka_rc_gpu_delta){0})) {
+        RG.pair_reject++;
+        return;
+    }
+    RG.pair_admitted++;
+    if (RG.delta_mode ? (a.oq_end == b.oq_end)
+                      : (a.oq_begin == a.oq_end && b.oq_begin == b.oq_end)) {
+        // Query-free cumulative delta: equality is determined exclusively
+        // by LOST counts. For non-delta original path both individual
+        // reports were fresh/empty by its own admission policy.
+        const int equal = !RG.delta_mode || a.oq_lost == b.oq_lost;
+        S.rc_skip = cond.mode == 1 ? equal : !equal;
+        RG.cpu_zero++;
+        return;
     }
     rc_gpu_context context;
     rc_gpu_context_of(&context, &S.d, g_memu_depth, g_memu_caller);
@@ -222,7 +276,11 @@ int vka_rc_gpu_predicate(VkBuffer *buffer, VkDeviceSize *offset) {
 }
 static void rc_gpu_stats(double frames) {
     if (!RG.enabled || frames <= 0) return;
-    VLOG("GPU visibility research: %.1f batches, %.1f exact current-submission pairs, %.1f query copies, %.1f draw-count predicate requests, %.1f exact empty-counter CPU decisions/frame; no hidden-draw/FPS claim",
-        RG.batches / frames, RG.pairs / frames, RG.query_copies / frames, RG.requests / frames, RG.cpu_zero / frames);
+    VLOG("GPU visibility research: delta=%d; %.1f conditions/frame tried, %.1f no same-submission report, %.1f epoch/range rejected, %.1f exact query-pairs admitted, %.1f batches, %.1f query copies, %.1f predicate draw requests, %.1f query-free CPU decisions/frame; NO FPS claim",
+        RG.delta_mode, RG.cond_seen / frames, RG.no_report / frames,
+        RG.pair_reject / frames, RG.pair_admitted / frames,
+        RG.batches / frames, RG.query_copies / frames, RG.requests / frames,
+        RG.cpu_zero / frames);
     RG.batches = RG.pairs = RG.query_copies = RG.requests = RG.cpu_zero = 0;
+    RG.cond_seen = RG.no_report = RG.pair_reject = RG.pair_admitted = 0;
 }
