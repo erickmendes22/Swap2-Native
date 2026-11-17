@@ -137,15 +137,6 @@ int main(void) {
         start = draw.index('    int mesh = dw && dw->prim == NVN_PRIM_MESH;')
         end = draw.index('    if (d->poly.cull == NVN_FACE_FRONT_AND_BACK')
         block = draw[start:end]
-        # This fixture compiles ONLY the mesh-routing subpath. The Ocarina
-        # opt-in zero-count vertex-draw shortcut is in the unrelated
-        # nonmesh branch; its types/guards have their own sanitizer suite.
-        # Do not copy that block into a deliberately minimal mesh-only C
-        # harness: it has no vka_zero_draw_case, render target state, etc.
-        zero_begin = block.find('        // Opt-in, exact-pair A/B from 720p frame profiler:')
-        if zero_begin >= 0:
-            zero_end = block.index('        if (d->rast_discard && d->tf_on)', zero_begin)
-            block = block[:zero_begin] + block[zero_end:]
         source = r"""
 #include <assert.h>
 #include <stdint.h>
