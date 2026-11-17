@@ -1450,6 +1450,8 @@ static int g_memu_cover; static uint64_t g_memu_sub = ~0ull; static vka_dstate g
 static _Thread_local const uint8_t *g_memu_caller[16];
 static _Thread_local int g_memu_depth;
 static uint64_t g_memu_parent_resumes, g_memu_nested_batches;
+static uint64_t g_memu_constant_enable_crossed;
+#include "vka_memu_true_cond.h"
 void vka_memu_caller_stats(uint64_t *resumes, uint64_t *nested) {
     if (resumes) *resumes = g_memu_parent_resumes;
     if (nested) *nested = g_memu_nested_batches;
@@ -1472,7 +1474,7 @@ static const char *memu_boundary_name(unsigned op) {
     }
 }
 static void memu_boundary_stats(char *out, size_t n) {
-    static uint64_t last[OP_COUNT_ + 1];
+    static uint64_t last[OP_COUNT_ + 1], true0;
     uint64_t delta[OP_COUNT_ + 1]; unsigned top[3] = {0}, nt = 0;
     for (unsigned k = 0; k <= OP_COUNT_; k++) {
         delta[k] = g_memu_boundary_op[k] - last[k];
@@ -1487,12 +1489,15 @@ static void memu_boundary_stats(char *out, size_t n) {
     }
     if (!n) return;
     if (!nt) { out[0] = 0; return; }
-    snprintf(out, n, "mesh batch boundaries (300-frame total): %s(%u)=%llu; %s(%u)=%llu; %s(%u)=%llu; no guest dependencies were removed",
+    uint64_t crossed = g_memu_constant_enable_crossed - true0;
+    true0 = g_memu_constant_enable_crossed;
+    snprintf(out, n, "mesh batch boundaries (300-frame total): %s(%u)=%llu; %s(%u)=%llu; %s(%u)=%llu; constant TRUE enable records safely crossed=%llu (queries, disabled conditions, barriers, targets still stop); no guest dependencies were removed",
         memu_boundary_name(top[0]), top[0], (unsigned long long)delta[top[0]],
         nt > 1 ? memu_boundary_name(top[1]) : "-", nt > 1 ? top[1] : 0u,
         nt > 1 ? (unsigned long long)delta[top[1]] : 0ull,
         nt > 2 ? memu_boundary_name(top[2]) : "-", nt > 2 ? top[2] : 0u,
-        nt > 2 ? (unsigned long long)delta[top[2]] : 0ull);
+        nt > 2 ? (unsigned long long)delta[top[2]] : 0ull,
+        (unsigned long long)crossed);
 }
 static int memu_allowed(uint32_t op) {
     switch (op) {
@@ -1503,6 +1508,22 @@ static int memu_allowed(uint32_t op) {
     case OP_RAST_DISCARD: case OP_VP_SWIZZLE: case OP_PRIM_RESTART: case OP_ALPHA_REF: case OP_PUSH_CONST: return 1;
     default: return 0;
     }
+}
+// An unconditional ENABLE is a CPU-side render state operation, not a
+// query or memory dependency. It sets S.rc_skip=0 and cannot suppress any
+// guest draw. Look-ahead may cross mode==2 when explicitly enabled for
+// Ocarina, preserving all earlier bind/state records. All conditional
+// modes (0/1), unconditional DISABLE (3), and malformed records are ALWAYS
+// hard boundaries. The replay uses the SAME admission function to keep
+// g_memu_cover coherent with the mesh record list.
+static int memu_allowed_record(uint32_t op, const void *a, uint32_t bytes) {
+    if (op != OP_RENDER_COND) return memu_allowed(op);
+    if (bytes < 8u + sizeof(p_render_cond) || !a) return 0;
+    p_render_cond c;
+    memcpy(&c, a, sizeof c);
+    return vka_memu_true_cond_allowed(
+        !strcmp(DM_GAME_ID, "0400486024DEC000"),
+        VKA_ENV("DM_VK_OOT_MEMU_TRUE_ENABLE", 1), c.mode);
 }
 // One walk from record p; phase MEMU_ADD counts the mesh draws it hands over (the later walks meet the same ones in the same order); phase -1 only says whether there is one, without the state
 static int memu_walk(const uint8_t *p, int phase) {
@@ -1534,11 +1555,15 @@ static int memu_walk(const uint8_t *p, int phase) {
         }
         if (h.op == OP_JUMP) { memcpy(&p, a, 8); continue; }
         if (h.op == OP_CALL) { if (nret == 17) break; ret[nret++] = p + h.size; memcpy(&p, a, 8); continue; }
-        if (!memu_allowed(h.op) || h.size < 8) {
+        if (h.size < 8 || !memu_allowed_record(h.op, a, h.size)) {
             if (phase == MEMU_ADD && h.op < OP_COUNT_)
                 g_memu_boundary_op[h.op]++;
             break;
         }
+        // Count admitted unconditional ENABLE records only in the primary
+        // ADD walk. The discovery and snapshot phases never inflate it.
+        if (phase == MEMU_ADD && h.op == OP_RENDER_COND)
+            ++g_memu_constant_enable_crossed;
         if (h.op == OP_DRAW) { p_draw t; const p_draw *d = draw_rec(a, h.size, &t);
             if (d->prim == NVN_PRIM_MESH && !d->mdi_cnt) {
                 int route = (hybrid || vegetation_off) ?
@@ -1663,7 +1688,7 @@ static void exec(const uint8_t *p, int depth) {
                 vka_dispatch_overlap_flush();
         }
         const void *a = p + 8;
-        if (g_memu_cover && !memu_allowed(h.op))
+        if (g_memu_cover && !memu_allowed_record(h.op, a, h.size))
             g_memu_cover = 0;
         int bar_kept = 0, bar_covered = 0;   // bar_covered: this pass ended with the same full GPU memory barrier that OP_BARRIER needs
         if (h.op == OP_DRAW || h.op == OP_DRAW_IDX) chunk_check();   // before a draw that opens a new pass
