@@ -40,6 +40,14 @@ final class ShaderLibs {
     // overlay. The ZIP reader verifies the actual full-file SHA-256.
     static final String OCARINA_BASE_VK = "b6b21fb5753a";
     static final long OCARINA_BASE_ENTRIES = 42339;
+    static final long OCARINA_VEGETATION_ENTRIES = 508;
+    /** Accept a full base with or without the 508 verified vegetation keys.
+     * The ZIP reader still verifies SHA-256, ABI, input digest, count and size;
+     * no arbitrary partial library is accepted as a playable full import. */
+    static boolean isFullOcarinaCount(long count) {
+        return count == OCARINA_BASE_ENTRIES ||
+                count == OCARINA_BASE_ENTRIES + OCARINA_VEGETATION_ENTRIES;
+    }
 
     static boolean trustedOcarinaBase(String titleId, String vkChain,
                                      String abi, String inputs, long entries,
@@ -49,7 +57,7 @@ final class ShaderLibs {
                 && expectedAbi != null && expectedAbi.equals(abi)
                 && expectedInputs != null && !"unknown".equals(expectedInputs)
                 && expectedInputs.equals(inputs)
-                && entries == OCARINA_BASE_ENTRIES;
+                && isFullOcarinaCount(entries);
     }
 
     static File trustedOcarinaBase(File pack, String titleId, String abi,
