@@ -22,7 +22,8 @@ class TrueEnableScan(unittest.TestCase):
         self.assertIn('memu_allowed(op)',fn)
         self.assertIn('if (h.size < 8 || !memu_allowed_record(h.op, a, h.size))',EXEC)
         self.assertIn('if (g_memu_cover && !memu_allowed_record(h.op, a, h.size))',EXEC)
-        self.assertEqual(EXEC.count('g_memu_constant_enable_crossed;'),1)
+        self.assertIn('static uint64_t g_memu_constant_enable_crossed;',EXEC)
+        self.assertIn('++g_memu_constant_enable_crossed;',EXEC)
     def test_dynamic_query_modes_remain_hard_boundaries(self):
         body=EXEC.split('static int memu_allowed(uint32_t op)',1)[1].split('// An unconditional ENABLE',1)[0]
         self.assertNotIn('case OP_RENDER_COND:',body)
