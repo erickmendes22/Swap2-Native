@@ -17,7 +17,7 @@ class HotOnePlane(unittest.TestCase):
             "vka_shader *vka_memu_by_key(",1)[0]
         for path in (cs,vs):
             self.assertIn('vka_oot_hot_one_plane_eligible(',path)
-            self.assertIn('VKA_ENV("DM_VK_OOT_ONE_PLANE_PRUNE", 1)',path)
+            self.assertIn('VKA_ENV("DM_VK_OOT_ONE_PLANE_PRUNE", 0)',path)
             self.assertIn('unsigned dropped = (unsigned)__builtin_popcountll(all & ~used);',path)
             self.assertIn('used == all',path)
             self.assertIn('vka_memu_pixel_mask(fragment, &used)',path)
