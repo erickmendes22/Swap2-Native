@@ -96,6 +96,25 @@ int main(void) {
     batched = 0; S.d.state = 10;
     assert(memu_walk((const uint8_t*)&inner[0], MEMU_ADD) == 2);
     assert(batched == 2 && states[0] == 10 && states[1] == 30);
+    // A real NVN fixed-enable record between two mesh draws MUST be
+    // traversed. Query-based conditions (0,1) and fixed DISABLE (3) MUST
+    // stop before the second mesh. The record is 24 bytes including its
+    // original guest payload; the draws are unchanged.
+    unsigned char seq[16 + 24 + 16 + 16]={0};
+    op_hdr h={OP_DRAW,16};p_draw d={NVN_PRIM_MESH,0};
+    memcpy(seq,&h,8);memcpy(seq+8,&d,sizeof d);
+    h=(op_hdr){OP_RENDER_COND,24};memcpy(seq+16,&h,8);
+    h=(op_hdr){OP_DRAW,16};memcpy(seq+40,&h,8);memcpy(seq+48,&d,sizeof d);
+    h=(op_hdr){OP_END,16};memcpy(seq+56,&h,8);
+    g_memu_depth=0;S.d.state=9;
+    for (int mode=0;mode<4;mode++){
+      p_render_cond cond={0};cond.mode=mode;memcpy(seq+24,&cond,sizeof cond);
+      batched=0;
+      assert(memu_walk(seq,MEMU_ADD)==(mode==2?2:1));
+      assert(batched==(mode==2?2:1));
+      assert(states[0]==9 && (mode!=2 || states[1]==9));
+    }
+    assert(g_memu_constant_enable_crossed==1);
     // The existence probe remains side-effect-free and sees first mesh draw.
     batched = 0; assert(memu_walk((const uint8_t*)&inner[0], -1) == 1);
     assert(batched == 0);
