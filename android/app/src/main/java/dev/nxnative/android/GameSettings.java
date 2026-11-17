@@ -346,19 +346,8 @@ final class GameSettings {
             box.addView(row.chevron(a).view);
             if (on) sceneCheck(a, g, prof, row, cur);
         }
-        if (Prefs.OCARINA_TITLE.equals(id)) {
-            int effect = Prefs.fpsPatch(a, id), shadow = Prefs.shadowProfile(a, id);
-            Ui.Setting fpsRow = new Ui.Setting(a, R.drawable.s2_ic_gauge,
-                    "Patch de FPS do jogo (RomFS)", v -> fpsPatches(a, g, again))
-                    .value(fpsLabel(effect));
-            box.addView(fpsRow.chevron(a).view);
-            if (effect != 0) graphicsCheck(a, g, fpsRow, fpsLabel(effect));
-            Ui.Setting shadowRow = new Ui.Setting(a, R.drawable.s2_ic_display,
-                    "Mapas de sombra (RomFS)", v -> shadowMaps(a, g, again))
-                    .value(shadowLabel(shadow));
-            box.addView(shadowRow.chevron(a).view);
-            if (shadow != 0) graphicsCheck(a, g, shadowRow, shadowLabel(shadow));
-        }
+        // The Ocarina UI is handled by graphicsOcarina019() above.
+        // Legacy shadow-map and experimental FPS controls were retired.
         builtinMods(a, g, box);
         Ui.add(p, Ui.small(a, a.getString(R.string.s2_game_graphics_hint)), 8);
     }
