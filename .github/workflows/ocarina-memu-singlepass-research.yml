@@ -1,0 +1,29 @@
+name: Ocarina single-walk mesh and selective-native research
+on:
+  push:
+    branches: [research/ocarina-memu-singlepass-native-pair-20261117]
+    paths:
+      - .github/workflows/ocarina-memu-singlepass-research.yml
+      - dm/gfx/vk_android/vka_exec.c
+      - dm/gfx/vk_android/vka_draw.c
+      - dm/gfx/vk_android/vka_oot_mesh_pair.h
+      - dm/gfx/tools/tests/test_ocarina_singlepass_mesh.py
+      - dm/host/tests/t_oot_hot_mesh_pair.c
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify lookahead invariants and exact native pair guards
+        run: python3 -m unittest dm.gfx.tools.tests.test_ocarina_singlepass_mesh -v
+      - name: Native C/UBSAN test of pair selection
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -fsanitize=undefined -fno-omit-frame-pointer -Idm/gfx/vk_android dm/host/tests/t_oot_hot_mesh_pair.c -o /tmp/t_oot_hot_mesh_pair
+          /tmp/t_oot_hot_mesh_pair
+      - name: Retest zero draw and mesh ordering baseline
+        run: |
+          python3 -m unittest dm.gfx.tools.tests.test_ocarina_zero_draw_elide -v
+          test -f dm/gfx/vk_android/vka_memu_order.h
