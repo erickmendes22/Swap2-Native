@@ -435,7 +435,8 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             env.add("DM_LANG=" + AppLanguage.gameCode(this));
             Lsfg.env(this, env);   // frame generation: the user's Lossless.dll and the settings
             GraphicsOptions.env(this, id, env); // one source of truth: presentation, aspect, pipeline, GPU time
-            QglConfig.env(this, id, env); // opt-in Qualcomm file override; the default changes nothing
+            // Qualcomm proprietary qgl_config forcing was retired.
+            // Leave rendermode/load/store entirely to the GPU driver.
             // 0.1.9: four established scene/GPU paths are ON for Ocarina,
             // hidden in Graphics; RAM Saver / shared buffer remain user choices.
             // Opt-in 0.1.8.5 memory-sharing adaptation; Direct mapping
@@ -451,7 +452,7 @@ public final class GameActivity extends Activity implements SurfaceHolder.Callba
             // Independent, OFF-by-default draw omissions. Evaluate only
             // for Ocarina; restore defaults by disabling each switch.
             if (Prefs.OCARINA_TITLE.equals(id)) {
-                env.add("DM_VK_OQ_SPLIT_PASS=" + (Prefs.keepCaveWalls(this, id) ? "1" : "0"));
+                env.add("DM_VK_OQ_SPLIT_PASS=0"); // retired; old per-game choice cannot reactivate it
                 // Approved Ocarina 162/167 cave-OFF renderer uses dynamic rendering.
                 // Never revive the cached classic backend for this title.
                 env.add("DM_VK_CLASSIC_RP=0");
