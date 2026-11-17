@@ -256,6 +256,8 @@ final class Prefs {
         SharedPreferences p = of(c);
         int mask = p.contains(gameKey("oot_fps_mask", id))
                 ? p.getInt(gameKey("oot_fps_mask", id), 0)
+                : p.contains(gameKey("oot_fps_patch_mask", id))
+                ? p.getInt(gameKey("oot_fps_patch_mask", id), 0)
                 : legacyFpsMask(p.getInt(gameKey("oot_fps_patch", id), 0));
         return fpsMaskValid(mask) ? mask : 0;
     }
@@ -271,8 +273,10 @@ final class Prefs {
         SharedPreferences.Editor edit = of(c).edit().remove(gameKey("oot_fps_patch", id));
         if (mask == 0) edit.remove(gameKey("oot_fps_mask", id));
         else edit.putInt(gameKey("oot_fps_mask", id), mask);
-        edit.commit();
+        edit.remove(gameKey("oot_fps_patch_mask", id)).commit();
     }
+    static int fpsPatchMask(Context c, String id) { return fpsPatch(c, id); }
+    static void fpsPatchMask(Context c, String id, int mask) { fpsPatch(c, id, mask); }
     /** 0: original game maps; 1: dynamic 512 / static 2048; 2: dynamic 256 / static 1024. */
     static int shadowProfile(Context c, String id) {
         if (!OCARINA_TITLE.equals(id)) return 0;
