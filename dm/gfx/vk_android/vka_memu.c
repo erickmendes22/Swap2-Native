@@ -208,15 +208,34 @@ static uint64_t g_memu_varying_draws, g_memu_varying_words_saved;
 // commands. These figures make a zero-candidate experiment falsifiable.
 static uint64_t g_hot_one_unknown, g_hot_one_none, g_hot_one_exact,
     g_hot_one_multi, g_hot_one_invalid;
+static _Atomic uint64_t g_hot_one_pairs, g_hot_one_resolved_fs;
+void vka_memu_hot_one_pair_note(uint64_t mesh_key, int source_fs_resolved) {
+    // Strictly a no-rendering diagnostic, recorded at the REAL guest mesh
+    // draw with its actual fragment binding; independent of shader creation.
+    if (!vka_oot_hot_one_plane_eligible(
+            !strcmp(DM_GAME_ID, "0400486024DEC000"),
+            1, mesh_key, 1u)) return;
+    atomic_fetch_add_explicit(&g_hot_one_pairs, 1, memory_order_relaxed);
+    if (source_fs_resolved)
+        atomic_fetch_add_explicit(&g_hot_one_resolved_fs, 1, memory_order_relaxed);
+}
 void vka_memu_hot_one_plane_stats(void) {
     static uint64_t previous[5];
     uint64_t now[5] = {g_hot_one_unknown, g_hot_one_none,
         g_hot_one_exact, g_hot_one_multi, g_hot_one_invalid}, diff[5], sum=0;
     for (int i=0;i<5;i++) { diff[i]=now[i]-previous[i]; previous[i]=now[i]; sum+=diff[i]; }
-    if (sum) VLOG("Ocarina hot mesh actual FS varying masks: unknown=%llu, none-removed=%llu, ONE-vec4-candidates=%llu, >=2-vec4-candidates=%llu, incompatible=%llu; pair-safe candidate not guaranteed FPS",
-        (unsigned long long)diff[0], (unsigned long long)diff[1],
-        (unsigned long long)diff[2], (unsigned long long)diff[3],
-        (unsigned long long)diff[4]);
+    static uint64_t pair0, fs0;
+    uint64_t pair = atomic_load_explicit(&g_hot_one_pairs, memory_order_relaxed);
+    uint64_t fs = atomic_load_explicit(&g_hot_one_resolved_fs, memory_order_relaxed);
+    uint64_t ndraw = pair - pair0, nresolved = fs - fs0;
+    pair0 = pair; fs0 = fs;
+    if (sum || ndraw)
+        VLOG("Ocarina hot mesh actual FS varying masks: hot-mesh-draws=%llu, bound-FS-resolved=%llu, missing/failed/no-FS=%llu, mask-unknown=%llu, none-removed=%llu, ONE-vec4-candidates=%llu, >=2-vec4-candidates=%llu, incompatible=%llu; candidate is NOT an FPS gain",
+            (unsigned long long)ndraw, (unsigned long long)nresolved,
+            (unsigned long long)(ndraw > nresolved ? ndraw - nresolved : 0),
+            (unsigned long long)diff[0], (unsigned long long)diff[1],
+            (unsigned long long)diff[2], (unsigned long long)diff[3],
+            (unsigned long long)diff[4]);
 }
 void vka_memu_varying_stats(uint64_t *draws, uint64_t *words) {
     if (draws) *draws = g_memu_varying_draws;
