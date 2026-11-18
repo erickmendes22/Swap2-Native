@@ -7,6 +7,10 @@ on:
       - dm/gfx/tools/tests/test_rc_gpu_policy.py
       - .github/workflows/ocarina-occlusion-validation.yml
       - dm/gfx/vk_android/vka_exec.c
+      - dm/gfx/vk_android/vka_draw.c
+      - dm/gfx/vk_android/vka_rc_write_scope.h
+      - dm/gfx/tools/tests/test_oot_gpu_query_archive.py
+      - dm/gfx/tools/tests/test_oot_rc_write_scope.py
       - dm/gfx/tools/tests/test_ocarina_early_occlusion.py
   workflow_dispatch:
 
