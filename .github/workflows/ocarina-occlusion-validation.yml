@@ -12,6 +12,9 @@ on:
       - dm/gfx/tools/tests/test_oot_gpu_query_archive.py
       - dm/gfx/tools/tests/test_oot_rc_write_scope.py
       - dm/gfx/tools/tests/test_ocarina_early_occlusion.py
+      - android/app/src/main/java/dev/nxnative/android/GameSettings.java
+      - android/app/src/main/java/dev/nxnative/android/GameActivity.java
+      - dm/tools/tests/test_ocarina_gpu_visibility_option.py
   workflow_dispatch:
 
 permissions:
@@ -33,3 +36,6 @@ jobs:
       - name: Validate existing GPU predicate and cumulative counter invariants
         run: |
           python3 -m unittest dm.gfx.tools.tests.test_rc_gpu_policy dm.gfx.tools.tests.test_oot_rc_cumulative_delta dm.gfx.tools.tests.test_oot_gpu_query_archive dm.gfx.tools.tests.test_oot_rc_write_scope -v
+      - name: Validate visible Ocarina 0.1.9 toggle and launch wiring
+        run: |
+          python3 -m unittest dm.tools.tests.test_ocarina_gpu_visibility_option dm.tools.tests.test_ocarina_019_release -v

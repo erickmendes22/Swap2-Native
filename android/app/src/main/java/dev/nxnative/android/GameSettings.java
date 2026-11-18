@@ -179,6 +179,7 @@ final class GameSettings {
                     .remove(Prefs.gameKey("oot_mesh_route", id))
                     .remove(Prefs.gameKey("oot_short_task_search", id))
                     .remove(Prefs.gameKey("gpu_partial_upload", id))
+                    .remove(Prefs.gameKey("gpu_visibility", id))
                     .remove(Prefs.gameKey("fb_invocation_cache", id))
                     .remove(Prefs.gameKey("oot_depth_store_none", id))
                     .remove(Prefs.gameKey("gpu_unused_color", id))
@@ -395,6 +396,19 @@ final class GameSettings {
                 });
         mist.value(a.getString(R.string.s2_oot019_mist_note));
         box.addView(mist.view);
+
+        // The compact 0.1.9 Ocarina screen must expose the actual
+        // DM_VK_GPU_VISIBILITY toggle. The legacy graphics() screen below
+        // never renders for this title; without this row the new cross-
+        // submission occlusion implementation cannot be compared on-device.
+        // OFF keeps the current renderer; ON enables conservative GPU
+        // predicates and the archived-query path. Restart to apply.
+        Ui.Setting gpuVisibility = new Ui.Setting(a, R.drawable.s2_ic_gauge,
+                a.getString(R.string.s2_gpu_visibility), null)
+                .toggle(a, Prefs.gpuVisibility(a, id),
+                        (button, on) -> Prefs.gpuVisibility(a, id, on));
+        gpuVisibility.value(a.getString(R.string.s2_gpu_visibility_note));
+        box.addView(gpuVisibility.view);
 
         Ui.Setting ram = new Ui.Setting(a, R.drawable.s2_ic_chip,
                 a.getString(R.string.s2_oot019_ram), null)

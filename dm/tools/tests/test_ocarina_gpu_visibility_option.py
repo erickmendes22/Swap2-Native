@@ -20,6 +20,20 @@ class GPUVisibilityOption(unittest.TestCase):
         settings = (APP / 'java/dev/nxnative/android/GameSettings.java').read_text()
         self.assertIn('.toggle(a, Prefs.gpuVisibility(a, id)', settings)
         self.assertIn('R.string.s2_gpu_visibility_note', settings)
+        # 0.1.9 routes Ocarina to this dedicated compact page, not the old
+        # graphics() list. An old hidden switch is not a user-visible option.
+        start = settings.index('private static void graphicsOcarina019(')
+        end = settings.index("/** The APK's assets", start)
+        page = settings[start:end]
+        self.assertIn('a.getString(R.string.s2_gpu_visibility)', page)
+        self.assertIn('.toggle(a, Prefs.gpuVisibility(a, id)', page)
+        self.assertIn('gpuVisibility.value(a.getString(R.string.s2_gpu_visibility_note))', page)
+        self.assertIn('box.addView(gpuVisibility.view)', page)
+        self.assertLess(page.index('box.addView(mist.view)'), page.index('box.addView(gpuVisibility.view)'))
+        self.assertLess(page.index('box.addView(gpuVisibility.view)'), page.index('box.addView(ram.view)'))
+        self.assertIn('.remove(Prefs.gameKey("gpu_visibility", id))', settings)
+        # The launcher passes BOTH states, not merely the enabled state.
+        self.assertIn('Prefs.gpuVisibility(this, id) ? "1" : "0"', game)
 
     def test_supported_translations_exist_once_and_preserve_resource_validity(self):
         for directory in ('values', 'values-pt', 'values-tr', 'values-pl', 'values-ru'):
