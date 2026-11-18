@@ -117,7 +117,7 @@ static const uint8_t *g_memu_caller[16];
 static int rc_gpu_report(uint64_t a,rc_rep *r){r->oq_begin=1;r->oq_end=2;return a!=0xbad;}
 // This existing test exercises the original collector in delta_mode=0.
 // A separate test executes the *real* cumulative-delta eligibility helper.
-static struct {int delta_mode;} RG={0};
+static struct {int delta_mode, archive_mode;} RG={0};
 static int rc_gpu_pair_valid(const rc_rep*a,const rc_rep*b,vka_rc_gpu_delta*out){
     (void)a;(void)b;(void)out;return 1;
 }
