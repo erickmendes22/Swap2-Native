@@ -6,6 +6,7 @@
 // tessellation's patch size, texel buffers, viewport swizzles other than a y flip
 #if defined(__ANDROID__)
 #include "vka.h"
+#include "vka_rc_write_scope.h"
 #include "vka_pool_bind_cache.h"
 #include "vka_selftest_spv.h"   // SPV_MESHCOUNT_COMP (mesh_ind_args)
 #include "vka_ndsr.h"
@@ -2649,6 +2650,15 @@ void vka_dispatch(vka_dstate *d, const p_dispatch *dp) {
     if (!sh[5]) SKIP("dispatch with no compute shader bound: skipped");
     vka_layout lay; if (!vka_layout_of(sh, 1, &lay)) SKIP("dispatch skipped: no pipeline layout");
     walk_all(d, sh);   // bindings are evaluated once before any pipeline
+    // The command stream no longer globally invalidates the archive before
+    // every compute. Conservative binding classification keeps the old
+    // behaviour for guest-memory writes, raw GMEM writes, storage images,
+    // atomics, unknown bindings or a failed resource walk. Only proven
+    // read-only compute can preserve older, still-in-flight OQ reports.
+    if (vka_rc_gpu_enabled() &&
+        (!VKA_ENV("DM_VK_OOT_RC_COMPUTE_RO", 1) ||
+         vka_rc_compute_may_write(g_wk.r[5], g_wk.n[5])))
+        vka_rc_gpu_invalidate();
     oot_sgsr_chain_frame();
     int chain_part = oot_sgsr_chain_part(sh[5]->key), scene_linear = 0;
     int scene_binding = -1, scene_previous_tid = 0;
