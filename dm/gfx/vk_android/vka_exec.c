@@ -1932,7 +1932,15 @@ static void exec(const uint8_t *p, int depth) {
                               vka_draw(&S.d, &S.rt, S.has_rt, &S.sc, S.has_sc, NULL, draw_idx_rec(a, h.size, &t));
                               vka_rp_predict_discard(0, 0); oq_sk1(sk); }
                           else if (!S.rc_skip && g_oq_count) { g_oq_lost++; g_oqs_skip++; } break;
-        case OP_DISPATCH: if (g_cb) { vka_rc_gpu_invalidate(); vka_dispatch(&S.d, a); } break;
+        case OP_DISPATCH: if (g_cb) {
+            const p_dispatch *dp = a;
+            // The existing Ocarina zero-dispatch path emits no shader work
+            // and cannot overwrite a counter report. Do not discard the
+            // archived query generation for a proven zero-invocation record.
+            if (dp->ind || (dp->x > 0 && dp->y > 0 && dp->z > 0))
+                vka_rc_gpu_invalidate();
+            vka_dispatch(&S.d, dp);
+        } break;
         case OP_DRAW_TEX: not_yet(h.op); if (g_oq_count && !S.rc_skip) { g_oq_lost++; g_oqs_skip++; } break;
         default: break;   // state: taken by vka_state_op above
         }

@@ -25,7 +25,7 @@ static struct {
     VkPipelineLayout layout;
     VkPipeline pipeline;
     uint64_t batches, pairs, query_copies, requests, cpu_zero;
-    uint64_t cond_seen, no_report, pair_reject, pair_admitted;
+    uint64_t cond_seen, no_report, pair_reject, pair_admitted, old_write_epoch;
 } RG;
 static vka_dstate g_rc_scan;
 
@@ -58,7 +58,7 @@ static int rc_gpu_report(uint64_t addr, rc_rep *out) {
     int i = rc_ix_find(addr);
     if (i < 0) return 0;
     *out = g_rcp[i];
-    if (out->gpu_write_epoch != g_rc_gpu_write_epoch) return 0;
+    if (out->gpu_write_epoch != g_rc_gpu_write_epoch) { if (RG.archive_mode) RG.old_write_epoch++; return 0; }
     if (RG.archive_mode) {
         uint64_t oldest = g_oq_archive_first;
         if (g_oq_head > OQ_N && g_oq_head - OQ_N > oldest)
@@ -234,8 +234,8 @@ static void rc_gpu_prepare(const uint8_t *p) {
         !vka_scratch((VkDeviceSize)n * 48, align, &job) ||
         !vka_scratch((VkDeviceSize)n * 4, align, &predicate)) return;
     memcpy(job.ptr, g_rc_job_words, (size_t)n * 48);
-    // All queries come from closed reports in this submission. Their reset
-    // callback cannot run until this fence completes, after these copies.
+    // Current-submission queries are copied from their live pool. Historical
+    // queries come from the immutable GPU archive written before host resets.
     vka_rp_end(); vka_dispatch_overlap_flush();
     if (RG.archive_mode) {
         VkMemoryBarrier pre = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -330,11 +330,11 @@ int vka_rc_gpu_predicate(VkBuffer *buffer, VkDeviceSize *offset) {
 }
 static void rc_gpu_stats(double frames) {
     if (!RG.enabled || frames <= 0) return;
-    VLOG("GPU visibility research: archive=%d delta=%d; %.1f conditions/frame tried, %.1f no same-submission report, %.1f epoch/range rejected, %.1f exact query-pairs admitted, %.1f batches, %.1f query copies, %.1f predicate draw requests, %.1f query-free CPU decisions/frame; NO FPS claim",
+    VLOG("GPU visibility research: archive=%d delta=%d; %.1f conditions/frame tried, %.1f no eligible report, %.1f prior-report write-epoch rejects, %.1f epoch/range rejected, %.1f exact query-pairs admitted, %.1f batches, %.1f query copies, %.1f predicate draw requests, %.1f query-free CPU decisions/frame; NO FPS claim",
         RG.archive_mode, RG.delta_mode, RG.cond_seen / frames, RG.no_report / frames,
-        RG.pair_reject / frames, RG.pair_admitted / frames,
+        RG.old_write_epoch / frames, RG.pair_reject / frames, RG.pair_admitted / frames,
         RG.batches / frames, RG.query_copies / frames, RG.requests / frames,
         RG.cpu_zero / frames);
     RG.batches = RG.pairs = RG.query_copies = RG.requests = RG.cpu_zero = 0;
-    RG.cond_seen = RG.no_report = RG.pair_reject = RG.pair_admitted = 0;
+    RG.cond_seen = RG.no_report = RG.pair_reject = RG.pair_admitted = RG.old_write_epoch = 0;
 }
