@@ -378,7 +378,7 @@ static uint64_t g_oq_head, g_oq_seg0;      // the next query's sequence number; 
 // buffer's end, BEFORE the submission fence permits hostQueryReset. Every
 // slot is keyed by monotonic query sequence, never by a stale Vulkan pool slot.
 static vka_span g_oq_archive;
-static int g_oq_archive_enabled;
+static _Atomic int g_oq_archive_enabled;
 static uint64_t g_oq_archive_first, g_oq_archive_head;
 static uint64_t g_oq_archive_queries;
 static _Atomic uint64_t g_oq_archive_cmds;

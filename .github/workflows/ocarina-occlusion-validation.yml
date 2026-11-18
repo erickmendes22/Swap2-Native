@@ -4,6 +4,7 @@ on:
   push:
     branches: [ocarina-v11-ios-perf-from-v101]
     paths:
+      - dm/gfx/tools/tests/test_rc_gpu_policy.py
       - .github/workflows/ocarina-occlusion-validation.yml
       - dm/gfx/vk_android/vka_exec.c
       - dm/gfx/tools/tests/test_ocarina_early_occlusion.py

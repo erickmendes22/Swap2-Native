@@ -68,6 +68,7 @@ int main(void) {
         self.assertIn("VKA_ENV(\"DM_VK_OOT_OQ_ARCHIVE\", 0)",exe)
         self.assertIn("g_oq_archive_head = end;",exe)
         self.assertIn("vka_rc_archive_pair_valid(aa, bb",gpu)
+        self.assertIn("static _Atomic int g_oq_archive_enabled;",exe)
         self.assertIn("vk.vkCmdCopyBuffer(g_cb, g_oq_archive.buf",gpu)
         self.assertIn("VKA_ENV(\"DM_VK_OOT_OQ_ARCHIVE\", 0)",gpu)
         self.assertIn("if(!az&&!bz){predicate[i]=1;return;}",shader)
