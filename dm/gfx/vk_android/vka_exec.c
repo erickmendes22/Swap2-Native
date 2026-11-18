@@ -380,7 +380,8 @@ static uint64_t g_oq_head, g_oq_seg0;      // the next query's sequence number; 
 static vka_span g_oq_archive;
 static int g_oq_archive_enabled;
 static uint64_t g_oq_archive_first, g_oq_archive_head;
-static uint64_t g_oq_archive_queries, g_oq_archive_cmds;
+static uint64_t g_oq_archive_queries;
+static _Atomic uint64_t g_oq_archive_cmds;
 
 static _Atomic uint64_t g_oq_ready, g_oq_freed;   // queries below ready are reset and may begin; (command reset) the completion thread has read every query below freed
 static uint64_t g_oq_acc; static pthread_mutex_t g_oq_mu = PTHREAD_MUTEX_INITIALIZER;   // the running count (the completion thread; vka_fence_cpu may run a submission's effects on another)
@@ -643,7 +644,7 @@ static void oq_archive_record(const void *arg) {
         vk.vkCmdCopyQueryPoolResults(x.cb, OQ.pool, slot, n,
             g_oq_archive.buf, g_oq_archive.off + (VkDeviceSize)slot * 8,
             8, VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-        g_oq_archive_cmds++;
+        atomic_fetch_add_explicit(&g_oq_archive_cmds, 1, memory_order_relaxed);
         q += n;
     }
     VkMemoryBarrier mb = {VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -781,8 +782,9 @@ static void oq_stats(char *b, size_t n, double frames) {   // every 300 frames w
     if (frames > 0 && g_oq_archive_queries != archive_queries_0)
         VLOG("Ocarina GPU query archive: %.1f results copied/frame in %.2f GPU copy commands/frame; stable cross-submission ring, no CPU readback",
              (g_oq_archive_queries - archive_queries_0) / frames,
-             (g_oq_archive_cmds - archive_cmds_0) / frames);
-    archive_queries_0 = g_oq_archive_queries; archive_cmds_0 = g_oq_archive_cmds;
+             (atomic_load_explicit(&g_oq_archive_cmds, memory_order_relaxed) - archive_cmds_0) / frames);
+    archive_queries_0 = g_oq_archive_queries;
+    archive_cmds_0 = atomic_load_explicit(&g_oq_archive_cmds, memory_order_relaxed);
     b[0] = 0;
     if (frames > 0 && (g_oqs_reset != r0 || g_oqs_rep != p0)) {
         if (g_oq != 1) snprintf(b, n, "occlusion queries per frame (not counted: %s): %.1f samples-passed resets, %.1f reports, each written 1", g_oq < 0 ? "no reset or report reached the GPU path" : "DM_VK_OCCLUSION=0 or no query pool",

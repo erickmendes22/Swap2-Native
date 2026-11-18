@@ -10,6 +10,9 @@ import unittest
 from pathlib import Path
 
 SRC=(Path(__file__).resolve().parents[4]/"dm/gfx/vk_android/vka_exec.c").read_text()
+# Unlike the GPU-side archive copy, the CPU availability-check helper MUST
+# never request a blocking Vulkan query read.
+EARLY=SRC.split('static int oq_early_pair_equal(uint64_t first, uint64_t second, int *equal) {',1)[1].split('static void oq_archive_record(',1)[0]
 
 def early_equality(counts,first,second,lost,available,same_epoch=True):
     if not same_epoch: return None
@@ -29,7 +32,7 @@ class EarlyOcclusionTests(unittest.TestCase):
         self.assertIn('pthread_mutex_lock(&g_oq_mu);',SRC)
         self.assertIn('if (!all_available)',SRC)
         self.assertIn('rc_oq_early_eq' if False else 'oq_early_pair_equal(rc->addr, rc->addr + 16, &early_equal)',SRC)
-        self.assertNotIn('VK_QUERY_RESULT_WAIT_BIT',SRC)
+        self.assertNotIn('VK_QUERY_RESULT_WAIT_BIT',EARLY)
 
     def test_all_early_decisions_agree_with_cumulative_counts(self):
         rng=random.Random(209)
@@ -84,7 +87,7 @@ class CrossResetEarlyOcclusionTests(unittest.TestCase):
         self.assertIn('if (unavailable) return 0;', SRC)
         self.assertIn('if (!az && !bz)', SRC)
         self.assertIn('pthread_mutex_lock(&g_oq_mu);', SRC)
-        self.assertNotIn('VK_QUERY_RESULT_WAIT_BIT', SRC)
+        self.assertNotIn('VK_QUERY_RESULT_WAIT_BIT', EARLY)
 
     def test_cross_epoch_zero_and_positive_only_100000_cases(self):
         rng = random.Random(20261117)
