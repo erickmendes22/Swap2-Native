@@ -36,7 +36,7 @@ static void rc_gpu_sub_begin(void) {
     // DM_VK_OOT_RC_DELTA=0 restores the original fresh-only experiment.
     RG.delta_mode = RG.enabled && VKA_ENV("DM_VK_OOT_RC_DELTA", 1);
     RG.archive_mode = RG.enabled && g_oq_archive_enabled &&
-        VKA_ENV("DM_VK_OOT_OQ_ARCHIVE", 0);
+        VKA_ENV("DM_VK_OOT_OQ_ARCHIVE", 1);
     RG.n = 0; RG.current.buf = VK_NULL_HANDLE; RG.submission_first = g_oq_head;
 }
 void vka_rc_gpu_invalidate(void) {

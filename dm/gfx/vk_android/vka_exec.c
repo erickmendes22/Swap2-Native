@@ -416,7 +416,7 @@ static int oq_on(void) {
     if (OQ.host) { OQ.hreset(V.dev, OQ.pool, 0, OQ_N); atomic_store(&g_oq_ready, OQ_N); }   // (else oq_refill resets them at the next submission's start)
     if (!strcmp(DM_GAME_ID, "0400486024DEC000") &&
         VKA_ENV("DM_VK_GPU_VISIBILITY", 0) &&
-        VKA_ENV("DM_VK_OOT_OQ_ARCHIVE", 0) &&
+        VKA_ENV("DM_VK_OOT_OQ_ARCHIVE", 1) &&
         vk.vkCmdCopyQueryPoolResults &&
         vka_static((VkDeviceSize)OQ_N * 8u, V.sb_align > 8 ? V.sb_align : 8, &g_oq_archive)) {
         g_oq_archive_first = g_oq_archive_head = g_oq_head;
